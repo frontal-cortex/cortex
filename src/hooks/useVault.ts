@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { commands, VaultInfo, VaultStatus, AgentBranch } from "../lib/commands";
+import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../lib/commands";
+
+const LOG_LIMIT = 10;
 
 interface VaultState {
   vault: VaultInfo | null;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
+  commits: CommitEntry[];
   syncing: boolean;
   error: string | null;
 }
@@ -15,6 +18,7 @@ export function useVault() {
     vault: null,
     status: null,
     agentBranches: [],
+    commits: [],
     syncing: false,
     error: null,
   });
@@ -39,13 +43,14 @@ export function useVault() {
   const refreshStatus = useCallback(async () => {
     if (!state.vault) return;
     try {
-      const [status, agentBranches] = await Promise.all([
+      const [status, agentBranches, commits] = await Promise.all([
         commands.gitStatus(),
         commands.listAgentBranches(),
+        commands.gitLog(LOG_LIMIT),
       ]);
-      setState((s) => ({ ...s, status, agentBranches }));
+      setState((s) => ({ ...s, status, agentBranches, commits }));
     } catch {
-      // git errors are non-fatal (e.g. no commits yet)
+      // git errors are non-fatal (e.g. fresh repo with no commits yet)
     }
   }, [state.vault]);
 

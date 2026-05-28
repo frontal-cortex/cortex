@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { VaultInfo, VaultStatus, AgentBranch } from "../../lib/commands";
+import { VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { Sidebar } from "./Sidebar";
 import { NoteList } from "./NoteList";
@@ -10,6 +10,7 @@ interface Props {
   vault: VaultInfo;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
+  commits: CommitEntry[];
   syncing: boolean;
   onSync: () => void;
   onCommit: (message: string) => Promise<void>;
@@ -21,6 +22,7 @@ export function Shell({
   vault,
   status,
   agentBranches,
+  commits,
   syncing,
   onSync,
   onCommit,
@@ -81,6 +83,7 @@ export function Shell({
         vault={vault}
         status={status}
         agentBranches={agentBranches}
+        commits={commits}
         syncing={syncing}
         activeView={activeView}
         onViewChange={setActiveView}

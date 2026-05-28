@@ -26,6 +26,7 @@ pub fn run() {
             commands::git::git_status,
             commands::git::git_commit,
             commands::git::git_sync,
+            commands::git::git_log,
             commands::git::list_agent_branches,
             commands::git::apply_agent_branch,
             commands::git::discard_agent_branch,

@@ -1,4 +1,4 @@
-use git2::{Repository, StatusOptions, BranchType};
+use git2::{Repository, Sort, StatusOptions, BranchType};
 use serde::Serialize;
 use std::path::Path;
 use crate::error::{AppError, Result};
@@ -17,6 +17,39 @@ pub struct AgentBranch {
     pub name: String,
     pub description: String,
     pub commit_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommitEntry {
+    pub hash: String,
+    pub message: String,
+    pub author: String,
+    pub timestamp: u64,
+}
+
+pub fn get_log(repo: &Repository, limit: usize) -> Result<Vec<CommitEntry>> {
+    let mut revwalk = repo.revwalk()?;
+
+    // Fresh repo with no commits — return empty without error
+    if revwalk.push_head().is_err() {
+        return Ok(vec![]);
+    }
+
+    revwalk.set_sorting(Sort::TIME)?;
+
+    let entries = revwalk
+        .take(limit)
+        .filter_map(|id| id.ok())
+        .filter_map(|id| repo.find_commit(id).ok())
+        .map(|commit| CommitEntry {
+            hash: format!("{:.7}", commit.id()),
+            message: commit.summary().unwrap_or("").to_string(),
+            author: commit.author().name().unwrap_or("").to_string(),
+            timestamp: commit.time().seconds() as u64,
+        })
+        .collect();
+
+    Ok(entries)
 }
 
 pub fn open_or_init(vault_path: &Path) -> Result<Repository> {

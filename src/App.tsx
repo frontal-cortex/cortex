@@ -15,6 +15,7 @@ export default function App() {
       vault={vault.vault}
       status={vault.status}
       agentBranches={vault.agentBranches}
+      commits={vault.commits}
       syncing={vault.syncing}
       onSync={vault.sync}
       onCommit={async (msg) => { await vault.commit(msg); }}

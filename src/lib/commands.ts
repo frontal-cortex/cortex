@@ -34,6 +34,13 @@ export interface AgentBranch {
   commit_count: number;
 }
 
+export interface CommitEntry {
+  hash: string;
+  message: string;
+  author: string;
+  timestamp: number;
+}
+
 export const commands = {
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),
@@ -67,6 +74,9 @@ export const commands = {
 
   gitSync: () =>
     invoke<void>("git_sync"),
+
+  gitLog: (limit: number) =>
+    invoke<CommitEntry[]>("git_log", { limit }),
 
   listAgentBranches: () =>
     invoke<AgentBranch[]>("list_agent_branches"),

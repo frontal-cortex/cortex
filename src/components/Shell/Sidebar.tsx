@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { VaultInfo, VaultStatus, AgentBranch } from "../../lib/commands";
+import { VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
 import styles from "./Sidebar.module.css";
 
 interface Props {
   vault: VaultInfo;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
+  commits: CommitEntry[];
   syncing: boolean;
   activeView: string;
   onViewChange: (view: string) => void;
@@ -19,6 +20,7 @@ export function Sidebar({
   vault,
   status,
   agentBranches,
+  commits,
   syncing,
   activeView,
   onViewChange,
@@ -66,6 +68,7 @@ export function Sidebar({
         status={status}
         isDirty={isDirty}
         changedCount={changedCount}
+        commits={commits}
         onCommit={onCommit}
       />
 
@@ -99,11 +102,13 @@ function GitSection({
   status,
   isDirty,
   changedCount,
+  commits,
   onCommit,
 }: {
   status: VaultStatus | null;
   isDirty: boolean;
   changedCount: number;
+  commits: CommitEntry[];
   onCommit: (message: string) => Promise<void>;
 }) {
   const [message, setMessage] = useState("");
@@ -183,8 +188,29 @@ function GitSection({
           </button>
         </div>
       )}
+
+      {commits.length > 0 && (
+        <div className={styles.commitLog}>
+          {commits.map((c) => (
+            <div key={c.hash} className={styles.commitRow}>
+              <span className={styles.commitHash}>{c.hash}</span>
+              <span className={styles.commitMsg}>{c.message}</span>
+              <span className={styles.commitTime}>{relativeTime(c.timestamp)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+function relativeTime(unixSecs: number): string {
+  const diff = Math.floor(Date.now() / 1000) - unixSecs;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(unixSecs * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function NavItem({
