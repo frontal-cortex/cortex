@@ -1,6 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
 import { commands, NoteEntry, Note } from "../lib/commands";
 
+function dateStamp(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return [
+    d.getFullYear(),
+    pad(d.getMonth() + 1),
+    pad(d.getDate()),
+    pad(d.getHours()),
+    pad(d.getMinutes()),
+    pad(d.getSeconds()),
+  ].join("-");
+}
+
 export function useNotes(vaultOpen: boolean) {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,7 +37,8 @@ export function useNotes(vaultOpen: boolean) {
     async (title: string): Promise<Note> => {
       const slug = title.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "untitled";
       const created = new Date().toISOString().split("T")[0];
-      const path = `notes/${slug}-${Date.now()}.md`;
+      const ts = dateStamp();
+      const path = `notes/${slug}-${ts}.md`;
       const note = await commands.createNote(path, title || "Untitled", created);
       await refresh();
       return note;

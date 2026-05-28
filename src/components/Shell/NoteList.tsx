@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { NoteEntry } from "../../lib/commands";
+import { commands } from "../../lib/commands";
 import styles from "./NoteList.module.css";
 
 interface Props {
@@ -12,14 +13,41 @@ interface Props {
 
 export function NoteList({ notes, loading, selectedPath, onSelect, onNewNote }: Props) {
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<NoteEntry[] | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const filtered = query.trim()
-    ? notes.filter(
-        (n) =>
-          n.title.toLowerCase().includes(query.toLowerCase()) ||
-          n.tags.some((t) => t.toLowerCase().includes(query.toLowerCase())),
-      )
-    : notes;
+  // Debounced backend search; fall back to client-side for empty query
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+
+    if (!query.trim()) {
+      setSearchResults(null);
+      return;
+    }
+
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const results = await commands.searchNotes(query);
+        setSearchResults(results);
+      } catch {
+        // Index not ready yet — fall back to client-side filter
+        const q = query.toLowerCase();
+        setSearchResults(
+          notes.filter(
+            (n) =>
+              n.title.toLowerCase().includes(q) ||
+              n.tags.some((t) => t.toLowerCase().includes(q)),
+          ),
+        );
+      }
+    }, 200);
+
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [query, notes]);
+
+  const displayed = searchResults ?? notes;
 
   return (
     <div className={styles.root}>
@@ -32,6 +60,11 @@ export function NoteList({ notes, loading, selectedPath, onSelect, onNewNote }: 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {query && (
+            <button className={styles.clearBtn} onClick={() => setQuery("")}>
+              ×
+            </button>
+          )}
         </div>
         <button className={styles.newBtn} onClick={onNewNote} title="New note">
           <PlusIcon />
@@ -40,12 +73,12 @@ export function NoteList({ notes, loading, selectedPath, onSelect, onNewNote }: 
 
       <div className={styles.list}>
         {loading && <p className={styles.empty}>Loading…</p>}
-        {!loading && filtered.length === 0 && (
+        {!loading && displayed.length === 0 && (
           <p className={styles.empty}>
             {query ? "No matches" : "No notes yet — create one to get started."}
           </p>
         )}
-        {filtered.map((note) => (
+        {displayed.map((note) => (
           <NoteRow
             key={note.path}
             note={note}
@@ -95,9 +128,7 @@ function NoteRow({
 
 function formatDate(date: Date): string {
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
-
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / 86400000);
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
@@ -107,8 +138,8 @@ function formatDate(date: Date): string {
 function SearchIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="11" cy="11" r="8"/>
-      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   );
 }
@@ -116,8 +147,8 @@ function SearchIcon() {
 function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-      <line x1="12" y1="5" x2="12" y2="19"/>
-      <line x1="5" y1="12" x2="19" y2="12"/>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   );
 }

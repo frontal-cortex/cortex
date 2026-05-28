@@ -4,7 +4,7 @@ use std::time::UNIX_EPOCH;
 use tauri::State;
 use walkdir::WalkDir;
 
-use crate::commands::vault::VaultState;
+use crate::commands::vault::{DbState, VaultState};
 use crate::error::{AppError, Result};
 use crate::note::{self, Note, NoteEntry};
 
@@ -16,6 +16,8 @@ fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
         .clone()
         .ok_or(AppError::NoVault)
 }
+
+// ── List / Read ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
@@ -47,16 +49,12 @@ pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
             .unwrap_or(0);
 
         let title = note::infer_title(&parsed);
-        let note_type = parsed
-            .frontmatter
-            .get("type")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
         let tags = parsed
             .frontmatter
             .get("tags")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
             .unwrap_or_default();
 
         entries.push(NoteEntry { path: rel, title, note_type, tags, modified });
@@ -74,8 +72,15 @@ pub fn read_note(path: String, state: State<'_, VaultState>) -> Result<Note> {
     note::parse_note(&path, &content)
 }
 
+// ── Write / Create / Delete ──────────────────────────────────────────────────
+
 #[tauri::command]
-pub fn write_note(path: String, note: Note, state: State<'_, VaultState>) -> Result<()> {
+pub fn write_note(
+    path: String,
+    note: Note,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<()> {
     let root = vault_path(&state)?;
     let abs = root.join(&path);
 
@@ -84,7 +89,13 @@ pub fn write_note(path: String, note: Note, state: State<'_, VaultState>) -> Res
     }
 
     let content = note::serialize_note(&note)?;
-    std::fs::write(abs, content)?;
+    std::fs::write(&abs, &content)?;
+
+    // Keep index in sync
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+    }
+
     Ok(())
 }
 
@@ -94,6 +105,7 @@ pub fn create_note(
     title: String,
     created: String,
     state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
 ) -> Result<Note> {
     let root = vault_path(&state)?;
     let abs = root.join(&path);
@@ -113,17 +125,45 @@ pub fn create_note(
 
     let note = Note { path: path.clone(), frontmatter, body: String::new() };
     let content = note::serialize_note(&note)?;
-    std::fs::write(&abs, content)?;
+    std::fs::write(&abs, &content)?;
+
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+    }
+
     Ok(note)
 }
 
 #[tauri::command]
-pub fn delete_note(path: String, state: State<'_, VaultState>) -> Result<()> {
+pub fn delete_note(
+    path: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<()> {
     let root = vault_path(&state)?;
     let abs = root.join(&path);
     if !abs.exists() {
         return Err(AppError::Other(format!("Note not found: {path}")));
     }
     std::fs::remove_file(abs)?;
+
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = db.remove_note(&path);
+    }
+
     Ok(())
+}
+
+// ── Search ───────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn search_notes(
+    query: String,
+    db_state: State<'_, DbState>,
+) -> Result<Vec<NoteEntry>> {
+    let guard = db_state.0.lock().unwrap();
+    match guard.as_ref() {
+        Some(db) => db.search(&query),
+        None => Ok(vec![]),
+    }
 }

@@ -4,7 +4,7 @@ mod error;
 mod git;
 mod note;
 
-use commands::vault::VaultState;
+use commands::vault::{DbState, VaultState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .manage(VaultState::default())
+        .manage(DbState::default())
         .invoke_handler(tauri::generate_handler![
             commands::vault::open_vault,
             commands::vault::get_vault_info,
@@ -21,6 +22,7 @@ pub fn run() {
             commands::notes::write_note,
             commands::notes::create_note,
             commands::notes::delete_note,
+            commands::notes::search_notes,
             commands::git::git_status,
             commands::git::git_commit,
             commands::git::git_sync,

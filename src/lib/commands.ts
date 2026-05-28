@@ -56,6 +56,9 @@ export const commands = {
   deleteNote: (path: string) =>
     invoke<void>("delete_note", { path }),
 
+  searchNotes: (query: string) =>
+    invoke<NoteEntry[]>("search_notes", { query }),
+
   gitStatus: () =>
     invoke<VaultStatus>("git_status"),
 

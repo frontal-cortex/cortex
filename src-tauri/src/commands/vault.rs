@@ -3,11 +3,15 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 
+use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::git;
 
 #[derive(Debug, Default)]
 pub struct VaultState(pub Mutex<Option<PathBuf>>);
+
+#[derive(Debug, Default)]
+pub struct DbState(pub Mutex<Option<Db>>);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VaultInfo {
@@ -17,17 +21,23 @@ pub struct VaultInfo {
 }
 
 #[tauri::command]
-pub fn open_vault(path: String, state: State<'_, VaultState>) -> Result<VaultInfo> {
+pub fn open_vault(
+    path: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<VaultInfo> {
     let vault_path = PathBuf::from(&path);
     if !vault_path.exists() {
         return Err(AppError::Other(format!("Path does not exist: {path}")));
     }
 
-    // Init git repo if needed
     git::open_or_init(&vault_path)?;
-
-    // Ensure .brain/ directory exists (for db, schemas, etc.)
     std::fs::create_dir_all(vault_path.join(".brain"))?;
+
+    // Open / migrate the SQLite index, then re-index all notes
+    let db = Db::open(&vault_path)?;
+    crate::commands::indexer::index_vault(&vault_path, &db)?;
+    *db_state.0.lock().unwrap() = Some(db);
 
     let name = vault_path
         .file_name()
