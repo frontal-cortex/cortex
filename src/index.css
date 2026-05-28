@@ -4,18 +4,14 @@
   padding: 0;
 }
 
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-  color: #1a1a1a;
-  background-color: #ffffff;
-  -webkit-font-smoothing: antialiased;
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #e8e8e8;
-    background-color: #1a1a1a;
-  }
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }

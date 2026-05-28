@@ -1,0 +1,63 @@
+.root {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.header {
+  padding: var(--space-5) var(--space-6) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.type {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-active);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.saving {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.editorWrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-6);
+}
+
+/* Override BlockNote defaults to match our design tokens */
+.editorWrap :global(.bn-container) {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  background: var(--bg-panel);
+}

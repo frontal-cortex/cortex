@@ -1,0 +1,101 @@
+import { useState, useEffect, useCallback } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { commands, VaultInfo, VaultStatus, AgentBranch } from "../lib/commands";
+
+interface VaultState {
+  vault: VaultInfo | null;
+  status: VaultStatus | null;
+  agentBranches: AgentBranch[];
+  syncing: boolean;
+  error: string | null;
+}
+
+export function useVault() {
+  const [state, setState] = useState<VaultState>({
+    vault: null,
+    status: null,
+    agentBranches: [],
+    syncing: false,
+    error: null,
+  });
+
+  useEffect(() => {
+    commands.getVaultInfo().then((vault) => {
+      if (vault) setState((s) => ({ ...s, vault }));
+    });
+  }, []);
+
+  const openVault = useCallback(async () => {
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (!selected || typeof selected !== "string") return;
+    try {
+      const vault = await commands.openVault(selected);
+      setState((s) => ({ ...s, vault, error: null }));
+    } catch (e) {
+      setState((s) => ({ ...s, error: String(e) }));
+    }
+  }, []);
+
+  const refreshStatus = useCallback(async () => {
+    if (!state.vault) return;
+    try {
+      const [status, agentBranches] = await Promise.all([
+        commands.gitStatus(),
+        commands.listAgentBranches(),
+      ]);
+      setState((s) => ({ ...s, status, agentBranches }));
+    } catch {
+      // git errors are non-fatal (e.g. no commits yet)
+    }
+  }, [state.vault]);
+
+  const sync = useCallback(async () => {
+    setState((s) => ({ ...s, syncing: true, error: null }));
+    try {
+      await commands.gitSync();
+      await refreshStatus();
+    } catch (e) {
+      setState((s) => ({ ...s, error: String(e) }));
+    } finally {
+      setState((s) => ({ ...s, syncing: false }));
+    }
+  }, [refreshStatus]);
+
+  const commit = useCallback(
+    async (message: string) => {
+      await commands.gitCommit(message);
+      await refreshStatus();
+    },
+    [refreshStatus],
+  );
+
+  const applyAgentBranch = useCallback(
+    async (branchName: string) => {
+      await commands.applyAgentBranch(branchName);
+      await refreshStatus();
+    },
+    [refreshStatus],
+  );
+
+  const discardAgentBranch = useCallback(
+    async (branchName: string) => {
+      await commands.discardAgentBranch(branchName);
+      await refreshStatus();
+    },
+    [refreshStatus],
+  );
+
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
+
+  return {
+    ...state,
+    openVault,
+    refreshStatus,
+    sync,
+    commit,
+    applyAgentBranch,
+    discardAgentBranch,
+  };
+}

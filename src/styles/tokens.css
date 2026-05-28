@@ -1,0 +1,74 @@
+:root {
+  /* Surfaces */
+  --bg-app:       #ffffff;
+  --bg-sidebar:   #f7f7f5;
+  --bg-hover:     #efefed;
+  --bg-active:    #e8e8e5;
+  --bg-panel:     #ffffff;
+
+  /* Text */
+  --text-primary:   #1a1a1a;
+  --text-secondary: #6b6b6b;
+  --text-tertiary:  #9b9b9b;
+  --text-inverse:   #ffffff;
+
+  /* Borders */
+  --border:       #e5e5e3;
+  --border-focus: #adadaa;
+
+  /* Accents */
+  --accent:       #2383e2;
+  --accent-light: #e8f2fc;
+  --danger:       #eb5757;
+
+  /* Git status */
+  --git-clean:    #0f9960;
+  --git-dirty:    #d9822b;
+  --git-conflict: #eb5757;
+  --git-agent:    #7c5cbf;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 15px;
+  --text-lg:   18px;
+  --text-xl:   24px;
+
+  /* Radii */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Panels */
+  --sidebar-width:   220px;
+  --notelist-width:  280px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-app:       #1f1f1f;
+    --bg-sidebar:   #191919;
+    --bg-hover:     #2a2a2a;
+    --bg-active:    #333333;
+    --bg-panel:     #1f1f1f;
+
+    --text-primary:   #e5e5e5;
+    --text-secondary: #999999;
+    --text-tertiary:  #666666;
+
+    --border:       #2e2e2e;
+    --border-focus: #555555;
+
+    --accent-light: #1a2e42;
+  }
+}
