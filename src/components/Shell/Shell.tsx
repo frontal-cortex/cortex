@@ -25,7 +25,7 @@ export function Shell({
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
 
-  const { notes, refresh, createNote, deleteNote } = useNotes(!!vault);
+  const { notes, dirs, refresh, createNote, deleteNote } = useNotes(!!vault);
   const { note, saving, save } = useNote(selectedPath);
 
   // Global keyboard shortcuts
@@ -87,6 +87,7 @@ export function Shell({
       <LeftPanel
         vault={vault}
         notes={notes}
+        dirs={dirs}
         selectedPath={selectedPath}
         status={status}
         agentBranches={agentBranches}

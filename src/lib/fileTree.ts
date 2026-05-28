@@ -2,29 +2,38 @@ import { NoteEntry } from "./commands";
 
 export interface FileNode {
   type: "file";
-  name: string;   // display name (title or filename stem)
-  path: string;   // vault-relative path
+  name: string;
+  path: string;
   note: NoteEntry;
 }
 
 export interface DirNode {
   type: "dir";
-  name: string;   // folder name
-  path: string;   // vault-relative path with trailing /
+  name: string;
+  path: string;   // vault-relative with trailing /
   children: TreeNode[];
 }
 
 export type TreeNode = FileNode | DirNode;
 
 /**
- * Convert a flat NoteEntry list into a directory tree rooted at `prefix`.
- * Dirs are sorted alphabetically; files within each dir are sorted by
- * modified desc (newest first).
+ * Build a directory tree from a flat note list plus a list of known
+ * directory paths (so empty directories are visible too).
+ *
+ * @param notes     Flat list of all NoteEntry objects in the vault.
+ * @param prefix    Root path for this tree level, e.g. "notes/".
+ * @param knownDirs All known directory paths (vault-relative, trailing slash).
+ *                  Directories without any .md files are still rendered.
  */
-export function buildTree(notes: NoteEntry[], prefix: string): TreeNode[] {
+export function buildTree(
+  notes: NoteEntry[],
+  prefix: string,
+  knownDirs: string[] = [],
+): TreeNode[] {
   const dirMap = new Map<string, NoteEntry[]>();
   const files: NoteEntry[] = [];
 
+  // Collect notes that belong to this level or deeper
   for (const note of notes) {
     if (!note.path.startsWith(prefix)) continue;
     const rel = note.path.slice(prefix.length);
@@ -39,20 +48,27 @@ export function buildTree(notes: NoteEntry[], prefix: string): TreeNode[] {
     }
   }
 
+  // Add known empty dirs that are direct children of this prefix
+  for (const dirPath of knownDirs) {
+    if (!dirPath.startsWith(prefix)) continue;
+    const rel = dirPath.slice(prefix.length).replace(/\/$/, "");
+    // Only direct children — no slash in the remaining part
+    if (!rel || rel.includes("/")) continue;
+    if (!dirMap.has(rel)) dirMap.set(rel, []);
+  }
+
   const result: TreeNode[] = [];
 
-  // Dirs first, alphabetical
   for (const [dirName, dirNotes] of [...dirMap.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const dirPath = prefix + dirName + "/";
+    const dirPath = `${prefix}${dirName}/`;
     result.push({
       type: "dir",
       name: dirName,
       path: dirPath,
-      children: buildTree(dirNotes, dirPath),
+      children: buildTree(dirNotes, dirPath, knownDirs),
     });
   }
 
-  // Then files, newest first
   for (const note of files.sort((a, b) => b.modified - a.modified)) {
     result.push({
       type: "file",

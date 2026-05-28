@@ -70,6 +70,9 @@ export const commands = {
   createFolder: (path: string) =>
     invoke<void>("create_folder", { path }),
 
+  listVaultDirs: () =>
+    invoke<string[]>("list_vault_dirs"),
+
   getBacklinks: (path: string) =>
     invoke<NoteEntry[]>("get_backlinks", { path }),
 

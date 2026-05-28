@@ -26,16 +26,19 @@ A vault is a directory that is also a git repository.
 
 ```
 my-vault/
-├── .brain/              # App metadata — gitignored by default
-│   ├── index.db         # SQLite full-text + structured index (rebuilt from files)
-│   └── schemas/         # JSON Schema definitions for note types
-├── notes/               # Freeform notes (suggested, not required)
-├── journal/             # Daily notes (suggested)
-├── projects/            # Project notes (suggested)
-└── *.md                 # Notes can live anywhere in the tree
+├── notes/               # All user notes live here — organise freely into subdirectories
+│   ├── journal/         # Example: a folder for daily notes (user-created, not special)
+│   ├── work/            # Example: any subdirectory structure the user chooses
+│   └── *.md
+├── templates/           # Note templates — any .md file here can seed a new note
+├── .brain/              # App metadata — gitignored, always safe to delete
+│   └── index.db         # SQLite FTS index rebuilt from the .md files
+└── VAULT.md             # Vault conventions doc, written on first open
 ```
 
-The directory layout is a convention, not a constraint. Any `.md` file anywhere in the vault (outside `.brain/` and `.git/`) is a note.
+All user notes live under `notes/`. The app enforces no structure within that directory — users create folders freely via the UI. There are no special-cased subdirectories (no `journal/`, no `projects/`). The "Today" button creates `notes/journal/YYYY-MM-DD.md` by convention, but `journal/` is just a regular folder.
+
+`templates/` holds template files. The app reads them when creating new notes but never writes to this directory on its own.
 
 ### Note Format
 
@@ -102,7 +105,7 @@ Agents are configured per-vault in `.brain/agents.json` (not yet implemented). E
 |---|---|---|
 | Desktop app | Tauri 2.0 | Native binary, much lighter than Electron, Rust backend, macOS/Windows/Android from one codebase |
 | Frontend | React + TypeScript + Vite | Widest ecosystem for block editor libs, fast iteration |
-| Block editor | BlockNote (planned) | Notion-style block UX, outputs clean Markdown, React-native |
+| Block editor | BlockNote | Notion-style block UX, outputs clean Markdown, React-native |
 | Git operations | `git2` (libgit2) | Cross-platform, no system git dependency for core ops, works on Android |
 | Local index | SQLite (bundled) + FTS5 | Zero-config, fast full-text search, queryable frontmatter, works offline |
 | Frontmatter | YAML via `serde_yaml` | Human-readable, wide tool support, de-facto standard for Markdown metadata |

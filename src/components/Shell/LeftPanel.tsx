@@ -8,6 +8,7 @@ import styles from "./LeftPanel.module.css";
 interface Props {
   vault: VaultInfo;
   notes: NoteEntry[];
+  dirs: string[];
   selectedPath: string | null;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
@@ -24,7 +25,7 @@ interface Props {
 }
 
 export function LeftPanel({
-  vault, notes, selectedPath, status, agentBranches, commits, syncing,
+  vault, notes, dirs, selectedPath, status, agentBranches, commits, syncing,
   onSelect, onNewNote, onTodayNote, onSync, onCommit, onApplyBranch, onDiscardBranch, onRefresh,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -65,8 +66,8 @@ export function LeftPanel({
     onRefresh();
   }, [onRefresh]);
 
-  const notesTree    = useMemo(() => buildTree(notes, "notes/"),     [notes]);
-  const templateTree = useMemo(() => buildTree(notes, "templates/"), [notes]);
+  const notesTree    = useMemo(() => buildTree(notes, "notes/", dirs),     [notes, dirs]);
+  const templateTree = useMemo(() => buildTree(notes, "templates/"),       [notes]);
 
   const treeActions = useMemo(() => ({
     newFolderIn,
@@ -152,18 +153,30 @@ export function LeftPanel({
                   />}
             </Section>
 
-            {templateTree.length > 0 && (
-              <Section label="Templates" defaultOpen={false} count={templateTree.length}>
-                <FileTree
-                  nodes={templateTree}
-                  currentPath="templates/"
-                  selectedPath={selectedPath}
-                  defaultOpen
-                  actions={{ ...treeActions, onNewFolderRequest: () => {}, newFolderIn: null }}
-                  onSelect={onSelect}
-                />
-              </Section>
-            )}
+            <Section
+              label="Templates"
+              defaultOpen={false}
+              count={templateTree.length}
+              onNewFolder={undefined}
+              onNewNote={() => onNewNote("templates")}
+            >
+              {templateTree.length === 0
+                ? <p className={styles.empty}>
+                    No templates yet.{" "}
+                    <button className={styles.emptyAction} onClick={() => onNewNote("templates")}>
+                      Create one
+                    </button>{" "}
+                    to use as a starting point for new notes.
+                  </p>
+                : <FileTree
+                    nodes={templateTree}
+                    currentPath="templates/"
+                    selectedPath={selectedPath}
+                    defaultOpen
+                    actions={{ ...treeActions, onNewFolderRequest: () => {}, newFolderIn: null, onNewNoteInFolder: (p) => onNewNote(p) }}
+                    onSelect={onSelect}
+                  />}
+            </Section>
           </>
         )}
       </div>
@@ -186,12 +199,13 @@ export function LeftPanel({
 // ── Section ───────────────────────────────────────────────────────────────────
 
 function Section({
-  label, count, defaultOpen, onNewFolder, children,
+  label, count, defaultOpen, onNewFolder, onNewNote, children,
 }: {
   label: string;
   count: number;
   defaultOpen: boolean;
   onNewFolder?: () => void;
+  onNewNote?: () => void;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -203,6 +217,15 @@ function Section({
           <span className={styles.sectionLabel}>{label}</span>
           <span className={styles.sectionCount}>{count}</span>
         </button>
+        {onNewNote && (
+          <button
+            className={styles.sectionAction}
+            onClick={(e) => { e.stopPropagation(); setOpen(true); onNewNote(); }}
+            title={`New ${label.toLowerCase().replace(/s$/, "")}`}
+          >
+            <PlusIcon />
+          </button>
+        )}
         {onNewFolder && (
           <button
             className={styles.sectionAction}

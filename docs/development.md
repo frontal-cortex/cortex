@@ -1,0 +1,91 @@
+# Development Guide
+
+## Prerequisites
+
+- **Rust** (1.70+) — [rustup.rs](https://rustup.rs)
+- **Node.js** (18+) — via [nvm](https://github.com/nvm-sh/nvm) or direct install
+- **Tauri system dependencies** — platform-specific:
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+  - Windows: see [Tauri prerequisites](https://tauri.app/start/prerequisites/)
+  - Linux: `webkit2gtk`, `libssl-dev`, etc.
+
+## Running locally
+
+```bash
+# Install JS dependencies
+npm install
+
+# Start dev mode (hot reload for both frontend and Rust)
+npm run tauri dev
+```
+
+The first run compiles the Rust backend (~2 min). Subsequent runs are fast.
+
+## Project structure
+
+```
+second-brain/
+├── src/                      # React + TypeScript frontend
+│   ├── components/Shell/     # Main UI components
+│   ├── hooks/                # React hooks (useVault, useNotes)
+│   ├── lib/                  # Shared utilities (commands.ts, fileTree.ts)
+│   └── styles/tokens.css     # Design tokens (CSS variables)
+├── src-tauri/                # Rust backend
+│   └── src/
+│       ├── commands/         # Tauri IPC command handlers
+│       │   ├── vault.rs      # Vault open/info, DbState
+│       │   ├── notes.rs      # CRUD + search + backlinks + folders
+│       │   ├── git.rs        # Status, commit, sync, log, agent branches
+│       │   └── indexer.rs    # SQLite index population
+│       ├── db.rs             # SQLite schema + queries
+│       ├── git.rs            # libgit2 operations
+│       ├── note.rs           # Markdown + frontmatter parse/serialize
+│       └── lib.rs            # App entry, command registration
+├── docs/                     # Project documentation (this directory)
+├── ARCHITECTURE.md           # System design overview
+└── README.md                 # Getting started
+```
+
+## Key design decisions
+
+**Frontmatter uses BTreeMap**: keys are always serialized alphabetically
+(`created`, `tags`, `title`, `type`) so every save of the same note produces
+identical YAML output — critical for clean git diffs.
+
+**SQLite index is a cache**: deleting `.brain/index.db` and restarting
+rebuilds it. The `.md` files are always the source of truth.
+
+**Sync shells out to git**: push/pull use the system `git` binary so SSH
+agents and OS credential helpers work. Internal ops (status, commit,
+branch management) use `git2` (libgit2) for cross-platform reliability.
+
+**Wiki links are decorations**: `[[...]]` text is stored as plain markdown.
+The ProseMirror plugin applies visual decorations at render time without
+modifying the document structure.
+
+## Building for production
+
+```bash
+# Build frontend + Rust native binary
+npm run tauri build
+```
+
+Output is in `src-tauri/target/release/bundle/`.
+
+## Running tests
+
+```bash
+# TypeScript type check
+npx tsc --noEmit
+
+# Rust tests (none yet — contributions welcome)
+cd src-tauri && cargo test
+```
+
+## Adding a new Tauri command
+
+1. Write the handler function in the appropriate `src-tauri/src/commands/*.rs` file
+2. Add `#[tauri::command]` to the function
+3. Register it in `src-tauri/src/lib.rs` in `tauri::generate_handler![...]`
+4. Add a typed wrapper in `src/lib/commands.ts`
+5. Use it via the `commands` object in your React component or hook

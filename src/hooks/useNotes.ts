@@ -16,14 +16,19 @@ function dateStamp(): string {
 
 export function useNotes(vaultOpen: boolean) {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
+  const [dirs, setDirs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!vaultOpen) return;
     setLoading(true);
     try {
-      const list = await commands.listNotes();
+      const [list, dirList] = await Promise.all([
+        commands.listNotes(),
+        commands.listVaultDirs(),
+      ]);
       setNotes(list);
+      setDirs(dirList);
     } finally {
       setLoading(false);
     }
@@ -55,7 +60,7 @@ export function useNotes(vaultOpen: boolean) {
     [refresh],
   );
 
-  return { notes, loading, refresh, createNote, deleteNote };
+  return { notes, dirs, loading, refresh, createNote, deleteNote };
 }
 
 export function useNote(path: string | null) {

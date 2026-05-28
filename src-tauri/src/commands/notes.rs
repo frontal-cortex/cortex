@@ -195,6 +195,37 @@ pub fn create_folder(path: String, state: State<'_, VaultState>) -> Result<()> {
     Ok(())
 }
 
+/// Return all subdirectory paths under `notes/`, relative to vault root,
+/// with a trailing slash. Used by the frontend to show empty directories.
+#[tauri::command]
+pub fn list_vault_dirs(state: State<'_, VaultState>) -> Result<Vec<String>> {
+    let root = vault_path(&state)?;
+    let notes_root = root.join("notes");
+
+    if !notes_root.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut dirs = Vec::new();
+    for entry in WalkDir::new(&notes_root)
+        .min_depth(1)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_dir())
+    {
+        if let Ok(rel) = entry.path().strip_prefix(&root) {
+            let mut path = rel.to_string_lossy().replace('\\', "/");
+            if !path.ends_with('/') {
+                path.push('/');
+            }
+            dirs.push(path);
+        }
+    }
+
+    dirs.sort();
+    Ok(dirs)
+}
+
 // ── Backlinks ────────────────────────────────────────────────────────────────
 
 #[tauri::command]

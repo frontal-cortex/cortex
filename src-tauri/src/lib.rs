@@ -24,6 +24,7 @@ pub fn run() {
             commands::notes::delete_note,
             commands::notes::search_notes,
             commands::notes::create_folder,
+            commands::notes::list_vault_dirs,
             commands::notes::get_backlinks,
             commands::notes::list_templates,
             commands::notes::read_template,
