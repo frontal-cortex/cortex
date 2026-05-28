@@ -1,20 +1,78 @@
 .dirRow {
   display: flex;
   align-items: center;
-  gap: 5px;
-  width: 100%;
-  padding: 4px 8px 4px 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-align: left;
+  padding-right: 4px;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
   min-height: 26px;
 }
 
 .dirRow:hover {
   background: var(--bg-hover);
+}
+
+.dirRow:hover .dirActions {
+  opacity: 1;
+}
+
+.dirToggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-secondary);
+  padding: 4px 4px 4px 0;
+  min-width: 0;
+}
+
+.dirActions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+}
+
+.dirActionBtn {
+  background: none;
+  border: none;
+  padding: 3px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+}
+
+.dirActionBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.newFolderRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.newFolderInput {
+  flex: 1;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  outline: none;
+}
+
+.newFolderInput::placeholder {
+  color: var(--text-tertiary);
 }
 
 .arrow {

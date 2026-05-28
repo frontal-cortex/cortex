@@ -23,6 +23,7 @@ pub fn run() {
             commands::notes::create_note,
             commands::notes::delete_note,
             commands::notes::search_notes,
+            commands::notes::create_folder,
             commands::notes::get_backlinks,
             commands::notes::list_templates,
             commands::notes::read_template,

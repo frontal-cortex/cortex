@@ -33,7 +33,7 @@ export function Shell({
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.key === "k") { e.preventDefault(); setShowQuickSwitcher(true); }
-      if (meta && e.key === "n") { e.preventDefault(); handleNewNote(); }
+      if (meta && e.key === "n") { e.preventDefault(); handleNewNote(undefined); }
       if (e.key === "Escape") setShowQuickSwitcher(false);
     }
     window.addEventListener("keydown", onKeyDown);
@@ -41,14 +41,14 @@ export function Shell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleNewNote = useCallback(async () => {
-    const created = await createNote("");
+  const handleNewNote = useCallback(async (parentFolder?: string) => {
+    const created = await createNote("", parentFolder);
     setSelectedPath(created.path);
   }, [createNote]);
 
   const handleTodayNote = useCallback(async () => {
     const today = new Date().toISOString().split("T")[0];
-    const path = `journal/${today}.md`;
+    const path = `notes/journal/${today}.md`;
     if (notes.find((n) => n.path === path)) { setSelectedPath(path); return; }
 
     const { commands } = await import("../../lib/commands");
@@ -99,6 +99,7 @@ export function Shell({
         onCommit={onCommit}
         onApplyBranch={onApplyBranch}
         onDiscardBranch={onDiscardBranch}
+        onRefresh={refresh}
       />
 
       <Editor

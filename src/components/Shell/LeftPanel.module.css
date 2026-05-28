@@ -134,8 +134,17 @@
 .sectionHeader {
   display: flex;
   align-items: center;
+  padding-right: var(--space-2);
+}
+
+.sectionHeader:hover { background: var(--bg-hover); }
+.sectionHeader:hover .sectionAction { opacity: 1; }
+
+.sectionToggle {
+  display: flex;
+  align-items: center;
   gap: 5px;
-  width: 100%;
+  flex: 1;
   padding: 4px var(--space-3);
   background: none;
   border: none;
@@ -143,7 +152,24 @@
   text-align: left;
 }
 
-.sectionHeader:hover { background: var(--bg-hover); }
+.sectionAction {
+  background: none;
+  border: none;
+  padding: 3px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+}
+
+.sectionAction:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
 
 .sectionArrow {
   font-size: 8px;

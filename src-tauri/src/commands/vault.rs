@@ -18,12 +18,14 @@ Your data is plain Markdown — readable anywhere, version-controlled with git.
 
 ```
 my-vault/
-├── notes/          ← All your notes live here. Organise into subdirectories freely.
-├── journal/        ← Daily notes, one file per day (YYYY-MM-DD.md).
-├── templates/      ← Note templates. See Templates section below.
-├── .brain/         ← App metadata (gitignored). Safe to delete — rebuilt on open.
-│   └── index.db   ← Full-text search index (SQLite).
-└── VAULT.md        ← This file.
+├── notes/                  ← All your notes. Organise into subdirectories freely.
+│   ├── journal/            ← Example: a folder for daily notes (optional convention).
+│   ├── work/               ← Create any folders you like via the + button in the app.
+│   └── my-note-2024.md
+├── templates/              ← Note templates. See Templates section below.
+├── .brain/                 ← App metadata (gitignored). Safe to delete — rebuilt on open.
+│   └── index.db           ← Full-text search index (SQLite).
+└── VAULT.md                ← This file.
 ```
 
 ## Note format
@@ -153,7 +155,6 @@ pub fn open_vault(
     std::fs::create_dir_all(vault_path.join(".brain"))?;
     std::fs::create_dir_all(vault_path.join("templates"))?;
     std::fs::create_dir_all(vault_path.join("notes"))?;
-    std::fs::create_dir_all(vault_path.join("journal"))?;
 
     // Write VAULT.md only when opening for the first time
     let vault_doc = vault_path.join("VAULT.md");

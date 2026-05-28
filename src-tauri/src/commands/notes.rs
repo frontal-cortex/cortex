@@ -168,6 +168,33 @@ pub fn search_notes(
     }
 }
 
+// ── Folders ──────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn create_folder(path: String, state: State<'_, VaultState>) -> Result<()> {
+    let root = vault_path(&state)?;
+
+    // Guard against path traversal and system directories
+    if path.contains("..") || path.starts_with('/') || path.starts_with('\\') {
+        return Err(AppError::Other("Invalid folder path".into()));
+    }
+    let first = path.split('/').next().unwrap_or("");
+    if matches!(first, ".git" | ".brain") {
+        return Err(AppError::Other("Cannot create folders in system directories".into()));
+    }
+
+    let abs = root.join(&path);
+    std::fs::create_dir_all(&abs)?;
+
+    // .gitkeep so git tracks the otherwise-empty directory
+    let gitkeep = abs.join(".gitkeep");
+    if !gitkeep.exists() {
+        std::fs::write(gitkeep, "")?;
+    }
+
+    Ok(())
+}
+
 // ── Backlinks ────────────────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -34,11 +34,12 @@ export function useNotes(vaultOpen: boolean) {
   }, [refresh]);
 
   const createNote = useCallback(
-    async (title: string): Promise<Note> => {
+    async (title: string, parentFolder?: string): Promise<Note> => {
       const slug = title.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "untitled";
       const created = new Date().toISOString().split("T")[0];
       const ts = dateStamp();
-      const path = `notes/${slug}-${ts}.md`;
+      const folder = parentFolder?.replace(/\/$/, "") ?? "notes";
+      const path = `${folder}/${slug}-${ts}.md`;
       const note = await commands.createNote(path, title || "Untitled", created);
       await refresh();
       return note;

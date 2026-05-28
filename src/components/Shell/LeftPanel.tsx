@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { NoteEntry, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
 import { buildTree } from "../../lib/fileTree";
@@ -14,21 +14,25 @@ interface Props {
   commits: CommitEntry[];
   syncing: boolean;
   onSelect: (path: string) => void;
-  onNewNote: () => void;
+  onNewNote: (parentFolder?: string) => void;
   onTodayNote: () => void;
   onSync: () => void;
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
+  onRefresh: () => void;
 }
 
 export function LeftPanel({
   vault, notes, selectedPath, status, agentBranches, commits, syncing,
-  onSelect, onNewNote, onTodayNote, onSync, onCommit, onApplyBranch, onDiscardBranch,
+  onSelect, onNewNote, onTodayNote, onSync, onCommit, onApplyBranch, onDiscardBranch, onRefresh,
 }: Props) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<NoteEntry[] | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Folder creation state
+  const [newFolderIn, setNewFolderIn] = useState<string | null>(null);
 
   const changedCount = (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
   const isDirty = changedCount > 0;
@@ -38,7 +42,6 @@ export function LeftPanel({
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (!query.trim()) { setSearchResults(null); return; }
-
     searchTimer.current = setTimeout(async () => {
       try {
         setSearchResults(await commands.searchNotes(query));
@@ -49,32 +52,49 @@ export function LeftPanel({
         ));
       }
     }, 200);
-
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [query, notes]);
 
-  // Build trees per section (memoised — only recomputes when notes change)
-  const notesTree  = useMemo(() => buildTree(notes, "notes/"),    [notes]);
-  const journalTree = useMemo(() => buildTree(notes, "journal/"), [notes]);
+  // Folder creation handler
+  const handleCreateFolder = useCallback(async (parentPath: string, name: string) => {
+    const cleaned = name.trim().replace(/\/+/g, "");
+    if (!cleaned) return;
+    const fullPath = `${parentPath.replace(/\/$/, "")}/${cleaned}`;
+    await commands.createFolder(fullPath);
+    setNewFolderIn(null);
+    onRefresh();
+  }, [onRefresh]);
+
+  const notesTree    = useMemo(() => buildTree(notes, "notes/"),     [notes]);
   const templateTree = useMemo(() => buildTree(notes, "templates/"), [notes]);
+
+  const treeActions = useMemo(() => ({
+    newFolderIn,
+    onNewFolderRequest: setNewFolderIn,
+    onNewFolderSubmit: handleCreateFolder,
+    onNewFolderCancel: () => setNewFolderIn(null),
+    onNewNoteInFolder: (parentPath: string) => onNewNote(parentPath),
+  }), [newFolderIn, handleCreateFolder, onNewNote]);
+
+  const notesCount = notes.filter((n) => n.path.startsWith("notes/")).length;
 
   return (
     <div className={styles.root}>
-      {/* ── Header ─────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────── */}
       <div className={styles.header}>
         <span className={styles.vaultName}>{vault.name}</span>
         <div className={styles.headerActions}>
-          <button className={styles.iconBtn} onClick={onTodayNote} title="Open today's journal">
+          <button className={styles.iconBtn} onClick={onTodayNote} title="Open today's note">
             <CalendarIcon />
           </button>
-          <button className={styles.iconBtn} onClick={onNewNote} title="New note (⌘N)">
+          <button className={styles.iconBtn} onClick={() => onNewNote()} title="New note (⌘N)">
             <PlusIcon />
           </button>
           <button
             className={`${styles.iconBtn} ${needsSync ? styles.iconBtnAlert : ""}`}
             onClick={onSync}
             disabled={syncing || !vault.has_remote}
-            title={!vault.has_remote ? "No remote" : needsSync ? `${status?.ahead ?? 0}↑ ${status?.behind ?? 0}↓` : "Up to date"}
+            title={!vault.has_remote ? "No remote configured" : needsSync ? `${status?.ahead ?? 0}↑ ${status?.behind ?? 0}↓` : "Up to date"}
           >
             {needsSync && !syncing && <span className={styles.syncDot} />}
             <SyncIcon spinning={syncing} />
@@ -82,30 +102,25 @@ export function LeftPanel({
         </div>
       </div>
 
-      {/* ── Search ─────────────────────────────────────────────── */}
+      {/* ── Search ──────────────────────────────────────────────── */}
       <div className={styles.searchRow}>
         <div className={styles.searchBox}>
           <SearchIcon />
           <input
             className={styles.searchInput}
-            placeholder="Search… (⌘K for quick jump)"
+            placeholder="Search… (⌘K to jump)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {query && (
-            <button className={styles.clearBtn} onClick={() => setQuery("")}>×</button>
-          )}
+          {query && <button className={styles.clearBtn} onClick={() => setQuery("")}>×</button>}
         </div>
       </div>
 
-      {/* ── Tree / Search results ───────────────────────────────── */}
+      {/* ── Tree / Search results ────────────────────────────────── */}
       <div className={styles.treeArea}>
         {searchResults ? (
-          /* Flat search results */
           <div className={styles.searchResults}>
-            {searchResults.length === 0 && (
-              <p className={styles.empty}>No matches for "{query}"</p>
-            )}
+            {searchResults.length === 0 && <p className={styles.empty}>No matches for "{query}"</p>}
             {searchResults.map((n) => (
               <button
                 key={n.path}
@@ -118,30 +133,42 @@ export function LeftPanel({
             ))}
           </div>
         ) : (
-          /* File tree sections */
           <>
-            <Section label="Notes" defaultOpen count={notes.filter(n => n.path.startsWith("notes/")).length}>
-              {notesTree.length === 0
+            <Section
+              label="Notes"
+              defaultOpen
+              count={notesCount}
+              onNewFolder={() => setNewFolderIn("notes/")}
+            >
+              {notesTree.length === 0 && newFolderIn !== "notes/"
                 ? <p className={styles.empty}>No notes yet — press ⌘N to create one.</p>
-                : <FileTree nodes={notesTree} selectedPath={selectedPath} defaultOpen onSelect={onSelect} />}
+                : <FileTree
+                    nodes={notesTree}
+                    currentPath="notes/"
+                    selectedPath={selectedPath}
+                    defaultOpen
+                    actions={treeActions}
+                    onSelect={onSelect}
+                  />}
             </Section>
-
-            {journalTree.length > 0 && (
-              <Section label="Journal" defaultOpen={false} count={journalTree.length}>
-                <FileTree nodes={journalTree} selectedPath={selectedPath} defaultOpen onSelect={onSelect} />
-              </Section>
-            )}
 
             {templateTree.length > 0 && (
               <Section label="Templates" defaultOpen={false} count={templateTree.length}>
-                <FileTree nodes={templateTree} selectedPath={selectedPath} defaultOpen onSelect={onSelect} />
+                <FileTree
+                  nodes={templateTree}
+                  currentPath="templates/"
+                  selectedPath={selectedPath}
+                  defaultOpen
+                  actions={{ ...treeActions, onNewFolderRequest: () => {}, newFolderIn: null }}
+                  onSelect={onSelect}
+                />
               </Section>
             )}
           </>
         )}
       </div>
 
-      {/* ── Git ────────────────────────────────────────────────── */}
+      {/* ── Git ─────────────────────────────────────────────────── */}
       <GitSection
         status={status}
         isDirty={isDirty}
@@ -156,24 +183,36 @@ export function LeftPanel({
   );
 }
 
-// ── Section wrapper ───────────────────────────────────────────────────────────
+// ── Section ───────────────────────────────────────────────────────────────────
 
 function Section({
-  label, count, defaultOpen, children,
+  label, count, defaultOpen, onNewFolder, children,
 }: {
   label: string;
   count: number;
   defaultOpen: boolean;
+  onNewFolder?: () => void;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className={styles.section}>
-      <button className={styles.sectionHeader} onClick={() => setOpen((x) => !x)}>
-        <span className={`${styles.sectionArrow} ${open ? styles.sectionArrowOpen : ""}`}>▶</span>
-        <span className={styles.sectionLabel}>{label}</span>
-        <span className={styles.sectionCount}>{count}</span>
-      </button>
+      <div className={styles.sectionHeader}>
+        <button className={styles.sectionToggle} onClick={() => setOpen((x) => !x)}>
+          <span className={`${styles.sectionArrow} ${open ? styles.sectionArrowOpen : ""}`}>▶</span>
+          <span className={styles.sectionLabel}>{label}</span>
+          <span className={styles.sectionCount}>{count}</span>
+        </button>
+        {onNewFolder && (
+          <button
+            className={styles.sectionAction}
+            onClick={(e) => { e.stopPropagation(); setOpen(true); onNewFolder(); }}
+            title="New folder"
+          >
+            <FolderPlusIcon />
+          </button>
+        )}
+      </div>
       {open && <div className={styles.sectionBody}>{children}</div>}
     </div>
   );
@@ -205,7 +244,6 @@ function GitSection({
 
   return (
     <div className={styles.gitSection}>
-      {/* Status row */}
       <div className={styles.gitStatus}>
         <span className={styles.statusDot} style={{ background: isDirty ? "var(--git-dirty)" : "var(--git-clean)" }} />
         <span className={styles.statusText}>{isDirty ? `${changedCount} changed` : "Clean"}</span>
@@ -218,7 +256,6 @@ function GitSection({
         )}
       </div>
 
-      {/* Commit form */}
       {isDirty && expanded && (
         <div className={styles.commitForm}>
           <input
@@ -243,7 +280,6 @@ function GitSection({
         </div>
       )}
 
-      {/* Agent branches */}
       {agentBranches.map((b) => (
         <div key={b.name} className={styles.agentBranch}>
           <span className={styles.agentDot}>●</span>
@@ -253,7 +289,6 @@ function GitSection({
         </div>
       ))}
 
-      {/* Commit log */}
       {commits.length > 0 && (
         <div className={styles.commitLog}>
           {commits.map((c) => (
@@ -269,7 +304,7 @@ function GitSection({
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers & icons ───────────────────────────────────────────────────────────
 
 function relTime(s: number) {
   const d = Math.floor(Date.now() / 1000) - s;
@@ -278,8 +313,6 @@ function relTime(s: number) {
   if (d < 86400) return `${Math.floor(d / 3600)}h`;
   return `${Math.floor(d / 86400)}d`;
 }
-
-// ── Icons ─────────────────────────────────────────────────────────────────────
 
 function PlusIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
@@ -292,4 +325,7 @@ function SyncIcon({ spinning }: { spinning: boolean }) {
 }
 function SearchIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+}
+function FolderPlusIcon() {
+  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>;
 }

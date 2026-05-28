@@ -67,6 +67,9 @@ export const commands = {
   searchNotes: (query: string) =>
     invoke<NoteEntry[]>("search_notes", { query }),
 
+  createFolder: (path: string) =>
+    invoke<void>("create_folder", { path }),
+
   getBacklinks: (path: string) =>
     invoke<NoteEntry[]>("get_backlinks", { path }),
 
