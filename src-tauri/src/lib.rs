@@ -19,6 +19,8 @@ pub fn run() {
             commands::notes::list_notes,
             commands::notes::read_note,
             commands::notes::write_note,
+            commands::notes::create_note,
+            commands::notes::delete_note,
             commands::git::git_status,
             commands::git::git_commit,
             commands::git::git_sync,

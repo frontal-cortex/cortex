@@ -12,7 +12,7 @@ interface Props {
   agentBranches: AgentBranch[];
   syncing: boolean;
   onSync: () => void;
-  onCommit: (message: string) => void;
+  onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
 }
@@ -23,19 +23,19 @@ export function Shell({
   agentBranches,
   syncing,
   onSync,
+  onCommit,
   onApplyBranch,
   onDiscardBranch,
 }: Props) {
   const [activeView, setActiveView] = useState("all");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
-  const { notes, loading, refresh } = useNotes(!!vault);
+  const { notes, loading, refresh, createNote } = useNotes(!!vault);
   const { note, saving, save } = useNote(selectedPath);
 
-  function handleNewNote() {
-    const name = `notes/untitled-${Date.now()}.md`;
-    setSelectedPath(name);
-    refresh();
+  async function handleNewNote() {
+    const created = await createNote("");
+    setSelectedPath(created.path);
   }
 
   return (
@@ -48,6 +48,7 @@ export function Shell({
         activeView={activeView}
         onViewChange={setActiveView}
         onSync={onSync}
+        onCommit={onCommit}
         onApplyBranch={onApplyBranch}
         onDiscardBranch={onDiscardBranch}
       />
@@ -58,7 +59,14 @@ export function Shell({
         onSelect={setSelectedPath}
         onNewNote={handleNewNote}
       />
-      <Editor note={note} saving={saving} onSave={save} />
+      <Editor
+        note={note}
+        saving={saving}
+        onSave={async (updated) => {
+          await save(updated);
+          refresh();
+        }}
+      />
     </div>
   );
 }

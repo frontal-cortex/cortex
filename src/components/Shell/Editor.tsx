@@ -1,8 +1,9 @@
 import "@blocknote/mantine/style.css";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Note } from "../../lib/commands";
+import { PropertiesPanel } from "./PropertiesPanel";
 import styles from "./Editor.module.css";
 
 interface Props {
@@ -32,51 +33,84 @@ function NoteEditor({
   saving: boolean;
   onSave: (n: Note) => void;
 }) {
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref so callbacks always close over latest note without re-subscribing
+  const noteRef = useRef(note);
+  noteRef.current = note;
+
+  const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const editor = useCreateBlockNote();
 
-  // Populate editor from markdown when note loads (key prop resets on path change)
+  // Populate editor from markdown body on mount (key prop resets per note)
   useEffect(() => {
     if (note.body.trim()) {
       const blocks = editor.tryParseMarkdownToBlocks(note.body);
       editor.replaceBlocks(editor.document, blocks);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-save 1s after the last change
+  // Auto-save body 1s after last keystroke
   useEffect(() => {
     const unsub = editor.onChange(async () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(async () => {
+      if (bodyTimer.current) clearTimeout(bodyTimer.current);
+      bodyTimer.current = setTimeout(async () => {
         const md = await editor.blocksToMarkdownLossy(editor.document);
-        onSave({ ...note, body: md });
+        onSave({ ...noteRef.current, body: md });
       }, 1000);
     });
     return () => {
       unsub();
-      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (bodyTimer.current) clearTimeout(bodyTimer.current);
     };
-  }, [editor, note, onSave]);
+  }, [editor, onSave]);
 
-  const title = typeof note.frontmatter["title"] === "string"
-    ? note.frontmatter["title"]
-    : pathToTitle(note.path);
+  // Debounced title save
+  const handleTitleChange = useCallback(
+    (value: string) => {
+      if (titleTimer.current) clearTimeout(titleTimer.current);
+      titleTimer.current = setTimeout(() => {
+        onSave({
+          ...noteRef.current,
+          frontmatter: { ...noteRef.current.frontmatter, title: value },
+        });
+      }, 500);
+    },
+    [onSave],
+  );
 
-  const noteType = typeof note.frontmatter["type"] === "string"
-    ? note.frontmatter["type"]
-    : null;
+  // Immediate frontmatter save (properties panel changes)
+  const handleFrontmatterChange = useCallback(
+    (updated: Record<string, unknown>) => {
+      onSave({ ...noteRef.current, frontmatter: updated });
+    },
+    [onSave],
+  );
+
+  const title =
+    typeof note.frontmatter["title"] === "string"
+      ? note.frontmatter["title"]
+      : pathToTitle(note.path);
 
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <h1 className={styles.title}>{title}</h1>
-        <div className={styles.meta}>
-          {noteType && <span className={styles.type}>{noteType}</span>}
-          {saving && <span className={styles.saving}>Saving…</span>}
-        </div>
+        <input
+          key={note.path}
+          className={styles.titleInput}
+          defaultValue={title}
+          placeholder="Untitled"
+          onChange={(e) => handleTitleChange(e.target.value)}
+        />
+        {saving && <span className={styles.saving}>Saving…</span>}
       </div>
+
+      <PropertiesPanel
+        frontmatter={note.frontmatter}
+        onChange={handleFrontmatterChange}
+      />
+
       <div className={styles.editorWrap}>
         <BlockNoteView editor={editor} />
       </div>

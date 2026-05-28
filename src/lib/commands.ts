@@ -50,6 +50,12 @@ export const commands = {
   writeNote: (path: string, note: Note) =>
     invoke<void>("write_note", { path, note }),
 
+  createNote: (path: string, title: string, created: string) =>
+    invoke<Note>("create_note", { path, title, created }),
+
+  deleteNote: (path: string) =>
+    invoke<void>("delete_note", { path }),
+
   gitStatus: () =>
     invoke<VaultStatus>("git_status"),
 

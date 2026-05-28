@@ -17,7 +17,7 @@ export default function App() {
       agentBranches={vault.agentBranches}
       syncing={vault.syncing}
       onSync={vault.sync}
-      onCommit={vault.commit}
+      onCommit={async (msg) => { await vault.commit(msg); }}
       onApplyBranch={vault.applyAgentBranch}
       onDiscardBranch={vault.discardAgentBranch}
     />

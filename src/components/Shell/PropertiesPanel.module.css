@@ -1,0 +1,170 @@
+.root {
+  padding: var(--space-2) var(--space-6) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Generic key-value field */
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.fieldLabel {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.fieldInput {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  padding: 1px 2px;
+  min-width: 50px;
+  max-width: 120px;
+}
+
+.fieldInput:hover,
+.fieldInput:focus {
+  border-bottom-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+/* Created date */
+.created {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+/* Expand/collapse button */
+.expandBtn {
+  background: none;
+  border: none;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.expandBtn:hover {
+  color: var(--text-secondary);
+}
+
+/* Tags */
+.tagsField {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: text;
+}
+
+.tagsInner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-xs);
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.tagRemove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.tagRemove:hover {
+  opacity: 1;
+}
+
+.tagInput {
+  font-size: var(--text-xs);
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text-secondary);
+  min-width: 60px;
+  width: 60px;
+}
+
+/* Custom properties */
+.custom {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.customRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.customKey {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  min-width: 80px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  padding: 1px 2px;
+}
+
+.customValue {
+  flex: 1;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  padding: 1px 2px;
+}
+
+.customValue:focus,
+.customKey:focus {
+  border-bottom-color: var(--accent);
+}
+
+.removeBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  padding: 0 2px;
+}
+
+.removeBtn:hover {
+  color: var(--danger);
+}

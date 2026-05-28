@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use tauri::State;
@@ -84,5 +85,45 @@ pub fn write_note(path: String, note: Note, state: State<'_, VaultState>) -> Res
 
     let content = note::serialize_note(&note)?;
     std::fs::write(abs, content)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_note(
+    path: String,
+    title: String,
+    created: String,
+    state: State<'_, VaultState>,
+) -> Result<Note> {
+    let root = vault_path(&state)?;
+    let abs = root.join(&path);
+
+    if abs.exists() {
+        return Err(AppError::Other(format!("Note already exists: {path}")));
+    }
+    if let Some(parent) = abs.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut frontmatter: HashMap<String, serde_json::Value> = HashMap::new();
+    frontmatter.insert("title".into(), serde_json::Value::String(title));
+    frontmatter.insert("type".into(), serde_json::Value::String("note".into()));
+    frontmatter.insert("created".into(), serde_json::Value::String(created));
+    frontmatter.insert("tags".into(), serde_json::Value::Array(vec![]));
+
+    let note = Note { path: path.clone(), frontmatter, body: String::new() };
+    let content = note::serialize_note(&note)?;
+    std::fs::write(&abs, content)?;
+    Ok(note)
+}
+
+#[tauri::command]
+pub fn delete_note(path: String, state: State<'_, VaultState>) -> Result<()> {
+    let root = vault_path(&state)?;
+    let abs = root.join(&path);
+    if !abs.exists() {
+        return Err(AppError::Other(format!("Note not found: {path}")));
+    }
+    std::fs::remove_file(abs)?;
     Ok(())
 }

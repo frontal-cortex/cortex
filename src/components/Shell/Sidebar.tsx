@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { VaultInfo, VaultStatus, AgentBranch } from "../../lib/commands";
 import styles from "./Sidebar.module.css";
 
@@ -9,6 +10,7 @@ interface Props {
   activeView: string;
   onViewChange: (view: string) => void;
   onSync: () => void;
+  onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
 }
@@ -21,12 +23,15 @@ export function Sidebar({
   activeView,
   onViewChange,
   onSync,
+  onCommit,
   onApplyBranch,
   onDiscardBranch,
 }: Props) {
-  const isDirty =
-    status &&
-    (status.staged.length + status.unstaged.length + status.untracked.length > 0);
+  const changedCount =
+    (status?.staged.length ?? 0) +
+    (status?.unstaged.length ?? 0) +
+    (status?.untracked.length ?? 0);
+  const isDirty = changedCount > 0;
 
   return (
     <nav className={styles.root}>
@@ -57,26 +62,12 @@ export function Sidebar({
         />
       </div>
 
-      <div className={styles.section}>
-        <p className={styles.sectionLabel}>Git</p>
-        <div className={styles.gitStatus}>
-          <span
-            className={styles.statusDot}
-            style={{ background: isDirty ? "var(--git-dirty)" : "var(--git-clean)" }}
-          />
-          <span className={styles.statusText}>
-            {isDirty
-              ? `${(status?.staged.length ?? 0) + (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0)} changed`
-              : "Clean"}
-          </span>
-          {(status?.ahead ?? 0) > 0 && (
-            <span className={styles.pill}>{status!.ahead} ahead</span>
-          )}
-          {(status?.behind ?? 0) > 0 && (
-            <span className={styles.pill}>{status!.behind} behind</span>
-          )}
-        </div>
-      </div>
+      <GitSection
+        status={status}
+        isDirty={isDirty}
+        changedCount={changedCount}
+        onCommit={onCommit}
+      />
 
       {agentBranches.length > 0 && (
         <div className={styles.section}>
@@ -86,19 +77,13 @@ export function Sidebar({
               <div className={styles.agentInfo}>
                 <AgentIcon />
                 <span className={styles.agentDesc}>{b.description}</span>
-                <span className={styles.agentCount}>{b.commit_count}</span>
+                <span className={styles.agentCount}>{b.commit_count}c</span>
               </div>
               <div className={styles.agentActions}>
-                <button
-                  className={styles.applyBtn}
-                  onClick={() => onApplyBranch(b.name)}
-                >
+                <button className={styles.applyBtn} onClick={() => onApplyBranch(b.name)}>
                   Apply
                 </button>
-                <button
-                  className={styles.discardBtn}
-                  onClick={() => onDiscardBranch(b.name)}
-                >
+                <button className={styles.discardBtn} onClick={() => onDiscardBranch(b.name)}>
                   Discard
                 </button>
               </div>
@@ -107,6 +92,98 @@ export function Sidebar({
         </div>
       )}
     </nav>
+  );
+}
+
+function GitSection({
+  status,
+  isDirty,
+  changedCount,
+  onCommit,
+}: {
+  status: VaultStatus | null;
+  isDirty: boolean;
+  changedCount: number;
+  onCommit: (message: string) => Promise<void>;
+}) {
+  const [message, setMessage] = useState("");
+  const [committing, setCommitting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const handleCommit = async () => {
+    const msg = message.trim() || "Update notes";
+    setCommitting(true);
+    try {
+      await onCommit(msg);
+      setMessage("");
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.gitHeader}>
+        <p className={styles.sectionLabel} style={{ margin: 0 }}>Git</p>
+        <div className={styles.gitStatus}>
+          <span
+            className={styles.statusDot}
+            style={{ background: isDirty ? "var(--git-dirty)" : "var(--git-clean)" }}
+          />
+          <span className={styles.statusText}>
+            {isDirty ? `${changedCount} changed` : "Clean"}
+          </span>
+          {(status?.ahead ?? 0) > 0 && (
+            <span className={styles.pill}>{status!.ahead}↑</span>
+          )}
+          {(status?.behind ?? 0) > 0 && (
+            <span className={styles.pill}>{status!.behind}↓</span>
+          )}
+        </div>
+        {isDirty && (
+          <button
+            className={styles.expandToggle}
+            onClick={() => setExpanded((x) => !x)}
+          >
+            {expanded ? "−" : "Commit"}
+          </button>
+        )}
+      </div>
+
+      {isDirty && expanded && (
+        <div className={styles.commitForm}>
+          <input
+            className={styles.commitInput}
+            placeholder="Commit message…"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCommit()}
+            autoFocus
+          />
+          {status && (
+            <div className={styles.changedFiles}>
+              {[...status.staged, ...status.unstaged, ...status.untracked]
+                .slice(0, 5)
+                .map((f) => (
+                  <span key={f} className={styles.changedFile}>
+                    {f.split("/").pop()}
+                  </span>
+                ))}
+              {changedCount > 5 && (
+                <span className={styles.changedFile}>+{changedCount - 5} more</span>
+              )}
+            </div>
+          )}
+          <button
+            className={styles.commitBtn}
+            onClick={handleCommit}
+            disabled={committing}
+          >
+            {committing ? "Committing…" : "Commit all"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -135,8 +212,8 @@ function NavItem({
 function HomeIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-      <polyline points="9 22 9 12 15 12 15 22"/>
+      <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
     </svg>
   );
 }
@@ -144,8 +221,8 @@ function HomeIcon() {
 function ClockIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10"/>
-      <polyline points="12 6 12 12 16 14"/>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
     </svg>
   );
 }
@@ -161,9 +238,9 @@ function SyncIcon({ spinning }: { spinning: boolean }) {
       strokeWidth="2"
       style={{ animation: spinning ? "spin 1s linear infinite" : undefined }}
     >
-      <polyline points="23 4 23 10 17 10"/>
-      <polyline points="1 20 1 14 7 14"/>
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
     </svg>
   );
 }
@@ -171,8 +248,8 @@ function SyncIcon({ spinning }: { spinning: boolean }) {
 function AgentIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10"/>
-      <path d="M12 8v4l3 3"/>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v4l3 3" />
     </svg>
   );
 }

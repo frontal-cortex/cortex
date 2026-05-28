@@ -18,34 +18,33 @@
 }
 
 .header {
-  padding: var(--space-5) var(--space-6) var(--space-3);
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6) var(--space-2);
 }
 
-.title {
+.titleInput {
+  flex: 1;
   font-size: var(--text-xl);
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 var(--space-2);
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+  font-family: var(--font-sans);
 }
 
-.meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.type {
-  font-size: var(--text-xs);
+.titleInput::placeholder {
   color: var(--text-tertiary);
-  background: var(--bg-active);
-  padding: 2px 8px;
-  border-radius: 10px;
 }
 
 .saving {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .editorWrap {

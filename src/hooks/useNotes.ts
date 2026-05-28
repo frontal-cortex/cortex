@@ -20,7 +20,27 @@ export function useNotes(vaultOpen: boolean) {
     refresh();
   }, [refresh]);
 
-  return { notes, loading, refresh };
+  const createNote = useCallback(
+    async (title: string): Promise<Note> => {
+      const slug = title.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "untitled";
+      const created = new Date().toISOString().split("T")[0];
+      const path = `notes/${slug}-${Date.now()}.md`;
+      const note = await commands.createNote(path, title || "Untitled", created);
+      await refresh();
+      return note;
+    },
+    [refresh],
+  );
+
+  const deleteNote = useCallback(
+    async (path: string) => {
+      await commands.deleteNote(path);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  return { notes, loading, refresh, createNote, deleteNote };
 }
 
 export function useNote(path: string | null) {
@@ -32,7 +52,7 @@ export function useNote(path: string | null) {
       setNote(null);
       return;
     }
-    commands.readNote(path).then(setNote);
+    commands.readNote(path).then(setNote).catch(() => setNote(null));
   }, [path]);
 
   const save = useCallback(
