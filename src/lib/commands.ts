@@ -14,6 +14,7 @@ export interface NoteEntry {
   modified: number;
 }
 
+// Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
 export interface Note {
   path: string;
   frontmatter: Record<string, unknown>;
@@ -65,6 +66,15 @@ export const commands = {
 
   searchNotes: (query: string) =>
     invoke<NoteEntry[]>("search_notes", { query }),
+
+  getBacklinks: (path: string) =>
+    invoke<NoteEntry[]>("get_backlinks", { path }),
+
+  listTemplates: () =>
+    invoke<string[]>("list_templates"),
+
+  readTemplate: (name: string) =>
+    invoke<string | null>("read_template", { name }),
 
   gitStatus: () =>
     invoke<VaultStatus>("git_status"),

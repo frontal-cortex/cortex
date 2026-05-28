@@ -33,6 +33,9 @@ pub fn open_vault(
 
     git::open_or_init(&vault_path)?;
     std::fs::create_dir_all(vault_path.join(".brain"))?;
+    std::fs::create_dir_all(vault_path.join("templates"))?;
+    std::fs::create_dir_all(vault_path.join("notes"))?;
+    std::fs::create_dir_all(vault_path.join("journal"))?;
 
     // Open / migrate the SQLite index, then re-index all notes
     let db = Db::open(&vault_path)?;

@@ -1,13 +1,15 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Parsed representation of a markdown note with YAML frontmatter.
+///
+/// BTreeMap keeps keys in alphabetical order so every serialization produces
+/// the same output — critical for clean, readable git diffs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
-    /// Path relative to vault root
     pub path: String,
-    pub frontmatter: HashMap<String, serde_json::Value>,
+    pub frontmatter: BTreeMap<String, serde_json::Value>,
     pub body: String,
 }
 
@@ -21,7 +23,6 @@ pub struct NoteEntry {
     pub modified: u64,
 }
 
-/// Split raw file content into frontmatter (YAML string) and body.
 fn split_frontmatter(content: &str) -> (Option<&str>, &str) {
     let content = content.trim_start();
     if !content.starts_with("---") {
@@ -40,9 +41,9 @@ fn split_frontmatter(content: &str) -> (Option<&str>, &str) {
 pub fn parse_note(path: &str, content: &str) -> crate::error::Result<Note> {
     let (yaml_str, body) = split_frontmatter(content);
 
-    let frontmatter: HashMap<String, serde_json::Value> = match yaml_str {
+    let frontmatter: BTreeMap<String, serde_json::Value> = match yaml_str {
         Some(y) => serde_yaml::from_str(y)?,
-        None => HashMap::new(),
+        None => BTreeMap::new(),
     };
 
     Ok(Note {
@@ -71,10 +72,34 @@ pub fn infer_title(note: &Note) -> String {
             return s.to_string();
         }
     }
-    // Fall back to filename without extension
     Path::new(&note.path)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("Untitled")
         .to_string()
+}
+
+/// Extract all [[wiki link]] targets from a body string without a regex dep.
+pub fn extract_wiki_links(body: &str) -> Vec<String> {
+    let mut links = Vec::new();
+    let bytes = body.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i + 1 < len {
+        if bytes[i] == b'[' && bytes[i + 1] == b'[' {
+            i += 2;
+            let start = i;
+            while i + 1 < len && !(bytes[i] == b']' && bytes[i + 1] == b']') {
+                i += 1;
+            }
+            if i + 1 < len {
+                let link = body[start..i].trim();
+                if !link.is_empty() && !link.contains('\n') {
+                    links.push(link.to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+    links
 }

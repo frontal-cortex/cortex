@@ -55,6 +55,22 @@
   cursor: default;
 }
 
+.syncButtonActive {
+  color: var(--git-dirty) !important;
+  position: relative;
+}
+
+.syncDot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--git-dirty);
+  border: 1.5px solid var(--bg-sidebar);
+}
+
 .section {
   padding: var(--space-3) var(--space-2);
   border-bottom: 1px solid var(--border);

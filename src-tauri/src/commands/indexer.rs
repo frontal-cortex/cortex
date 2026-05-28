@@ -41,8 +41,13 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
         .unwrap_or_default();
 
-    let ne = NoteEntry { path: rel, title, note_type, tags, modified };
-    db.upsert_note(&ne, &note.body)
+    let ne = NoteEntry { path: rel.clone(), title, note_type, tags, modified };
+    db.upsert_note(&ne, &note.body)?;
+
+    let links = crate::note::extract_wiki_links(&note.body);
+    db.upsert_links(&rel, &links)?;
+
+    Ok(())
 }
 
 fn is_note(p: &Path) -> bool {

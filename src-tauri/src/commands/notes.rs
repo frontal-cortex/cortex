@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use tauri::State;
@@ -117,7 +117,7 @@ pub fn create_note(
         std::fs::create_dir_all(parent)?;
     }
 
-    let mut frontmatter: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut frontmatter: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     frontmatter.insert("title".into(), serde_json::Value::String(title));
     frontmatter.insert("type".into(), serde_json::Value::String("note".into()));
     frontmatter.insert("created".into(), serde_json::Value::String(created));
@@ -166,4 +166,50 @@ pub fn search_notes(
         Some(db) => db.search(&query),
         None => Ok(vec![]),
     }
+}
+
+// ── Backlinks ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_backlinks(
+    path: String,
+    db_state: State<'_, DbState>,
+) -> Result<Vec<NoteEntry>> {
+    let guard = db_state.0.lock().unwrap();
+    match guard.as_ref() {
+        Some(db) => db.get_backlinks(&path),
+        None => Ok(vec![]),
+    }
+}
+
+// ── Templates ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn list_templates(state: State<'_, VaultState>) -> Result<Vec<String>> {
+    let root = vault_path(&state)?;
+    let templates_dir = root.join("templates");
+    if !templates_dir.exists() {
+        return Ok(vec![]);
+    }
+    let names = std::fs::read_dir(templates_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path().extension().and_then(|s| s.to_str()) == Some("md")
+        })
+        .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        .collect();
+    Ok(names)
+}
+
+/// Read a template file by name (e.g. "daily.md") and return its raw content.
+/// Returns None if the template doesn't exist — the frontend falls back gracefully.
+#[tauri::command]
+pub fn read_template(name: String, state: State<'_, VaultState>) -> Result<Option<String>> {
+    let root = vault_path(&state)?;
+    let path = root.join("templates").join(&name);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(path)?;
+    Ok(Some(content))
 }

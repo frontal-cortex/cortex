@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { Note } from "../../lib/commands";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { PropertiesPanel } from "./PropertiesPanel";
+import { BacklinksPanel } from "./BacklinksPanel";
 import styles from "./Editor.module.css";
 
 interface Props {
@@ -145,6 +146,8 @@ function NoteEditor({
       <div className={styles.editorWrap}>
         <BlockNoteView editor={editor} />
       </div>
+
+      <BacklinksPanel path={note.path} onNavigate={onNavigate} />
     </div>
   );
 }

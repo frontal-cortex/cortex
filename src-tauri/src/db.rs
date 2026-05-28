@@ -39,6 +39,13 @@ impl Db {
             -- Plain FTS5 (no content='') so DELETE works normally
             CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts
                 USING fts5(path UNINDEXED, title, body);
+
+            -- [[wiki link]] graph: source note → raw link target text
+            CREATE TABLE IF NOT EXISTS links (
+                source  TEXT NOT NULL,
+                target  TEXT NOT NULL,
+                PRIMARY KEY (source, target)
+            );
             ",
         )?;
         Ok(())
@@ -72,6 +79,48 @@ impl Db {
         )?;
 
         Ok(())
+    }
+
+    pub fn upsert_links(&self, source: &str, targets: &[String]) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM links WHERE source = ?1", params![source])?;
+        for target in targets {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO links (source, target) VALUES (?1, ?2)",
+                params![source, target],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Return all notes that contain a [[link]] pointing at this note,
+    /// matched by title or path stem.
+    pub fn get_backlinks(&self, path: &str) -> Result<Vec<NoteEntry>> {
+        let stem = path
+            .split('/')
+            .next_back()
+            .unwrap_or(path)
+            .trim_end_matches(".md");
+
+        let title: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT title FROM notes WHERE path = ?1",
+                params![path],
+                |row| row.get(0),
+            )
+            .ok();
+        let title = title.unwrap_or_else(|| stem.to_string());
+
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT n.path, n.title, n.note_type, n.tags, n.modified
+             FROM links l
+             JOIN notes n ON n.path = l.source
+             WHERE (l.target = ?1 OR l.target = ?2)
+               AND l.source != ?3
+             ORDER BY n.modified DESC",
+        )?;
+        collect_entries(&mut stmt, params![title, stem, path])
     }
 
     pub fn remove_note(&self, path: &str) -> Result<()> {
