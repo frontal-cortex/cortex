@@ -3,6 +3,7 @@ import { NoteEntry, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../
 import { commands } from "../../lib/commands";
 import { buildTree } from "../../lib/fileTree";
 import { FileTree } from "./FileTree";
+import { CommitDiffModal } from "./CommitDiffModal";
 import styles from "./LeftPanel.module.css";
 
 interface Props {
@@ -32,8 +33,10 @@ export function LeftPanel({
   const [searchResults, setSearchResults] = useState<NoteEntry[] | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Folder creation state
   const [newFolderIn, setNewFolderIn] = useState<string | null>(null);
+  const [diffHash, setDiffHash] = useState<string | null>(null);
+  // Notes section root drop zone
+  const [notesSectionDragOver, setNotesSectionDragOver] = useState(false);
 
   const changedCount = (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
   const isDirty = changedCount > 0;
@@ -56,7 +59,24 @@ export function LeftPanel({
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [query, notes]);
 
-  // Folder creation handler
+  const handleDeleteFolder = useCallback(async (path: string) => {
+    const name = path.replace(/\/$/, "").split("/").pop() ?? path;
+    if (!window.confirm(`Delete folder "${name}" and all notes inside? This cannot be undone.`)) return;
+    await commands.deleteFolder(path);
+    onRefresh();
+  }, [onRefresh]);
+
+  const handleMoveNote = useCallback(async (fromPath: string, toDir: string) => {
+    try {
+      const newPath = await commands.moveNote(fromPath, toDir);
+      onRefresh();
+      // Re-select the note at its new path
+      onSelect(newPath);
+    } catch (e) {
+      window.alert(String(e));
+    }
+  }, [onRefresh, onSelect]);
+
   const handleCreateFolder = useCallback(async (parentPath: string, name: string) => {
     const cleaned = name.trim().replace(/\/+/g, "");
     if (!cleaned) return;
@@ -75,7 +95,9 @@ export function LeftPanel({
     onNewFolderSubmit: handleCreateFolder,
     onNewFolderCancel: () => setNewFolderIn(null),
     onNewNoteInFolder: (parentPath: string) => onNewNote(parentPath),
-  }), [newFolderIn, handleCreateFolder, onNewNote]);
+    onDeleteFolder: handleDeleteFolder,
+    onMoveNote: handleMoveNote,
+  }), [newFolderIn, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote]);
 
   const notesCount = notes.filter((n) => n.path.startsWith("notes/")).length;
 
@@ -140,6 +162,15 @@ export function LeftPanel({
               defaultOpen
               count={notesCount}
               onNewFolder={() => setNewFolderIn("notes/")}
+              dropActive={notesSectionDragOver}
+              onDragOver={(e) => { e.preventDefault(); setNotesSectionDragOver(true); }}
+              onDragLeave={() => setNotesSectionDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setNotesSectionDragOver(false);
+                const path = e.dataTransfer.getData("text/plain");
+                if (path) handleMoveNote(path, "notes/");
+              }}
             >
               {notesTree.length === 0 && newFolderIn !== "notes/"
                 ? <p className={styles.empty}>No notes yet — press ⌘N to create one.</p>
@@ -191,7 +222,12 @@ export function LeftPanel({
         onCommit={onCommit}
         onApplyBranch={onApplyBranch}
         onDiscardBranch={onDiscardBranch}
+        onCommitClick={setDiffHash}
       />
+
+      {diffHash && (
+        <CommitDiffModal hash={diffHash} onClose={() => setDiffHash(null)} />
+      )}
     </div>
   );
 }
@@ -199,18 +235,28 @@ export function LeftPanel({
 // ── Section ───────────────────────────────────────────────────────────────────
 
 function Section({
-  label, count, defaultOpen, onNewFolder, onNewNote, children,
+  label, count, defaultOpen, onNewFolder, onNewNote, dropActive,
+  onDragOver, onDragLeave, onDrop, children,
 }: {
   label: string;
   count: number;
   defaultOpen: boolean;
   onNewFolder?: () => void;
   onNewNote?: () => void;
+  dropActive?: boolean;
+  onDragOver?: React.DragEventHandler;
+  onDragLeave?: React.DragEventHandler;
+  onDrop?: React.DragEventHandler;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className={styles.section}>
+    <div
+      className={`${styles.section} ${dropActive ? styles.sectionDropTarget : ""}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div className={styles.sectionHeader}>
         <button className={styles.sectionToggle} onClick={() => setOpen((x) => !x)}>
           <span className={`${styles.sectionArrow} ${open ? styles.sectionArrowOpen : ""}`}>▶</span>
@@ -244,7 +290,8 @@ function Section({
 // ── Git section ───────────────────────────────────────────────────────────────
 
 function GitSection({
-  status, isDirty, changedCount, commits, agentBranches, onCommit, onApplyBranch, onDiscardBranch,
+  status, isDirty, changedCount, commits, agentBranches,
+  onCommit, onApplyBranch, onDiscardBranch, onCommitClick,
 }: {
   status: VaultStatus | null;
   isDirty: boolean;
@@ -254,6 +301,7 @@ function GitSection({
   onCommit: (msg: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
+  onCommitClick: (hash: string) => void;
 }) {
   const [msg, setMsg] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -315,11 +363,16 @@ function GitSection({
       {commits.length > 0 && (
         <div className={styles.commitLog}>
           {commits.map((c) => (
-            <div key={c.hash} className={styles.commitRow}>
+            <button
+              key={c.hash}
+              className={styles.commitRow}
+              onClick={() => onCommitClick(c.hash)}
+              title="View diff"
+            >
               <span className={styles.commitHash}>{c.hash}</span>
               <span className={styles.commitMsg}>{c.message}</span>
               <span className={styles.commitTime}>{relTime(c.timestamp)}</span>
-            </div>
+            </button>
           ))}
         </div>
       )}

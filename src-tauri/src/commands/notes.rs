@@ -171,6 +171,81 @@ pub fn search_notes(
 // ── Folders ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
+pub fn delete_folder(
+    path: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<()> {
+    let root = vault_path(&state)?;
+
+    // Protect system and root directories
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.contains("..") || matches!(trimmed, ".git" | ".brain" | "notes" | "templates") {
+        return Err(AppError::Other(format!("Cannot delete protected path: {path}")));
+    }
+
+    let abs = root.join(&path);
+    if !abs.exists() {
+        return Err(AppError::Other(format!("Folder not found: {path}")));
+    }
+
+    std::fs::remove_dir_all(&abs)?;
+
+    // Purge index entries for all notes that were inside this folder
+    let prefix = if path.ends_with('/') { path.clone() } else { format!("{path}/") };
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = db.remove_notes_by_prefix(&prefix);
+    }
+
+    Ok(())
+}
+
+/// Move a note to a different folder, keeping the same filename.
+/// Returns the new vault-relative path.
+#[tauri::command]
+pub fn move_note(
+    from_path: String,
+    to_dir: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<String> {
+    let root = vault_path(&state)?;
+    let from_abs = root.join(&from_path);
+
+    if !from_abs.exists() {
+        return Err(AppError::Other(format!("Source not found: {from_path}")));
+    }
+
+    let filename = from_abs
+        .file_name()
+        .ok_or_else(|| AppError::Other("Invalid source path".into()))?;
+
+    let to_dir_clean = to_dir.trim_end_matches('/');
+    let to_dir_abs = root.join(to_dir_clean);
+    std::fs::create_dir_all(&to_dir_abs)?;
+
+    let to_abs = to_dir_abs.join(filename);
+
+    if to_abs.exists() {
+        return Err(AppError::Other(format!(
+            "A note with this name already exists in {}",
+            to_dir_clean
+        )));
+    }
+
+    let new_path = format!("{}/{}", to_dir_clean, filename.to_string_lossy());
+    std::fs::rename(&from_abs, &to_abs)?;
+
+    // Update index: rename the path row, then re-index the content at new location
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = db.rename_note(&from_path, &new_path);
+        let _ = crate::commands::indexer::index_file(&root, &to_abs, db);
+    }
+
+    Ok(new_path)
+}
+
+#[tauri::command]
 pub fn create_folder(path: String, state: State<'_, VaultState>) -> Result<()> {
     let root = vault_path(&state)?;
 

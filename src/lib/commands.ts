@@ -42,6 +42,14 @@ export interface CommitEntry {
   timestamp: number;
 }
 
+export interface CommitDiff {
+  hash: string;
+  message: string;
+  author: string;
+  timestamp: number;
+  patch: string;
+}
+
 export const commands = {
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),
@@ -70,6 +78,12 @@ export const commands = {
   createFolder: (path: string) =>
     invoke<void>("create_folder", { path }),
 
+  deleteFolder: (path: string) =>
+    invoke<void>("delete_folder", { path }),
+
+  moveNote: (fromPath: string, toDir: string) =>
+    invoke<string>("move_note", { fromPath, toDir }),
+
   listVaultDirs: () =>
     invoke<string[]>("list_vault_dirs"),
 
@@ -93,6 +107,9 @@ export const commands = {
 
   gitLog: (limit: number) =>
     invoke<CommitEntry[]>("git_log", { limit }),
+
+  gitDiff: (hash: string) =>
+    invoke<CommitDiff>("git_diff", { hash }),
 
   listAgentBranches: () =>
     invoke<AgentBranch[]>("list_agent_branches"),

@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::commands::vault::VaultState;
 use crate::error::{AppError, Result};
-use crate::git::{self, AgentBranch, CommitEntry, VaultStatus};
+use crate::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 
 fn open_repo(state: &State<'_, VaultState>) -> Result<git2::Repository> {
     let guard = state.0.lock().unwrap();
@@ -57,6 +57,12 @@ pub fn git_sync(state: State<'_, VaultState>) -> Result<()> {
 pub fn git_log(limit: usize, state: State<'_, VaultState>) -> Result<Vec<CommitEntry>> {
     let repo = open_repo(&state)?;
     git::get_log(&repo, limit)
+}
+
+#[tauri::command]
+pub fn git_diff(hash: String, state: State<'_, VaultState>) -> Result<CommitDiff> {
+    let repo = open_repo(&state)?;
+    git::get_commit_diff(&repo, &hash)
 }
 
 #[tauri::command]

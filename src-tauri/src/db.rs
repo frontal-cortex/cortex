@@ -124,10 +124,33 @@ impl Db {
     }
 
     pub fn remove_note(&self, path: &str) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM notes WHERE path = ?1", params![path])?;
-        self.conn
-            .execute("DELETE FROM notes_fts WHERE path = ?1", params![path])?;
+        self.conn.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
+        self.conn.execute("DELETE FROM notes_fts WHERE path = ?1", params![path])?;
+        self.conn.execute("DELETE FROM links WHERE source = ?1", params![path])?;
+        Ok(())
+    }
+
+    /// Remove all notes whose paths start with `prefix` (e.g. "notes/work/").
+    pub fn remove_notes_by_prefix(&self, prefix: &str) -> Result<()> {
+        let pattern = format!("{prefix}%");
+        self.conn.execute("DELETE FROM notes WHERE path LIKE ?1", params![pattern])?;
+        self.conn.execute("DELETE FROM notes_fts WHERE path LIKE ?1", params![pattern])?;
+        self.conn.execute("DELETE FROM links WHERE source LIKE ?1", params![pattern])?;
+        Ok(())
+    }
+
+    /// Update index paths after a note is moved/renamed.
+    pub fn rename_note(&self, old_path: &str, new_path: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE notes SET path = ?1 WHERE path = ?2",
+            params![new_path, old_path],
+        )?;
+        self.conn.execute(
+            "UPDATE links SET source = ?1 WHERE source = ?2",
+            params![new_path, old_path],
+        )?;
+        // FTS5 row must be re-inserted with the new path
+        self.conn.execute("DELETE FROM notes_fts WHERE path = ?1", params![old_path])?;
         Ok(())
     }
 

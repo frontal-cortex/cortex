@@ -53,6 +53,18 @@
   background: var(--bg-active);
 }
 
+.dirActionBtnDanger:hover {
+  color: var(--danger) !important;
+  background: color-mix(in srgb, var(--danger) 10%, transparent) !important;
+}
+
+.dirRowDropTarget {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+}
+
 .newFolderRow {
   display: flex;
   align-items: center;
@@ -117,6 +129,7 @@
   text-align: left;
   border-radius: var(--radius-sm);
   min-height: 26px;
+  user-select: none;
 }
 
 .fileRow:hover {

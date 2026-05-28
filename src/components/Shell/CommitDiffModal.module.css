@@ -1,0 +1,147 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 24px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 780px;
+  max-height: 80vh;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.headerMeta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hash {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-active);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  width: fit-content;
+}
+
+.message {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.author {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.closeBtn:hover { color: var(--text-primary); }
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.loading,
+.empty {
+  padding: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  text-align: center;
+  margin: 0;
+}
+
+.errorMsg {
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--danger);
+  margin: 0;
+}
+
+/* Diff rendering */
+.diff {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  padding: var(--space-3) 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.diff span {
+  display: block;
+  padding: 0 var(--space-4);
+}
+
+.lineAdded {
+  background: color-mix(in srgb, var(--git-clean) 12%, transparent);
+  color: color-mix(in srgb, var(--git-clean) 70%, var(--text-primary));
+}
+
+.lineRemoved {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: color-mix(in srgb, var(--danger) 70%, var(--text-primary));
+}
+
+.lineHunk {
+  color: var(--accent);
+  background: var(--accent-light);
+  font-weight: 500;
+}
+
+.lineFileHeader {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+.lineMeta {
+  color: var(--text-tertiary);
+}
+
+.lineContext {
+  color: var(--text-secondary);
+}

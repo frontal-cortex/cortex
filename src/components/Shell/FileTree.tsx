@@ -3,12 +3,13 @@ import { TreeNode, DirNode, FileNode } from "../../lib/fileTree";
 import styles from "./FileTree.module.css";
 
 interface TreeActions {
-  /** Path of the directory currently showing the new-folder input, e.g. "notes/work/" */
   newFolderIn: string | null;
   onNewFolderRequest: (parentPath: string) => void;
   onNewFolderSubmit: (parentPath: string, name: string) => void;
   onNewFolderCancel: () => void;
   onNewNoteInFolder: (parentPath: string) => void;
+  onDeleteFolder: (path: string) => void;
+  onMoveNote: (fromPath: string, toDir: string) => void;
 }
 
 interface Props {
@@ -72,8 +73,8 @@ function DirRow({
   onSelect: (path: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [dragOver, setDragOver] = useState(false);
 
-  // Auto-open when a child becomes selected
   const hasSelected = selectedPath?.startsWith(node.path);
   useEffect(() => {
     if (hasSelected) setOpen(true);
@@ -82,8 +83,18 @@ function DirRow({
   return (
     <div>
       <div
-        className={styles.dirRow}
+        className={`${styles.dirRow} ${dragOver ? styles.dirRowDropTarget : ""}`}
         style={{ paddingLeft: 10 + indent * 14 }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+        onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
+        onDrop={(e) => {
+          e.preventDefault(); e.stopPropagation();
+          setDragOver(false);
+          const path = e.dataTransfer.getData("text/plain");
+          if (path && path !== node.path && !path.startsWith(node.path)) {
+            actions.onMoveNote(path, node.path);
+          }
+        }}
       >
         <button className={styles.dirToggle} onClick={() => setOpen((x) => !x)}>
           <span className={`${styles.arrow} ${open ? styles.arrowOpen : ""}`}>▶</span>
@@ -92,7 +103,6 @@ function DirRow({
           <span className={styles.count}>{countFiles(node)}</span>
         </button>
 
-        {/* Action buttons — visible on hover via CSS */}
         <div className={styles.dirActions}>
           <button
             className={styles.dirActionBtn}
@@ -107,6 +117,13 @@ function DirRow({
             onClick={(e) => { e.stopPropagation(); setOpen(true); actions.onNewFolderRequest(node.path); }}
           >
             <FolderPlusIcon />
+          </button>
+          <button
+            className={`${styles.dirActionBtn} ${styles.dirActionBtnDanger}`}
+            title="Delete folder"
+            onClick={(e) => { e.stopPropagation(); actions.onDeleteFolder(node.path); }}
+          >
+            <TrashIcon />
           </button>
         </div>
       </div>
@@ -135,18 +152,23 @@ function FileRow({
   onSelect: (path: string) => void;
 }) {
   return (
-    <button
+    <div
       className={`${styles.fileRow} ${selected ? styles.fileRowSelected : ""}`}
       style={{ paddingLeft: 10 + indent * 14 }}
       onClick={() => onSelect(node.path)}
       title={node.path}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", node.path);
+        e.dataTransfer.effectAllowed = "move";
+      }}
     >
       <DocIcon type={node.note.note_type} />
       <span className={styles.fileName}>{node.name || "Untitled"}</span>
       {node.note.note_type && (
         <span className={styles.noteType}>{node.note.note_type}</span>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -237,6 +259,17 @@ function NoteIcon() {
       <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
       <line x1="12" y1="11" x2="12" y2="17"/>
       <line x1="9" y1="14" x2="15" y2="14"/>
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
     </svg>
   );
 }

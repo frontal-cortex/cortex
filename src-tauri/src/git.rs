@@ -52,6 +52,51 @@ pub fn get_log(repo: &Repository, limit: usize) -> Result<Vec<CommitEntry>> {
     Ok(entries)
 }
 
+#[derive(Debug, Serialize)]
+pub struct CommitDiff {
+    pub hash: String,
+    pub message: String,
+    pub author: String,
+    pub timestamp: u64,
+    pub patch: String,
+}
+
+pub fn get_commit_diff(repo: &Repository, hash: &str) -> Result<CommitDiff> {
+    let oid = git2::Oid::from_str(hash).map_err(AppError::Git)?;
+    let commit = repo.find_commit(oid)?;
+
+    // Collect metadata before borrowing for the diff
+    let short_hash  = format!("{:.7}", commit.id());
+    let message     = commit.summary().unwrap_or("").to_string();
+    let author      = commit.author().name().unwrap_or("").to_string();
+    let timestamp   = commit.time().seconds() as u64;
+
+    let tree = commit.tree()?;
+
+    // Store parent commit as an owned value so parent_tree can borrow it
+    let parent_commit = if commit.parent_count() > 0 {
+        Some(commit.parent(0)?)
+    } else {
+        None
+    };
+    let parent_tree = parent_commit.as_ref().map(|p| p.tree()).transpose()?;
+
+    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?;
+
+    let mut patch = String::new();
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let origin = line.origin();
+        let content = std::str::from_utf8(line.content()).unwrap_or("");
+        match origin {
+            '+' | '-' | ' ' => { patch.push(origin); patch.push_str(content); }
+            _ => { patch.push_str(content); }
+        }
+        true
+    })?;
+
+    Ok(CommitDiff { hash: short_hash, message, author, timestamp, patch })
+}
+
 pub fn open_or_init(vault_path: &Path) -> Result<Repository> {
     Repository::open(vault_path)
         .or_else(|_| Repository::init(vault_path))
