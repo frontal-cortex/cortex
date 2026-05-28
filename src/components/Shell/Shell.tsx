@@ -128,6 +128,7 @@ export function Shell({
       <Editor
         note={note}
         saving={saving}
+        allNotes={notes}
         onSave={async (updated) => { await save(updated); refresh(); }}
         onDelete={handleDelete}
         onNavigate={(target) => {

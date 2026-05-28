@@ -1,0 +1,118 @@
+import { Extension } from "@tiptap/core";
+import { Plugin, PluginKey, EditorState } from "prosemirror-state";
+import { EditorView } from "prosemirror-view";
+
+export interface SuggestionCoords {
+  left: number;
+  bottom: number;
+}
+
+export interface SuggestionHandle {
+  /** Called from ProseMirror; React updates the dropdown via this. */
+  keyHandler: React.MutableRefObject<((key: string) => boolean) | null>;
+  /** Stable wrappers — set these from the component side. */
+  callbacks: React.MutableRefObject<{
+    onOpen: (query: string, coords: SuggestionCoords, from: number) => void;
+    onUpdate: (query: string, coords: SuggestionCoords, from: number) => void;
+    onClose: () => void;
+  }>;
+}
+
+interface PluginState {
+  active: boolean;
+  query: string;
+  from: number;
+}
+
+const PLUGIN_KEY = new PluginKey<PluginState>("wikiLinkSuggestion");
+
+function detectSuggestion(state: EditorState): PluginState {
+  const inactive: PluginState = { active: false, query: "", from: 0 };
+  const { selection } = state;
+
+  // Only act on a plain cursor (no range selection)
+  if (!selection.empty) return inactive;
+  const $cursor = (selection as { $cursor?: { parent: { textContent: string }; parentOffset: number; start: () => number } }).$cursor;
+  if (!$cursor) return inactive;
+
+  // Text in the current block before the cursor
+  const textBefore = $cursor.parent.textContent.slice(0, $cursor.parentOffset);
+  const openIdx = textBefore.lastIndexOf("[[");
+  if (openIdx === -1) return inactive;
+
+  const afterBrackets = textBefore.slice(openIdx + 2);
+  // Bail if already closed or if a second [[ was opened
+  if (afterBrackets.includes("]]") || afterBrackets.includes("[[")) return inactive;
+
+  return {
+    active: true,
+    query: afterBrackets,
+    from: $cursor.start() + openIdx,
+  };
+}
+
+/**
+ * TipTap Extension that detects when the cursor is inside an unclosed [[...
+ * and fires open/update/close callbacks so React can render the dropdown.
+ *
+ * Keyboard events (↑↓ Enter Tab Escape) are forwarded to keyHandler while
+ * the suggestion is active.
+ */
+export function wikiLinkSuggestionExtension(handle: SuggestionHandle) {
+  return Extension.create({
+    name: "wikiLinkSuggestion",
+
+    addProseMirrorPlugins() {
+      return [
+        new Plugin<PluginState>({
+          key: PLUGIN_KEY,
+
+          state: {
+            init: () => ({ active: false, query: "", from: 0 }),
+            apply(_tr, _prev, _oldState, newState) {
+              return detectSuggestion(newState);
+            },
+          },
+
+          view() {
+            return {
+              update(view: EditorView, prevEditorState: EditorState) {
+                const prev = PLUGIN_KEY.getState(prevEditorState);
+                const next = PLUGIN_KEY.getState(view.state);
+                if (!next) return;
+
+                const coords = (): SuggestionCoords => {
+                  const c = view.coordsAtPos(view.state.selection.from);
+                  return { left: c.left, bottom: c.bottom };
+                };
+
+                if (next.active && !prev?.active) {
+                  handle.callbacks.current.onOpen(next.query, coords(), next.from);
+                } else if (next.active && prev?.active && next.query !== prev.query) {
+                  handle.callbacks.current.onUpdate(next.query, coords(), next.from);
+                } else if (!next.active && prev?.active) {
+                  handle.callbacks.current.onClose();
+                }
+              },
+              destroy() {},
+            };
+          },
+
+          props: {
+            handleKeyDown(_view: EditorView, event: KeyboardEvent): boolean {
+              const state = PLUGIN_KEY.getState(_view.state);
+              if (!state?.active) return false;
+
+              const NAV_KEYS = ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"];
+              if (!NAV_KEYS.includes(event.key)) return false;
+
+              const handled = handle.keyHandler.current?.(event.key) ?? false;
+              if (handled) event.preventDefault();
+              return handled;
+            },
+          },
+        }),
+      ];
+    },
+  });
+}

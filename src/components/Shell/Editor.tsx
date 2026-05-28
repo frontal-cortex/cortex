@@ -1,22 +1,25 @@
 import "@blocknote/mantine/style.css";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
-import { useEffect, useRef, useCallback } from "react";
-import { Note } from "../../lib/commands";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
+import { Note, NoteEntry } from "../../lib/commands";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
+import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle } from "../../lib/wikiLinkSuggestion";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
+import { WikiLinkDropdown } from "./WikiLinkDropdown";
 import styles from "./Editor.module.css";
 
 interface Props {
   note: Note | null;
   saving: boolean;
+  allNotes: NoteEntry[];
   onSave: (note: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
 }
 
-export function Editor({ note, saving, onSave, onDelete, onNavigate }: Props) {
+export function Editor({ note, saving, allNotes, onSave, onDelete, onNavigate }: Props) {
   if (!note) {
     return (
       <div className={styles.empty}>
@@ -30,6 +33,7 @@ export function Editor({ note, saving, onSave, onDelete, onNavigate }: Props) {
       key={note.path}
       note={note}
       saving={saving}
+      allNotes={allNotes}
       onSave={onSave}
       onDelete={onDelete}
       onNavigate={onNavigate}
@@ -37,15 +41,18 @@ export function Editor({ note, saving, onSave, onDelete, onNavigate }: Props) {
   );
 }
 
+interface SuggestionState {
+  query: string;
+  coords: SuggestionCoords;
+  from: number;
+}
+
 function NoteEditor({
-  note,
-  saving,
-  onSave,
-  onDelete,
-  onNavigate,
+  note, saving, allNotes, onSave, onDelete, onNavigate,
 }: {
   note: Note;
   saving: boolean;
+  allNotes: NoteEntry[];
   onSave: (n: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
@@ -53,21 +60,105 @@ function NoteEditor({
   const noteRef = useRef(note);
   noteRef.current = note;
 
-  // Keep navigate ref so the extension doesn't close over stale state
   const navigateRef = useRef(onNavigate);
   navigateRef.current = onNavigate;
 
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Suggestion state ───────────────────────────────────────────────────────
+  const [suggestion, setSuggestion] = useState<SuggestionState | null>(null);
+  const [suggActiveIdx, setSuggActiveIdx] = useState(0);
+
+  // Refs so the ProseMirror plugin always calls the latest versions
+  const keyHandlerRef = useRef<((key: string) => boolean) | null>(null);
+  const callbacksRef = useRef({
+    onOpen: (_q: string, _c: SuggestionCoords, _f: number) => {},
+    onUpdate: (_q: string, _c: SuggestionCoords, _f: number) => {},
+    onClose: () => {},
+  });
+
+  // Filtered note list for the suggestion dropdown
+  const filteredSuggestions = useMemo(() => {
+    if (!suggestion) return [];
+    const q = suggestion.query.toLowerCase();
+    if (!q) return allNotes.slice(0, 8);
+    return allNotes
+      .filter((n) =>
+        n.title.toLowerCase().includes(q) ||
+        n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(q),
+      )
+      .slice(0, 8);
+  }, [suggestion, allNotes]);
+
+  // Keep filteredSuggestions accessible in the key handler without stale closure
+  const filteredRef = useRef(filteredSuggestions);
+  filteredRef.current = filteredSuggestions;
+
+  const suggActiveIdxRef = useRef(suggActiveIdx);
+  suggActiveIdxRef.current = suggActiveIdx;
+
+  // ── Editor ─────────────────────────────────────────────────────────────────
+  const handle: SuggestionHandle = useMemo(() => ({
+    keyHandler: keyHandlerRef,
+    callbacks: callbacksRef,
+  }), []);
+
   const editor = useCreateBlockNote({
-    // _tiptapOptions is BlockNote's escape hatch for custom TipTap extensions
     _tiptapOptions: {
-      extensions: [wikiLinkExtension((t) => navigateRef.current(t))],
+      extensions: [
+        wikiLinkExtension((t) => navigateRef.current(t)),
+        wikiLinkSuggestionExtension(handle),
+      ],
     },
   });
 
-  // Populate editor from markdown body on mount
+  // Wire suggestion callbacks (updated every render via ref)
+  callbacksRef.current = {
+    onOpen: (query, coords, from) => {
+      setSuggestion({ query, coords, from });
+      setSuggActiveIdx(0);
+    },
+    onUpdate: (query, coords, from) => {
+      setSuggestion({ query, coords, from });
+      setSuggActiveIdx(0);
+    },
+    onClose: () => setSuggestion(null),
+  };
+
+  // ── Suggestion insertion ───────────────────────────────────────────────────
+  const insertSuggestion = useCallback((title: string) => {
+    if (!suggestion) return;
+    const { from } = suggestion;
+    const to = editor._tiptapEditor.state.selection.from;
+
+    editor._tiptapEditor.commands.command(({ tr, dispatch }) => {
+      if (dispatch) {
+        tr.replaceWith(from, to, editor._tiptapEditor.schema.text(`[[${title}]]`));
+      }
+      return true;
+    });
+
+    setSuggestion(null);
+  }, [editor, suggestion]);
+
+  // Wire key handler (updated every render via ref)
+  keyHandlerRef.current = (key: string) => {
+    if (!suggestion) return false;
+    const items = filteredRef.current;
+    const idx = suggActiveIdxRef.current;
+
+    if (key === "ArrowDown") { setSuggActiveIdx((i) => Math.min(i + 1, items.length - 1)); return true; }
+    if (key === "ArrowUp")   { setSuggActiveIdx((i) => Math.max(i - 1, 0)); return true; }
+    if (key === "Enter" || key === "Tab") {
+      if (items[idx]) insertSuggestion(items[idx].title || pathToTitle(items[idx].path));
+      return true;
+    }
+    if (key === "Escape") { setSuggestion(null); return true; }
+    return false;
+  };
+
+  // ── Editor population & auto-save ─────────────────────────────────────────
   useEffect(() => {
     if (note.body.trim()) {
       const blocks = editor.tryParseMarkdownToBlocks(note.body);
@@ -76,7 +167,6 @@ function NoteEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-save body 1s after last keystroke
   useEffect(() => {
     const unsub = editor.onChange(async () => {
       if (bodyTimer.current) clearTimeout(bodyTimer.current);
@@ -91,25 +181,16 @@ function NoteEditor({
     };
   }, [editor, onSave]);
 
-  const handleTitleChange = useCallback(
-    (value: string) => {
-      if (titleTimer.current) clearTimeout(titleTimer.current);
-      titleTimer.current = setTimeout(() => {
-        onSave({
-          ...noteRef.current,
-          frontmatter: { ...noteRef.current.frontmatter, title: value },
-        });
-      }, 500);
-    },
-    [onSave],
-  );
+  const handleTitleChange = useCallback((value: string) => {
+    if (titleTimer.current) clearTimeout(titleTimer.current);
+    titleTimer.current = setTimeout(() => {
+      onSave({ ...noteRef.current, frontmatter: { ...noteRef.current.frontmatter, title: value } });
+    }, 500);
+  }, [onSave]);
 
-  const handleFrontmatterChange = useCallback(
-    (updated: Record<string, unknown>) => {
-      onSave({ ...noteRef.current, frontmatter: updated });
-    },
-    [onSave],
-  );
+  const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
+    onSave({ ...noteRef.current, frontmatter: updated });
+  }, [onSave]);
 
   const title =
     typeof note.frontmatter["title"] === "string"
@@ -128,38 +209,36 @@ function NoteEditor({
         />
         <div className={styles.headerActions}>
           {saving && <span className={styles.saving}>Saving…</span>}
-          <button
-            className={styles.deleteBtn}
-            onClick={() => onDelete(note.path)}
-            title="Delete note"
-          >
+          <button className={styles.deleteBtn} onClick={() => onDelete(note.path)} title="Delete note">
             <TrashIcon />
           </button>
         </div>
       </div>
 
-      <PropertiesPanel
-        frontmatter={note.frontmatter}
-        onChange={handleFrontmatterChange}
-      />
+      <PropertiesPanel frontmatter={note.frontmatter} onChange={handleFrontmatterChange} />
 
       <div className={styles.editorWrap}>
         <BlockNoteView editor={editor} />
       </div>
 
       <BacklinksPanel path={note.path} onNavigate={onNavigate} />
+
+      {suggestion && (
+        <WikiLinkDropdown
+          query={suggestion.query}
+          notes={filteredSuggestions}
+          coords={suggestion.coords}
+          activeIndex={suggActiveIdx}
+          onSelect={insertSuggestion}
+          onClose={() => setSuggestion(null)}
+        />
+      )}
     </div>
   );
 }
 
 function pathToTitle(path: string): string {
-  return (
-    path
-      .split("/")
-      .pop()
-      ?.replace(/\.md$/, "")
-      .replace(/-/g, " ") ?? "Untitled"
-  );
+  return path.split("/").pop()?.replace(/\.md$/, "").replace(/-/g, " ") ?? "Untitled";
 }
 
 function TrashIcon() {
