@@ -50,8 +50,7 @@
   --radius-lg: 8px;
 
   /* Panels */
-  --sidebar-width:   220px;
-  --notelist-width:  280px;
+  --left-panel-width: 280px;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -1,0 +1,379 @@
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.root {
+  width: 280px;
+  min-width: 280px;
+  height: 100%;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.vaultName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.iconBtn {
+  background: none;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.iconBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.iconBtnAlert {
+  color: var(--git-dirty) !important;
+}
+
+.syncDot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--git-dirty);
+  border: 1.5px solid var(--bg-sidebar);
+}
+
+/* ── Search ──────────────────────────────────────────────────── */
+.searchRow {
+  padding: var(--space-2) var(--space-2);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-2);
+  color: var(--text-tertiary);
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  outline: none;
+  padding: 5px 0;
+}
+
+.searchInput::placeholder { color: var(--text-tertiary); }
+
+.clearBtn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+
+/* ── Tree area ───────────────────────────────────────────────── */
+.treeArea {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1) 0;
+}
+
+/* ── Sections ────────────────────────────────────────────────── */
+.section {
+  margin-bottom: 2px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px var(--space-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sectionHeader:hover { background: var(--bg-hover); }
+
+.sectionArrow {
+  font-size: 8px;
+  color: var(--text-tertiary);
+  transition: transform 0.15s;
+  display: inline-block;
+}
+
+.sectionArrowOpen { transform: rotate(90deg); }
+
+.sectionLabel {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex: 1;
+}
+
+.sectionCount {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.sectionBody {
+  padding-bottom: var(--space-1);
+}
+
+.empty {
+  padding: var(--space-2) var(--space-3) var(--space-2) 28px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* ── Search results ──────────────────────────────────────────── */
+.searchResults { padding: var(--space-1) 0; }
+
+.resultRow {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 5px var(--space-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 0;
+}
+
+.resultRow:hover { background: var(--bg-hover); }
+.resultRowSelected { background: var(--bg-active); }
+
+.resultTitle {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.resultPath {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ── Git section ─────────────────────────────────────────────── */
+.gitSection {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: var(--space-2) 0 var(--space-1);
+}
+
+.gitStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  flex-wrap: wrap;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusText {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.pill {
+  font-size: var(--text-xs);
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+
+.commitToggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.commitToggle:hover { background: var(--bg-hover); }
+
+.commitForm {
+  padding: var(--space-2) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.commitInput {
+  font-size: var(--text-xs);
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+}
+
+.commitInput:focus { border-color: var(--border-focus); }
+
+.changedFiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.changedFile {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-active);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+
+.commitBtn {
+  padding: 4px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  background: var(--text-primary);
+  color: var(--bg-app);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  width: 100%;
+}
+
+.commitBtn:disabled { opacity: 0.5; cursor: default; }
+
+/* Agent branches */
+.agentBranch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2);
+  margin: 0 var(--space-1);
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+  margin-bottom: 2px;
+}
+
+.agentDot { color: var(--git-agent); font-size: 10px; }
+
+.agentDesc {
+  font-size: var(--text-xs);
+  color: var(--git-agent);
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.applyBtn, .discardBtn {
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.applyBtn { background: var(--git-agent); color: white; }
+.discardBtn { background: var(--bg-active); color: var(--text-secondary); }
+
+/* Commit log */
+.commitLog {
+  padding: var(--space-1) 0 0;
+}
+
+.commitRow {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+}
+
+.commitRow:hover { background: var(--bg-hover); }
+
+.commitHash {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.commitMsg {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commitTime {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}

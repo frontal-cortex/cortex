@@ -1,8 +1,7 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
 import { useNotes, useNote } from "../../hooks/useNotes";
-import { Sidebar } from "./Sidebar";
-import { NoteList } from "./NoteList";
+import { LeftPanel } from "./LeftPanel";
 import { Editor } from "./Editor";
 import { QuickSwitcher } from "./QuickSwitcher";
 import styles from "./Shell.module.css";
@@ -23,28 +22,11 @@ export function Shell({
   vault, status, agentBranches, commits, syncing,
   onSync, onCommit, onApplyBranch, onDiscardBranch,
 }: Props) {
-  const [activeView, setActiveView] = useState("all");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
 
-  const { notes, loading, refresh, createNote, deleteNote } = useNotes(!!vault);
+  const { notes, refresh, createNote, deleteNote } = useNotes(!!vault);
   const { note, saving, save } = useNote(selectedPath);
-
-  // Unique types derived from the note list — no extra command needed
-  const availableTypes = useMemo(() => {
-    const types = new Set(notes.map((n) => n.note_type).filter(Boolean) as string[]);
-    return [...types].sort();
-  }, [notes]);
-
-  // Filter notes by active view
-  const visibleNotes = useMemo(() => {
-    if (activeView === "recent") return [...notes].sort((a, b) => b.modified - a.modified).slice(0, 20);
-    if (activeView.startsWith("type:")) {
-      const type = activeView.slice(5);
-      return notes.filter((n) => n.note_type === type);
-    }
-    return notes;
-  }, [notes, activeView]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -67,17 +49,14 @@ export function Shell({
   const handleTodayNote = useCallback(async () => {
     const today = new Date().toISOString().split("T")[0];
     const path = `journal/${today}.md`;
-    const existing = notes.find((n) => n.path === path);
-    if (existing) { setSelectedPath(path); return; }
-    // Try to use templates/daily.md; fall back to empty
+    if (notes.find((n) => n.path === path)) { setSelectedPath(path); return; }
+
     const { commands } = await import("../../lib/commands");
-    const templateContent = await commands.readTemplate("daily.md").catch(() => null);
-    if (templateContent) {
-      const { commands: c2 } = await import("../../lib/commands");
-      const note = await c2.createNote(path, today, today);
-      // Apply template body (substitute {{date}})
-      const body = templateContent.replace(/\{\{date\}\}/g, today).replace(/^---[\s\S]*?---\n\n?/, "");
-      await c2.writeNote(path, { ...note, body });
+    const tmpl = await commands.readTemplate("daily.md").catch(() => null);
+    if (tmpl) {
+      const n = await commands.createNote(path, today, today);
+      const body = tmpl.replace(/\{\{date\}\}/g, today).replace(/^---[\s\S]*?---\n\n?/, "");
+      await commands.writeNote(path, { ...n, body });
     } else {
       await commands.createNote(path, today, today);
     }
@@ -93,6 +72,8 @@ export function Shell({
 
   const handleNavigate = useCallback((target: string) => {
     const lower = target.toLowerCase();
+    const byPath = notes.find((n) => n.path === target);
+    if (byPath) { setSelectedPath(target); return; }
     const byTitle = notes.find((n) => (n.title || "").toLowerCase() === lower);
     if (byTitle) { setSelectedPath(byTitle.path); return; }
     const byStem = notes.find((n) =>
@@ -103,40 +84,30 @@ export function Shell({
 
   return (
     <div className={styles.root}>
-      <Sidebar
+      <LeftPanel
         vault={vault}
+        notes={notes}
+        selectedPath={selectedPath}
         status={status}
         agentBranches={agentBranches}
         commits={commits}
-        availableTypes={availableTypes}
         syncing={syncing}
-        activeView={activeView}
-        onViewChange={setActiveView}
+        onSelect={setSelectedPath}
+        onNewNote={handleNewNote}
+        onTodayNote={handleTodayNote}
         onSync={onSync}
         onCommit={onCommit}
-        onTodayNote={handleTodayNote}
         onApplyBranch={onApplyBranch}
         onDiscardBranch={onDiscardBranch}
       />
-      <NoteList
-        notes={visibleNotes}
-        loading={loading}
-        selectedPath={selectedPath}
-        onSelect={setSelectedPath}
-        onNewNote={handleNewNote}
-      />
+
       <Editor
         note={note}
         saving={saving}
         allNotes={notes}
         onSave={async (updated) => { await save(updated); refresh(); }}
         onDelete={handleDelete}
-        onNavigate={(target) => {
-          // First try path-based navigation, then title-based
-          const byPath = notes.find((n) => n.path === target);
-          if (byPath) { setSelectedPath(target); return; }
-          handleNavigate(target);
-        }}
+        onNavigate={handleNavigate}
       />
 
       {showQuickSwitcher && (
