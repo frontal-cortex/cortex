@@ -1,7 +1,7 @@
 {
-  "productName": "Second Brain",
+  "productName": "Cortex",
   "version": "0.1.0",
-  "identifier": "com.secondbrain.app",
+  "identifier": "com.cortex.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -11,13 +11,15 @@
   "app": {
     "windows": [
       {
-        "title": "Second Brain",
+        "title": "Cortex",
         "width": 1280,
         "height": 840,
         "minWidth": 800,
         "minHeight": 600,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "titleBarStyle": "Overlay",
+        "dragDropEnabled": false
       }
     ],
     "security": {

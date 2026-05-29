@@ -34,6 +34,7 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
 
     let title = note::infer_title(&note);
     let note_type = note.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
+    let icon = note.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
     let tags = note
         .frontmatter
         .get("tags")
@@ -41,7 +42,7 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
         .unwrap_or_default();
 
-    let ne = NoteEntry { path: rel.clone(), title, note_type, tags, modified };
+    let ne = NoteEntry { path: rel.clone(), title, note_type, icon, tags, modified };
     db.upsert_note(&ne, &note.body)?;
 
     let links = crate::note::extract_wiki_links(&note.body);

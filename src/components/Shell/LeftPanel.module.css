@@ -1,8 +1,8 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .root {
-  width: 280px;
-  min-width: 280px;
+  width: var(--left-panel-width);
+  min-width: var(--left-panel-width);
   height: 100%;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
@@ -12,51 +12,24 @@
   user-select: none;
 }
 
-/* ── Header ──────────────────────────────────────────────────── */
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--space-2) 0 var(--space-3);
-  min-height: 44px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.vaultName {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.headerActions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
 
 .iconBtn {
   background: none;
   border: none;
-  padding: 5px;
+  padding: 6px;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  transition: color 0.1s, background 0.1s;
 }
 
 .iconBtn:hover:not(:disabled) {
   background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .iconBtn:disabled {
@@ -79,6 +52,54 @@
   border: 1.5px solid var(--bg-sidebar);
 }
 
+/* ── Favorites ───────────────────────────────────────────────── */
+.favRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 8px);
+  margin: 0 var(--space-1);
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  min-height: 28px;
+  font-family: var(--font-sans);
+}
+
+.favRow:hover { background: var(--bg-hover); }
+.favRowSelected { background: var(--bg-active); }
+
+.favIcon { font-size: 13px; flex-shrink: 0; }
+
+.favTitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favRowSelected .favTitle { color: var(--text-primary); font-weight: 500; }
+
+.favStar {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.favRow:hover .favStar { opacity: 1; }
+.favStar:hover { color: var(--git-dirty); }
+
 /* ── Search ──────────────────────────────────────────────────── */
 .searchRow {
   padding: var(--space-2) var(--space-2);
@@ -95,6 +116,11 @@
   border-radius: var(--radius-md);
   padding: 0 var(--space-2);
   color: var(--text-tertiary);
+  transition: border-color 0.15s;
+}
+
+.searchBox:focus-within {
+  border-color: var(--border-focus);
 }
 
 .searchInput {
@@ -104,7 +130,8 @@
   font-size: var(--text-xs);
   color: var(--text-primary);
   outline: none;
-  padding: 5px 0;
+  padding: 6px 0;
+  font-family: var(--font-sans);
 }
 
 .searchInput::placeholder { color: var(--text-tertiary); }
@@ -123,7 +150,9 @@
 .treeArea {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-1) 0;
+  padding: var(--space-2) 0 var(--space-1);
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
 }
 
 /* ── Sections ────────────────────────────────────────────────── */
@@ -135,21 +164,31 @@
   display: flex;
   align-items: center;
   padding-right: var(--space-2);
+  border-radius: var(--radius-sm);
+  margin: 0 var(--space-1);
 }
 
 .sectionHeader:hover { background: var(--bg-hover); }
 .sectionHeader:hover .sectionAction { opacity: 1; }
+.sectionHeader:hover .sectionCount { opacity: 0; }
 
 .sectionToggle {
   display: flex;
   align-items: center;
   gap: 5px;
   flex: 1;
-  padding: 4px var(--space-3);
+  padding: 5px var(--space-2);
   background: none;
   border: none;
   cursor: pointer;
   text-align: left;
+  min-width: 0;
+}
+
+.sectionActions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .sectionAction {
@@ -167,7 +206,7 @@
 }
 
 .sectionAction:hover {
-  color: var(--text-primary);
+  color: var(--text-secondary);
   background: var(--bg-active);
 }
 
@@ -181,17 +220,19 @@
 .sectionArrowOpen { transform: rotate(90deg); }
 
 .sectionLabel {
-  font-size: var(--text-xs);
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  flex: 1;
+  letter-spacing: 0.07em;
 }
 
 .sectionCount {
   font-size: 10px;
   color: var(--text-tertiary);
+  flex-shrink: 0;
+  padding-right: 2px;
+  transition: opacity 0.1s;
 }
 
 .sectionBody {
@@ -224,7 +265,7 @@
   flex-direction: column;
   gap: 1px;
   width: 100%;
-  padding: 5px var(--space-3);
+  padding: 6px var(--space-3);
   background: none;
   border: none;
   cursor: pointer;
@@ -251,7 +292,7 @@
 .gitSection {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-  padding: var(--space-2) 0 var(--space-1);
+  padding: var(--space-2) 0 var(--space-2);
 }
 
 .gitStatus {
@@ -263,8 +304,8 @@
 }
 
 .statusDot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -276,24 +317,29 @@
 }
 
 .pill {
-  font-size: var(--text-xs);
-  padding: 1px 5px;
-  border-radius: 10px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 20px;
   background: var(--bg-active);
   color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .commitToggle {
   background: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 1px 6px;
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
+  padding: 1px 7px;
+  font-size: 10px;
+  color: var(--text-tertiary);
   cursor: pointer;
+  font-family: var(--font-sans);
 }
 
-.commitToggle:hover { background: var(--bg-hover); }
+.commitToggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
 
 .commitForm {
   padding: var(--space-2) var(--space-2);
@@ -304,13 +350,15 @@
 
 .commitInput {
   font-size: var(--text-xs);
-  padding: 4px 7px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
   color: var(--text-primary);
   outline: none;
   width: 100%;
+  font-family: var(--font-sans);
+  transition: border-color 0.15s;
 }
 
 .commitInput:focus { border-color: var(--border-focus); }
@@ -325,13 +373,13 @@
   font-size: 10px;
   color: var(--text-tertiary);
   background: var(--bg-active);
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
 }
 
 .commitBtn {
-  padding: 4px;
+  padding: 5px;
   font-size: var(--text-xs);
   font-weight: 500;
   background: var(--text-primary);
@@ -340,20 +388,24 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   width: 100%;
+  font-family: var(--font-sans);
+  transition: opacity 0.1s;
 }
 
-.commitBtn:disabled { opacity: 0.5; cursor: default; }
+.commitBtn:hover:not(:disabled) { opacity: 0.85; }
+.commitBtn:disabled { opacity: 0.4; cursor: default; }
 
 /* Agent branches */
 .agentBranch {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 3px var(--space-2);
-  margin: 0 var(--space-1);
+  padding: 4px var(--space-2);
+  margin: 0 var(--space-2);
   background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--git-agent) 20%, transparent);
   border-radius: var(--radius-sm);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .agentDot { color: var(--git-agent); font-size: 10px; }
@@ -370,10 +422,12 @@
 
 .applyBtn, .discardBtn {
   font-size: var(--text-xs);
-  padding: 2px 6px;
+  padding: 2px 7px;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  font-family: var(--font-sans);
+  font-weight: 500;
 }
 
 .applyBtn { background: var(--git-agent); color: white; }
@@ -392,16 +446,18 @@
 
 .commitRow {
   display: grid;
-  grid-template-columns: 44px 1fr auto;
-  align-items: baseline;
-  gap: var(--space-1);
-  padding: 2px var(--space-3);
+  grid-template-columns: 46px 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-3);
   border-radius: var(--radius-sm);
   width: 100%;
   background: none;
   border: none;
   cursor: pointer;
   text-align: left;
+  margin: 0 0;
+  transition: background 0.1s;
 }
 
 .commitRow:hover { background: var(--bg-hover); }
@@ -410,6 +466,7 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-tertiary);
+  letter-spacing: 0.02em;
 }
 
 .commitMsg {

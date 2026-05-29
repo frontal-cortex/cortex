@@ -10,12 +10,12 @@
 }
 
 .modal {
-  width: 540px;
+  width: 560px;
   max-width: calc(100vw - 32px);
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 24px 64px rgba(0, 0, 0, 0.16);
   overflow: hidden;
 }
 
@@ -35,6 +35,7 @@
   background: none;
   border: none;
   outline: none;
+  font-family: var(--font-sans);
 }
 
 .input::placeholder {
@@ -69,7 +70,10 @@
   text-align: left;
 }
 
-.item:hover,
+.item:hover {
+  background: var(--bg-hover);
+}
+
 .itemActive {
   background: var(--accent-light);
 }

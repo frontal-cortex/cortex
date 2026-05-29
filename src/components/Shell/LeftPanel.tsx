@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { NoteEntry, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
+import { NoteEntry, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
 import { buildTree } from "../../lib/fileTree";
 import { FileTree } from "./FileTree";
@@ -7,18 +7,18 @@ import { CommitDiffModal } from "./CommitDiffModal";
 import styles from "./LeftPanel.module.css";
 
 interface Props {
-  vault: VaultInfo;
   notes: NoteEntry[];
   dirs: string[];
   selectedPath: string | null;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
   commits: CommitEntry[];
-  syncing: boolean;
+  favorites: string[];
   onSelect: (path: string) => void;
   onNewNote: (parentFolder?: string) => void;
-  onTodayNote: () => void;
-  onSync: () => void;
+  onToggleFavorite: (path: string) => void;
+  isFavorite: (path: string) => boolean;
+  onOpenGraph: () => void;
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
@@ -26,8 +26,9 @@ interface Props {
 }
 
 export function LeftPanel({
-  vault, notes, dirs, selectedPath, status, agentBranches, commits, syncing,
-  onSelect, onNewNote, onTodayNote, onSync, onCommit, onApplyBranch, onDiscardBranch, onRefresh,
+  notes, dirs, selectedPath, status, agentBranches, commits, favorites,
+  onSelect, onNewNote, onToggleFavorite, isFavorite, onOpenGraph,
+  onCommit, onApplyBranch, onDiscardBranch, onRefresh,
 }: Props) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<NoteEntry[] | null>(null);
@@ -40,7 +41,6 @@ export function LeftPanel({
 
   const changedCount = (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
   const isDirty = changedCount > 0;
-  const needsSync = vault.has_remote && ((status?.ahead ?? 0) > 0 || (status?.behind ?? 0) > 0);
 
   // Debounced backend search
   useEffect(() => {
@@ -97,34 +97,14 @@ export function LeftPanel({
     onNewNoteInFolder: (parentPath: string) => onNewNote(parentPath),
     onDeleteFolder: handleDeleteFolder,
     onMoveNote: handleMoveNote,
-  }), [newFolderIn, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote]);
+    onToggleFavorite,
+    isFavorite,
+  }), [newFolderIn, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote, onToggleFavorite, isFavorite]);
 
   const notesCount = notes.filter((n) => n.path.startsWith("notes/")).length;
 
   return (
     <div className={styles.root}>
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <div className={styles.header}>
-        <span className={styles.vaultName}>{vault.name}</span>
-        <div className={styles.headerActions}>
-          <button className={styles.iconBtn} onClick={onTodayNote} title="Open today's note">
-            <CalendarIcon />
-          </button>
-          <button className={styles.iconBtn} onClick={() => onNewNote()} title="New note (⌘N)">
-            <PlusIcon />
-          </button>
-          <button
-            className={`${styles.iconBtn} ${needsSync ? styles.iconBtnAlert : ""}`}
-            onClick={onSync}
-            disabled={syncing || !vault.has_remote}
-            title={!vault.has_remote ? "No remote configured" : needsSync ? `${status?.ahead ?? 0}↑ ${status?.behind ?? 0}↓` : "Up to date"}
-          >
-            {needsSync && !syncing && <span className={styles.syncDot} />}
-            <SyncIcon spinning={syncing} />
-          </button>
-        </div>
-      </div>
-
       {/* ── Search ──────────────────────────────────────────────── */}
       <div className={styles.searchRow}>
         <div className={styles.searchBox}>
@@ -157,11 +137,41 @@ export function LeftPanel({
           </div>
         ) : (
           <>
+            {favorites.length > 0 && (
+              <Section label="Favorites" defaultOpen count={favorites.length}>
+                {favorites.map((path) => {
+                  const note = notes.find((n) => n.path === path);
+                  if (!note) return null;
+                  return (
+                    <button
+                      key={path}
+                      className={`${styles.favRow} ${path === selectedPath ? styles.favRowSelected : ""}`}
+                      onClick={() => onSelect(path)}
+                    >
+                      {note.icon
+                        ? <span className={styles.favIcon}>{note.icon}</span>
+                        : <DocIcon />}
+                      <span className={styles.favTitle}>{note.title || "Untitled"}</span>
+                      <button
+                        className={styles.favStar}
+                        onClick={(e) => { e.stopPropagation(); onToggleFavorite(path); }}
+                        title="Remove from favorites"
+                      >★</button>
+                    </button>
+                  );
+                })}
+              </Section>
+            )}
+
             <Section
               label="Notes"
               defaultOpen
               count={notesCount}
+              onNewNote={() => onNewNote()}
               onNewFolder={() => setNewFolderIn("notes/")}
+              onAction={onOpenGraph}
+              actionTitle="Graph view"
+              actionIcon={<GraphIcon />}
               dropActive={notesSectionDragOver}
               onDragOver={(e) => { e.preventDefault(); setNotesSectionDragOver(true); }}
               onDragLeave={() => setNotesSectionDragOver(false)}
@@ -235,14 +245,17 @@ export function LeftPanel({
 // ── Section ───────────────────────────────────────────────────────────────────
 
 function Section({
-  label, count, defaultOpen, onNewFolder, onNewNote, dropActive,
-  onDragOver, onDragLeave, onDrop, children,
+  label, count, defaultOpen, onNewFolder, onNewNote, onAction, actionIcon, actionTitle,
+  dropActive, onDragOver, onDragLeave, onDrop, children,
 }: {
   label: string;
   count: number;
   defaultOpen: boolean;
   onNewFolder?: () => void;
   onNewNote?: () => void;
+  onAction?: () => void;
+  actionIcon?: React.ReactNode;
+  actionTitle?: string;
   dropActive?: boolean;
   onDragOver?: React.DragEventHandler;
   onDragLeave?: React.DragEventHandler;
@@ -261,26 +274,37 @@ function Section({
         <button className={styles.sectionToggle} onClick={() => setOpen((x) => !x)}>
           <span className={`${styles.sectionArrow} ${open ? styles.sectionArrowOpen : ""}`}>▶</span>
           <span className={styles.sectionLabel}>{label}</span>
-          <span className={styles.sectionCount}>{count}</span>
         </button>
-        {onNewNote && (
-          <button
-            className={styles.sectionAction}
-            onClick={(e) => { e.stopPropagation(); setOpen(true); onNewNote(); }}
-            title={`New ${label.toLowerCase().replace(/s$/, "")}`}
-          >
-            <PlusIcon />
-          </button>
-        )}
-        {onNewFolder && (
-          <button
-            className={styles.sectionAction}
-            onClick={(e) => { e.stopPropagation(); setOpen(true); onNewFolder(); }}
-            title="New folder"
-          >
-            <FolderPlusIcon />
-          </button>
-        )}
+        <div className={styles.sectionActions}>
+          {onNewNote && (
+            <button
+              className={styles.sectionAction}
+              onClick={(e) => { e.stopPropagation(); setOpen(true); onNewNote(); }}
+              title={`New ${label.toLowerCase().replace(/s$/, "")}`}
+            >
+              <PlusIcon />
+            </button>
+          )}
+          {onNewFolder && (
+            <button
+              className={styles.sectionAction}
+              onClick={(e) => { e.stopPropagation(); setOpen(true); onNewFolder(); }}
+              title="New folder"
+            >
+              <FolderPlusIcon />
+            </button>
+          )}
+          {onAction && (
+            <button
+              className={styles.sectionAction}
+              onClick={(e) => { e.stopPropagation(); onAction(); }}
+              title={actionTitle}
+            >
+              {actionIcon}
+            </button>
+          )}
+        </div>
+        <span className={styles.sectionCount}>{count}</span>
       </div>
       {open && <div className={styles.sectionBody}>{children}</div>}
     </div>
@@ -369,7 +393,7 @@ function GitSection({
               onClick={() => onCommitClick(c.hash)}
               title="View diff"
             >
-              <span className={styles.commitHash}>{c.hash}</span>
+              <span className={styles.commitHash}>{c.hash.slice(0, 7)}</span>
               <span className={styles.commitMsg}>{c.message}</span>
               <span className={styles.commitTime}>{relTime(c.timestamp)}</span>
             </button>
@@ -393,15 +417,17 @@ function relTime(s: number) {
 function PlusIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 }
-function CalendarIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
-}
-function SyncIcon({ spinning }: { spinning: boolean }) {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: spinning ? "spin 1s linear infinite" : undefined }}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
-}
 function SearchIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
 }
+function GraphIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><line x1="7" y1="11.5" x2="17" y2="6.5"/><line x1="7" y1="12.5" x2="17" y2="17.5"/></svg>;
+}
+
+function DocIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" style={{ flexShrink: 0 }}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>;
+}
+
 function FolderPlusIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>;
 }
