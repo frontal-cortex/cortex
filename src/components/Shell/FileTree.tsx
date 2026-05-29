@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { TreeNode, DirNode, FileNode } from "../../lib/fileTree";
+import { StarIcon, StarFilledIcon } from "./icons";
 import styles from "./FileTree.module.css";
 
 interface TreeActions {
@@ -183,7 +184,7 @@ function FileRow({
           onClick={(e) => { e.stopPropagation(); onToggleFavorite(node.path); }}
           title={fav ? "Remove from favorites" : "Add to favorites"}
         >
-          {fav ? "★" : "☆"}
+          {fav ? <StarFilledIcon size={13} /> : <StarIcon size={13} />}
         </button>
       )}
     </div>

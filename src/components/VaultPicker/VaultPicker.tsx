@@ -3,10 +3,12 @@ import styles from "./VaultPicker.module.css";
 
 interface Props {
   onOpen: () => void;
+  onCreate: () => void;
+  creating: boolean;
   error: string | null;
 }
 
-export function VaultPicker({ onOpen, error }: Props) {
+export function VaultPicker({ onOpen, onCreate, creating, error }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -274,12 +276,26 @@ export function VaultPicker({ onOpen, error }: Props) {
         <p className={styles.subtitle}>
           A local-first knowledge base backed by a plain git repo.
         </p>
-        <button className={styles.button} onClick={onOpen}>
-          Open vault
-        </button>
+        <div className={styles.actions}>
+          <button className={styles.button} onClick={onCreate} disabled={creating}>
+            {creating ? "Creating…" : "Create new vault"}
+          </button>
+          <button className={styles.buttonSecondary} onClick={onOpen} disabled={creating}>
+            Open existing vault
+          </button>
+        </div>
         {error && <p className={styles.error}>{error}</p>}
         <p className={styles.hint}>
-          Any folder works — Cortex initializes git automatically.
+          New vaults start from the{" "}
+          <a
+            className={styles.link}
+            href="https://github.com/frontal-cortex/vault-template"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Cortex template
+          </a>
+          . Opening any folder works too — git is set up automatically.
         </p>
       </div>
     </div>

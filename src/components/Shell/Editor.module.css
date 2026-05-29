@@ -88,7 +88,9 @@
 }
 
 .iconPlaceholder {
-  font-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-tertiary);
   line-height: 1;
 }
@@ -198,6 +200,100 @@
 :global(.wiki-link:hover) {
   text-decoration: underline;
 }
+
+/* ── Cover image ──────────────────────────────────────────────────── */
+.coverEmpty {
+  height: 12px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.coverAddBtn {
+  position: absolute;
+  bottom: 4px;
+  left: 54px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.docInner:hover .coverAddBtn { opacity: 1; }
+.coverAddBtn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+
+.cover {
+  height: 200px;
+  background: var(--bg-active);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: var(--space-2);
+  position: relative;
+  border-radius: 0;
+  transition: opacity 0.1s;
+}
+
+.coverDragOver {
+  opacity: 0.7;
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+.coverActions {
+  display: flex;
+  gap: var(--space-2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cover:hover .coverActions { opacity: 1; }
+
+.coverBtn {
+  font-size: var(--text-xs);
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+.coverBtn:hover { background: rgba(0, 0, 0, 0.75); }
+
+/* ── Icon image variant ────────────────────────────────────────────── */
+.iconBtnGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.iconImage {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.iconUploadBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.header:hover .iconUploadBtn { opacity: 0.5; }
+.iconUploadBtn:hover { opacity: 1 !important; background: var(--bg-hover); }
 
 .editorWrap {
   flex: 1;

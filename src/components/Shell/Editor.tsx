@@ -12,6 +12,8 @@ import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle } from 
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown } from "./WikiLinkDropdown";
+import { NoteHistoryModal } from "./NoteHistoryModal";
+import { PlusIcon, HistoryIcon, TrashIcon } from "./icons";
 import styles from "./Editor.module.css";
 
 // Maps data URIs → vault-relative paths (e.g. "assets/image-123.png")
@@ -75,9 +77,16 @@ interface Props {
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onRename: (oldPath: string, newPath: string) => void;
+  onApplyNote: (note: Note) => void;
 }
 
-export function Editor({ note, saving, allNotes, onSave, onDelete, onNavigate, onRename }: Props) {
+export function Editor({
+  note, saving, allNotes, onSave, onDelete, onNavigate, onRename, onApplyNote,
+}: Props) {
+  const [showHistory, setShowHistory] = useState(false);
+  // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
+  const [rev, setRev] = useState(0);
+
   if (!note) {
     return (
       <div className={styles.empty}>
@@ -91,16 +100,27 @@ export function Editor({ note, saving, allNotes, onSave, onDelete, onNavigate, o
   }
 
   return (
-    <NoteEditor
-      key={note.path}
-      note={note}
-      saving={saving}
-      allNotes={allNotes}
-      onSave={onSave}
-      onDelete={onDelete}
-      onNavigate={onNavigate}
-      onRename={onRename}
-    />
+    <>
+      <NoteEditor
+        key={`${note.path}:${rev}`}
+        note={note}
+        saving={saving}
+        allNotes={allNotes}
+        onSave={onSave}
+        onDelete={onDelete}
+        onNavigate={onNavigate}
+        onRename={onRename}
+        onShowHistory={() => setShowHistory(true)}
+      />
+      {showHistory && (
+        <NoteHistoryModal
+          path={note.path}
+          current={note}
+          onClose={() => setShowHistory(false)}
+          onRestored={(restored) => { onApplyNote(restored); setRev((r) => r + 1); }}
+        />
+      )}
+    </>
   );
 }
 
@@ -115,7 +135,7 @@ function titleToSlug(title: string): string {
 }
 
 function NoteEditor({
-  note, saving, allNotes, onSave, onDelete, onNavigate, onRename,
+  note, saving, allNotes, onSave, onDelete, onNavigate, onRename, onShowHistory,
 }: {
   note: Note;
   saving: boolean;
@@ -124,6 +144,7 @@ function NoteEditor({
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onRename: (oldPath: string, newPath: string) => void;
+  onShowHistory: () => void;
 }) {
   const noteRef = useRef(note);
   noteRef.current = note;
@@ -343,19 +364,33 @@ function NoteEditor({
     <div className={styles.root}>
       <div className={styles.docWrap}>
         <div className={styles.docInner}>
+          {/* Cover image */}
+          <CoverImage
+            cover={typeof note.frontmatter["cover"] === "string" ? note.frontmatter["cover"] : null}
+            onChange={(dataUri, relPath) => {
+              if (relPath) dataUriToRelPath.set(dataUri, relPath);
+              handleFrontmatterChange({ ...noteRef.current.frontmatter, cover: relPath ?? dataUri });
+            }}
+            onRemove={() => {
+              const fm = { ...noteRef.current.frontmatter };
+              delete fm["cover"];
+              handleFrontmatterChange(fm);
+            }}
+          />
+
           {/* Breadcrumb */}
           <Breadcrumb path={note.path} />
 
           <div className={styles.header}>
-            <button
-              className={`${styles.iconBtn} ${!icon ? styles.iconBtnEmpty : ""}`}
-              onClick={() => setShowEmojiPicker((x) => !x)}
-              title={icon ? "Change icon" : "Add icon"}
-            >
-              {icon
-                ? <span className={styles.iconEmoji}>{icon}</span>
-                : <span className={styles.iconPlaceholder}>＋</span>}
-            </button>
+            <NoteIconButton
+              icon={icon}
+              onEmojiClick={() => setShowEmojiPicker((x) => !x)}
+              onImageUpload={async (file) => {
+                const dataUri = await saveFileAsAsset(file);
+                const relPath = dataUriToRelPath.get(dataUri);
+                handleFrontmatterChange({ ...noteRef.current.frontmatter, icon: relPath ?? dataUri });
+              }}
+            />
             <input
               key={note.path}
               className={styles.titleInput}
@@ -365,6 +400,9 @@ function NoteEditor({
             />
             <div className={styles.headerActions}>
               {saving && <span className={styles.saving}>Saving…</span>}
+              <button className={styles.deleteBtn} onClick={onShowHistory} title="Version history">
+                <HistoryIcon />
+              </button>
               <button className={styles.deleteBtn} onClick={() => onDelete(note.path)} title="Delete note">
                 <TrashIcon />
               </button>
@@ -420,13 +458,140 @@ function pathToTitle(path: string): string {
   return path.split("/").pop()?.replace(/\.md$/, "").replace(/-/g, " ") ?? "Untitled";
 }
 
-function TrashIcon() {
+// ── Cover image banner ────────────────────────────────────────────────────────
+
+function CoverImage({
+  cover, onChange, onRemove,
+}: {
+  cover: string | null;
+  onChange: (dataUri: string, relPath: string | undefined) => void;
+  onRemove: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const dataUri = await saveFileAsAsset(file);
+    const relPath = dataUriToRelPath.get(dataUri);
+    onChange(dataUri, relPath);
+  };
+
+  const [dragOver, setDragOver] = useState(false);
+
+  // Resolve display URL: asset paths need to be converted to data URIs.
+  const [displayUrl, setDisplayUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cover) { setDisplayUrl(null); return; }
+    if (cover.startsWith("data:") || cover.startsWith("http")) {
+      setDisplayUrl(cover); return;
+    }
+    // It's a vault-relative path — read it as a data URI.
+    import("../../lib/commands").then(({ commands }) =>
+      commands.readAsset(cover).then(setDisplayUrl).catch(() => setDisplayUrl(null))
+    );
+  }, [cover]);
+
+  if (!cover && !dragOver) {
+    return (
+      <div
+        className={styles.coverEmpty}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      >
+        <button
+          className={styles.coverAddBtn}
+          onClick={() => fileInputRef.current?.click()}
+          title="Add cover image"
+        >
+          + Add cover
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+        />
+      </div>
+    );
+  }
+
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-      <path d="M10 11v6M14 11v6" />
-      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-    </svg>
+    <div
+      className={`${styles.cover} ${dragOver ? styles.coverDragOver : ""}`}
+      style={displayUrl ? { backgroundImage: `url(${displayUrl})` } : undefined}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault(); setDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file) handleFile(file);
+      }}
+    >
+      <div className={styles.coverActions}>
+        <button className={styles.coverBtn} onClick={() => fileInputRef.current?.click()}>
+          Change cover
+        </button>
+        <button className={styles.coverBtn} onClick={onRemove}>Remove</button>
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+      />
+    </div>
+  );
+}
+
+// ── Note icon button (emoji + image upload) ───────────────────────────────────
+
+function NoteIconButton({
+  icon, onEmojiClick, onImageUpload,
+}: {
+  icon: string | null;
+  onEmojiClick: () => void;
+  onImageUpload: (file: File) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const isImage = icon && !icon.match(/\p{Emoji}/u) && (icon.startsWith("assets/") || icon.startsWith("data:"));
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isImage || !icon) { setImgSrc(null); return; }
+    if (icon.startsWith("data:")) { setImgSrc(icon); return; }
+    import("../../lib/commands").then(({ commands }) =>
+      commands.readAsset(icon).then(setImgSrc).catch(() => setImgSrc(null))
+    );
+  }, [icon, isImage]);
+
+  return (
+    <div className={styles.iconBtnGroup}>
+      <button
+        className={`${styles.iconBtn} ${!icon ? styles.iconBtnEmpty : ""}`}
+        onClick={onEmojiClick}
+        title={icon ? "Change icon" : "Add icon"}
+      >
+        {isImage && imgSrc
+          ? <img src={imgSrc} alt="icon" className={styles.iconImage} />
+          : icon
+            ? <span className={styles.iconEmoji}>{icon}</span>
+            : <span className={styles.iconPlaceholder}><PlusIcon size={20} /></span>}
+      </button>
+      <button
+        className={styles.iconUploadBtn}
+        onClick={() => fileRef.current?.click()}
+        title="Use image as icon"
+      >
+        🖼
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onImageUpload(f); }}
+      />
+    </div>
   );
 }

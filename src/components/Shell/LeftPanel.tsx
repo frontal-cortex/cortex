@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { NoteEntry, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
+import { NoteEntry, VaultStatus, AgentBranch, CommitEntry, TrashEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
 import { buildTree } from "../../lib/fileTree";
 import { FileTree } from "./FileTree";
 import { CommitDiffModal } from "./CommitDiffModal";
+import { CloseIcon, MinusIcon, StarFilledIcon } from "./icons";
 import styles from "./LeftPanel.module.css";
 
 interface Props {
@@ -19,17 +20,27 @@ interface Props {
   onToggleFavorite: (path: string) => void;
   isFavorite: (path: string) => boolean;
   onOpenGraph: () => void;
+  onNewFromTemplate: (templateName: string) => void;
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
   onRefresh: () => void;
+  trash: TrashEntry[];
+  onRestoreTrashed: (id: string) => void;
+  onDeleteTrashed: (id: string) => void;
+  onEmptyTrash: () => void;
 }
 
 export function LeftPanel({
   notes, dirs, selectedPath, status, agentBranches, commits, favorites,
   onSelect, onNewNote, onToggleFavorite, isFavorite, onOpenGraph,
+  onNewFromTemplate,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
+  trash, onRestoreTrashed, onDeleteTrashed, onEmptyTrash,
 }: Props) {
+  // Unused until command palette wires the template picker — accepted here so
+  // Shell can pass it down without TS errors.
+  void onNewFromTemplate;
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<NoteEntry[] | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -115,7 +126,7 @@ export function LeftPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {query && <button className={styles.clearBtn} onClick={() => setQuery("")}>×</button>}
+          {query && <button className={styles.clearBtn} onClick={() => setQuery("")} title="Clear search"><CloseIcon size={13} /></button>}
         </div>
       </div>
 
@@ -156,7 +167,7 @@ export function LeftPanel({
                         className={styles.favStar}
                         onClick={(e) => { e.stopPropagation(); onToggleFavorite(path); }}
                         title="Remove from favorites"
-                      >★</button>
+                      ><StarFilledIcon size={12} /></button>
                     </button>
                   );
                 })}
@@ -218,6 +229,35 @@ export function LeftPanel({
                     onSelect={onSelect}
                   />}
             </Section>
+
+            {trash.length > 0 && (
+              <Section label="Trash" defaultOpen={false} count={trash.length}>
+                {trash.map((t) => (
+                  <div key={t.id} className={styles.trashRow}>
+                    <span className={styles.trashTitle} title={t.original_path}>
+                      {t.title || "Untitled"}
+                    </span>
+                    <button
+                      className={styles.trashAction}
+                      onClick={() => onRestoreTrashed(t.id)}
+                      title="Restore to original location"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      className={styles.trashDelete}
+                      onClick={() => onDeleteTrashed(t.id)}
+                      title="Delete permanently"
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </div>
+                ))}
+                <button className={styles.emptyTrashBtn} onClick={onEmptyTrash}>
+                  Empty trash
+                </button>
+              </Section>
+            )}
           </>
         )}
       </div>
@@ -346,7 +386,7 @@ function GitSection({
         {(status?.behind ?? 0) > 0 && <span className={styles.pill}>{status!.behind}↓</span>}
         {isDirty && (
           <button className={styles.commitToggle} onClick={() => setExpanded((x) => !x)}>
-            {expanded ? "−" : "Commit"}
+            {expanded ? <MinusIcon size={12} /> : "Commit"}
           </button>
         )}
       </div>
@@ -380,7 +420,7 @@ function GitSection({
           <span className={styles.agentDot}>●</span>
           <span className={styles.agentDesc}>{b.description}</span>
           <button className={styles.applyBtn} onClick={() => onApplyBranch(b.name)}>Apply</button>
-          <button className={styles.discardBtn} onClick={() => onDiscardBranch(b.name)}>✕</button>
+          <button className={styles.discardBtn} onClick={() => onDiscardBranch(b.name)} title="Discard proposal"><CloseIcon size={12} /></button>
         </div>
       ))}
 

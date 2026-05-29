@@ -9,15 +9,24 @@ export default function App() {
 
   return (
     <div className={styles.root}>
-      <div className={styles.titleBar} data-tauri-drag-region />
       {!vault.vault ? (
-        <VaultPicker onOpen={vault.openVault} error={vault.error} />
+        <>
+          <div className={styles.titleBar} data-tauri-drag-region />
+          <VaultPicker
+            onOpen={vault.openVault}
+            onCreate={vault.createVault}
+            creating={vault.creating}
+            error={vault.error}
+          />
+        </>
       ) : (
         <Shell
           vault={vault.vault}
           status={vault.status}
           agentBranches={vault.agentBranches}
           commits={vault.commits}
+          syncing={vault.syncing}
+          onSync={vault.sync}
           onCommit={async (msg) => { await vault.commit(msg); }}
           onApplyBranch={vault.applyAgentBranch}
           onDiscardBranch={vault.discardAgentBranch}

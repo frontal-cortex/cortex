@@ -1,4 +1,5 @@
 import { useState, useRef, KeyboardEvent } from "react";
+import { PlusIcon, MinusIcon, CloseIcon } from "./icons";
 import styles from "./PropertiesPanel.module.css";
 
 interface Props {
@@ -52,7 +53,7 @@ export function PropertiesPanel({ frontmatter, onChange }: Props) {
           onClick={() => setExpanded((x) => !x)}
           title="Toggle custom properties"
         >
-          {expanded ? "−" : "+"}
+          {expanded ? <MinusIcon size={13} /> : <PlusIcon size={13} />}
         </button>
       </div>
 
@@ -66,8 +67,8 @@ export function PropertiesPanel({ frontmatter, onChange }: Props) {
                 value={typeof val === "string" ? val : JSON.stringify(val)}
                 onChange={(e) => set(key, e.target.value)}
               />
-              <button className={styles.removeBtn} onClick={() => remove(key)}>
-                ×
+              <button className={styles.removeBtn} onClick={() => remove(key)} title="Remove property">
+                <CloseIcon size={12} />
               </button>
             </div>
           ))}
@@ -141,8 +142,9 @@ function TagsField({
                 e.stopPropagation();
                 onChange(tags.filter((t) => t !== tag));
               }}
+              title="Remove tag"
             >
-              ×
+              <CloseIcon size={10} />
             </button>
           </span>
         ))}
@@ -189,8 +191,8 @@ function AddPropertyRow({ onAdd }: { onAdd: (key: string, val: string) => void }
         onChange={(e) => setVal(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
       />
-      <button className={styles.removeBtn} onClick={submit} style={{ color: "var(--accent)" }}>
-        +
+      <button className={styles.removeBtn} onClick={submit} style={{ color: "var(--accent)" }} title="Add property">
+        <PlusIcon size={12} />
       </button>
     </div>
   );

@@ -117,30 +117,71 @@
   animation-delay: 0.2s;
 }
 
-.button {
+.actions {
   margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  animation-delay: 0.28s;
+}
+
+.button,
+.buttonSecondary {
   padding: 11px 30px;
   font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
   cursor: pointer;
-  border: 1px solid rgba(120, 160, 255, 0.5);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(63, 124, 244, 0.95), rgba(40, 92, 212, 0.95));
-  box-shadow: 0 8px 30px rgba(42, 102, 232, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
-  animation-delay: 0.28s;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease,
+    background 0.12s ease, border-color 0.12s ease;
 }
 
-.button:hover {
+.button {
+  color: #fff;
+  border: 1px solid rgba(120, 160, 255, 0.5);
+  background: linear-gradient(180deg, rgba(63, 124, 244, 0.95), rgba(40, 92, 212, 0.95));
+  box-shadow: 0 8px 30px rgba(42, 102, 232, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.button:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.06);
   box-shadow: 0 12px 40px rgba(60, 120, 244, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-.button:active {
+.button:active:not(:disabled) {
   transform: translateY(0);
+}
+
+.buttonSecondary {
+  color: rgba(216, 224, 244, 0.9);
+  border: 1px solid rgba(140, 160, 200, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.buttonSecondary:hover:not(:disabled) {
+  border-color: rgba(150, 180, 240, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.button:disabled,
+.buttonSecondary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.link {
+  color: rgba(150, 184, 255, 0.85);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(150, 184, 255, 0.3);
+}
+
+.link:hover {
+  color: #aecbff;
+  border-bottom-color: rgba(174, 203, 255, 0.6);
 }
 
 .error {

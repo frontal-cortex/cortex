@@ -23,7 +23,12 @@ my-vault/
 │   ├── work/               ← Create any folders you like via the + button in the app.
 │   └── my-note-2024.md
 ├── templates/              ← Note templates. See Templates section below.
-├── .brain/                 ← App metadata (gitignored). Safe to delete — rebuilt on open.
+├── assets/                 ← Images & files, referenced from notes by relative path.
+├── .trash/                 ← Soft-deleted notes (committed) so you can restore them.
+├── .cortex/                ← Your config (committed, portable, human-readable YAML).
+│   ├── settings.yaml      ← App settings.
+│   └── favorites.yaml     ← Favorited notes.
+├── .brain/                 ← Cache (gitignored). Safe to delete — rebuilt on open.
 │   └── index.db           ← Full-text search index (SQLite).
 └── VAULT.md                ← This file.
 ```
@@ -73,12 +78,15 @@ Place `.md` files in `templates/` to use as note templates.
 **Special templates:**
 - `templates/daily.md` — used when creating a journal entry via the Today button.
 
-Supported variables: `{{date}}`, `{{title}}`
+Supported variables: `{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}`.
+
+Quote placeholders in frontmatter so the file stays valid YAML
+(`title: "{{date}}"`, not `title: {{date}}`).
 
 Example `templates/daily.md`:
 ```markdown
 ---
-title: {{date}}
+title: "{{date}}"
 type: journal
 tags: [journal]
 ---
@@ -118,14 +126,46 @@ The sync button turns orange when you have unpushed or unpulled commits.
 
 ## Settings
 
-App settings live in `.brain/settings.yaml` (created automatically if absent):
+App settings live in `.cortex/settings.yaml` (created automatically if absent).
+`.cortex/` is committed to git so your config travels with the vault; `.brain/`
+is a gitignored cache you can delete at any time.
 
 ```yaml
-auto_commit: false          # commit after every note save
-default_note_type: note     # pre-filled type for new notes
-journal_template: daily.md  # template used for Today notes
+auto_commit: false           # commit after every note save
+default_note_type: note      # pre-filled type for new notes
+journal_template: daily.md   # template used for Today / daily notes
+theme: system                # light | dark | system
+trash_retention_days: 30     # auto-prune trashed notes after N days (0 = never)
 ```
 "#;
+
+/// Append `entry` to the vault's `.gitignore` if not already present, creating
+/// the file with a sensible header if it doesn't exist. Idempotent.
+fn ensure_gitignored(root: &PathBuf, entry: &str) -> Result<()> {
+    let gitignore = root.join(".gitignore");
+    let existing = std::fs::read_to_string(&gitignore).unwrap_or_default();
+
+    let already = existing
+        .lines()
+        .map(|l| l.trim())
+        .any(|l| l == entry || l == entry.trim_end_matches('/'));
+    if already {
+        return Ok(());
+    }
+
+    let mut out = existing;
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    if out.is_empty() {
+        out.push_str("# Cortex — rebuildable cache (safe to delete)\n");
+    }
+    out.push_str(entry);
+    out.push('\n');
+    out.push_str(".DS_Store\n");
+    std::fs::write(&gitignore, out)?;
+    Ok(())
+}
 
 #[derive(Debug, Default)]
 pub struct VaultState(pub Mutex<Option<PathBuf>>);
@@ -153,14 +193,27 @@ pub fn open_vault(
 
     git::open_or_init(&vault_path)?;
     std::fs::create_dir_all(vault_path.join(".brain"))?;
+    std::fs::create_dir_all(vault_path.join(".cortex"))?;
     std::fs::create_dir_all(vault_path.join("templates"))?;
     std::fs::create_dir_all(vault_path.join("notes"))?;
+
+    // Ensure the rebuildable cache is gitignored. `.cortex/` (config) and
+    // `.trash/` (soft-deletes) are intentionally committed.
+    ensure_gitignored(&vault_path, ".brain/")?;
 
     // Write VAULT.md only when opening for the first time
     let vault_doc = vault_path.join("VAULT.md");
     if !vault_doc.exists() {
         std::fs::write(&vault_doc, VAULT_MD)?;
     }
+
+    // Best-effort prune of expired trash, using the vault's retention setting.
+    let retention = std::fs::read_to_string(vault_path.join(".cortex/settings.yaml"))
+        .ok()
+        .and_then(|c| serde_yaml::from_str::<crate::commands::config::Settings>(&c).ok())
+        .unwrap_or_default()
+        .trash_retention_days;
+    let _ = crate::commands::trash::prune_expired(&vault_path, retention);
 
     // Open / migrate the SQLite index, then re-index all notes
     let db = Db::open(&vault_path)?;
@@ -180,6 +233,56 @@ pub fn open_vault(
     *state.0.lock().unwrap() = Some(vault_path);
 
     Ok(VaultInfo { path, name, has_remote })
+}
+
+/// Public template repo used as the starting point for a new vault.
+const TEMPLATE_URL: &str = "https://github.com/frontal-cortex/vault-template.git";
+
+/// Scaffold a brand-new vault at `path` from the template repo.
+///
+/// Clones the template, strips its git history (so the new vault is the
+/// user's own repo and can never accidentally push to the public template),
+/// then re-initialises a fresh repo with an initial commit. The caller is
+/// expected to follow up with `open_vault(path)`.
+#[tauri::command]
+pub fn create_vault_from_template(path: String) -> Result<()> {
+    let target = PathBuf::from(&path);
+
+    // The destination must be empty — never clobber existing files.
+    if target.exists() {
+        let mut entries = std::fs::read_dir(&target)?;
+        if entries.next().is_some() {
+            return Err(AppError::Other(format!(
+                "Directory is not empty: {path}"
+            )));
+        }
+    } else {
+        std::fs::create_dir_all(&target)?;
+    }
+
+    // Shell out to system git so we reuse the user's credentials / proxy
+    // config (same approach as git_sync).
+    let output = std::process::Command::new("git")
+        .args(["clone", "--depth", "1", TEMPLATE_URL, "."])
+        .current_dir(&target)
+        .output()?;
+    if !output.status.success() {
+        return Err(AppError::Other(format!(
+            "Failed to clone template: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    // Drop the template's history + origin so this becomes a clean,
+    // independent repository owned by the user.
+    std::fs::remove_dir_all(target.join(".git"))?;
+
+    let repo = git::open_or_init(&target)?;
+    // Best-effort initial commit. If the user has no git identity configured,
+    // the repo is still valid and the app will index the working tree on open.
+    let _ = git::stage_all_and_commit(&repo, "Initial vault from template");
+
+    Ok(())
 }
 
 #[tauri::command]

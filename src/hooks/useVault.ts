@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../lib/commands";
 
 const LOG_LIMIT = 10;
@@ -10,6 +10,7 @@ interface VaultState {
   agentBranches: AgentBranch[];
   commits: CommitEntry[];
   syncing: boolean;
+  creating: boolean;
   error: string | null;
 }
 
@@ -20,6 +21,7 @@ export function useVault() {
     agentBranches: [],
     commits: [],
     syncing: false,
+    creating: false,
     error: null,
   });
 
@@ -37,6 +39,22 @@ export function useVault() {
       setState((s) => ({ ...s, vault, error: null }));
     } catch (e) {
       setState((s) => ({ ...s, error: String(e) }));
+    }
+  }, []);
+
+  const createVault = useCallback(async () => {
+    const selected = await saveDialog({
+      title: "Create new vault",
+      defaultPath: "cortex-vault",
+    });
+    if (!selected) return;
+    setState((s) => ({ ...s, creating: true, error: null }));
+    try {
+      await commands.createVaultFromTemplate(selected);
+      const vault = await commands.openVault(selected);
+      setState((s) => ({ ...s, vault, creating: false, error: null }));
+    } catch (e) {
+      setState((s) => ({ ...s, creating: false, error: String(e) }));
     }
   }, []);
 
@@ -97,6 +115,7 @@ export function useVault() {
   return {
     ...state,
     openVault,
+    createVault,
     refreshStatus,
     sync,
     commit,

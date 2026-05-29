@@ -4,6 +4,7 @@ import {
   SimulationNodeDatum, SimulationLinkDatum,
 } from "d3-force";
 import { NoteEntry, commands } from "../../lib/commands";
+import { CloseIcon } from "./icons";
 import styles from "./GraphView.module.css";
 
 interface GNode extends SimulationNodeDatum {
@@ -119,7 +120,7 @@ export function GraphView({ notes, onNavigate, onClose }: Props) {
         <div className={styles.toolbar}>
           <span className={styles.toolbarTitle}>Note Graph</span>
           <span className={styles.toolbarHint}>{nodes.length} notes · {links.length} links</span>
-          <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          <button className={styles.closeBtn} onClick={onClose} title="Close"><CloseIcon size={15} /></button>
         </div>
 
         {loading ? (
