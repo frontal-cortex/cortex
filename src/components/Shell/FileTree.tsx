@@ -10,6 +10,8 @@ interface TreeActions {
   onNewNoteInFolder: (parentPath: string) => void;
   onDeleteFolder: (path: string) => void;
   onMoveNote: (fromPath: string, toDir: string) => void;
+  onToggleFavorite?: (path: string) => void;
+  isFavorite?: (path: string) => boolean;
 }
 
 interface Props {
@@ -46,6 +48,8 @@ export function FileTree({
             selected={node.path === selectedPath}
             indent={indent}
             onSelect={onSelect}
+            onToggleFavorite={actions.onToggleFavorite}
+            isFavorite={actions.isFavorite}
           />
         ),
       )}
@@ -100,7 +104,6 @@ function DirRow({
           <span className={`${styles.arrow} ${open ? styles.arrowOpen : ""}`}>▶</span>
           <FolderIcon open={open} />
           <span className={styles.dirName}>{node.name}</span>
-          <span className={styles.count}>{countFiles(node)}</span>
         </button>
 
         <div className={styles.dirActions}>
@@ -126,6 +129,7 @@ function DirRow({
             <TrashIcon />
           </button>
         </div>
+        <span className={styles.count}>{countFiles(node)}</span>
       </div>
 
       {open && (
@@ -144,13 +148,16 @@ function DirRow({
 }
 
 function FileRow({
-  node, selected, indent, onSelect,
+  node, selected, indent, onSelect, onToggleFavorite, isFavorite,
 }: {
   node: FileNode;
   selected: boolean;
   indent: number;
   onSelect: (path: string) => void;
+  onToggleFavorite?: (path: string) => void;
+  isFavorite?: (path: string) => boolean;
 }) {
+  const fav = isFavorite?.(node.path) ?? false;
   return (
     <div
       className={`${styles.fileRow} ${selected ? styles.fileRowSelected : ""}`}
@@ -163,10 +170,21 @@ function FileRow({
         e.dataTransfer.effectAllowed = "move";
       }}
     >
-      <DocIcon type={node.note.note_type} />
+      {node.note.icon
+        ? <span className={styles.fileIcon}>{node.note.icon}</span>
+        : <DocIcon type={node.note.note_type} />}
       <span className={styles.fileName}>{node.name || "Untitled"}</span>
-      {node.note.note_type && (
+      {node.note.note_type && node.note.note_type !== "note" && (
         <span className={styles.noteType}>{node.note.note_type}</span>
+      )}
+      {onToggleFavorite && (
+        <button
+          className={`${styles.starBtn} ${fav ? styles.starBtnActive : ""}`}
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite(node.path); }}
+          title={fav ? "Remove from favorites" : "Add to favorites"}
+        >
+          {fav ? "★" : "☆"}
+        </button>
       )}
     </div>
   );

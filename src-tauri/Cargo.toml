@@ -33,3 +33,6 @@ serde_yaml = "0.9"
 
 # File traversal
 walkdir = "2"
+
+# Base64 for asset binary upload
+base64 = "0.22"

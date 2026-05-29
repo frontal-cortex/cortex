@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect } from "react";
 import { VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
 import { useNotes, useNote } from "../../hooks/useNotes";
+import { useFavorites } from "../../hooks/useFavorites";
 import { LeftPanel } from "./LeftPanel";
 import { Editor } from "./Editor";
 import { QuickSwitcher } from "./QuickSwitcher";
+import { GraphView } from "./GraphView";
 import styles from "./Shell.module.css";
 
 interface Props {
@@ -11,30 +13,30 @@ interface Props {
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
   commits: CommitEntry[];
-  syncing: boolean;
-  onSync: () => void;
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
 }
 
 export function Shell({
-  vault, status, agentBranches, commits, syncing,
-  onSync, onCommit, onApplyBranch, onDiscardBranch,
+  vault, status, agentBranches, commits,
+  onCommit, onApplyBranch, onDiscardBranch,
 }: Props) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
 
   const { notes, dirs, refresh, createNote, deleteNote } = useNotes(!!vault);
   const { note, saving, save } = useNote(selectedPath);
+  const { favorites, toggleFavorite, isFavorite } = useFavorites(!!vault);
 
-  // Global keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.key === "k") { e.preventDefault(); setShowQuickSwitcher(true); }
       if (meta && e.key === "n") { e.preventDefault(); handleNewNote(undefined); }
-      if (e.key === "Escape") setShowQuickSwitcher(false);
+      if (meta && e.key === "g") { e.preventDefault(); setShowGraph((x) => !x); }
+      if (e.key === "Escape") { setShowQuickSwitcher(false); setShowGraph(false); }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -46,23 +48,12 @@ export function Shell({
     setSelectedPath(created.path);
   }, [createNote]);
 
-  const handleTodayNote = useCallback(async () => {
-    const today = new Date().toISOString().split("T")[0];
-    const path = `notes/journal/${today}.md`;
-    if (notes.find((n) => n.path === path)) { setSelectedPath(path); return; }
-
+  const handleRename = useCallback(async (oldPath: string, newPath: string) => {
     const { commands } = await import("../../lib/commands");
-    const tmpl = await commands.readTemplate("daily.md").catch(() => null);
-    if (tmpl) {
-      const n = await commands.createNote(path, today, today);
-      const body = tmpl.replace(/\{\{date\}\}/g, today).replace(/^---[\s\S]*?---\n\n?/, "");
-      await commands.writeNote(path, { ...n, body });
-    } else {
-      await commands.createNote(path, today, today);
-    }
+    await commands.renameNote(oldPath, newPath);
     await refresh();
-    setSelectedPath(path);
-  }, [notes, refresh]);
+    setSelectedPath(newPath);
+  }, [refresh]);
 
   const handleDelete = useCallback(async (path: string) => {
     if (!window.confirm("Delete this note? This cannot be undone.")) return;
@@ -85,18 +76,18 @@ export function Shell({
   return (
     <div className={styles.root}>
       <LeftPanel
-        vault={vault}
         notes={notes}
         dirs={dirs}
         selectedPath={selectedPath}
         status={status}
         agentBranches={agentBranches}
         commits={commits}
-        syncing={syncing}
+        favorites={favorites}
         onSelect={setSelectedPath}
         onNewNote={handleNewNote}
-        onTodayNote={handleTodayNote}
-        onSync={onSync}
+        onToggleFavorite={toggleFavorite}
+        isFavorite={isFavorite}
+        onOpenGraph={() => setShowGraph(true)}
         onCommit={onCommit}
         onApplyBranch={onApplyBranch}
         onDiscardBranch={onDiscardBranch}
@@ -107,9 +98,11 @@ export function Shell({
         note={note}
         saving={saving}
         allNotes={notes}
+        vaultPath={vault.path}
         onSave={async (updated) => { await save(updated); refresh(); }}
         onDelete={handleDelete}
         onNavigate={handleNavigate}
+        onRename={handleRename}
       />
 
       {showQuickSwitcher && (
@@ -117,6 +110,14 @@ export function Shell({
           notes={notes}
           onSelect={setSelectedPath}
           onClose={() => setShowQuickSwitcher(false)}
+        />
+      )}
+
+      {showGraph && (
+        <GraphView
+          notes={notes}
+          onNavigate={(path) => { setSelectedPath(path); setShowGraph(false); }}
+          onClose={() => setShowGraph(false)}
         />
       )}
     </div>

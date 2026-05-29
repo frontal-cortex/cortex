@@ -42,7 +42,7 @@ pub fn get_log(repo: &Repository, limit: usize) -> Result<Vec<CommitEntry>> {
         .filter_map(|id| id.ok())
         .filter_map(|id| repo.find_commit(id).ok())
         .map(|commit| CommitEntry {
-            hash: format!("{:.7}", commit.id()),
+            hash: commit.id().to_string(),
             message: commit.summary().unwrap_or("").to_string(),
             author: commit.author().name().unwrap_or("").to_string(),
             timestamp: commit.time().seconds() as u64,

@@ -21,6 +21,7 @@ pub struct NoteEntry {
     pub note_type: Option<String>,
     pub tags: Vec<String>,
     pub modified: u64,
+    pub icon: Option<String>,
 }
 
 fn split_frontmatter(content: &str) -> (Option<&str>, &str) {

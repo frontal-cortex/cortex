@@ -10,23 +10,130 @@
 .empty {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--space-3);
   background: var(--bg-panel);
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
 }
 
-.header {
+.emptyTitle {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin: 0;
+}
+
+.emptyHint {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+.emptyKbd {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  color: var(--text-secondary);
+}
+
+/* ── Breadcrumb ────────────────────────────────────────────────── */
+.breadcrumb {
   display: flex;
   align-items: center;
+  gap: 2px;
+  padding-left: 54px;
+  margin-bottom: var(--space-2);
+}
+
+.breadcrumbSeg {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.breadcrumbSep {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin: 0 2px;
+}
+
+/* ── Page icon (inline left of title) ──────────────────────────── */
+.iconBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px 0 0;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.iconBtn:hover { background: var(--bg-hover); }
+
+.iconBtnEmpty {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.header:hover .iconBtnEmpty { opacity: 1; }
+
+.iconEmoji {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.iconPlaceholder {
+  font-size: 20px;
+  color: var(--text-tertiary);
+  line-height: 1;
+}
+
+.emojiPickerWrap {
+  padding-left: 54px;
+  margin-bottom: var(--space-2);
+  position: relative;
+  z-index: 10;
+}
+
+/* ── Document area (max-width for readability) ─────────────────── */
+.docWrap {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
+}
+
+.docInner {
+  width: 100%;
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 32px 0 var(--space-6);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+/* ── Header (title + actions) ──────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-5) var(--space-6) var(--space-2);
+  margin-bottom: var(--space-2);
+  /* align with bn-editor's padding-inline: 54px */
+  padding-left: 54px;
+  padding-right: 54px;
 }
 
 .titleInput {
   flex: 1;
-  font-size: var(--text-xl);
+  font-size: 28px;
   font-weight: 700;
   color: var(--text-primary);
   background: none;
@@ -34,6 +141,8 @@
   outline: none;
   padding: 0;
   font-family: var(--font-sans);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
 .titleInput::placeholder {
@@ -45,6 +154,7 @@
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
+  padding-top: 6px;
 }
 
 .saving {
@@ -56,14 +166,14 @@
 .deleteBtn {
   background: none;
   border: none;
-  padding: 4px;
+  padding: 5px;
   cursor: pointer;
   color: var(--text-tertiary);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   opacity: 0;
-  transition: opacity 0.1s;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
 }
 
 .root:hover .deleteBtn {
@@ -79,8 +189,8 @@
 :global(.wiki-link) {
   color: var(--accent);
   background: var(--accent-light);
-  border-radius: 2px;
-  padding: 0 2px;
+  border-radius: 3px;
+  padding: 1px 3px;
   cursor: pointer;
   text-decoration: none;
 }
@@ -91,12 +201,23 @@
 
 .editorWrap {
   flex: 1;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-6);
+  min-height: 0;
 }
 
-/* Override BlockNote defaults to match our design tokens */
-.editorWrap :global(.bn-container) {
+/* Block drag-and-drop drop indicator */
+:global(.ProseMirror-dropcursor) {
+  border-color: var(--accent) !important;
+  border-width: 2px !important;
+  border-radius: 2px;
+  opacity: 0.8;
+}
+
+/* Override BlockNote/Mantine defaults to match our design tokens */
+.editorWrap :global(.bn-container),
+.editorWrap :global(.bn-mantine) {
+  --mantine-color-body: var(--bg-panel);
+  --bn-colors-editor-background: var(--bg-panel);
+  --bn-colors-menu-background: var(--bg-panel);
   font-family: var(--font-sans);
   font-size: var(--text-base);
   color: var(--text-primary);

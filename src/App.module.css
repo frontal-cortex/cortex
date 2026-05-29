@@ -1,0 +1,13 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.titleBar {
+  height: 35px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}

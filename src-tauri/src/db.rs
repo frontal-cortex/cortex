@@ -154,6 +154,14 @@ impl Db {
         Ok(())
     }
 
+    pub fn get_all_links(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT source, target FROM links")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     pub fn list_notes(&self) -> Result<Vec<NoteEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT path, title, note_type, tags, modified
@@ -193,6 +201,7 @@ fn collect_entries<P: rusqlite::Params>(
                 note_type: row.get(2)?,
                 tags,
                 modified: row.get(4)?,
+                icon: None,
             })
         })?
         .filter_map(|r| r.ok())

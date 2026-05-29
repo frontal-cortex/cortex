@@ -1,17 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { commands, NoteEntry, Note } from "../lib/commands";
 
-function dateStamp(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return [
-    d.getFullYear(),
-    pad(d.getMonth() + 1),
-    pad(d.getDate()),
-    pad(d.getHours()),
-    pad(d.getMinutes()),
-    pad(d.getSeconds()),
-  ].join("-");
+function today(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+function titleToSlug(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "untitled";
 }
 
 export function useNotes(vaultOpen: boolean) {
@@ -40,11 +35,10 @@ export function useNotes(vaultOpen: boolean) {
 
   const createNote = useCallback(
     async (title: string, parentFolder?: string): Promise<Note> => {
-      const slug = title.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "untitled";
-      const created = new Date().toISOString().split("T")[0];
-      const ts = dateStamp();
+      const created = today();
+      const slug = titleToSlug(title);
       const folder = parentFolder?.replace(/\/$/, "") ?? "notes";
-      const path = `${folder}/${slug}-${ts}.md`;
+      const path = `${folder}/${slug}-${created}.md`;
       const note = await commands.createNote(path, title || "Untitled", created);
       await refresh();
       return note;

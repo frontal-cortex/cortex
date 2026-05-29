@@ -12,6 +12,7 @@ export interface NoteEntry {
   note_type: string | null;
   tags: string[];
   modified: number;
+  icon: string | null;
 }
 
 // Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
@@ -81,11 +82,29 @@ export const commands = {
   deleteFolder: (path: string) =>
     invoke<void>("delete_folder", { path }),
 
+  renameNote: (oldPath: string, newPath: string) =>
+    invoke<void>("rename_note", { oldPath, newPath }),
+
   moveNote: (fromPath: string, toDir: string) =>
     invoke<string>("move_note", { fromPath, toDir }),
 
   listVaultDirs: () =>
     invoke<string[]>("list_vault_dirs"),
+
+  saveAsset: (name: string, dataBase64: string) =>
+    invoke<string>("save_asset", { name, dataBase64 }),
+
+  readAsset: (relPath: string) =>
+    invoke<string>("read_asset", { relPath }),
+
+  getFavorites: () =>
+    invoke<string[]>("get_favorites"),
+
+  setFavorites: (paths: string[]) =>
+    invoke<void>("set_favorites", { paths }),
+
+  getAllLinks: () =>
+    invoke<Array<[string, string]>>("get_all_links"),
 
   getBacklinks: (path: string) =>
     invoke<NoteEntry[]>("get_backlinks", { path }),

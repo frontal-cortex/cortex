@@ -50,6 +50,7 @@ pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
 
         let title = note::infer_title(&parsed);
         let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
+        let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
         let tags = parsed
             .frontmatter
             .get("tags")
@@ -57,7 +58,7 @@ pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
             .unwrap_or_default();
 
-        entries.push(NoteEntry { path: rel, title, note_type, tags, modified });
+        entries.push(NoteEntry { path: rel, title, note_type, icon, tags, modified });
     }
 
     entries.sort_by(|a, b| b.modified.cmp(&a.modified));
@@ -200,6 +201,39 @@ pub fn delete_folder(
     Ok(())
 }
 
+/// Rename a note to a new vault-relative path (can change directory and/or filename).
+/// Returns the new path.
+#[tauri::command]
+pub fn rename_note(
+    old_path: String,
+    new_path: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<()> {
+    let root = vault_path(&state)?;
+    let from_abs = root.join(&old_path);
+    let to_abs = root.join(&new_path);
+
+    if !from_abs.exists() {
+        return Err(AppError::Other(format!("Source not found: {old_path}")));
+    }
+    if to_abs.exists() && to_abs != from_abs {
+        return Err(AppError::Other(format!("Target already exists: {new_path}")));
+    }
+    if let Some(parent) = to_abs.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    std::fs::rename(&from_abs, &to_abs)?;
+
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = db.rename_note(&old_path, &new_path);
+        let _ = crate::commands::indexer::index_file(&root, &to_abs, db);
+    }
+
+    Ok(())
+}
+
 /// Move a note to a different folder, keeping the same filename.
 /// Returns the new vault-relative path.
 #[tauri::command]
@@ -285,6 +319,14 @@ pub fn list_vault_dirs(state: State<'_, VaultState>) -> Result<Vec<String>> {
     for entry in WalkDir::new(&notes_root)
         .min_depth(1)
         .into_iter()
+        // Skip hidden directories (.git, .brain, .DS_Store dirs, etc.) and never
+        // descend into them — a nested repo would otherwise flood the tree.
+        .filter_entry(|e| {
+            e.file_name()
+                .to_str()
+                .map(|name| !name.starts_with('.'))
+                .unwrap_or(false)
+        })
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_dir())
     {
@@ -299,6 +341,117 @@ pub fn list_vault_dirs(state: State<'_, VaultState>) -> Result<Vec<String>> {
 
     dirs.sort();
     Ok(dirs)
+}
+
+// ── Assets ───────────────────────────────────────────────────────────────────
+
+/// Save a binary asset (image, file) to vault/assets/ and return the relative path.
+/// `data_base64` is the file content as a standard base64 string.
+#[tauri::command]
+pub fn save_asset(
+    name: String,
+    data_base64: String,
+    state: State<'_, VaultState>,
+) -> Result<String> {
+    use base64::{Engine as _, engine::general_purpose};
+
+    let data = general_purpose::STANDARD
+        .decode(&data_base64)
+        .map_err(|e| AppError::Other(format!("base64 decode: {e}")))?;
+
+    let root = vault_path(&state)?;
+    let assets_dir = root.join("assets");
+    std::fs::create_dir_all(&assets_dir)?;
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+
+    let ext = std::path::Path::new(&name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png");
+
+    let stem = std::path::Path::new(&name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image");
+
+    let clean_stem: String = stem
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+
+    let filename = format!("{clean_stem}-{ts}.{ext}");
+    std::fs::write(assets_dir.join(&filename), data)?;
+
+    Ok(format!("assets/{filename}"))
+}
+
+/// Read an asset from vault/assets/ and return it as a base64 data URI.
+/// `rel_path` is like `assets/image-1234.png`.
+#[tauri::command]
+pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<String> {
+    use base64::{Engine as _, engine::general_purpose};
+
+    let root = vault_path(&state)?;
+    let abs = root.join(&rel_path);
+
+    if !abs.exists() {
+        return Err(AppError::Other(format!("Asset not found: {rel_path}")));
+    }
+
+    let data = std::fs::read(&abs)?;
+    let b64 = general_purpose::STANDARD.encode(&data);
+
+    let ext = std::path::Path::new(&rel_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png");
+
+    let mime = match ext {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        _ => "image/png",
+    };
+
+    Ok(format!("data:{mime};base64,{b64}"))
+}
+
+// ── Favorites ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_favorites(state: State<'_, VaultState>) -> Result<Vec<String>> {
+    let root = vault_path(&state)?;
+    let path = root.join(".brain/favorites.json");
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content = std::fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&content).unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn set_favorites(paths: Vec<String>, state: State<'_, VaultState>) -> Result<()> {
+    let root = vault_path(&state)?;
+    let fav_path = root.join(".brain/favorites.json");
+    let json = serde_json::to_string(&paths).unwrap_or_else(|_| "[]".into());
+    std::fs::write(fav_path, json)?;
+    Ok(())
+}
+
+// ── Graph ─────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_all_links(db_state: State<'_, DbState>) -> Result<Vec<(String, String)>> {
+    let guard = db_state.0.lock().unwrap();
+    match guard.as_ref() {
+        Some(db) => db.get_all_links(),
+        None => Ok(vec![]),
+    }
 }
 
 // ── Backlinks ────────────────────────────────────────────────────────────────
