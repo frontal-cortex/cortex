@@ -1,8 +1,9 @@
 use tauri::State;
 
-use crate::commands::vault::VaultState;
+use crate::commands::vault::{DbState, VaultState};
 use crate::error::{AppError, Result};
 use crate::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
+use crate::note::{self, Note};
 
 fn open_repo(state: &State<'_, VaultState>) -> Result<git2::Repository> {
     let guard = state.0.lock().unwrap();
@@ -63,6 +64,50 @@ pub fn git_log(limit: usize, state: State<'_, VaultState>) -> Result<Vec<CommitE
 pub fn git_diff(hash: String, state: State<'_, VaultState>) -> Result<CommitDiff> {
     let repo = open_repo(&state)?;
     git::get_commit_diff(&repo, &hash)
+}
+
+// ── Per-note history ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn note_history(
+    path: String,
+    limit: usize,
+    state: State<'_, VaultState>,
+) -> Result<Vec<CommitEntry>> {
+    let repo = open_repo(&state)?;
+    git::get_note_history(&repo, &path, limit)
+}
+
+#[tauri::command]
+pub fn note_at(path: String, hash: String, state: State<'_, VaultState>) -> Result<String> {
+    let repo = open_repo(&state)?;
+    git::get_note_at(&repo, &path, &hash)
+}
+
+/// Restore a note to a previous version by writing the historical content back
+/// to the working file. Non-destructive: the current version stays in history,
+/// and this just creates a new working-tree state the user can commit.
+#[tauri::command]
+pub fn restore_note(
+    path: String,
+    hash: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<Note> {
+    let content = {
+        let repo = open_repo(&state)?;
+        git::get_note_at(&repo, &path, &hash)?
+    };
+
+    let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
+    let abs = root.join(&path);
+    std::fs::write(&abs, &content)?;
+
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+    }
+
+    note::parse_note(&path, &content)
 }
 
 #[tauri::command]

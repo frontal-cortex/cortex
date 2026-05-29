@@ -31,14 +31,16 @@ pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
             let p = e.path();
             p.extension().and_then(|s| s.to_str()) == Some("md")
                 && !p.components().any(|c| {
-                    c.as_os_str() == ".brain" || c.as_os_str() == ".git"
+                    matches!(
+                        c.as_os_str().to_str(),
+                        Some(".brain") | Some(".git") | Some(".trash") | Some(".cortex")
+                    )
                 })
         })
     {
         let abs = entry.path();
         let rel = abs.strip_prefix(&root).unwrap().to_string_lossy().to_string();
-        let content = std::fs::read_to_string(abs)?;
-        let parsed = note::parse_note(&rel, &content)?;
+        let Ok(content) = std::fs::read_to_string(abs) else { continue };
 
         let modified = abs
             .metadata()
@@ -48,15 +50,31 @@ pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let title = note::infer_title(&parsed);
-        let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
-        let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
-        let tags = parsed
-            .frontmatter
-            .get("tags")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-            .unwrap_or_default();
+        // A file with unparseable frontmatter (e.g. a template with raw
+        // `{{placeholder}}` values) must still appear in the tree rather than
+        // silently vanishing — fall back to a filename-derived title.
+        let (title, note_type, icon, tags) = match note::parse_note(&rel, &content) {
+            Ok(parsed) => {
+                let title = note::infer_title(&parsed);
+                let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
+                let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
+                let tags = parsed
+                    .frontmatter
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default();
+                (title, note_type, icon, tags)
+            }
+            Err(_) => {
+                let title = std::path::Path::new(&rel)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Untitled")
+                    .to_string();
+                (title, None, None, Vec::new())
+            }
+        };
 
         entries.push(NoteEntry { path: rel, title, note_type, icon, tags, modified });
     }
@@ -135,6 +153,50 @@ pub fn create_note(
     Ok(note)
 }
 
+/// Create a new note from a template in `templates/`, substituting `{{key}}`
+/// placeholders with the supplied values (date / time / title / uuid are
+/// computed by the frontend, keeping this backend dependency-free). The result
+/// is normalized through parse→serialize when the substituted frontmatter is
+/// valid YAML, so the new note gets clean, sorted frontmatter.
+#[tauri::command]
+pub fn create_note_from_template(
+    template: String,
+    path: String,
+    vars: std::collections::HashMap<String, String>,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<Note> {
+    let root = vault_path(&state)?;
+    let tpl_path = root.join("templates").join(&template);
+    let mut content = std::fs::read_to_string(&tpl_path)
+        .map_err(|_| AppError::Other(format!("Template not found: {template}")))?;
+
+    for (k, v) in &vars {
+        let needle = ["{{", k.as_str(), "}}"].concat();
+        content = content.replace(&needle, v);
+    }
+
+    let abs = root.join(&path);
+    if abs.exists() {
+        return Err(AppError::Other(format!("Note already exists: {path}")));
+    }
+    if let Some(parent) = abs.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let to_write = match note::parse_note(&path, &content) {
+        Ok(n) => note::serialize_note(&n).unwrap_or_else(|_| content.clone()),
+        Err(_) => content.clone(),
+    };
+    std::fs::write(&abs, &to_write)?;
+
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+    }
+
+    note::parse_note(&path, &to_write)
+}
+
 #[tauri::command]
 pub fn delete_note(
     path: String,
@@ -146,7 +208,10 @@ pub fn delete_note(
     if !abs.exists() {
         return Err(AppError::Other(format!("Note not found: {path}")));
     }
-    std::fs::remove_file(abs)?;
+
+    // Soft-delete: move to `.trash/` instead of destroying. Restorable from the
+    // Trash section, and committed so it syncs to other clones.
+    crate::commands::trash::move_to_trash(&root, &path)?;
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
         let _ = db.remove_note(&path);
@@ -419,28 +484,6 @@ pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<Stri
     };
 
     Ok(format!("data:{mime};base64,{b64}"))
-}
-
-// ── Favorites ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_favorites(state: State<'_, VaultState>) -> Result<Vec<String>> {
-    let root = vault_path(&state)?;
-    let path = root.join(".brain/favorites.json");
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let content = std::fs::read_to_string(path)?;
-    Ok(serde_json::from_str(&content).unwrap_or_default())
-}
-
-#[tauri::command]
-pub fn set_favorites(paths: Vec<String>, state: State<'_, VaultState>) -> Result<()> {
-    let root = vault_path(&state)?;
-    let fav_path = root.join(".brain/favorites.json");
-    let json = serde_json::to_string(&paths).unwrap_or_else(|_| "[]".into());
-    std::fs::write(fav_path, json)?;
-    Ok(())
 }
 
 // ── Graph ─────────────────────────────────────────────────────────────────────

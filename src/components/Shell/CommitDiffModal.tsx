@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { commands, CommitDiff } from "../../lib/commands";
+import { CloseIcon } from "./icons";
 import styles from "./CommitDiffModal.module.css";
 
 interface Props {
@@ -36,7 +37,7 @@ export function CommitDiffModal({ hash, onClose }: Props) {
               </>
             )}
           </div>
-          <button className={styles.closeBtn} onClick={onClose}>×</button>
+          <button className={styles.closeBtn} onClick={onClose} title="Close"><CloseIcon size={16} /></button>
         </div>
 
         <div className={styles.body}>

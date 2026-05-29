@@ -1,68 +1,138 @@
-import { useState, useEffect, useRef, KeyboardEvent } from "react";
-import { NoteEntry } from "../../lib/commands";
+import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
+import { NoteEntry, commands } from "../../lib/commands";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
+
+interface Action {
+  id: string;
+  label: string;
+  description?: string;
+  icon: React.ReactNode;
+  run: () => void;
+}
 
 interface Props {
   notes: NoteEntry[];
   onSelect: (path: string) => void;
   onClose: () => void;
+  // Actions wired from Shell
+  onNewNote: () => void;
+  onToday: () => void;
+  onOpenGraph: () => void;
+  onNewFromTemplate: (tplName: string) => void;
 }
 
-export function QuickSwitcher({ notes, onSelect, onClose }: Props) {
+type Mode = "notes" | "actions";
+
+export function QuickSwitcher({
+  notes, onSelect, onClose,
+  onNewNote, onToday, onOpenGraph, onNewFromTemplate,
+}: Props) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [templates, setTemplates] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
-    inputRef.current?.focus();
+    commands.listTemplates().then(setTemplates).catch(() => {});
   }, []);
 
-  const filtered = query.trim()
-    ? notes.filter((n) =>
-        n.title.toLowerCase().includes(query.toLowerCase()) ||
-        n.path.toLowerCase().includes(query.toLowerCase()) ||
-        n.tags.some((t) => t.toLowerCase().includes(query.toLowerCase())),
-      )
-    : notes.slice(0, 12);
+  const isActionMode: Mode = query.startsWith(">") ? "actions" : "notes";
+  const rawQuery = isActionMode === "actions" ? query.slice(1).trimStart() : query;
 
-  const clampedIndex = Math.min(activeIndex, Math.max(0, filtered.length - 1));
+  // ── Note results ────────────────────────────────────────────────────────────
+  const noteResults = isActionMode === "notes"
+    ? (rawQuery
+        ? notes.filter((n) =>
+            n.title.toLowerCase().includes(rawQuery.toLowerCase()) ||
+            n.path.toLowerCase().includes(rawQuery.toLowerCase()) ||
+            n.tags.some((t) => t.toLowerCase().includes(rawQuery.toLowerCase())),
+          )
+        : notes.slice(0, 12))
+    : [];
+
+  // ── Action results ──────────────────────────────────────────────────────────
+  const buildActions = useCallback((): Action[] => {
+    const base: Action[] = [
+      {
+        id: "new-note",
+        label: "New note",
+        description: "⌘N",
+        icon: <PlusIcon size={14} />,
+        run: () => { onNewNote(); onClose(); },
+      },
+      {
+        id: "today",
+        label: "Today's note",
+        description: "Open or create today's journal entry",
+        icon: <TodayIcon size={14} />,
+        run: () => { onToday(); onClose(); },
+      },
+      {
+        id: "graph",
+        label: "Graph view",
+        description: "⌘G",
+        icon: <GraphIcon size={14} />,
+        run: () => { onOpenGraph(); onClose(); },
+      },
+    ];
+    const tplActions: Action[] = templates.map((t) => ({
+      id: `tpl:${t}`,
+      label: `New from template: ${t.replace(/\.md$/, "")}`,
+      icon: <TemplateIcon size={14} />,
+      run: () => { onNewFromTemplate(t); onClose(); },
+    }));
+    return [...base, ...tplActions];
+  }, [templates, onNewNote, onToday, onOpenGraph, onNewFromTemplate, onClose]);
+
+  const actionResults = isActionMode === "actions"
+    ? buildActions().filter((a) =>
+        !rawQuery || a.label.toLowerCase().includes(rawQuery.toLowerCase()),
+      )
+    : [];
+
+  const items = isActionMode === "notes"
+    ? noteResults.map((n, i) => ({ id: n.path, type: "note" as const, note: n, index: i }))
+    : actionResults.map((a, i) => ({ id: a.id, type: "action" as const, action: a, index: i }));
+
+  const clamped = Math.min(activeIndex, Math.max(0, items.length - 1));
+  useEffect(() => { setActiveIndex(0); }, [query]);
+
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-idx="${clamped}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [clamped]);
 
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === "Escape") { onClose(); return; }
-    if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown") { e.preventDefault(); setActiveIndex((i) => Math.min(i + 1, items.length - 1)); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); setActiveIndex((i) => Math.max(i - 1, 0)); }
+    if (e.key === "Enter") {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIndex((i) => Math.max(i - 1, 0));
-    }
-    if (e.key === "Enter" && filtered[clampedIndex]) {
-      onSelect(filtered[clampedIndex].path);
-      onClose();
+      const active = items[clamped];
+      if (!active) return;
+      if (active.type === "note") { onSelect(active.note.path); onClose(); }
+      else active.action.run();
     }
   }
 
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
-
-  // Scroll active item into view
-  useEffect(() => {
-    const el = listRef.current?.querySelector(`[data-index="${clampedIndex}"]`);
-    el?.scrollIntoView({ block: "nearest" });
-  }, [clampedIndex]);
+  const placeholder = isActionMode === "actions"
+    ? "Run a command…"
+    : "Jump to note… (type > for commands)";
 
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.inputRow}>
-          <SearchIcon />
+          {isActionMode === "actions"
+            ? <span className={styles.cmdPrefix}>&gt;</span>
+            : <SearchIcon size={14} />}
           <input
             ref={inputRef}
             className={styles.input}
-            placeholder="Jump to note…"
+            placeholder={placeholder}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -70,36 +140,52 @@ export function QuickSwitcher({ notes, onSelect, onClose }: Props) {
           <kbd className={styles.esc}>Esc</kbd>
         </div>
 
-        {filtered.length > 0 && (
+        {items.length > 0 && (
           <div ref={listRef} className={styles.list}>
-            {filtered.map((note, i) => (
-              <button
-                key={note.path}
-                data-index={i}
-                className={`${styles.item} ${i === clampedIndex ? styles.itemActive : ""}`}
-                onMouseEnter={() => setActiveIndex(i)}
-                onClick={() => { onSelect(note.path); onClose(); }}
-              >
-                <span className={styles.itemTitle}>{note.title || "Untitled"}</span>
-                <span className={styles.itemPath}>{note.path}</span>
-              </button>
-            ))}
+            {isActionMode === "notes"
+              ? noteResults.map((note, i) => (
+                  <button
+                    key={note.path}
+                    data-idx={i}
+                    className={`${styles.item} ${i === clamped ? styles.itemActive : ""}`}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    onClick={() => { onSelect(note.path); onClose(); }}
+                  >
+                    <span className={styles.itemIcon}>{note.icon ?? "📄"}</span>
+                    <span className={styles.itemTitle}>{note.title || "Untitled"}</span>
+                    <span className={styles.itemPath}>{note.path}</span>
+                  </button>
+                ))
+              : actionResults.map((action, i) => (
+                  <button
+                    key={action.id}
+                    data-idx={i}
+                    className={`${styles.item} ${i === clamped ? styles.itemActive : ""}`}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    onClick={action.run}
+                  >
+                    <span className={styles.itemIcon}>{action.icon}</span>
+                    <span className={styles.itemTitle}>{action.label}</span>
+                    {action.description && (
+                      <span className={styles.itemPath}>{action.description}</span>
+                    )}
+                  </button>
+                ))}
           </div>
         )}
 
-        {query && filtered.length === 0 && (
-          <p className={styles.empty}>No notes match "{query}"</p>
+        {query && items.length === 0 && (
+          <p className={styles.empty}>
+            {isActionMode === "actions"
+              ? `No commands match "${rawQuery}"`
+              : `No notes match "${rawQuery}"`}
+          </p>
+        )}
+
+        {!query && (
+          <p className={styles.hint}>Type <kbd className={styles.hintKbd}>&gt;</kbd> to run commands</p>
         )}
       </div>
     </div>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="11" cy="11" r="8"/>
-      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
   );
 }

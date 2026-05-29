@@ -53,5 +53,10 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
 
 fn is_note(p: &Path) -> bool {
     p.extension().and_then(|s| s.to_str()) == Some("md")
-        && !p.components().any(|c| c.as_os_str() == ".brain" || c.as_os_str() == ".git")
+        && !p.components().any(|c| {
+            matches!(
+                c.as_os_str().to_str(),
+                Some(".brain") | Some(".git") | Some(".trash") | Some(".cortex")
+            )
+        })
 }

@@ -61,6 +61,66 @@ pub struct CommitDiff {
     pub patch: String,
 }
 
+/// Return the commits that changed a specific file, newest first. Only versions
+/// where the file *exists* afterward are returned (so every entry is
+/// restorable). This is the equivalent of `git log -- <path>`.
+pub fn get_note_history(repo: &Repository, path: &str, limit: usize) -> Result<Vec<CommitEntry>> {
+    let mut revwalk = repo.revwalk()?;
+    if revwalk.push_head().is_err() {
+        return Ok(vec![]);
+    }
+    revwalk.set_sorting(Sort::TIME)?;
+
+    let target = std::path::Path::new(path);
+    let mut out = Vec::new();
+
+    for oid in revwalk {
+        let Ok(oid) = oid else { continue };
+        let Ok(commit) = repo.find_commit(oid) else { continue };
+        let Ok(tree) = commit.tree() else { continue };
+
+        let cur = tree.get_path(target).ok().map(|e| e.id());
+        // Compare against the first parent's version of the same path.
+        let parent = if commit.parent_count() > 0 {
+            commit
+                .parent(0)
+                .ok()
+                .and_then(|p| p.tree().ok())
+                .and_then(|t| t.get_path(target).ok().map(|e| e.id()))
+        } else {
+            None
+        };
+
+        // Include only commits where the file changed AND still exists (a
+        // deletion would have `cur == None` — not a restorable version).
+        if cur != parent && cur.is_some() {
+            out.push(CommitEntry {
+                hash: commit.id().to_string(),
+                message: commit.summary().unwrap_or("").to_string(),
+                author: commit.author().name().unwrap_or("").to_string(),
+                timestamp: commit.time().seconds() as u64,
+            });
+            if out.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Read the contents of a file as it existed at a specific commit.
+pub fn get_note_at(repo: &Repository, path: &str, hash: &str) -> Result<String> {
+    let oid = git2::Oid::from_str(hash).map_err(AppError::Git)?;
+    let commit = repo.find_commit(oid)?;
+    let tree = commit.tree()?;
+    let entry = tree
+        .get_path(std::path::Path::new(path))
+        .map_err(|_| AppError::Other(format!("File not found in {hash}: {path}")))?;
+    let blob = repo.find_blob(entry.id())?;
+    Ok(String::from_utf8_lossy(blob.content()).to_string())
+}
+
 pub fn get_commit_diff(repo: &Repository, hash: &str) -> Result<CommitDiff> {
     let oid = git2::Oid::from_str(hash).map_err(AppError::Git)?;
     let commit = repo.find_commit(oid)?;

@@ -1,0 +1,88 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  flex-shrink: 0;
+  /* Clear the macOS traffic lights (titleBarStyle: Overlay) */
+  padding: 0 var(--space-2) 0 78px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-app);
+  user-select: none;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.vaultName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spacer {
+  flex: 1;
+  align-self: stretch;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 26px;
+  padding: 0 7px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.actionUnsynced {
+  color: var(--git-dirty);
+}
+
+.actionUnsynced:hover:not(:disabled) {
+  color: var(--git-dirty);
+}
+
+.syncCounts {
+  display: inline-flex;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.spin {
+  display: inline-flex;
+  animation: topbar-spin 0.9s linear infinite;
+}
+
+@keyframes topbar-spin {
+  to { transform: rotate(360deg); }
+}

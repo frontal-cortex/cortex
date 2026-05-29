@@ -51,9 +51,27 @@ export interface CommitDiff {
   patch: string;
 }
 
+export interface Settings {
+  auto_commit: boolean;
+  default_note_type: string;
+  journal_template: string;
+  theme: "light" | "dark" | "system";
+  trash_retention_days: number;
+}
+
+export interface TrashEntry {
+  id: string;
+  original_path: string;
+  title: string;
+  deleted_at: number;
+}
+
 export const commands = {
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),
+
+  createVaultFromTemplate: (path: string) =>
+    invoke<void>("create_vault_from_template", { path }),
 
   getVaultInfo: () =>
     invoke<VaultInfo | null>("get_vault_info"),
@@ -69,6 +87,9 @@ export const commands = {
 
   createNote: (path: string, title: string, created: string) =>
     invoke<Note>("create_note", { path, title, created }),
+
+  createNoteFromTemplate: (template: string, path: string, vars: Record<string, string>) =>
+    invoke<Note>("create_note_from_template", { template, path, vars }),
 
   deleteNote: (path: string) =>
     invoke<void>("delete_note", { path }),
@@ -103,6 +124,24 @@ export const commands = {
   setFavorites: (paths: string[]) =>
     invoke<void>("set_favorites", { paths }),
 
+  getSettings: () =>
+    invoke<Settings>("get_settings"),
+
+  setSettings: (settings: Settings) =>
+    invoke<void>("set_settings", { settings }),
+
+  listTrash: () =>
+    invoke<TrashEntry[]>("list_trash"),
+
+  restoreTrashed: (id: string) =>
+    invoke<string>("restore_trashed", { id }),
+
+  deleteTrashed: (id: string) =>
+    invoke<void>("delete_trashed", { id }),
+
+  emptyTrash: () =>
+    invoke<void>("empty_trash"),
+
   getAllLinks: () =>
     invoke<Array<[string, string]>>("get_all_links"),
 
@@ -129,6 +168,15 @@ export const commands = {
 
   gitDiff: (hash: string) =>
     invoke<CommitDiff>("git_diff", { hash }),
+
+  noteHistory: (path: string, limit: number) =>
+    invoke<CommitEntry[]>("note_history", { path, limit }),
+
+  noteAt: (path: string, hash: string) =>
+    invoke<string>("note_at", { path, hash }),
+
+  restoreNote: (path: string, hash: string) =>
+    invoke<Note>("restore_note", { path, hash }),
 
   listAgentBranches: () =>
     invoke<AgentBranch[]>("list_agent_branches"),
