@@ -69,13 +69,12 @@ export function buildTree(
     });
   }
 
-  for (const note of files.sort((a, b) => b.modified - a.modified)) {
-    result.push({
-      type: "file",
-      name: note.title || pathStem(note.path),
-      path: note.path,
-      note,
-    });
+  // Sort by display name (stable) — sorting by mtime made the sidebar reshuffle
+  // every time a note was opened or saved.
+  const named = files.map((note) => ({ note, name: note.title || pathStem(note.path) }));
+  named.sort((a, b) => a.name.localeCompare(b.name));
+  for (const { note, name } of named) {
+    result.push({ type: "file", name, path: note.path, note });
   }
 
   return result;

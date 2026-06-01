@@ -1,4 +1,5 @@
 mod commands;
+mod data;
 mod db;
 mod error;
 mod git;
@@ -18,6 +19,7 @@ pub fn run() {
             commands::vault::open_vault,
             commands::vault::create_vault_from_template,
             commands::vault::get_vault_info,
+            commands::recent::get_recent_vaults,
             commands::notes::list_notes,
             commands::notes::read_note,
             commands::notes::write_note,
@@ -55,6 +57,11 @@ pub fn run() {
             commands::git::list_agent_branches,
             commands::git::apply_agent_branch,
             commands::git::discard_agent_branch,
+            commands::data::run_view,
+            commands::data::run_chart,
+            commands::data::set_cell,
+            commands::data::add_row,
+            commands::data::delete_row,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

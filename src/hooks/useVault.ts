@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../lib/commands";
+import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, RecentVault } from "../lib/commands";
 
 const LOG_LIMIT = 10;
 
 interface VaultState {
   vault: VaultInfo | null;
+  recentVaults: RecentVault[];
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
   commits: CommitEntry[];
@@ -17,6 +18,7 @@ interface VaultState {
 export function useVault() {
   const [state, setState] = useState<VaultState>({
     vault: null,
+    recentVaults: [],
     status: null,
     agentBranches: [],
     commits: [],
@@ -29,18 +31,26 @@ export function useVault() {
     commands.getVaultInfo().then((vault) => {
       if (vault) setState((s) => ({ ...s, vault }));
     });
+    commands.getRecentVaults().then((recentVaults) => {
+      setState((s) => ({ ...s, recentVaults }));
+    });
   }, []);
 
-  const openVault = useCallback(async () => {
-    const selected = await openDialog({ directory: true, multiple: false });
-    if (!selected || typeof selected !== "string") return;
+  // Open a vault by an explicit path (e.g. a recent-vaults entry).
+  const openVaultPath = useCallback(async (path: string) => {
     try {
-      const vault = await commands.openVault(selected);
+      const vault = await commands.openVault(path);
       setState((s) => ({ ...s, vault, error: null }));
     } catch (e) {
       setState((s) => ({ ...s, error: String(e) }));
     }
   }, []);
+
+  const openVault = useCallback(async () => {
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (!selected || typeof selected !== "string") return;
+    await openVaultPath(selected);
+  }, [openVaultPath]);
 
   const createVault = useCallback(async () => {
     const selected = await saveDialog({
@@ -115,6 +125,7 @@ export function useVault() {
   return {
     ...state,
     openVault,
+    openVaultPath,
     createVault,
     refreshStatus,
     sync,

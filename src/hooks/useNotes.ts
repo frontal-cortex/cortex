@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { commands, NoteEntry, Note } from "../lib/commands";
 
 function today(): string {
@@ -49,8 +49,20 @@ export function useNotes(vaultOpen: boolean) {
       const created = today();
       const slug = titleToSlug(title);
       const folder = parentFolder?.replace(/\/$/, "") ?? "notes";
-      const path = `${folder}/${slug}-${created}.md`;
-      const note = await commands.createNote(path, title || "Untitled", created);
+      // Find a free filename — untitled notes on the same day would otherwise
+      // collide (createNote errors on an existing path).
+      let note: Note | null = null;
+      for (let n = 0; n < 100; n++) {
+        const suffix = n === 0 ? "" : `-${n + 1}`;
+        const path = `${folder}/${slug}-${created}${suffix}.md`;
+        try {
+          note = await commands.createNote(path, title || "Untitled", created);
+          break;
+        } catch {
+          // Path taken — try the next suffix.
+        }
+      }
+      if (!note) throw new Error("Could not create a unique note filename");
       await refresh();
       return note;
     },
@@ -89,22 +101,29 @@ export function useNotes(vaultOpen: boolean) {
   const openOrCreateDaily = useCallback(
     async (journalTemplate: string): Promise<Note> => {
       const date = today();
+      // Canonical, stable path — used for BOTH the existence check and creation,
+      // so a second click reliably re-opens today's note instead of duplicating.
       const path = `notes/journal/${date}.md`;
-      // Try to open an existing daily note first.
-      const existing = notes.find((n) => n.path === path);
-      if (existing) {
-        return commands.readNote(path);
-      }
-      // If there's a configured journal template, use it.
+
+      // Open if it already exists (read straight from disk; the notes list may
+      // be stale right after creation).
       try {
-        const templates = await commands.listTemplates();
-        if (templates.includes(journalTemplate)) {
-          return createNoteFromTemplate(journalTemplate, date, "notes/journal");
-        }
-      } catch { /* fall through to blank note */ }
-      return createNote(date, "notes/journal");
+        return await commands.readNote(path);
+      } catch { /* doesn't exist yet — create it below */ }
+
+      let note: Note;
+      const templates = await commands.listTemplates().catch(() => [] as string[]);
+      if (templates.includes(journalTemplate)) {
+        note = await commands.createNoteFromTemplate(journalTemplate, path, {
+          date, time: nowTime(), title: date, uuid: uuid(),
+        });
+      } else {
+        note = await commands.createNote(path, date, date);
+      }
+      await refresh();
+      return note;
     },
-    [notes, createNote, createNoteFromTemplate],
+    [refresh],
   );
 
   return { notes, dirs, loading, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote };
@@ -113,27 +132,35 @@ export function useNotes(vaultOpen: boolean) {
 export function useNote(path: string | null) {
   const [note, setNote] = useState<Note | null>(null);
   const [saving, setSaving] = useState(false);
+  const pathRef = useRef(path);
+  pathRef.current = path;
 
   useEffect(() => {
     if (!path) {
       setNote(null);
       return;
     }
-    commands.readNote(path).then(setNote).catch(() => setNote(null));
+    let cancelled = false;
+    commands.readNote(path)
+      .then((n) => { if (!cancelled) setNote(n); })
+      .catch(() => { if (!cancelled) setNote(null); });
+    return () => { cancelled = true; };
   }, [path]);
 
+  // Always write to the note's OWN path (not the hook's current path) — a
+  // deferred/flushed save from a note we just navigated away from must land in
+  // that note, never the one now open. Only refresh view state if it's still current.
   const save = useCallback(
     async (updated: Note) => {
-      if (!path) return;
       setSaving(true);
       try {
-        await commands.writeNote(path, updated);
-        setNote(updated);
+        await commands.writeNote(updated.path, updated);
+        if (updated.path === pathRef.current) setNote(updated);
       } finally {
         setSaving(false);
       }
     },
-    [path],
+    [],
   );
 
   // Update editor state from an already-persisted note (e.g. a history

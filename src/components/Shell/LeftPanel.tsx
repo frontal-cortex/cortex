@@ -4,7 +4,7 @@ import { commands } from "../../lib/commands";
 import { buildTree } from "../../lib/fileTree";
 import { FileTree } from "./FileTree";
 import { CommitDiffModal } from "./CommitDiffModal";
-import { CloseIcon, MinusIcon, StarFilledIcon } from "./icons";
+import { CloseIcon, MinusIcon, StarFilledIcon, TemplateIcon } from "./icons";
 import styles from "./LeftPanel.module.css";
 
 interface Props {
@@ -21,6 +21,8 @@ interface Props {
   isFavorite: (path: string) => boolean;
   onOpenGraph: () => void;
   onNewFromTemplate: (templateName: string) => void;
+  onNewCollection: () => void;
+  onOpenCollection: (name: string) => void;
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
@@ -34,7 +36,7 @@ interface Props {
 export function LeftPanel({
   notes, dirs, selectedPath, status, agentBranches, commits, favorites,
   onSelect, onNewNote, onToggleFavorite, isFavorite, onOpenGraph,
-  onNewFromTemplate,
+  onNewFromTemplate, onNewCollection, onOpenCollection,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
   trash, onRestoreTrashed, onDeleteTrashed, onEmptyTrash,
 }: Props) {
@@ -99,6 +101,16 @@ export function LeftPanel({
 
   const notesTree    = useMemo(() => buildTree(notes, "notes/", dirs),     [notes, dirs]);
   const templateTree = useMemo(() => buildTree(notes, "templates/"),       [notes]);
+
+  // Collection folders under collections/, derived from note paths.
+  const collections = useMemo(() => {
+    const names = new Set<string>();
+    for (const n of notes) {
+      const m = n.path.match(/^collections\/([^/]+)\//);
+      if (m) names.add(m[1]);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [notes]);
 
   const treeActions = useMemo(() => ({
     newFolderIn,
@@ -203,6 +215,36 @@ export function LeftPanel({
                     actions={treeActions}
                     onSelect={onSelect}
                   />}
+            </Section>
+
+            <Section
+              label="Collections"
+              defaultOpen
+              count={collections.length}
+              onNewNote={onNewCollection}
+              actionTitle="New collection"
+            >
+              {collections.length === 0
+                ? <p className={styles.empty}>
+                    No collections yet.{" "}
+                    <button className={styles.emptyAction} onClick={onNewCollection}>
+                      Create one
+                    </button>{" "}
+                    — a structured table of notes.
+                  </p>
+                : collections.map((name) => {
+                    const indexPath = `collections/${name}/_index.md`;
+                    return (
+                      <button
+                        key={name}
+                        className={`${styles.favRow} ${indexPath === selectedPath ? styles.favRowSelected : ""}`}
+                        onClick={() => onOpenCollection(name)}
+                      >
+                        <TemplateIcon size={14} />
+                        <span className={styles.favTitle}>{name}</span>
+                      </button>
+                    );
+                  })}
             </Section>
 
             <Section
