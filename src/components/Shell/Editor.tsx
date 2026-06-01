@@ -1,9 +1,8 @@
 import "@blocknote/mantine/style.css";
-import { useCreateBlockNote } from "@blocknote/react";
+import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from "@blocknote/react";
+import { filterSuggestionItems } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
-import Picker from "@emoji-mart/react";
-import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { Note, NoteEntry, commands } from "../../lib/commands";
@@ -13,7 +12,8 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown } from "./WikiLinkDropdown";
 import { NoteHistoryModal } from "./NoteHistoryModal";
-import { PlusIcon, HistoryIcon, TrashIcon } from "./icons";
+import { HistoryIcon, TrashIcon } from "./icons";
+import { cortexSchema, inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
 import styles from "./Editor.module.css";
 
 // Maps data URIs → vault-relative paths (e.g. "assets/image-123.png")
@@ -76,12 +76,11 @@ interface Props {
   onSave: (note: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
-  onRename: (oldPath: string, newPath: string) => void;
   onApplyNote: (note: Note) => void;
 }
 
 export function Editor({
-  note, saving, allNotes, onSave, onDelete, onNavigate, onRename, onApplyNote,
+  note, saving, allNotes, onSave, onDelete, onNavigate, onApplyNote,
 }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
@@ -109,7 +108,6 @@ export function Editor({
         onSave={onSave}
         onDelete={onDelete}
         onNavigate={onNavigate}
-        onRename={onRename}
         onShowHistory={() => setShowHistory(true)}
       />
       {showHistory && (
@@ -130,12 +128,8 @@ interface SuggestionState {
   from: number;
 }
 
-function titleToSlug(title: string): string {
-  return title.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "untitled";
-}
-
 function NoteEditor({
-  note, saving, allNotes, onSave, onDelete, onNavigate, onRename, onShowHistory,
+  note, saving, allNotes, onSave, onDelete, onNavigate, onShowHistory,
 }: {
   note: Note;
   saving: boolean;
@@ -143,7 +137,6 @@ function NoteEditor({
   onSave: (n: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
-  onRename: (oldPath: string, newPath: string) => void;
   onShowHistory: () => void;
 }) {
   const noteRef = useRef(note);
@@ -241,6 +234,7 @@ function NoteEditor({
   }), []);
 
   const editor = useCreateBlockNote({
+    schema: cortexSchema,
     uploadFile: (file) => saveFileAsAsset(file),
     _tiptapOptions: {
       extensions: [
@@ -299,48 +293,61 @@ function NoteEditor({
   };
 
   // ── Editor population & auto-save ─────────────────────────────────────────
+  // While true, onChange events are ignored. Programmatically loading the note
+  // body emits onChange, which would otherwise autosave on open — bumping the
+  // file mtime (reordering the sidebar) and dirtying git just from viewing.
+  const hydrating = useRef(true);
+
   useEffect(() => {
     if (note.body.trim()) {
       assetsToDisplayUrls(note.body).then((displayBody) => {
         const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-        editor.replaceBlocks(editor.document, blocks);
+        // Translate `cortex-view` code fences into live view blocks on load.
+        editor.replaceBlocks(editor.document, inflateViewBlocks(blocks) as typeof blocks);
+        hydrating.current = false;
       });
+    } else {
+      hydrating.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Serialize the current document and persist it.
+  const persistBody = useCallback(async () => {
+    // Collapse live view blocks back to standard code fences before export.
+    const doc = flattenViewBlocks(editor.document) as typeof editor.document;
+    const md = await editor.blocksToMarkdownLossy(doc);
+    const cleanMd = displayUrlsToAssets(md);
+    onSave({ ...noteRef.current, body: cleanMd });
+  }, [editor, onSave]);
+
   useEffect(() => {
-    const unsub = editor.onChange(async () => {
+    const unsub = editor.onChange(() => {
+      if (hydrating.current) return;
       if (bodyTimer.current) clearTimeout(bodyTimer.current);
-      bodyTimer.current = setTimeout(async () => {
-        const md = await editor.blocksToMarkdownLossy(editor.document);
-        const cleanMd = displayUrlsToAssets(md);
-        onSave({ ...noteRef.current, body: cleanMd });
-      }, 1000);
+      bodyTimer.current = setTimeout(() => { bodyTimer.current = null; void persistBody(); }, 800);
     });
     return () => {
       unsub();
-      if (bodyTimer.current) clearTimeout(bodyTimer.current);
+      // Flush a pending edit on unmount — switching notes remounts this editor,
+      // so a quick edit (e.g. ticking a checkbox) made within the debounce window
+      // would otherwise be silently dropped.
+      if (bodyTimer.current) {
+        clearTimeout(bodyTimer.current);
+        bodyTimer.current = null;
+        void persistBody();
+      }
     };
-  }, [editor, onSave]);
+  }, [editor, persistBody]);
 
-  const onRenameRef = useRef(onRename);
-  onRenameRef.current = onRename;
-
+  // Title edits only update frontmatter. The filename is fixed at creation —
+  // renaming the file on every keystroke caused stale paths (note couldn't open)
+  // and rename/save races that duplicated notes.
   const handleTitleChange = useCallback((value: string) => {
     if (titleTimer.current) clearTimeout(titleTimer.current);
     titleTimer.current = setTimeout(() => {
       onSave({ ...noteRef.current, frontmatter: { ...noteRef.current.frontmatter, title: value } });
-
-      const slug = titleToSlug(value);
-      const created = (noteRef.current.frontmatter["created"] as string) ?? new Date().toISOString().split("T")[0];
-      const parts = noteRef.current.path.split("/");
-      const dir = parts.slice(0, -1).join("/");
-      const newPath = `${dir}/${slug}-${created}.md`;
-      if (newPath !== noteRef.current.path) {
-        onRenameRef.current(noteRef.current.path, newPath);
-      }
-    }, 600);
+    }, 400);
   }, [onSave]);
 
   const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
@@ -351,14 +358,6 @@ function NoteEditor({
     typeof note.frontmatter["title"] === "string"
       ? note.frontmatter["title"]
       : pathToTitle(note.path);
-
-  const icon = typeof note.frontmatter["icon"] === "string" ? note.frontmatter["icon"] : null;
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-
-  const handleIconSelect = useCallback((emoji: { native: string }) => {
-    setShowEmojiPicker(false);
-    handleFrontmatterChange({ ...noteRef.current.frontmatter, icon: emoji.native });
-  }, [handleFrontmatterChange]);
 
   return (
     <div className={styles.root}>
@@ -378,19 +377,7 @@ function NoteEditor({
             }}
           />
 
-          {/* Breadcrumb */}
-          <Breadcrumb path={note.path} />
-
           <div className={styles.header}>
-            <NoteIconButton
-              icon={icon}
-              onEmojiClick={() => setShowEmojiPicker((x) => !x)}
-              onImageUpload={async (file) => {
-                const dataUri = await saveFileAsAsset(file);
-                const relPath = dataUriToRelPath.get(dataUri);
-                handleFrontmatterChange({ ...noteRef.current.frontmatter, icon: relPath ?? dataUri });
-              }}
-            />
             <input
               key={note.path}
               className={styles.titleInput}
@@ -408,16 +395,21 @@ function NoteEditor({
               </button>
             </div>
           </div>
-          {showEmojiPicker && (
-            <div className={styles.emojiPickerWrap}>
-              <Picker data={data} onEmojiSelect={handleIconSelect} theme="auto" previewPosition="none" skinTonePosition="none" />
-            </div>
-          )}
 
           <PropertiesPanel frontmatter={note.frontmatter} onChange={handleFrontmatterChange} />
 
           <div className={styles.editorWrap}>
-            <BlockNoteView editor={editor} />
+            <BlockNoteView editor={editor} slashMenu={false}>
+              <SuggestionMenuController
+                triggerCharacter="/"
+                getItems={async (query) =>
+                  filterSuggestionItems(
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor)],
+                    query,
+                  )
+                }
+              />
+            </BlockNoteView>
           </div>
 
           <BacklinksPanel path={note.path} onNavigate={onNavigate} />
@@ -438,21 +430,6 @@ function NoteEditor({
   );
 }
 
-function Breadcrumb({ path }: { path: string }) {
-  const parts = path.split("/");
-  const dirs = parts.slice(0, -1);
-  if (dirs.length === 0) return null;
-  return (
-    <div className={styles.breadcrumb}>
-      {dirs.map((seg, i) => (
-        <span key={i}>
-          {i > 0 && <span className={styles.breadcrumbSep}>›</span>}
-          <span className={styles.breadcrumbSeg}>{seg}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function pathToTitle(path: string): string {
   return path.split("/").pop()?.replace(/\.md$/, "").replace(/-/g, " ") ?? "Untitled";
@@ -539,58 +516,6 @@ function CoverImage({
         accept="image/*"
         style={{ display: "none" }}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-      />
-    </div>
-  );
-}
-
-// ── Note icon button (emoji + image upload) ───────────────────────────────────
-
-function NoteIconButton({
-  icon, onEmojiClick, onImageUpload,
-}: {
-  icon: string | null;
-  onEmojiClick: () => void;
-  onImageUpload: (file: File) => void;
-}) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const isImage = icon && !icon.match(/\p{Emoji}/u) && (icon.startsWith("assets/") || icon.startsWith("data:"));
-  const [imgSrc, setImgSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isImage || !icon) { setImgSrc(null); return; }
-    if (icon.startsWith("data:")) { setImgSrc(icon); return; }
-    import("../../lib/commands").then(({ commands }) =>
-      commands.readAsset(icon).then(setImgSrc).catch(() => setImgSrc(null))
-    );
-  }, [icon, isImage]);
-
-  return (
-    <div className={styles.iconBtnGroup}>
-      <button
-        className={`${styles.iconBtn} ${!icon ? styles.iconBtnEmpty : ""}`}
-        onClick={onEmojiClick}
-        title={icon ? "Change icon" : "Add icon"}
-      >
-        {isImage && imgSrc
-          ? <img src={imgSrc} alt="icon" className={styles.iconImage} />
-          : icon
-            ? <span className={styles.iconEmoji}>{icon}</span>
-            : <span className={styles.iconPlaceholder}><PlusIcon size={20} /></span>}
-      </button>
-      <button
-        className={styles.iconUploadBtn}
-        onClick={() => fileRef.current?.click()}
-        title="Use image as icon"
-      >
-        🖼
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) onImageUpload(f); }}
       />
     </div>
   );

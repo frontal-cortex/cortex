@@ -1,14 +1,17 @@
 import { useEffect, useRef } from "react";
+import { RecentVault } from "../../lib/commands";
 import styles from "./VaultPicker.module.css";
 
 interface Props {
   onOpen: () => void;
   onCreate: () => void;
+  onOpenRecent: (path: string) => void;
+  recentVaults: RecentVault[];
   creating: boolean;
   error: string | null;
 }
 
-export function VaultPicker({ onOpen, onCreate, creating, error }: Props) {
+export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, creating, error }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -285,6 +288,27 @@ export function VaultPicker({ onOpen, onCreate, creating, error }: Props) {
           </button>
         </div>
         {error && <p className={styles.error}>{error}</p>}
+        {recentVaults.length > 0 && (
+          <div className={styles.recents}>
+            <p className={styles.recentsLabel}>Recent vaults</p>
+            <ul className={styles.recentsList}>
+              {recentVaults.map((v) => (
+                <li key={v.path}>
+                  <button
+                    type="button"
+                    className={styles.recentItem}
+                    onClick={() => onOpenRecent(v.path)}
+                    disabled={creating}
+                    title={v.path}
+                  >
+                    <span className={styles.recentName}>{v.name}</span>
+                    <span className={styles.recentPath}>{prettyPath(v.path)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <p className={styles.hint}>
           New vaults start from the{" "}
           <a
@@ -300,6 +324,13 @@ export function VaultPicker({ onOpen, onCreate, creating, error }: Props) {
       </div>
     </div>
   );
+}
+
+// Show the containing directory (the full path is on the button's title tooltip).
+function prettyPath(path: string): string {
+  const sep = path.includes("\\") ? "\\" : "/";
+  const cut = path.lastIndexOf(sep);
+  return cut > 0 ? path.slice(0, cut) : path;
 }
 
 function BrainIcon() {

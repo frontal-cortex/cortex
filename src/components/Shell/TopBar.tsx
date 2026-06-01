@@ -1,5 +1,5 @@
 import { VaultStatus } from "../../lib/commands";
-import { SearchIcon, GraphIcon, SyncIcon, TodayIcon } from "./icons";
+import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon } from "./icons";
 import styles from "./TopBar.module.css";
 
 interface Props {
@@ -7,6 +7,10 @@ interface Props {
   status: VaultStatus | null;
   syncing: boolean;
   hasRemote: boolean;
+  canBack: boolean;
+  canForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
   onSync: () => void;
   onOpenGraph: () => void;
   onOpenSwitcher: () => void;
@@ -14,7 +18,8 @@ interface Props {
 }
 
 export function TopBar({
-  vaultName, status, syncing, hasRemote, onSync, onOpenGraph, onOpenSwitcher, onToday,
+  vaultName, status, syncing, hasRemote, canBack, canForward, onBack, onForward,
+  onSync, onOpenGraph, onOpenSwitcher, onToday,
 }: Props) {
   const ahead = status?.ahead ?? 0;
   const behind = status?.behind ?? 0;
@@ -30,6 +35,15 @@ export function TopBar({
 
   return (
     <header className={styles.bar} data-tauri-drag-region>
+      <div className={styles.nav}>
+        <button className={styles.action} onClick={onBack} disabled={!canBack} title="Back (⌘[)">
+          <ChevronLeftIcon size={16} />
+        </button>
+        <button className={styles.action} onClick={onForward} disabled={!canForward} title="Forward (⌘])">
+          <ChevronRightIcon size={16} />
+        </button>
+      </div>
+
       <div className={styles.identity} data-tauri-drag-region>
         <span className={styles.vaultName}>{vaultName}</span>
       </div>

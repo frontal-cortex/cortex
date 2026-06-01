@@ -6,6 +6,40 @@ export interface VaultInfo {
   has_remote: boolean;
 }
 
+export interface RecentVault {
+  path: string;
+  name: string;
+  last_opened: number;
+}
+
+export interface ViewColumn {
+  key: string;
+  ty: "text" | "number" | "bool" | "date" | "list";
+}
+
+export interface ViewRow {
+  id: string;
+  cells: Record<string, string | number | boolean | string[] | null>;
+}
+
+export interface ViewTable {
+  name: string;
+  columns: ViewColumn[];
+  rows: ViewRow[];
+}
+
+export interface ChartPoint {
+  x: string;
+  y: number;
+}
+
+export interface ChartResult {
+  chartType: string;
+  xLabel: string;
+  yLabel: string;
+  points: ChartPoint[];
+}
+
 export interface NoteEntry {
   path: string;
   title: string;
@@ -67,6 +101,21 @@ export interface TrashEntry {
 }
 
 export const commands = {
+  runView: (spec: string) =>
+    invoke<ViewTable>("run_view", { spec }),
+
+  runChart: (spec: string) =>
+    invoke<ChartResult>("run_chart", { spec }),
+
+  setCell: (source: string, rowId: string, field: string, value: string, ty: string) =>
+    invoke<void>("set_cell", { source, rowId, field, value, ty }),
+
+  addRow: (source: string, id: string, fields: Record<string, string>) =>
+    invoke<void>("add_row", { source, id, fields }),
+
+  deleteRow: (source: string, rowId: string) =>
+    invoke<void>("delete_row", { source, rowId }),
+
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),
 
@@ -75,6 +124,9 @@ export const commands = {
 
   getVaultInfo: () =>
     invoke<VaultInfo | null>("get_vault_info"),
+
+  getRecentVaults: () =>
+    invoke<RecentVault[]>("get_recent_vaults"),
 
   listNotes: () =>
     invoke<NoteEntry[]>("list_notes"),

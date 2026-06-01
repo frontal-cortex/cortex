@@ -15,6 +15,8 @@ export default function App() {
           <VaultPicker
             onOpen={vault.openVault}
             onCreate={vault.createVault}
+            onOpenRecent={vault.openVaultPath}
+            recentVaults={vault.recentVaults}
             creating={vault.creating}
             error={vault.error}
           />

@@ -35,3 +35,22 @@ a:focus-visible,
   outline-offset: 1px;
   border-radius: var(--radius-sm);
 }
+
+/* The rich-text editor is a focusable contenteditable — it must never get the
+   app focus ring (it would box the whole writing area). */
+.bn-editor:focus,
+.bn-editor:focus-visible,
+.ProseMirror:focus,
+.ProseMirror:focus-visible,
+[contenteditable]:focus,
+[contenteditable]:focus-visible {
+  outline: none !important;
+}
+
+/* BlockNote draws a 4px blue outline on a selected atomic node (images, data
+   blocks, etc.). We don't want any block-selection outline — keep it clean. */
+.ProseMirror-selectednode,
+.ProseMirror-selectednode > *,
+.ProseMirror-selectednode > .bn-block-content > * {
+  outline: none !important;
+}

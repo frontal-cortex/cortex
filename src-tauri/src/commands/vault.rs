@@ -182,6 +182,7 @@ pub struct VaultInfo {
 
 #[tauri::command]
 pub fn open_vault(
+    app: tauri::AppHandle,
     path: String,
     state: State<'_, VaultState>,
     db_state: State<'_, DbState>,
@@ -229,6 +230,8 @@ pub fn open_vault(
     let has_remote = git2::Repository::open(&vault_path)
         .map(|r| r.find_remote("origin").is_ok())
         .unwrap_or(false);
+
+    crate::commands::recent::record_recent(&app, &vault_path);
 
     *state.0.lock().unwrap() = Some(vault_path);
 

@@ -11,6 +11,13 @@
   user-select: none;
 }
 
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
 .identity {
   display: flex;
   align-items: center;

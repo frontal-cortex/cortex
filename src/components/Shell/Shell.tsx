@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
+import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
@@ -9,7 +9,6 @@ import { Editor } from "./Editor";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
-import { TabBar } from "./TabBar";
 import styles from "./Shell.module.css";
 
 interface Props {
@@ -32,11 +31,11 @@ export function Shell({
   const [showGraph, setShowGraph] = useState(false);
 
   const {
-    currentPath: selectedPath, tabs, activeTab, canBack, canForward,
-    navigate: navTo, back, forward, closeTab, switchTab,
+    currentPath: selectedPath, canBack, canForward,
+    navigate: navTo, back, forward,
   } = useNavHistory();
 
-  const setSelectedPath = useCallback((path: string, title?: string) => navTo(path, title ?? ""), [navTo]);
+  const setSelectedPath = useCallback((path: string) => navTo(path), [navTo]);
 
   const { notes, dirs, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
   const { note, saving, save, applyNote } = useNote(selectedPath);
@@ -58,6 +57,16 @@ export function Shell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Embedded data views (collection rows) dispatch this to open a row as a note.
+  useEffect(() => {
+    function onOpenNote(e: Event) {
+      const path = (e as CustomEvent<{ path?: string }>).detail?.path;
+      if (typeof path === "string") setSelectedPath(path);
+    }
+    window.addEventListener("cortex:open-note", onOpenNote);
+    return () => window.removeEventListener("cortex:open-note", onOpenNote);
+  }, [setSelectedPath]);
+
   const handleNewNote = useCallback(async (parentFolder?: string) => {
     const created = await createNote("", parentFolder);
     setSelectedPath(created.path);
@@ -73,19 +82,46 @@ export function Shell({
     setSelectedPath(note.path);
   }, [createNoteFromTemplate]);
 
-  const handleRename = useCallback(async (oldPath: string, newPath: string) => {
-    const { commands } = await import("../../lib/commands");
-    await commands.renameNote(oldPath, newPath);
-    await refresh();
-    setSelectedPath(newPath, "");
+  // Open a collection's `_index.md` "home" note (a board + table over its rows),
+  // creating it on demand — so pre-existing collections without an index work too.
+  const handleOpenCollection = useCallback(async (name: string) => {
+    const dir = `collections/${name}`;
+    const indexPath = `${dir}/_index.md`;
+    try {
+      await commands.readNote(indexPath);
+    } catch {
+      const date = new Date().toISOString().split("T")[0];
+      const body =
+        "## Board\n\n" +
+        "```cortex-view\n" + `source: ${dir}\n` + "type: board\ngroup: status\n```\n\n" +
+        "## All items\n\n" +
+        "```cortex-view\n" + `source: ${dir}\n` + "type: table\n```\n";
+      const index = await commands.createNote(indexPath, name, date);
+      await commands.writeNote(indexPath, { ...index, body });
+      await refresh();
+    }
+    setSelectedPath(indexPath);
   }, [refresh, setSelectedPath]);
+
+  // Start a collection from scratch: a `collections/<slug>/` folder with a
+  // starter row, then open its (freshly created) index note.
+  const handleNewCollection = useCallback(async () => {
+    const name = window.prompt("New collection name")?.trim();
+    if (!name) return;
+    const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "collection";
+    const dir = `collections/${slug}`;
+    const date = new Date().toISOString().split("T")[0];
+    await commands.createFolder(dir).catch(() => {});
+    await commands.createNote(`${dir}/first-item.md`, "First item", date).catch(() => {});
+    await handleOpenCollection(slug);
+  }, [handleOpenCollection]);
 
   const handleDelete = useCallback(async (path: string) => {
     // Soft-delete: the note moves to Trash and can be restored, so no scary
     // confirmation is needed.
     await deleteNote(path);
     await refreshTrash();
-    if (selectedPath === path) setSelectedPath("", "");
+    if (selectedPath === path) setSelectedPath("");
   }, [deleteNote, refreshTrash, selectedPath]);
 
   const handleRestoreTrashed = useCallback(async (id: string) => {
@@ -113,21 +149,14 @@ export function Shell({
         status={status}
         syncing={syncing}
         hasRemote={vault.has_remote}
+        canBack={canBack}
+        canForward={canForward}
+        onBack={back}
+        onForward={forward}
         onSync={onSync}
         onOpenGraph={() => setShowGraph(true)}
         onOpenSwitcher={() => setShowQuickSwitcher(true)}
         onToday={handleToday}
-      />
-
-      <TabBar
-        tabs={tabs}
-        activeTab={activeTab}
-        canBack={canBack}
-        canForward={canForward}
-        onSwitch={switchTab}
-        onClose={closeTab}
-        onBack={back}
-        onForward={forward}
       />
 
       <div className={styles.body}>
@@ -145,6 +174,8 @@ export function Shell({
           isFavorite={isFavorite}
           onOpenGraph={() => setShowGraph(true)}
           onNewFromTemplate={handleNewFromTemplate}
+          onNewCollection={handleNewCollection}
+          onOpenCollection={handleOpenCollection}
           onCommit={onCommit}
           onApplyBranch={onApplyBranch}
           onDiscardBranch={onDiscardBranch}
@@ -163,7 +194,6 @@ export function Shell({
           onSave={async (updated) => { await save(updated); refresh(); }}
           onDelete={handleDelete}
           onNavigate={handleNavigate}
-          onRename={handleRename}
           onApplyNote={applyNote}
         />
       </div>
