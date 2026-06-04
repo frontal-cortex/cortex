@@ -7,6 +7,7 @@ import Picker from "@emoji-mart/react";
 import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
+import { useColorScheme } from "../../hooks/useColorScheme";
 import { Note, NoteEntry, commands } from "../../lib/commands";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle } from "../../lib/wikiLinkSuggestion";
@@ -379,6 +380,10 @@ function NoteEditor({
   const icon = typeof note.frontmatter["icon"] === "string" ? note.frontmatter["icon"] : null;
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+  // Match BlockNote to the app's theme. Without this it themes off the OS, so
+  // forcing light mode under a dark OS left light-gray text on a white page.
+  const colorScheme = useColorScheme();
+
   const handleIconSelect = useCallback((emoji: { native: string }) => {
     setShowEmojiPicker(false);
     handleFrontmatterChange({ ...noteRef.current.frontmatter, icon: emoji.native });
@@ -433,7 +438,7 @@ function NoteEditor({
           <PropertiesPanel frontmatter={note.frontmatter} onChange={handleFrontmatterChange} />
 
           <div className={styles.editorWrap}>
-            <BlockNoteView editor={editor} slashMenu={false}>
+            <BlockNoteView editor={editor} slashMenu={false} theme={colorScheme}>
               <SuggestionMenuController
                 triggerCharacter="/"
                 getItems={async (query) =>
