@@ -9,6 +9,7 @@ import { Editor } from "./Editor";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
+import { SettingsModal, applyTheme } from "./SettingsModal";
 import styles from "./Shell.module.css";
 
 interface Props {
@@ -21,14 +22,21 @@ interface Props {
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
+  onLeaveVault: () => void;
 }
 
 export function Shell({
   vault, status, agentBranches, commits, syncing, onSync,
-  onCommit, onApplyBranch, onDiscardBranch,
+  onCommit, onApplyBranch, onDiscardBranch, onLeaveVault,
 }: Props) {
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Apply the saved theme preference when the vault opens.
+  useEffect(() => {
+    commands.getSettings().then((s) => applyTheme(s.theme)).catch(() => {});
+  }, []);
 
   const {
     currentPath: selectedPath, canBack, canForward,
@@ -176,6 +184,7 @@ export function Shell({
           onNewFromTemplate={handleNewFromTemplate}
           onNewCollection={handleNewCollection}
           onOpenCollection={handleOpenCollection}
+          onOpenSettings={() => setShowSettings(true)}
           onCommit={onCommit}
           onApplyBranch={onApplyBranch}
           onDiscardBranch={onDiscardBranch}
@@ -215,6 +224,14 @@ export function Shell({
           notes={notes}
           onNavigate={(path) => { setSelectedPath(path); setShowGraph(false); }}
           onClose={() => setShowGraph(false)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          vault={vault}
+          onClose={() => setShowSettings(false)}
+          onLeaveVault={onLeaveVault}
         />
       )}
     </div>

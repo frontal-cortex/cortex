@@ -288,6 +288,18 @@ pub fn create_vault_from_template(path: String) -> Result<()> {
     Ok(())
 }
 
+/// Close the open vault — clears the in-memory vault path and index handle so
+/// the app returns to the landing screen (like signing out).
+#[tauri::command]
+pub fn close_vault(
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<()> {
+    *state.0.lock().unwrap() = None;
+    *db_state.0.lock().unwrap() = None;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_vault_info(state: State<'_, VaultState>) -> Result<Option<VaultInfo>> {
     let guard = state.0.lock().unwrap();

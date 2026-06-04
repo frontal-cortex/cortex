@@ -68,6 +68,21 @@ export function useVault() {
     }
   }, []);
 
+  // Leave the current vault and return to the landing page (sign-out style).
+  const closeVault = useCallback(async () => {
+    try { await commands.closeVault(); } catch { /* clear UI regardless */ }
+    const recentVaults = await commands.getRecentVaults().catch(() => []);
+    setState((s) => ({
+      ...s,
+      vault: null,
+      status: null,
+      agentBranches: [],
+      commits: [],
+      recentVaults,
+      error: null,
+    }));
+  }, []);
+
   const refreshStatus = useCallback(async () => {
     if (!state.vault) return;
     try {
@@ -127,6 +142,7 @@ export function useVault() {
     openVault,
     openVaultPath,
     createVault,
+    closeVault,
     refreshStatus,
     sync,
     commit,

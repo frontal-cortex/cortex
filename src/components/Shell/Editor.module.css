@@ -41,7 +41,76 @@
   color: var(--text-secondary);
 }
 
-/* ── Breadcrumb ────────────────────────────────────────────────── */
+/* ── Page icon (left of title; collapses when absent) ──────────── */
+.iconBtnGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-right: var(--space-2);
+}
+
+/* No icon: collapse the slot so the title is flush-left. Hovering the header
+   opens space (title shifts right) and reveals the "add icon" affordance. */
+.iconBtnGroupEmpty {
+  width: 0;
+  margin-right: 0;
+  overflow: hidden;
+  transition: width 0.12s ease, margin-right 0.12s ease;
+}
+
+.header:hover .iconBtnGroupEmpty {
+  width: 34px;
+  margin-right: var(--space-2);
+}
+
+.iconBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px 0 0;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.iconBtn:hover { background: var(--bg-hover); }
+
+.iconBtnEmpty {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.header:hover .iconBtnEmpty { opacity: 1; }
+
+.iconEmoji {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.iconImage {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.iconPlaceholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  line-height: 1;
+}
+
+.emojiPickerWrap {
+  padding-left: 54px;
+  margin-bottom: var(--space-2);
+  position: relative;
+  z-index: 10;
+}
+
 /* ── Document area (max-width for readability) ─────────────────── */
 .docWrap {
   flex: 1;
