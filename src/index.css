@@ -54,3 +54,10 @@ a:focus-visible,
 .ProseMirror-selectednode > .bn-block-content > * {
   outline: none !important;
 }
+
+/* Strike through a ticked todo based on the LIVE checkbox state. BlockNote keys
+   this off a `data-checked` attribute that can lag the click, so the line-through
+   flickered; the checkbox's own `:checked` is always in sync. */
+.bn-block-content[data-content-type="checkListItem"]:has(input[type="checkbox"]:checked) .bn-inline-content {
+  text-decoration: line-through !important;
+}

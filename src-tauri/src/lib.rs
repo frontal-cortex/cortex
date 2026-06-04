@@ -18,6 +18,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::vault::open_vault,
             commands::vault::create_vault_from_template,
+            commands::vault::close_vault,
             commands::vault::get_vault_info,
             commands::recent::get_recent_vaults,
             commands::notes::list_notes,

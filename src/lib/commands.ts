@@ -122,6 +122,9 @@ export const commands = {
   createVaultFromTemplate: (path: string) =>
     invoke<void>("create_vault_from_template", { path }),
 
+  closeVault: () =>
+    invoke<void>("close_vault"),
+
   getVaultInfo: () =>
     invoke<VaultInfo | null>("get_vault_info"),
 

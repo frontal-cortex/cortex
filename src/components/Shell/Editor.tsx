@@ -3,6 +3,8 @@ import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuI
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
+import Picker from "@emoji-mart/react";
+import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { Note, NoteEntry, commands } from "../../lib/commands";
@@ -12,7 +14,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown } from "./WikiLinkDropdown";
 import { NoteHistoryModal } from "./NoteHistoryModal";
-import { HistoryIcon, TrashIcon } from "./icons";
+import { PlusIcon, HistoryIcon, TrashIcon } from "./icons";
 import { cortexSchema, inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
 import styles from "./Editor.module.css";
 
@@ -297,48 +299,63 @@ function NoteEditor({
   // body emits onChange, which would otherwise autosave on open — bumping the
   // file mtime (reordering the sidebar) and dirtying git just from viewing.
   const hydrating = useRef(true);
+  // Last serialized body, captured while the editor is alive (see below).
+  const pendingMd = useRef<string | null>(null);
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
 
   useEffect(() => {
+    const finish = () => { hydrating.current = false; };
     if (note.body.trim()) {
-      assetsToDisplayUrls(note.body).then((displayBody) => {
-        const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-        // Translate `cortex-view` code fences into live view blocks on load.
-        editor.replaceBlocks(editor.document, inflateViewBlocks(blocks) as typeof blocks);
-        hydrating.current = false;
-      });
+      assetsToDisplayUrls(note.body)
+        .then((displayBody) => {
+          try {
+            const blocks = editor.tryParseMarkdownToBlocks(displayBody);
+            // Translate `cortex-view` code fences into live view blocks on load.
+            editor.replaceBlocks(editor.document, inflateViewBlocks(blocks) as typeof blocks);
+          } finally {
+            // Always clear the guard, even if parsing throws — otherwise saves
+            // would be suppressed forever for this note.
+            finish();
+          }
+        })
+        .catch(finish);
     } else {
-      hydrating.current = false;
+      finish();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Serialize the current document and persist it.
-  const persistBody = useCallback(async () => {
-    // Collapse live view blocks back to standard code fences before export.
-    const doc = flattenViewBlocks(editor.document) as typeof editor.document;
-    const md = await editor.blocksToMarkdownLossy(doc);
-    const cleanMd = displayUrlsToAssets(md);
-    onSave({ ...noteRef.current, body: cleanMd });
-  }, [editor, onSave]);
+  // Write whatever was last serialized. Uses the stashed markdown (not a fresh
+  // editor read) so flushing during unmount/teardown is safe even if BlockNote
+  // has already torn the editor down.
+  const flush = useCallback(() => {
+    if (bodyTimer.current) { clearTimeout(bodyTimer.current); bodyTimer.current = null; }
+    if (pendingMd.current === null) return;
+    onSaveRef.current({ ...noteRef.current, body: pendingMd.current });
+    pendingMd.current = null;
+  }, []);
 
   useEffect(() => {
     const unsub = editor.onChange(() => {
       if (hydrating.current) return;
-      if (bodyTimer.current) clearTimeout(bodyTimer.current);
-      bodyTimer.current = setTimeout(() => { bodyTimer.current = null; void persistBody(); }, 800);
+      // Serialize NOW, while the editor is definitely alive, and stash the
+      // result. A checkbox toggle is a single quick action often followed
+      // immediately by navigating away — capturing here means the pending
+      // write survives the editor being destroyed on unmount.
+      void (async () => {
+        const doc = flattenViewBlocks(editor.document) as typeof editor.document;
+        const md = await editor.blocksToMarkdownLossy(doc);
+        pendingMd.current = displayUrlsToAssets(md);
+        if (bodyTimer.current) clearTimeout(bodyTimer.current);
+        bodyTimer.current = setTimeout(flush, 400);
+      })();
     });
     return () => {
       unsub();
-      // Flush a pending edit on unmount — switching notes remounts this editor,
-      // so a quick edit (e.g. ticking a checkbox) made within the debounce window
-      // would otherwise be silently dropped.
-      if (bodyTimer.current) {
-        clearTimeout(bodyTimer.current);
-        bodyTimer.current = null;
-        void persistBody();
-      }
+      flush(); // persist any pending edit before this editor goes away
     };
-  }, [editor, persistBody]);
+  }, [editor, flush]);
 
   // Title edits only update frontmatter. The filename is fixed at creation —
   // renaming the file on every keystroke caused stale paths (note couldn't open)
@@ -359,6 +376,14 @@ function NoteEditor({
       ? note.frontmatter["title"]
       : pathToTitle(note.path);
 
+  const icon = typeof note.frontmatter["icon"] === "string" ? note.frontmatter["icon"] : null;
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  const handleIconSelect = useCallback((emoji: { native: string }) => {
+    setShowEmojiPicker(false);
+    handleFrontmatterChange({ ...noteRef.current.frontmatter, icon: emoji.native });
+  }, [handleFrontmatterChange]);
+
   return (
     <div className={styles.root}>
       <div className={styles.docWrap}>
@@ -378,6 +403,10 @@ function NoteEditor({
           />
 
           <div className={styles.header}>
+            <NoteIconButton
+              icon={icon}
+              onEmojiClick={() => setShowEmojiPicker((x) => !x)}
+            />
             <input
               key={note.path}
               className={styles.titleInput}
@@ -395,6 +424,11 @@ function NoteEditor({
               </button>
             </div>
           </div>
+          {showEmojiPicker && (
+            <div className={styles.emojiPickerWrap}>
+              <Picker data={data} onEmojiSelect={handleIconSelect} theme="auto" previewPosition="none" skinTonePosition="none" />
+            </div>
+          )}
 
           <PropertiesPanel frontmatter={note.frontmatter} onChange={handleFrontmatterChange} />
 
@@ -517,6 +551,40 @@ function CoverImage({
         style={{ display: "none" }}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
       />
+    </div>
+  );
+}
+
+// ── Note icon button (emoji + image upload) ───────────────────────────────────
+
+function NoteIconButton({
+  icon, onEmojiClick,
+}: {
+  icon: string | null;
+  onEmojiClick: () => void;
+}) {
+  const isImage = icon && !icon.match(/\p{Emoji}/u) && (icon.startsWith("assets/") || icon.startsWith("data:"));
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isImage || !icon) { setImgSrc(null); return; }
+    if (icon.startsWith("data:")) { setImgSrc(icon); return; }
+    commands.readAsset(icon).then(setImgSrc).catch(() => setImgSrc(null));
+  }, [icon, isImage]);
+
+  return (
+    <div className={`${styles.iconBtnGroup} ${!icon ? styles.iconBtnGroupEmpty : ""}`}>
+      <button
+        className={`${styles.iconBtn} ${!icon ? styles.iconBtnEmpty : ""}`}
+        onClick={onEmojiClick}
+        title={icon ? "Change icon" : "Add icon"}
+      >
+        {isImage && imgSrc
+          ? <img src={imgSrc} alt="icon" className={styles.iconImage} />
+          : icon
+            ? <span className={styles.iconEmoji}>{icon}</span>
+            : <span className={styles.iconPlaceholder}><PlusIcon size={20} /></span>}
+      </button>
     </div>
   );
 }

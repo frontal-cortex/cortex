@@ -32,6 +32,7 @@ export default function App() {
           onCommit={async (msg) => { await vault.commit(msg); }}
           onApplyBranch={vault.applyAgentBranch}
           onDiscardBranch={vault.discardAgentBranch}
+          onLeaveVault={vault.closeVault}
         />
       )}
     </div>

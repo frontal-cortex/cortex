@@ -359,6 +359,31 @@
   padding: var(--space-2) 0 var(--space-2);
 }
 
+.footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: var(--space-1) var(--space-2);
+}
+
+.footerBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.footerBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .gitStatus {
   display: flex;
   align-items: center;

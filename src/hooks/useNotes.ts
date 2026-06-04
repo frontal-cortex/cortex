@@ -129,6 +129,12 @@ export function useNotes(vaultOpen: boolean) {
   return { notes, dirs, loading, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote };
 }
 
+// In-flight writes, keyed by note path. A note's loader must wait for a pending
+// write to that path before reading from disk — otherwise leaving a note (which
+// flushes an async save) and immediately re-entering reads the stale on-disk
+// version before the write lands, losing the edit (e.g. a just-ticked checkbox).
+const inflightWrites = new Map<string, Promise<unknown>>();
+
 export function useNote(path: string | null) {
   const [note, setNote] = useState<Note | null>(null);
   const [saving, setSaving] = useState(false);
@@ -141,9 +147,18 @@ export function useNote(path: string | null) {
       return;
     }
     let cancelled = false;
-    commands.readNote(path)
-      .then((n) => { if (!cancelled) setNote(n); })
-      .catch(() => { if (!cancelled) setNote(null); });
+    (async () => {
+      // Wait out any in-flight write to this note so we read fresh content.
+      const pending = inflightWrites.get(path);
+      if (pending) { try { await pending; } catch { /* ignore */ } }
+      if (cancelled) return;
+      try {
+        const n = await commands.readNote(path);
+        if (!cancelled) setNote(n);
+      } catch {
+        if (!cancelled) setNote(null);
+      }
+    })();
     return () => { cancelled = true; };
   }, [path]);
 
@@ -153,10 +168,16 @@ export function useNote(path: string | null) {
   const save = useCallback(
     async (updated: Note) => {
       setSaving(true);
+      // Register the write synchronously so a concurrent re-entry awaits it.
+      const writePromise = commands.writeNote(updated.path, updated);
+      inflightWrites.set(updated.path, writePromise);
       try {
-        await commands.writeNote(updated.path, updated);
+        await writePromise;
         if (updated.path === pathRef.current) setNote(updated);
       } finally {
+        if (inflightWrites.get(updated.path) === writePromise) {
+          inflightWrites.delete(updated.path);
+        }
         setSaving(false);
       }
     },
