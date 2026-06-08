@@ -4,6 +4,7 @@ mod db;
 mod error;
 mod git;
 mod note;
+mod schema;
 
 use commands::vault::{DbState, VaultState};
 
@@ -23,6 +24,7 @@ pub fn run() {
             commands::recent::get_recent_vaults,
             commands::notes::list_notes,
             commands::notes::read_note,
+            commands::notes::resolve_ref,
             commands::notes::write_note,
             commands::notes::create_note,
             commands::notes::create_note_from_template,
@@ -63,6 +65,12 @@ pub fn run() {
             commands::data::set_cell,
             commands::data::add_row,
             commands::data::delete_row,
+            commands::data::parse_view_spec,
+            commands::data::serialize_view_spec,
+            commands::schema::get_schema,
+            commands::schema::get_schema_for_note,
+            commands::schema::set_schema,
+            commands::schema::upsert_property,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

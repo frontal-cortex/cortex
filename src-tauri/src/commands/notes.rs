@@ -91,6 +91,112 @@ pub fn read_note(path: String, state: State<'_, VaultState>) -> Result<Note> {
     note::parse_note(&path, &content)
 }
 
+/// Resolved target of a `![[note#section]]` transclusion.
+#[derive(serde::Serialize)]
+pub struct NoteRef {
+    pub path: String,
+    pub title: String,
+    pub body: String,
+    pub found: bool,
+}
+
+fn heading_level(line: &str) -> Option<(usize, String)> {
+    let t = line.trim_start();
+    if !t.starts_with('#') {
+        return None;
+    }
+    let hashes = t.chars().take_while(|c| *c == '#').count();
+    if hashes == 0 || hashes > 6 {
+        return None;
+    }
+    Some((hashes, t[hashes..].trim().to_string()))
+}
+
+/// Slice out a heading's section: from the matching heading to the next heading
+/// of the same or higher level (exclusive).
+fn extract_section(body: &str, section: &str) -> Option<String> {
+    let target = section.to_lowercase();
+    let lines: Vec<&str> = body.lines().collect();
+    let (start, level) = lines.iter().enumerate().find_map(|(i, l)| {
+        heading_level(l).and_then(|(lvl, text)| (text.to_lowercase() == target).then_some((i, lvl)))
+    })?;
+    let mut end = lines.len();
+    for i in (start + 1)..lines.len() {
+        if let Some((lvl, _)) = heading_level(lines[i]) {
+            if lvl <= level {
+                end = i;
+                break;
+            }
+        }
+    }
+    Some(lines[start..end].join("\n"))
+}
+
+/// Resolve a wiki-style ref (`Note Title`, `path/to/note`, optionally with
+/// `#Section`) to a note's body, for inline transclusion. Resolution order:
+/// exact path, then case-insensitive title, then filename stem.
+#[tauri::command]
+pub fn resolve_ref(target: String, state: State<'_, VaultState>) -> Result<NoteRef> {
+    let root = vault_path(&state)?;
+    let (base, section) = match target.split_once('#') {
+        Some((b, s)) => (b.trim().to_string(), Some(s.trim().to_string())),
+        None => (target.trim().to_string(), None),
+    };
+    let base_lower = base.to_lowercase();
+
+    let mut title_match: Option<(String, String, String)> = None;
+    let mut stem_match: Option<(String, String, String)> = None;
+    let mut exact: Option<(String, String, String)> = None;
+
+    for entry in WalkDir::new(&root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let p = e.path();
+            p.extension().and_then(|s| s.to_str()) == Some("md")
+                && !p.components().any(|c| {
+                    matches!(
+                        c.as_os_str().to_str(),
+                        Some(".brain") | Some(".git") | Some(".trash") | Some(".cortex")
+                    )
+                })
+        })
+    {
+        let abs = entry.path();
+        let rel = abs.strip_prefix(&root).unwrap().to_string_lossy().to_string();
+        let Ok(content) = std::fs::read_to_string(abs) else { continue };
+        let Ok(parsed) = note::parse_note(&rel, &content) else { continue };
+        let title = note::infer_title(&parsed);
+        let stem = std::path::Path::new(&rel)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        if rel == base || rel == format!("{base}.md") {
+            exact = Some((rel.clone(), title.clone(), parsed.body));
+            break;
+        }
+        if title.to_lowercase() == base_lower && title_match.is_none() {
+            title_match = Some((rel.clone(), title.clone(), parsed.body.clone()));
+        }
+        if stem.to_lowercase() == base_lower && stem_match.is_none() {
+            stem_match = Some((rel, title, parsed.body));
+        }
+    }
+
+    match exact.or(title_match).or(stem_match) {
+        Some((path, title, body)) => {
+            let body = match &section {
+                Some(s) => extract_section(&body, s).unwrap_or(body),
+                None => body,
+            };
+            Ok(NoteRef { path, title, body, found: true })
+        }
+        None => Ok(NoteRef { path: String::new(), title: base, body: String::new(), found: false }),
+    }
+}
+
 // ── Write / Create / Delete ──────────────────────────────────────────────────
 
 #[tauri::command]
@@ -541,4 +647,34 @@ pub fn read_template(name: String, state: State<'_, VaultState>) -> Result<Optio
     }
     let content = std::fs::read_to_string(path)?;
     Ok(Some(content))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_section, heading_level};
+
+    #[test]
+    fn heading_level_parses_atx() {
+        assert_eq!(heading_level("## Tasks"), Some((2, "Tasks".to_string())));
+        assert_eq!(heading_level("   # Title  "), Some((1, "Title".to_string())));
+        assert_eq!(heading_level("not a heading"), None);
+        assert_eq!(heading_level("####### too deep"), None);
+    }
+
+    #[test]
+    fn extract_section_slices_to_next_same_or_higher_heading() {
+        let body = "# Top\nintro\n\n## Tasks\n- a\n- b\n\n### Sub\nx\n\n## Done\ny";
+        let sect = extract_section(body, "Tasks").unwrap();
+        // Includes its own heading, its body, and the deeper ### Sub, but stops
+        // at the next `## Done` (same level).
+        assert!(sect.contains("## Tasks"));
+        assert!(sect.contains("- a"));
+        assert!(sect.contains("### Sub"));
+        assert!(!sect.contains("## Done"));
+        assert!(!sect.contains("# Top"));
+
+        // Case-insensitive match; missing section returns None.
+        assert!(extract_section(body, "tasks").is_some());
+        assert!(extract_section(body, "Nope").is_none());
+    }
 }

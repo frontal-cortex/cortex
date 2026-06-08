@@ -516,6 +516,11 @@ pub struct ViewSpec {
     #[serde(default)]
     pub columns: Option<Vec<String>>,
     #[serde(default)]
+    pub group: Option<String>,
+    /// Calendar views: which date property positions a row on the grid.
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
     pub limit: Option<usize>,
     // Chart-only fields.
     #[serde(default)]
@@ -548,6 +553,14 @@ fn resolve_source(root: &Path, source: &str) -> Result<Table> {
     }
 }
 
+/// All field names a source offers (the `$body` pseudo-column excluded), before
+/// any column projection. The toolbar needs this so a hidden column can still be
+/// re-shown and so filter/sort dropdowns aren't limited to visible columns.
+pub fn source_columns(root: &Path, source: &str) -> Result<Vec<String>> {
+    let table = resolve_source(root, source)?;
+    Ok(table.columns.into_iter().map(|c| c.key).filter(|k| k != "$body").collect())
+}
+
 /// Parse a `cortex-view` YAML spec, resolve its source, and run its query.
 pub fn run_view(root: &Path, spec_yaml: &str) -> Result<Table> {
     let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
@@ -564,6 +577,218 @@ pub fn run_view(root: &Path, spec_yaml: &str) -> Result<Table> {
     };
 
     Ok(query.apply(&table))
+}
+
+// ── Structured spec ⇄ YAML (the GUI filter/sort/group builder talks to this) ──
+//
+// The YAML spec stays the on-disk source of truth. The toolbar edits this
+// structured form and serializes it straight back, so a view authored in the
+// UI is byte-identical to one hand-written, and a hand-written one round-trips
+// without surprises. A filter that mixes `and`/`or` (which the flat UI can't
+// represent) is flagged `filter_complex` and kept verbatim — the UI then defers
+// to raw editing rather than mangling it.
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct FilterClause {
+    pub field: String,
+    pub op: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SortClause {
+    pub field: String,
+    #[serde(default)]
+    pub desc: bool,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructuredSpec {
+    pub source: String,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub filters: Vec<FilterClause>,
+    #[serde(default)]
+    pub filter_join: String, // "and" | "or"
+    #[serde(default)]
+    pub filter_complex: bool,
+    #[serde(default)]
+    pub filter_raw: Option<String>,
+    #[serde(default)]
+    pub sort: Vec<SortClause>,
+    #[serde(default)]
+    pub columns: Option<Vec<String>>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub x: Option<String>,
+    #[serde(default)]
+    pub y: Option<String>,
+    #[serde(default)]
+    pub agg: Option<String>,
+    #[serde(default)]
+    pub chart_type: Option<String>,
+}
+
+fn normalize_op(tok: &str) -> Option<&'static str> {
+    match tok.to_lowercase().as_str() {
+        "==" | "=" => Some("=="),
+        "!=" => Some("!="),
+        ">" => Some(">"),
+        ">=" => Some(">="),
+        "<" => Some("<"),
+        "<=" => Some("<="),
+        "contains" => Some("contains"),
+        _ => None,
+    }
+}
+
+/// Flatten a filter string into clauses joined by a single connector. `None`
+/// when it mixes `and`/`or` or isn't a clean `field op value …` chain.
+fn flatten_filter(filter: &str) -> Option<(Vec<FilterClause>, String)> {
+    let tokens = tokenize(filter);
+    if tokens.is_empty() {
+        return Some((vec![], "and".into()));
+    }
+    let mut clauses = Vec::new();
+    let mut join: Option<String> = None;
+    let mut i = 0;
+    loop {
+        let field = tokens.get(i)?;
+        if field.starts_with('\u{1}') {
+            return None; // a literal where a field name belongs
+        }
+        let op = normalize_op(tokens.get(i + 1)?)?;
+        let raw_val = tokens.get(i + 2)?;
+        let value = raw_val.strip_prefix('\u{1}').unwrap_or(raw_val).to_string();
+        clauses.push(FilterClause { field: field.clone(), op: op.to_string(), value });
+        i += 3;
+        match tokens.get(i) {
+            None => break,
+            Some(conn) => {
+                let conn = conn.to_lowercase();
+                if conn != "and" && conn != "or" {
+                    return None;
+                }
+                match &join {
+                    Some(j) if *j != conn => return None, // mixed → complex
+                    _ => join = Some(conn),
+                }
+                i += 1;
+            }
+        }
+    }
+    Some((clauses, join.unwrap_or_else(|| "and".into())))
+}
+
+/// String values get quoted; bare numbers/bools don't — matching the spec style
+/// the engine already parses (`status == 'reading'`, `rating > 3`).
+fn build_filter(clauses: &[FilterClause], join: &str) -> String {
+    let render = |c: &FilterClause| {
+        let is_scalar = c.value.parse::<f64>().is_ok()
+            || matches!(c.value.to_ascii_lowercase().as_str(), "true" | "false");
+        let v = if is_scalar {
+            c.value.clone()
+        } else {
+            format!("'{}'", c.value.replace('\'', ""))
+        };
+        format!("{} {} {}", c.field, c.op, v)
+    };
+    clauses.iter().map(render).collect::<Vec<_>>().join(&format!(" {join} "))
+}
+
+/// Parse a YAML view spec into its structured (UI-editable) form.
+pub fn parse_view_spec(spec_yaml: &str) -> Result<StructuredSpec> {
+    let vs: ViewSpec = serde_yaml::from_str(spec_yaml)?;
+    let mut out = StructuredSpec {
+        source: vs.source,
+        kind: vs.kind,
+        filter_join: "and".into(),
+        sort: vs.sort.unwrap_or_default().iter().map(|s| {
+            let p = parse_sort(s);
+            SortClause { field: p.field, desc: p.desc }
+        }).collect(),
+        columns: vs.columns,
+        group: vs.group,
+        date: vs.date,
+        limit: vs.limit,
+        x: vs.x,
+        y: vs.y,
+        agg: vs.agg,
+        chart_type: vs.chart_type,
+        ..Default::default()
+    };
+    if let Some(f) = vs.filter.filter(|f| !f.trim().is_empty()) {
+        match flatten_filter(&f) {
+            Some((clauses, join)) => {
+                out.filters = clauses;
+                out.filter_join = join;
+            }
+            None => {
+                out.filter_complex = true;
+                out.filter_raw = Some(f);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Serialize a structured spec back to the canonical YAML form. Field order is
+/// fixed so output is deterministic and git-diff friendly.
+pub fn serialize_view_spec(s: &StructuredSpec) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("source: {}\n", s.source));
+    if let Some(k) = s.kind.as_deref().filter(|k| !k.is_empty()) {
+        out.push_str(&format!("type: {k}\n"));
+    }
+    let filter = if s.filter_complex {
+        s.filter_raw.clone().unwrap_or_default()
+    } else {
+        let join = if s.filter_join.is_empty() { "and" } else { &s.filter_join };
+        build_filter(&s.filters, join)
+    };
+    if !filter.trim().is_empty() {
+        out.push_str(&format!("filter: {filter}\n"));
+    }
+    if !s.sort.is_empty() {
+        let parts: Vec<String> = s.sort.iter()
+            .map(|c| if c.desc { format!("{} desc", c.field) } else { c.field.clone() })
+            .collect();
+        out.push_str(&format!("sort: [{}]\n", parts.join(", ")));
+    }
+    if let Some(cols) = &s.columns {
+        if !cols.is_empty() {
+            out.push_str(&format!("columns: [{}]\n", cols.join(", ")));
+        }
+    }
+    if let Some(g) = s.group.as_deref().filter(|g| !g.is_empty()) {
+        out.push_str(&format!("group: {g}\n"));
+    }
+    if let Some(d) = s.date.as_deref().filter(|d| !d.is_empty()) {
+        out.push_str(&format!("date: {d}\n"));
+    }
+    if let Some(l) = s.limit {
+        out.push_str(&format!("limit: {l}\n"));
+    }
+    if let Some(x) = s.x.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("x: {x}\n"));
+    }
+    if let Some(y) = s.y.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("y: {y}\n"));
+    }
+    if let Some(a) = s.agg.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("agg: {a}\n"));
+    }
+    if let Some(ct) = s.chart_type.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("chartType: {ct}\n"));
+    }
+    out
 }
 
 // ── Write-back: edit one cell at its source ───────────────────────────────────
@@ -1026,6 +1251,38 @@ mod tests {
         assert_eq!(csv.lines().nth(1).unwrap(), "b,2024-01-02,81");
         assert!(delete_csv_row(&root, "data/weight.csv", "nope").is_err());
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn structured_spec_round_trips_and_flags_complex_filters() {
+        // Flat filter: parsed into clauses, rebuilt identically.
+        let spec = "source: collections/books\ntype: table\nfilter: status == 'reading' and rating > 3\nsort: [rating desc, title]\ncolumns: [title, author, rating]\n";
+        let s = parse_view_spec(spec).unwrap();
+        assert!(!s.filter_complex);
+        assert_eq!(s.filters.len(), 2);
+        assert_eq!(s.filter_join, "and");
+        assert_eq!(s.filters[0].field, "status");
+        assert_eq!(s.filters[0].op, "==");
+        assert_eq!(s.filters[0].value, "reading");
+        assert_eq!(s.filters[1].op, ">");
+        assert_eq!(s.sort.len(), 2);
+        assert!(s.sort[0].desc && !s.sort[1].desc);
+
+        let yaml = serialize_view_spec(&s);
+        assert!(yaml.contains("filter: status == 'reading' and rating > 3"));
+        assert!(yaml.contains("sort: [rating desc, title]"));
+        assert!(yaml.contains("columns: [title, author, rating]"));
+        // And it parses back to the same shape.
+        let again = parse_view_spec(&yaml).unwrap();
+        assert_eq!(again.filters.len(), 2);
+        assert_eq!(again.filter_join, "and");
+
+        // Mixed connectors can't be flattened → preserved verbatim.
+        let mixed = "source: collections/books\nfilter: a == '1' and b == '2' or c == '3'\n";
+        let m = parse_view_spec(mixed).unwrap();
+        assert!(m.filter_complex);
+        assert_eq!(m.filter_raw.as_deref(), Some("a == '1' and b == '2' or c == '3'"));
+        assert!(serialize_view_spec(&m).contains("filter: a == '1' and b == '2' or c == '3'"));
     }
 
     #[test]

@@ -12,9 +12,66 @@ export interface RecentVault {
   last_opened: number;
 }
 
+export type PropType =
+  | "text"
+  | "number"
+  | "date"
+  | "checkbox"
+  | "select"
+  | "multi_select"
+  | "status"
+  | "url";
+
+export interface SelectOption {
+  name: string;
+  color: string;
+}
+
+export interface PropertyDef {
+  name: string;
+  type: PropType;
+  options: SelectOption[];
+}
+
+export interface TypeSchema {
+  properties: PropertyDef[];
+}
+
 export interface ViewColumn {
   key: string;
   ty: "text" | "number" | "bool" | "date" | "list";
+  /** Typed-property schema for select/status columns (options + colors). */
+  schema?: PropertyDef;
+}
+
+export interface FilterClause {
+  field: string;
+  op: string;
+  value: string;
+}
+
+export interface SortClause {
+  field: string;
+  desc: boolean;
+}
+
+/** Structured, UI-editable form of a `cortex-view` YAML spec. */
+export interface StructuredSpec {
+  source: string;
+  kind?: string | null;
+  filters: FilterClause[];
+  filterJoin: string; // "and" | "or"
+  filterComplex: boolean;
+  filterRaw?: string | null;
+  sort: SortClause[];
+  columns?: string[] | null;
+  group?: string | null;
+  date?: string | null;
+  limit?: number | null;
+  x?: string | null;
+  y?: string | null;
+  agg?: string | null;
+  chartType?: string | null;
 }
 
 export interface ViewRow {
@@ -25,6 +82,8 @@ export interface ViewRow {
 export interface ViewTable {
   name: string;
   columns: ViewColumn[];
+  /** All source fields before column projection — for the toolbar's dropdowns. */
+  allColumns: string[];
   rows: ViewRow[];
 }
 
@@ -38,6 +97,13 @@ export interface ChartResult {
   xLabel: string;
   yLabel: string;
   points: ChartPoint[];
+}
+
+export interface NoteRef {
+  path: string;
+  title: string;
+  body: string;
+  found: boolean;
 }
 
 export interface NoteEntry {
@@ -116,6 +182,24 @@ export const commands = {
   deleteRow: (source: string, rowId: string) =>
     invoke<void>("delete_row", { source, rowId }),
 
+  parseViewSpec: (spec: string) =>
+    invoke<StructuredSpec>("parse_view_spec", { spec }),
+
+  serializeViewSpec: (spec: StructuredSpec) =>
+    invoke<string>("serialize_view_spec", { spec }),
+
+  getSchema: (key: string) =>
+    invoke<TypeSchema | null>("get_schema", { key }),
+
+  getSchemaForNote: (path: string, noteType: string | null) =>
+    invoke<TypeSchema | null>("get_schema_for_note", { path, noteType }),
+
+  setSchema: (key: string, schema: TypeSchema) =>
+    invoke<void>("set_schema", { key, schema }),
+
+  upsertProperty: (key: string, property: PropertyDef) =>
+    invoke<void>("upsert_property", { key, property }),
+
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),
 
@@ -136,6 +220,9 @@ export const commands = {
 
   readNote: (path: string) =>
     invoke<Note>("read_note", { path }),
+
+  resolveRef: (target: string) =>
+    invoke<NoteRef>("resolve_ref", { target }),
 
   writeNote: (path: string, note: Note) =>
     invoke<void>("write_note", { path, note }),

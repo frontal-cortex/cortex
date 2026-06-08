@@ -1,18 +1,29 @@
 import { useEffect, useRef } from "react";
-import { NoteEntry } from "../../lib/commands";
 import { SuggestionCoords } from "../../lib/wikiLinkSuggestion";
 import styles from "./WikiLinkDropdown.module.css";
 
+/** A generic suggestion row — a note to link or a date to insert. */
+export interface SuggestItem {
+  key: string;
+  title: string;
+  badge?: string;
+  subtitle?: string;
+}
+
 interface Props {
   query: string;
-  notes: NoteEntry[];
+  items: SuggestItem[];
   coords: SuggestionCoords;
   activeIndex: number;
-  onSelect: (title: string) => void;
+  emptyLabel?: string;
+  onSelectIndex: (i: number) => void;
+  onMouseEnterIndex?: (i: number) => void;
   onClose: () => void;
 }
 
-export function WikiLinkDropdown({ query, notes, coords, activeIndex, onSelect, onClose }: Props) {
+export function WikiLinkDropdown({
+  query, items, coords, activeIndex, emptyLabel, onSelectIndex, onMouseEnterIndex, onClose,
+}: Props) {
   const listRef = useRef<HTMLDivElement>(null);
 
   // Scroll active item into view when activeIndex changes
@@ -32,11 +43,11 @@ export function WikiLinkDropdown({ query, notes, coords, activeIndex, onSelect, 
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  if (notes.length === 0 && !query) return null;
+  if (items.length === 0 && !query) return null;
 
   // Flip above cursor if too close to the bottom of the viewport
   const spaceBelow = window.innerHeight - coords.bottom;
-  const dropdownMaxH = Math.min(notes.length * 36 + 8, 288);
+  const dropdownMaxH = Math.min(items.length * 36 + 8, 288);
   const showAbove = spaceBelow < dropdownMaxH + 8;
 
   const style: React.CSSProperties = {
@@ -49,28 +60,24 @@ export function WikiLinkDropdown({ query, notes, coords, activeIndex, onSelect, 
 
   return (
     <div data-wiki-dropdown style={style} className={styles.root} ref={listRef}>
-      {notes.length === 0 ? (
-        <div className={styles.empty}>No notes match "{query}"</div>
+      {items.length === 0 ? (
+        <div className={styles.empty}>{emptyLabel ?? `No matches for "${query}"`}</div>
       ) : (
-        notes.map((note, i) => (
+        items.map((item, i) => (
           <button
-            key={note.path}
+            key={item.key}
             data-idx={i}
             className={`${styles.item} ${i === activeIndex ? styles.itemActive : ""}`}
             onMouseDown={(e) => {
               // mousedown instead of click so it fires before the editor blur
               e.preventDefault();
-              onSelect(note.title || pathToTitle(note.path));
+              onSelectIndex(i);
             }}
-            onMouseEnter={() => {
-              // Hover just moves visual focus, doesn't update activeIndex state
-              // (that's owned by the parent). We'd need a callback for this.
-              // Keeping it simple for now.
-            }}
+            onMouseEnter={() => onMouseEnterIndex?.(i)}
           >
-            <span className={styles.title}>{note.title || pathToTitle(note.path)}</span>
-            {note.note_type && <span className={styles.type}>{note.note_type}</span>}
-            <span className={styles.path}>{note.path.split("/").pop()?.replace(/\.md$/, "")}</span>
+            <span className={styles.title}>{item.title}</span>
+            {item.badge && <span className={styles.type}>{item.badge}</span>}
+            {item.subtitle && <span className={styles.path}>{item.subtitle}</span>}
           </button>
         ))
       )}
@@ -79,8 +86,4 @@ export function WikiLinkDropdown({ query, notes, coords, activeIndex, onSelect, 
       </div>
     </div>
   );
-}
-
-function pathToTitle(path: string) {
-  return path.split("/").pop()?.replace(/\.md$/, "").replace(/-/g, " ") ?? "Untitled";
 }

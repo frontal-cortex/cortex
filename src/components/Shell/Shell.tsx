@@ -7,6 +7,7 @@ import { useNavHistory } from "../../hooks/useNavHistory";
 import { LeftPanel } from "./LeftPanel";
 import { Editor } from "./Editor";
 import { QuickSwitcher } from "./QuickSwitcher";
+import { QuickCapture } from "./QuickCapture";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
 import { SettingsModal, applyTheme } from "./SettingsModal";
@@ -32,6 +33,7 @@ export function Shell({
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
 
   // Apply the saved theme preference when the vault opens.
   useEffect(() => {
@@ -53,12 +55,13 @@ export function Shell({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.shiftKey && (e.key === "k" || e.key === "K")) { e.preventDefault(); setShowCapture(true); return; }
       if (meta && e.key === "k") { e.preventDefault(); setShowQuickSwitcher(true); }
       if (meta && e.key === "n") { e.preventDefault(); handleNewNote(undefined); }
       if (meta && e.key === "g") { e.preventDefault(); setShowGraph((x) => !x); }
       if (meta && e.key === "[") { e.preventDefault(); back(); }
       if (meta && e.key === "]") { e.preventDefault(); forward(); }
-      if (e.key === "Escape") { setShowQuickSwitcher(false); setShowGraph(false); }
+      if (e.key === "Escape") { setShowQuickSwitcher(false); setShowGraph(false); setShowCapture(false); }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -75,6 +78,17 @@ export function Shell({
     return () => window.removeEventListener("cortex:open-note", onOpenNote);
   }, [setSelectedPath]);
 
+  // Wiki links inside transclusion embeds dispatch this to navigate by ref.
+  useEffect(() => {
+    function onNavigate(e: Event) {
+      const target = (e as CustomEvent<{ target?: string }>).detail?.target;
+      if (typeof target === "string") handleNavigate(target);
+    }
+    window.addEventListener("cortex:navigate", onNavigate);
+    return () => window.removeEventListener("cortex:navigate", onNavigate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes]);
+
   const handleNewNote = useCallback(async (parentFolder?: string) => {
     const created = await createNote("", parentFolder);
     setSelectedPath(created.path);
@@ -89,6 +103,40 @@ export function Shell({
     const note = await createNoteFromTemplate(templateName, "", "notes");
     setSelectedPath(note.path);
   }, [createNoteFromTemplate]);
+
+  // Flip between light and dark, persisting the choice (forcing an explicit
+  // theme rather than following the OS, matching how the picker behaves).
+  const handleToggleTheme = useCallback(async () => {
+    const settings = await commands.getSettings();
+    const current = document.documentElement.getAttribute("data-theme");
+    const next = current === "dark" ? "light" : "dark";
+    applyTheme(next);
+    await commands.setSettings({ ...settings, theme: next });
+  }, []);
+
+  // Append a timestamped bullet to today's daily note, creating it if needed —
+  // without navigating away from whatever note is open.
+  const handleQuickCapture = useCallback(async (text: string) => {
+    const now = new Date();
+    const p2 = (n: number) => String(n).padStart(2, "0");
+    const dateStr = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+    const time = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
+    const path = `notes/journal/${dateStr}.md`;
+
+    let target;
+    try {
+      target = await commands.readNote(path);
+    } catch {
+      target = await commands.createNote(path, dateStr, dateStr);
+    }
+    const line = `- ${time} ${text}`;
+    const base = target.body.replace(/\n+$/, "");
+    const body = base ? `${base}\n${line}\n` : `${line}\n`;
+    await commands.writeNote(path, { ...target, body });
+    await refresh();
+    // If today's note is the one on screen, re-read so the new line shows.
+    if (selectedPath === path) applyNote(await commands.readNote(path));
+  }, [refresh, selectedPath, applyNote]);
 
   // Open a collection's `_index.md` "home" note (a board + table over its rows),
   // creating it on demand — so pre-existing collections without an index work too.
@@ -216,6 +264,19 @@ export function Shell({
           onToday={handleToday}
           onOpenGraph={() => setShowGraph(true)}
           onNewFromTemplate={handleNewFromTemplate}
+          onNewCollection={handleNewCollection}
+          onSync={onSync}
+          onToggleTheme={handleToggleTheme}
+          onOpenSettings={() => setShowSettings(true)}
+          onQuickCapture={() => setShowCapture(true)}
+          hasRemote={vault.has_remote}
+        />
+      )}
+
+      {showCapture && (
+        <QuickCapture
+          onCapture={handleQuickCapture}
+          onClose={() => setShowCapture(false)}
         />
       )}
 

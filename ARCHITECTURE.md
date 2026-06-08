@@ -55,7 +55,7 @@ created: 2024-01-15
 Note body here. [[Wiki links]] work. So do standard markdown features.
 ```
 
-`type` is how notes gain structured behavior (task lists, meeting notes, etc.). Type definitions live in `.brain/schemas/` as JSON Schema files. An app that doesn't know the schema still sees valid markdown.
+`type` is how notes gain structured behavior (task lists, meeting notes, etc.). Property schemas live in `.cortex/schemas/<key>.yaml` — committed and portable, so they travel with the vault. A schema is keyed by collection name for notes under `collections/<name>/`, otherwise by the note's `type` (see `schema_key`). Each schema declares typed properties (text, number, date, checkbox, select, multi_select, status, url); the select-like types carry named options with colors. An app that doesn't know the schema still sees valid markdown.
 
 ### The `.brain/` Directory
 

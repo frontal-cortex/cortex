@@ -51,6 +51,44 @@
 
   /* Panels */
   --left-panel-width: 260px;
+
+  /* Tag / select pill palette — muted fills, readable text. Referenced from
+     inline styles as var(--tag-<name>-bg/-fg); dark variants below. */
+  --tag-gray-bg:   #e9e9e7;  --tag-gray-fg:   #44423d;
+  --tag-brown-bg:  #eee0da;  --tag-brown-fg:  #543b2c;
+  --tag-orange-bg: #fbecdd;  --tag-orange-fg: #6b3e11;
+  --tag-yellow-bg: #fbf3db;  --tag-yellow-fg: #5c4416;
+  --tag-green-bg:  #dbeddb;  --tag-green-fg:  #1c3d2a;
+  --tag-blue-bg:   #ddebf1;  --tag-blue-fg:   #183347;
+  --tag-purple-bg: #eae4f2;  --tag-purple-fg: #3c2b59;
+  --tag-pink-bg:   #f4dfeb;  --tag-pink-fg:   #4f2741;
+  --tag-red-bg:    #fbe4e4;  --tag-red-fg:    #5d1715;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --tag-gray-bg:   #3a3a37;  --tag-gray-fg:   #cdcbc4;
+    --tag-brown-bg:  #4a3526;  --tag-brown-fg:  #e0c3af;
+    --tag-orange-bg: #5c3b23;  --tag-orange-fg: #f4c896;
+    --tag-yellow-bg: #564a2b;  --tag-yellow-fg: #f3df9b;
+    --tag-green-bg:  #2a3d30;  --tag-green-fg:  #a4d6b4;
+    --tag-blue-bg:   #233a4d;  --tag-blue-fg:   #9fcbe8;
+    --tag-purple-bg: #3a2f4d;  --tag-purple-fg: #c8b4e8;
+    --tag-pink-bg:   #4d2b3f;  --tag-pink-fg:   #e8b4d2;
+    --tag-red-bg:    #4d2626;  --tag-red-fg:    #e8a4a4;
+  }
+}
+
+:root[data-theme="dark"] {
+  --tag-gray-bg:   #3a3a37;  --tag-gray-fg:   #cdcbc4;
+  --tag-brown-bg:  #4a3526;  --tag-brown-fg:  #e0c3af;
+  --tag-orange-bg: #5c3b23;  --tag-orange-fg: #f4c896;
+  --tag-yellow-bg: #564a2b;  --tag-yellow-fg: #f3df9b;
+  --tag-green-bg:  #2a3d30;  --tag-green-fg:  #a4d6b4;
+  --tag-blue-bg:   #233a4d;  --tag-blue-fg:   #9fcbe8;
+  --tag-purple-bg: #3a2f4d;  --tag-purple-fg: #c8b4e8;
+  --tag-pink-bg:   #4d2b3f;  --tag-pink-fg:   #e8b4d2;
+  --tag-red-bg:    #4d2626;  --tag-red-fg:    #e8a4a4;
 }
 
 /* Warm dark. Applied automatically when the OS is dark AND no explicit theme is

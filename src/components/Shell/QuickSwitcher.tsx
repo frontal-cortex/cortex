@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -20,6 +20,12 @@ interface Props {
   onToday: () => void;
   onOpenGraph: () => void;
   onNewFromTemplate: (tplName: string) => void;
+  onNewCollection: () => void;
+  onSync: () => void;
+  onToggleTheme: () => void;
+  onOpenSettings: () => void;
+  onQuickCapture: () => void;
+  hasRemote: boolean;
 }
 
 type Mode = "notes" | "actions";
@@ -27,6 +33,7 @@ type Mode = "notes" | "actions";
 export function QuickSwitcher({
   notes, onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
+  onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture, hasRemote,
 }: Props) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -71,11 +78,44 @@ export function QuickSwitcher({
         run: () => { onToday(); onClose(); },
       },
       {
+        id: "capture",
+        label: "Quick capture",
+        description: "⌘⇧K · append a line to today's note",
+        icon: <PlusIcon size={14} />,
+        run: () => { onQuickCapture(); onClose(); },
+      },
+      {
         id: "graph",
         label: "Graph view",
         description: "⌘G",
         icon: <GraphIcon size={14} />,
         run: () => { onOpenGraph(); onClose(); },
+      },
+      {
+        id: "new-collection",
+        label: "New collection",
+        description: "Start a database of notes",
+        icon: <BrainIcon size={14} />,
+        run: () => { onNewCollection(); onClose(); },
+      },
+      ...(hasRemote ? [{
+        id: "sync",
+        label: "Sync vault",
+        description: "Pull, rebase, and push to the remote",
+        icon: <SyncIcon size={14} />,
+        run: () => { onSync(); onClose(); },
+      }] : []),
+      {
+        id: "toggle-theme",
+        label: "Toggle light / dark theme",
+        icon: <ThemeIcon size={14} />,
+        run: () => { onToggleTheme(); onClose(); },
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        icon: <GearIcon size={14} />,
+        run: () => { onOpenSettings(); onClose(); },
       },
     ];
     const tplActions: Action[] = templates.map((t) => ({
@@ -85,7 +125,8 @@ export function QuickSwitcher({
       run: () => { onNewFromTemplate(t); onClose(); },
     }));
     return [...base, ...tplActions];
-  }, [templates, onNewNote, onToday, onOpenGraph, onNewFromTemplate, onClose]);
+  }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
+      onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>
