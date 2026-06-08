@@ -1,0 +1,264 @@
+.root {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-app);
+}
+
+.inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-6) 54px var(--space-6);
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.icon {
+  font-size: 32px;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.icon:hover {
+  background: var(--bg-hover);
+}
+
+.title {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  outline: none;
+  padding: 0;
+}
+
+.emojiWrap {
+  position: absolute;
+  z-index: 100;
+  margin-top: 40px;
+}
+
+/* Tab bar */
+.tabBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-2);
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  position: relative;
+}
+
+.tabBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tabBtn:hover {
+  color: var(--text-primary);
+}
+
+.tabActive .tabBtn {
+  color: var(--text-primary);
+  font-weight: 500;
+  border-bottom-color: var(--text-primary);
+}
+
+.tabIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
+}
+
+.tabActive .tabIcon {
+  color: var(--text-secondary);
+}
+
+.tabMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 60;
+  min-width: 130px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tabMenuItem {
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.tabMenuItem:hover {
+  background: var(--bg-hover);
+}
+
+.addView {
+  position: relative;
+}
+
+.addBtn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 5px 7px;
+  border-radius: var(--radius-sm);
+}
+
+.addBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.addMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 60;
+  min-width: 150px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.addItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.addItem:hover {
+  background: var(--bg-hover);
+}
+
+.addIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  width: 16px;
+}
+
+.newBtn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  padding: 4px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.newBtn:hover {
+  filter: brightness(1.05);
+}
+
+/* Content */
+.content {
+  margin-top: var(--space-3);
+}
+
+.stub {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  padding: var(--space-4) 0;
+}
+
+.error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  padding: var(--space-2) 0;
+}
+
+/* Chart config bar */
+.chartBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.chartField {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.chartInput,
+.chartSelect {
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  padding: 3px 7px;
+}
+
+.chartInput:focus,
+.chartSelect:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}

@@ -32,6 +32,60 @@ export function ThemeIcon({ size = 14 }: IconProps) {
   );
 }
 
+// ── Database view-type icons ──────────────────────────────────────────────────
+
+export function TableIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <line x1="3" y1="9.5" x2="21" y2="9.5" />
+      <line x1="3" y1="14.5" x2="21" y2="14.5" />
+      <line x1="9" y1="9.5" x2="9" y2="20" />
+    </svg>
+  );
+}
+
+export function BoardIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="4.5" height="16" rx="1" />
+      <rect x="9.75" y="4" width="4.5" height="11" rx="1" />
+      <rect x="16.5" y="4" width="4.5" height="14" rx="1" />
+    </svg>
+  );
+}
+
+export function CalendarIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <line x1="3" y1="9.5" x2="21" y2="9.5" />
+      <line x1="8" y1="3" x2="8" y2="7" />
+      <line x1="16" y1="3" x2="16" y2="7" />
+    </svg>
+  );
+}
+
+export function GalleryIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="8" height="8" rx="1.5" />
+      <rect x="13" y="3" width="8" height="8" rx="1.5" />
+      <rect x="3" y="13" width="8" height="8" rx="1.5" />
+      <rect x="13" y="13" width="8" height="8" rx="1.5" />
+    </svg>
+  );
+}
+
+export function ChartIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4 v15 a1 1 0 0 0 1 1 h15" />
+      <polyline points="7 15 11 11 14 13 19 7" />
+    </svg>
+  );
+}
+
 export function SearchIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
