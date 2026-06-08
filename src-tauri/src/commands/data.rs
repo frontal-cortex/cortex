@@ -3,12 +3,17 @@ use tauri::State;
 
 use crate::commands::vault::{DbState, VaultState};
 use crate::error::{AppError, Result};
-use crate::data::{ChartResult, Table};
+use crate::data::{ChartResult, StructuredSpec, Table};
+use crate::schema::{PropertyDef, TypeSchema};
 
 #[derive(serde::Serialize)]
 pub struct WireColumn {
     pub key: String,
     pub ty: String,
+    /// Typed-property schema for this column (select options + colors), when the
+    /// source's schema declares one. Lets the view render colored pills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<PropertyDef>,
 }
 
 #[derive(serde::Serialize)]
@@ -18,17 +23,25 @@ pub struct WireRow {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WireTable {
     pub name: String,
     pub columns: Vec<WireColumn>,
+    /// Every field the source offers, before column projection — lets the
+    /// toolbar list hidden columns and sort/filter on them.
+    pub all_columns: Vec<String>,
     pub rows: Vec<WireRow>,
 }
 
-fn to_wire(table: Table) -> WireTable {
+fn to_wire(table: Table, all_columns: Vec<String>, schema: Option<&TypeSchema>) -> WireTable {
     WireTable {
         name: table.name,
+        all_columns,
         columns: table.columns.into_iter()
-            .map(|c| WireColumn { key: c.key, ty: c.ty.as_str().to_string() })
+            .map(|c| {
+                let schema = schema.and_then(|s| s.property(&c.key)).cloned();
+                WireColumn { key: c.key, ty: c.ty.as_str().to_string(), schema }
+            })
             .collect(),
         rows: table.rows.into_iter()
             .map(|r| WireRow {
@@ -45,7 +58,27 @@ fn to_wire(table: Table) -> WireTable {
 pub fn run_view(spec: String, state: State<'_, VaultState>) -> Result<WireTable> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
     let table = crate::data::run_view(&root, &spec)?;
-    Ok(to_wire(table))
+    let parsed = crate::data::parse_view_spec(&spec).ok();
+    let all_columns = parsed.as_ref()
+        .and_then(|s| crate::data::source_columns(&root, &s.source).ok())
+        .unwrap_or_else(|| table.columns.iter().map(|c| c.key.clone()).collect());
+    // Collection sources resolve to a schema by name; CSV sources have none.
+    let schema = parsed
+        .and_then(|s| crate::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
+        .and_then(|key| crate::schema::load(&root, &key).ok().flatten());
+    Ok(to_wire(table, all_columns, schema.as_ref()))
+}
+
+/// Parse a YAML view spec into the structured form the toolbar edits.
+#[tauri::command]
+pub fn parse_view_spec(spec: String) -> Result<StructuredSpec> {
+    crate::data::parse_view_spec(&spec)
+}
+
+/// Serialize a structured spec (from the toolbar) back to canonical YAML.
+#[tauri::command]
+pub fn serialize_view_spec(spec: StructuredSpec) -> Result<String> {
+    Ok(crate::data::serialize_view_spec(&spec))
 }
 
 /// Resolve a `cortex-chart` spec into a single `{x, y}` series.

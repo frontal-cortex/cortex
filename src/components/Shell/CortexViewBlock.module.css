@@ -111,6 +111,70 @@
   vertical-align: top;
 }
 
+/* Column header type picker */
+.colHeader {
+  position: relative;
+  display: inline-block;
+}
+
+.colHeaderBtn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  padding: 1px 3px;
+  border-radius: var(--radius-sm);
+}
+
+.colHeaderBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.colMenu {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  z-index: 50;
+  min-width: 150px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.colMenuLabel {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  padding: 3px 6px;
+}
+
+.colMenuItem {
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.colMenuItem:hover {
+  background: var(--bg-hover);
+}
+
 .table tr:last-child td {
   border-bottom: none;
 }
@@ -291,7 +355,9 @@
 }
 
 .boardCard:hover .cardOpen,
-.boardCard:hover .cardDelete {
+.boardCard:hover .cardDelete,
+.galleryCard:hover .cardOpen,
+.galleryCard:hover .cardDelete {
   opacity: 1;
 }
 
@@ -385,4 +451,221 @@
 
 .bar {
   fill: var(--accent);
+}
+
+/* ── Calendar view ──────────────────────────────────────────────────────────── */
+.calendar {
+  font-size: var(--text-sm);
+}
+
+.calHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.calTitle {
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 140px;
+}
+
+.calNav {
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+}
+
+.calNav:hover {
+  background: var(--bg-hover);
+}
+
+.calToday {
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+}
+
+.calToday:hover {
+  background: var(--bg-hover);
+}
+
+.calField {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.calGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.calWeekday {
+  background: var(--bg-panel);
+  padding: 4px 6px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.calEmpty {
+  background: var(--bg-app);
+  min-height: 76px;
+}
+
+.calCell {
+  background: var(--bg-panel);
+  min-height: 76px;
+  padding: 3px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calCellToday {
+  background: var(--accent-light);
+}
+
+.calDayRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calDay {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.calAdd {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  font-size: var(--text-sm);
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.calCell:hover .calAdd {
+  opacity: 1;
+}
+
+.calAdd:hover {
+  color: var(--accent);
+}
+
+.calEvent,
+.calEventOpen {
+  font-size: var(--text-xs);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.calEventOpen {
+  cursor: pointer;
+}
+
+.calEventOpen:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ── Gallery view ───────────────────────────────────────────────────────────── */
+.galleryWrap {
+  font-size: var(--text-sm);
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.galleryCard {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+
+.galleryCard:hover .cardActions {
+  opacity: 1;
+}
+
+.galleryCover {
+  height: 110px;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.galleryCoverOpen {
+  cursor: pointer;
+}
+
+.galleryImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.galleryNoCover {
+  font-size: var(--text-xl);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.galleryBody {
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.galleryTitle,
+.galleryTitleOpen {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.galleryTitleOpen {
+  cursor: pointer;
+}
+
+.galleryTitleOpen:hover {
+  color: var(--accent);
+}
+
+.galleryField {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
 }

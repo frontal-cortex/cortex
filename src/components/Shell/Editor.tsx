@@ -7,15 +7,18 @@ import Picker from "@emoji-mart/react";
 import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
+import { useColorScheme } from "../../hooks/useColorScheme";
 import { Note, NoteEntry, commands } from "../../lib/commands";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
-import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle } from "../../lib/wikiLinkSuggestion";
+import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
-import { WikiLinkDropdown } from "./WikiLinkDropdown";
+import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
 import { NoteHistoryModal } from "./NoteHistoryModal";
 import { PlusIcon, HistoryIcon, TrashIcon } from "./icons";
 import { cortexSchema, inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
+import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
+import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
 import styles from "./Editor.module.css";
 
 // Maps data URIs → vault-relative paths (e.g. "assets/image-123.png")
@@ -128,6 +131,47 @@ interface SuggestionState {
   query: string;
   coords: SuggestionCoords;
   from: number;
+  trigger: SuggestionTrigger;
+}
+
+/** An item offered in the suggestion dropdown: a note to wiki-link, or (for `@`)
+ *  a date to insert as plain text. `display` is what the dropdown renders. */
+type MentionItem =
+  | { kind: "note"; note: NoteEntry; display: SuggestItem }
+  | { kind: "date"; value: string; display: SuggestItem };
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Relative-date shortcuts offered after `@`, filtered by the typed query. */
+function dateSuggestions(query: string): MentionItem[] {
+  const now = new Date();
+  const mk = (label: string, d: Date): MentionItem => {
+    const value = isoDate(d);
+    return { kind: "date", value, display: { key: `date:${label}`, title: label, badge: "Date", subtitle: value } };
+  };
+  const all = [
+    mk("Today", now),
+    mk("Tomorrow", new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)),
+    mk("Yesterday", new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)),
+  ];
+  const q = query.toLowerCase();
+  if (!q) return all;
+  return all.filter((it) => it.display.title.toLowerCase().includes(q) || it.display.subtitle?.includes(q));
+}
+
+function noteItem(note: NoteEntry): MentionItem {
+  return {
+    kind: "note",
+    note,
+    display: {
+      key: note.path,
+      title: note.title || pathToTitle(note.path),
+      badge: note.note_type ?? undefined,
+      subtitle: note.path.split("/").pop()?.replace(/\.md$/, ""),
+    },
+  };
 }
 
 function NoteEditor({
@@ -157,27 +201,30 @@ function NoteEditor({
   // Refs so the ProseMirror plugin always calls the latest versions
   const keyHandlerRef = useRef<((key: string) => boolean) | null>(null);
   const callbacksRef = useRef({
-    onOpen: (_q: string, _c: SuggestionCoords, _f: number) => {},
-    onUpdate: (_q: string, _c: SuggestionCoords, _f: number) => {},
+    onOpen: (_q: string, _c: SuggestionCoords, _f: number, _t: SuggestionTrigger) => {},
+    onUpdate: (_q: string, _c: SuggestionCoords, _f: number, _t: SuggestionTrigger) => {},
     onClose: () => {},
   });
 
-  // Filtered note list for the suggestion dropdown
-  const filteredSuggestions = useMemo(() => {
+  // Unified item list for the suggestion dropdown: notes for `[[`, plus relative
+  // dates for `@`.
+  const filteredItems = useMemo<MentionItem[]>(() => {
     if (!suggestion) return [];
     const q = suggestion.query.toLowerCase();
-    if (!q) return allNotes.slice(0, 8);
-    return allNotes
-      .filter((n) =>
-        n.title.toLowerCase().includes(q) ||
-        n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(q),
-      )
-      .slice(0, 8);
+    const matchNote = (n: NoteEntry) =>
+      !q ||
+      n.title.toLowerCase().includes(q) ||
+      (n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(q) ?? false);
+    const notes = allNotes.filter(matchNote).slice(0, 8).map(noteItem);
+    if (suggestion.trigger === "mention") {
+      return [...dateSuggestions(suggestion.query), ...notes];
+    }
+    return notes;
   }, [suggestion, allNotes]);
 
-  // Keep filteredSuggestions accessible in the key handler without stale closure
-  const filteredRef = useRef(filteredSuggestions);
-  filteredRef.current = filteredSuggestions;
+  // Keep items accessible in the key handler without stale closure
+  const filteredRef = useRef(filteredItems);
+  filteredRef.current = filteredItems;
 
   const suggActiveIdxRef = useRef(suggActiveIdx);
   suggActiveIdxRef.current = suggActiveIdx;
@@ -251,26 +298,31 @@ function NoteEditor({
 
   // Wire suggestion callbacks (updated every render via ref)
   callbacksRef.current = {
-    onOpen: (query, coords, from) => {
-      setSuggestion({ query, coords, from });
+    onOpen: (query, coords, from, trigger) => {
+      setSuggestion({ query, coords, from, trigger });
       setSuggActiveIdx(0);
     },
-    onUpdate: (query, coords, from) => {
-      setSuggestion({ query, coords, from });
+    onUpdate: (query, coords, from, trigger) => {
+      setSuggestion({ query, coords, from, trigger });
       setSuggActiveIdx(0);
     },
     onClose: () => setSuggestion(null),
   };
 
   // ── Suggestion insertion ───────────────────────────────────────────────────
-  const insertSuggestion = useCallback((title: string) => {
+  // A note becomes a `[[wiki link]]` (for both `[[` and `@`); a date becomes
+  // plain ISO text. The trigger text (`[[query` or `@query`) is replaced wholesale.
+  const insertItem = useCallback((item: MentionItem) => {
     if (!suggestion) return;
     const { from } = suggestion;
     const to = editor._tiptapEditor.state.selection.from;
+    const text = item.kind === "note"
+      ? `[[${item.note.title || pathToTitle(item.note.path)}]]`
+      : item.value;
 
     editor._tiptapEditor.commands.command(({ tr, dispatch }) => {
       if (dispatch) {
-        tr.replaceWith(from, to, editor._tiptapEditor.schema.text(`[[${title}]]`));
+        tr.replaceWith(from, to, editor._tiptapEditor.schema.text(text));
       }
       return true;
     });
@@ -287,7 +339,7 @@ function NoteEditor({
     if (key === "ArrowDown") { setSuggActiveIdx((i) => Math.min(i + 1, items.length - 1)); return true; }
     if (key === "ArrowUp")   { setSuggActiveIdx((i) => Math.max(i - 1, 0)); return true; }
     if (key === "Enter" || key === "Tab") {
-      if (items[idx]) insertSuggestion(items[idx].title || pathToTitle(items[idx].path));
+      if (items[idx]) insertItem(items[idx]);
       return true;
     }
     if (key === "Escape") { setSuggestion(null); return true; }
@@ -311,8 +363,9 @@ function NoteEditor({
         .then((displayBody) => {
           try {
             const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-            // Translate `cortex-view` code fences into live view blocks on load.
-            editor.replaceBlocks(editor.document, inflateViewBlocks(blocks) as typeof blocks);
+            // Translate `cortex-view` fences, `![[embeds]]`, and `[!callout]`
+            // blockquotes into live blocks on load.
+            editor.replaceBlocks(editor.document, inflateCallouts(inflateEmbeds(inflateViewBlocks(blocks))) as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
             // would be suppressed forever for this note.
@@ -344,7 +397,7 @@ function NoteEditor({
       // immediately by navigating away — capturing here means the pending
       // write survives the editor being destroyed on unmount.
       void (async () => {
-        const doc = flattenViewBlocks(editor.document) as typeof editor.document;
+        const doc = flattenCallouts(flattenEmbeds(flattenViewBlocks(editor.document))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
         pendingMd.current = displayUrlsToAssets(md);
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
@@ -378,6 +431,10 @@ function NoteEditor({
 
   const icon = typeof note.frontmatter["icon"] === "string" ? note.frontmatter["icon"] : null;
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // Match BlockNote to the app's theme. Without this it themes off the OS, so
+  // forcing light mode under a dark OS left light-gray text on a white page.
+  const colorScheme = useColorScheme();
 
   const handleIconSelect = useCallback((emoji: { native: string }) => {
     setShowEmojiPicker(false);
@@ -430,15 +487,15 @@ function NoteEditor({
             </div>
           )}
 
-          <PropertiesPanel frontmatter={note.frontmatter} onChange={handleFrontmatterChange} />
+          <PropertiesPanel frontmatter={note.frontmatter} notePath={note.path} onChange={handleFrontmatterChange} />
 
           <div className={styles.editorWrap}>
-            <BlockNoteView editor={editor} slashMenu={false}>
+            <BlockNoteView editor={editor} slashMenu={false} theme={colorScheme}>
               <SuggestionMenuController
                 triggerCharacter="/"
                 getItems={async (query) =>
                   filterSuggestionItems(
-                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor)],
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor)],
                     query,
                   )
                 }
@@ -453,10 +510,14 @@ function NoteEditor({
       {suggestion && (
         <WikiLinkDropdown
           query={suggestion.query}
-          notes={filteredSuggestions}
+          items={filteredItems.map((it) => it.display)}
           coords={suggestion.coords}
           activeIndex={suggActiveIdx}
-          onSelect={insertSuggestion}
+          emptyLabel={suggestion.trigger === "mention"
+            ? `No matches for "${suggestion.query}"`
+            : `No notes match "${suggestion.query}"`}
+          onSelectIndex={(i) => { if (filteredItems[i]) insertItem(filteredItems[i]); }}
+          onMouseEnterIndex={setSuggActiveIdx}
           onClose={() => setSuggestion(null)}
         />
       )}

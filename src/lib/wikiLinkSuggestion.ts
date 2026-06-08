@@ -7,13 +7,16 @@ export interface SuggestionCoords {
   bottom: number;
 }
 
+/** What opened the suggestion: a `[[` wiki link or an `@` mention. */
+export type SuggestionTrigger = "wiki" | "mention";
+
 export interface SuggestionHandle {
   /** Called from ProseMirror; React updates the dropdown via this. */
   keyHandler: React.MutableRefObject<((key: string) => boolean) | null>;
   /** Stable wrappers — set these from the component side. */
   callbacks: React.MutableRefObject<{
-    onOpen: (query: string, coords: SuggestionCoords, from: number) => void;
-    onUpdate: (query: string, coords: SuggestionCoords, from: number) => void;
+    onOpen: (query: string, coords: SuggestionCoords, from: number, trigger: SuggestionTrigger) => void;
+    onUpdate: (query: string, coords: SuggestionCoords, from: number, trigger: SuggestionTrigger) => void;
     onClose: () => void;
   }>;
 }
@@ -22,12 +25,13 @@ interface PluginState {
   active: boolean;
   query: string;
   from: number;
+  trigger: SuggestionTrigger;
 }
 
 const PLUGIN_KEY = new PluginKey<PluginState>("wikiLinkSuggestion");
 
 function detectSuggestion(state: EditorState): PluginState {
-  const inactive: PluginState = { active: false, query: "", from: 0 };
+  const inactive: PluginState = { active: false, query: "", from: 0, trigger: "wiki" };
   const { selection } = state;
 
   // Only act on a plain cursor (no range selection)
@@ -37,18 +41,28 @@ function detectSuggestion(state: EditorState): PluginState {
 
   // Text in the current block before the cursor
   const textBefore = $cursor.parent.textContent.slice(0, $cursor.parentOffset);
+
+  // `[[ ` wiki link — takes precedence (it can legitimately contain an @).
   const openIdx = textBefore.lastIndexOf("[[");
-  if (openIdx === -1) return inactive;
+  if (openIdx !== -1) {
+    const afterBrackets = textBefore.slice(openIdx + 2);
+    // Bail if already closed or if a second [[ was opened
+    if (!afterBrackets.includes("]]") && !afterBrackets.includes("[[")) {
+      return { active: true, query: afterBrackets, from: $cursor.start() + openIdx, trigger: "wiki" };
+    }
+  }
 
-  const afterBrackets = textBefore.slice(openIdx + 2);
-  // Bail if already closed or if a second [[ was opened
-  if (afterBrackets.includes("]]") || afterBrackets.includes("[[")) return inactive;
+  // `@` mention — only at a word boundary, and the query ends at the first space.
+  const atIdx = textBefore.lastIndexOf("@");
+  if (atIdx !== -1) {
+    const before = atIdx === 0 ? " " : textBefore[atIdx - 1];
+    const afterAt = textBefore.slice(atIdx + 1);
+    if (/\s/.test(before) && !/[\s@[\]]/.test(afterAt)) {
+      return { active: true, query: afterAt, from: $cursor.start() + atIdx, trigger: "mention" };
+    }
+  }
 
-  return {
-    active: true,
-    query: afterBrackets,
-    from: $cursor.start() + openIdx,
-  };
+  return inactive;
 }
 
 /**
@@ -68,7 +82,7 @@ export function wikiLinkSuggestionExtension(handle: SuggestionHandle) {
           key: PLUGIN_KEY,
 
           state: {
-            init: () => ({ active: false, query: "", from: 0 }),
+            init: () => ({ active: false, query: "", from: 0, trigger: "wiki" }),
             apply(_tr, _prev, _oldState, newState) {
               return detectSuggestion(newState);
             },
@@ -87,9 +101,9 @@ export function wikiLinkSuggestionExtension(handle: SuggestionHandle) {
                 };
 
                 if (next.active && !prev?.active) {
-                  handle.callbacks.current.onOpen(next.query, coords(), next.from);
-                } else if (next.active && prev?.active && next.query !== prev.query) {
-                  handle.callbacks.current.onUpdate(next.query, coords(), next.from);
+                  handle.callbacks.current.onOpen(next.query, coords(), next.from, next.trigger);
+                } else if (next.active && prev?.active && (next.query !== prev.query || next.trigger !== prev.trigger)) {
+                  handle.callbacks.current.onUpdate(next.query, coords(), next.from, next.trigger);
                 } else if (!next.active && prev?.active) {
                   handle.callbacks.current.onClose();
                 }

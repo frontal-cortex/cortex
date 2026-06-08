@@ -1,17 +1,47 @@
-import { useState, useRef, KeyboardEvent } from "react";
+import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { PlusIcon, MinusIcon, CloseIcon } from "./icons";
+import { commands, PropertyDef, SelectOption, TypeSchema } from "../../lib/commands";
+import { SelectCell } from "./SelectCell";
 import styles from "./PropertiesPanel.module.css";
 
 interface Props {
   frontmatter: Record<string, unknown>;
+  notePath: string;
   onChange: (updated: Record<string, unknown>) => void;
 }
 
 // Keys rendered with dedicated UI — everything else shows in the custom section
 const KNOWN_KEYS = ["title", "type", "tags", "created"];
 
-export function PropertiesPanel({ frontmatter, onChange }: Props) {
+/** Mirror of the backend `schema_key` rule: collection name, else note type. */
+function schemaKeyFor(path: string, type: string | null): string | null {
+  const m = path.match(/^collections\/([^/]+)/);
+  if (m) return m[1];
+  return type && type.length ? type : null;
+}
+
+function isSelectType(t: PropertyDef["type"]): boolean {
+  return t === "select" || t === "status" || t === "multi_select";
+}
+
+export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [schema, setSchema] = useState<TypeSchema | null>(null);
+
+  const noteType = typeof frontmatter["type"] === "string" ? (frontmatter["type"] as string) : null;
+  const schemaKey = schemaKeyFor(notePath, noteType);
+
+  // (Re)load the governing schema whenever the note or its type changes.
+  useEffect(() => {
+    let alive = true;
+    commands.getSchemaForNote(notePath, noteType)
+      .then((s) => { if (alive) setSchema(s); })
+      .catch(() => { if (alive) setSchema(null); });
+    return () => { alive = false; };
+  }, [notePath, noteType]);
+
+  const selectProps = (schema?.properties ?? []).filter((p) => isSelectType(p.type));
+  const selectKeys = new Set(selectProps.map((p) => p.name));
 
   const set = (key: string, value: unknown) =>
     onChange({ ...frontmatter, [key]: value });
@@ -22,8 +52,18 @@ export function PropertiesPanel({ frontmatter, onChange }: Props) {
     onChange(next);
   };
 
+  // Persist a property's option set (new option / recolor) back to the schema,
+  // then refresh so the new color sticks immediately.
+  const persistOptions = (prop: PropertyDef, options: SelectOption[]) => {
+    if (!schemaKey) return;
+    commands.upsertProperty(schemaKey, { ...prop, options })
+      .then(() => commands.getSchemaForNote(notePath, noteType))
+      .then(setSchema)
+      .catch(() => {});
+  };
+
   const customEntries = Object.entries(frontmatter).filter(
-    ([k]) => !KNOWN_KEYS.includes(k),
+    ([k]) => !KNOWN_KEYS.includes(k) && !selectKeys.has(k),
   );
 
   return (
@@ -37,11 +77,14 @@ export function PropertiesPanel({ frontmatter, onChange }: Props) {
           onChange={(v) => set("type", v || "note")}
         />
 
-        {/* Tags */}
-        <TagsField
-          tags={Array.isArray(frontmatter["tags"]) ? (frontmatter["tags"] as string[]) : []}
-          onChange={(tags) => set("tags", tags)}
-        />
+        {/* Tags — unless the schema defines `tags` as a typed select (then it
+            renders as colored pills in the schema section below). */}
+        {!selectKeys.has("tags") && (
+          <TagsField
+            tags={Array.isArray(frontmatter["tags"]) ? (frontmatter["tags"] as string[]) : []}
+            onChange={(tags) => set("tags", tags)}
+          />
+        )}
 
         {/* Created (display only) */}
         {typeof frontmatter["created"] === "string" && (
@@ -56,6 +99,23 @@ export function PropertiesPanel({ frontmatter, onChange }: Props) {
           {expanded ? <MinusIcon size={13} /> : <PlusIcon size={13} />}
         </button>
       </div>
+
+      {selectProps.length > 0 && (
+        <div className={styles.schemaProps}>
+          {selectProps.map((prop) => (
+            <div className={styles.field} key={prop.name}>
+              <span className={styles.fieldLabel}>{prop.name}</span>
+              <SelectCell
+                value={frontmatter[prop.name] as string | string[] | null | undefined}
+                options={prop.options}
+                multi={prop.type === "multi_select"}
+                onChange={(next) => set(prop.name, next)}
+                onOptionsChange={(opts) => persistOptions(prop, opts)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
 
       {expanded && (
         <div className={styles.custom}>

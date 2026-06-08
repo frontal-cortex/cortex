@@ -11,6 +11,23 @@
   gap: var(--space-3);
 }
 
+/* Schema-driven typed properties (select / status / multi-select) */
+.schemaProps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.schemaProps .field {
+  align-items: flex-start;
+}
+
+.schemaProps .fieldLabel {
+  min-width: 90px;
+  padding-top: 3px;
+}
+
 /* Generic key-value field */
 .field {
   display: flex;
