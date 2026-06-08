@@ -6,6 +6,11 @@ import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
 import { LeftPanel } from "./LeftPanel";
 import { Editor } from "./Editor";
+import { DatabaseView } from "./DatabaseView";
+import {
+  isDatabaseNote, collectionNameFromIndex, defaultViews,
+  viewToFrontmatter, migrateLegacyIndex,
+} from "../../lib/database";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { QuickCapture } from "./QuickCapture";
 import { GraphView } from "./GraphView";
@@ -138,37 +143,48 @@ export function Shell({
     if (selectedPath === path) applyNote(await commands.readNote(path));
   }, [refresh, selectedPath, applyNote]);
 
-  // Open a collection's `_index.md` "home" note (a board + table over its rows),
-  // creating it on demand — so pre-existing collections without an index work too.
+  // Open a database's `_index.md`, creating it on demand and migrating any legacy
+  // index (views embedded as body code-blocks) into the frontmatter-views model.
   const handleOpenCollection = useCallback(async (name: string) => {
     const dir = `collections/${name}`;
     const indexPath = `${dir}/_index.md`;
+    const date = new Date().toISOString().split("T")[0];
     try {
-      await commands.readNote(indexPath);
+      const existing = await commands.readNote(indexPath);
+      if (existing.frontmatter["type"] !== "database") {
+        // Legacy index → upgrade. Extract any cortex-view fences as views; keep
+        // the rest of the body as the database description.
+        const { views, body } = migrateLegacyIndex(existing.body);
+        const frontmatter = {
+          ...existing.frontmatter,
+          type: "database",
+          title: existing.frontmatter["title"] ?? name,
+          views: (views.length ? views : defaultViews()).map(viewToFrontmatter),
+        };
+        await commands.writeNote(indexPath, { ...existing, frontmatter, body });
+        await refresh();
+      }
     } catch {
-      const date = new Date().toISOString().split("T")[0];
-      const body =
-        "## Board\n\n" +
-        "```cortex-view\n" + `source: ${dir}\n` + "type: board\ngroup: status\n```\n\n" +
-        "## All items\n\n" +
-        "```cortex-view\n" + `source: ${dir}\n` + "type: table\n```\n";
+      // No index yet — create a fresh database with the default views.
       const index = await commands.createNote(indexPath, name, date);
-      await commands.writeNote(indexPath, { ...index, body });
+      const frontmatter = {
+        ...index.frontmatter,
+        type: "database",
+        views: defaultViews().map(viewToFrontmatter),
+      };
+      await commands.writeNote(indexPath, { ...index, frontmatter, body: "" });
       await refresh();
     }
     setSelectedPath(indexPath);
   }, [refresh, setSelectedPath]);
 
-  // Start a collection from scratch: a `collections/<slug>/` folder with a
-  // starter row, then open its (freshly created) index note.
+  // Create a new database: a `collections/<slug>/` folder, then open its
+  // freshly created index (starts empty — rows are added with "+ New").
   const handleNewCollection = useCallback(async () => {
-    const name = window.prompt("New collection name")?.trim();
+    const name = window.prompt("New database name")?.trim();
     if (!name) return;
-    const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "collection";
-    const dir = `collections/${slug}`;
-    const date = new Date().toISOString().split("T")[0];
-    await commands.createFolder(dir).catch(() => {});
-    await commands.createNote(`${dir}/first-item.md`, "First item", date).catch(() => {});
+    const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "database";
+    await commands.createFolder(`collections/${slug}`).catch(() => {});
     await handleOpenCollection(slug);
   }, [handleOpenCollection]);
 
@@ -243,16 +259,24 @@ export function Shell({
           onEmptyTrash={emptyTrash}
         />
 
-        <Editor
-          note={note}
-          saving={saving}
-          allNotes={notes}
-          vaultPath={vault.path}
-          onSave={async (updated) => { await save(updated); refresh(); }}
-          onDelete={handleDelete}
-          onNavigate={handleNavigate}
-          onApplyNote={applyNote}
-        />
+        {note && isDatabaseNote(note) && collectionNameFromIndex(note.path) ? (
+          <DatabaseView
+            note={note}
+            collectionName={collectionNameFromIndex(note.path)!}
+            onSave={async (updated) => { await save(updated); refresh(); }}
+          />
+        ) : (
+          <Editor
+            note={note}
+            saving={saving}
+            allNotes={notes}
+            vaultPath={vault.path}
+            onSave={async (updated) => { await save(updated); refresh(); }}
+            onDelete={handleDelete}
+            onNavigate={handleNavigate}
+            onApplyNote={applyNote}
+          />
+        )}
       </div>
 
       {showQuickSwitcher && (

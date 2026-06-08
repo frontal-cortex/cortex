@@ -121,18 +121,18 @@ function fmtNum(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function today(): string {
+export function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function newRowId(): string {
+export function newRowId(): string {
   return `row-${Date.now().toString(36)}`;
 }
 
 // A new row in a filtered view would otherwise vanish (it can't match the
 // filter). Seed it with the view's top-level equality constraints so it shows
 // up where the user expects — e.g. filter `status == 'reading'` → status:reading.
-function seedFromFilter(spec: string): Record<string, string> {
+export function seedFromFilter(spec: string): Record<string, string> {
   const filter = peek(spec, "filter");
   if (!filter || /\bor\b/i.test(filter)) return {};
   const seed: Record<string, string> = {};
@@ -166,7 +166,7 @@ x: date
 y: weight`;
 
 /** Dependency-free SVG line/bar chart. Single series; responsive via viewBox. */
-function MiniChart({ chart }: { chart: ChartResult }) {
+export function MiniChart({ chart }: { chart: ChartResult }) {
   const W = 640, H = 240;
   const padL = 46, padR = 16, padT = 14, padB = 38;
   const innerW = W - padL - padR;
@@ -295,7 +295,7 @@ function EditableCell({ value, editable, saving, onCommit }: {
   );
 }
 
-function DataTable({ table, spec, source, onChanged }: { table: ViewTable; spec: string; source: string; onChanged: () => void }) {
+export function DataTable({ table, spec, source, onChanged }: { table: ViewTable; spec: string; source: string; onChanged: () => void }) {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -414,24 +414,41 @@ function DataTable({ table, spec, source, onChanged }: { table: ViewTable; spec:
   );
 }
 
-function BoardView({ table, spec, source, onChanged }: {
+export function BoardView({ table, spec, source, onChanged }: {
   table: ViewTable;
   spec: string;
   source: string;
   onChanged: () => void;
 }) {
+  // Optimistic local rows so a dropped card jumps to its new column instantly,
+  // before the write + reload round-trips.
+  const [rows, setRows] = useState(table.rows);
+  useEffect(() => { setRows(table.rows); }, [table.rows]);
+  const [dragOver, setDragOver] = useState<string | null>(null);
+
   const groupField = peek(spec, "group");
   if (!groupField) {
     return <div className={styles.error}>Board view needs a <code>group:</code> field in the spec.</div>;
   }
 
+  const groupCol = table.columns.find((c) => c.key === groupField);
+
   const groups = new Map<string, ViewTable["rows"]>();
-  for (const row of table.rows) {
+  for (const row of rows) {
     const key = toInput(row.cells[groupField]) || "—";
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(row);
   }
-  const groupKeys = [...groups.keys()].sort();
+
+  // Column order: the group property's defined options first — so a status board
+  // reads in the workflow order you chose, not alphabetically — then any other
+  // present values, then the "no value" column. Defined options always appear as
+  // a column (even when empty) so they're valid drop targets.
+  const optionOrder = groupCol?.schema?.options.map((o) => o.name) ?? [];
+  const present = [...groups.keys()];
+  const extras = present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort();
+  const none = groups.has("—") ? ["—"] : [];
+  const groupKeys = [...new Set([...optionOrder, ...extras, ...none])];
 
   const titleField =
     table.columns.find((c) => c.key === "title")?.key ??
@@ -456,19 +473,42 @@ function BoardView({ table, spec, source, onChanged }: {
     commands.deleteRow(source, rowId).then(onChanged).catch((e) => window.alert(String(e)));
   };
 
+  // Drop a card into a column → write its group field (e.g. status).
+  const moveCard = (rowId: string, group: string) => {
+    const value = group === "—" ? "" : group;
+    const row = rows.find((r) => r.id === rowId);
+    if (!row || (toInput(row.cells[groupField]) || "—") === group) return;
+    setRows((rs) => rs.map((r) => (r.id === rowId ? { ...r, cells: { ...r.cells, [groupField]: value } } : r)));
+    const ty = groupCol?.ty ?? "text";
+    commands.setCell(source, rowId, groupField, value, ty)
+      .then(onChanged)
+      .catch((e) => { window.alert(String(e)); onChanged(); });
+  };
+
   const canOpen = source.startsWith("collections/");
 
   return (
     <div className={styles.board}>
       {groupKeys.map((g) => (
-        <div key={g} className={styles.boardCol}>
+        <div
+          key={g}
+          className={`${styles.boardCol} ${dragOver === g ? styles.boardColDragOver : ""}`}
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== g) setDragOver(g); }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver((d) => (d === g ? null : d)); }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) moveCard(id, g); }}
+        >
           <div className={styles.boardColHeader}>
             <span className={styles.boardColTitle}>{g}</span>
-            <span className={styles.boardColCount}>{groups.get(g)!.length}</span>
+            <span className={styles.boardColCount}>{(groups.get(g) ?? []).length}</span>
           </div>
           <div className={styles.boardCards}>
-            {groups.get(g)!.map((row) => (
-              <div key={row.id} className={styles.boardCard}>
+            {(groups.get(g) ?? []).map((row) => (
+              <div
+                key={row.id}
+                className={styles.boardCard}
+                draggable
+                onDragStart={(e) => { e.dataTransfer.setData("text/plain", row.id); e.dataTransfer.effectAllowed = "move"; }}
+              >
                 <div className={styles.cardActions}>
                   {canOpen && (
                     <button className={styles.cardOpen} title="Open note" onClick={() => openRow(source, row.id)}>
@@ -548,7 +588,7 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function CalendarView({ table, spec, source, onChanged }: {
+export function CalendarView({ table, spec, source, onChanged }: {
   table: ViewTable; spec: string; source: string; onChanged: () => void;
 }) {
   const dateField = dateFieldFor(table, spec);
@@ -627,7 +667,7 @@ function CalendarView({ table, spec, source, onChanged }: {
   );
 }
 
-function GalleryView({ table, spec, source, onChanged }: {
+export function GalleryView({ table, spec, source, onChanged }: {
   table: ViewTable; spec: string; source: string; onChanged: () => void;
 }) {
   const canOpen = source.startsWith("collections/");
@@ -770,30 +810,27 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
         />
       )}
 
-      {!editing && (
-        <>
-          {loading && <div className={styles.stub}>Loading…</div>}
-          {error && <div className={styles.error}>{error}</div>}
-        </>
-      )}
+      {!editing && error && <div className={styles.error}>{error}</div>}
 
-      {!editing && !loading && !error && isChart && chart && (
-        chart.points.length === 0
-          ? <div className={styles.stub}>No data points for this chart.</div>
-          : <MiniChart chart={chart} />
-      )}
-
-      {!editing && !loading && !error && !isChart && table && (
-        table.rows.length === 0 && !isCalendar
-          ? <div className={styles.stub}>No rows match this view.</div>
-          : isBoard
-            ? <BoardView table={table} spec={spec} source={source} onChanged={reload} />
-            : isCalendar
-              ? <CalendarView table={table} spec={spec} source={source} onChanged={reload} />
-              : isGallery
-                ? <GalleryView table={table} spec={spec} source={source} onChanged={reload} />
-                : <DataTable table={table} spec={spec} source={source} onChanged={reload} />
-      )}
+      {/* Keep the last-loaded data mounted across a refresh so add/remove/drag
+          update in place instead of flashing a "Loading…" stub. */}
+      {!editing && !error && (isChart
+        ? (chart
+            ? (chart.points.length === 0
+                ? <div className={styles.stub}>No data points for this chart.</div>
+                : <MiniChart chart={chart} />)
+            : loading ? <div className={styles.stub}>Loading…</div> : null)
+        : (table
+            ? (table.rows.length === 0 && !isCalendar
+                ? <div className={styles.stub}>No rows match this view.</div>
+                : isBoard
+                  ? <BoardView table={table} spec={spec} source={source} onChanged={reload} />
+                  : isCalendar
+                    ? <CalendarView table={table} spec={spec} source={source} onChanged={reload} />
+                    : isGallery
+                      ? <GalleryView table={table} spec={spec} source={source} onChanged={reload} />
+                      : <DataTable table={table} spec={spec} source={source} onChanged={reload} />)
+            : loading ? <div className={styles.stub}>Loading…</div> : null))}
     </div>
   );
 }

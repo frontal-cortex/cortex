@@ -92,9 +92,9 @@ export function QuickSwitcher({
         run: () => { onOpenGraph(); onClose(); },
       },
       {
-        id: "new-collection",
-        label: "New collection",
-        description: "Start a database of notes",
+        id: "new-database",
+        label: "New database",
+        description: "Tabbed table / board / calendar over notes",
         icon: <BrainIcon size={14} />,
         run: () => { onNewCollection(); onClose(); },
       },

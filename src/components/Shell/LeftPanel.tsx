@@ -219,19 +219,19 @@ export function LeftPanel({
             </Section>
 
             <Section
-              label="Collections"
+              label="Databases"
               defaultOpen
               count={collections.length}
               onNewNote={onNewCollection}
-              actionTitle="New collection"
+              actionTitle="New database"
             >
               {collections.length === 0
                 ? <p className={styles.empty}>
-                    No collections yet.{" "}
+                    No databases yet.{" "}
                     <button className={styles.emptyAction} onClick={onNewCollection}>
                       Create one
                     </button>{" "}
-                    — a structured table of notes.
+                    — tabbed table / board / calendar views over your notes.
                   </p>
                 : collections.map((name) => {
                     const indexPath = `collections/${name}/_index.md`;

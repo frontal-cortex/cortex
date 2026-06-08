@@ -179,8 +179,16 @@ pub fn read_collection(root: &Path, name: &str) -> Result<Table> {
         rows.push(Row { id, cells });
     }
 
-    // Stable order by id so output is deterministic / git-diff friendly.
-    rows.sort_by(|a, b| a.id.cmp(&b.id));
+    // Default order: creation date ascending, then id as a stable tiebreak.
+    // This puts freshly added rows (seeded with today's `created`) at the END,
+    // which is what "+ New row" implies — a plain id sort scattered them
+    // alphabetically among existing rows. An explicit `sort:` in a view spec
+    // still overrides this via Query::apply. Deterministic, so git-diff friendly.
+    rows.sort_by(|a, b| {
+        let ca = a.cells.get("created").map(CellValue::as_text).unwrap_or_default();
+        let cb = b.cells.get("created").map(CellValue::as_text).unwrap_or_default();
+        ca.cmp(&cb).then_with(|| a.id.cmp(&b.id))
+    });
     let columns = infer_columns(&rows);
     Ok(Table { name: name.to_string(), columns, rows })
 }
@@ -1104,6 +1112,32 @@ mod tests {
         assert_eq!(out.rows[0].cells.get("title").unwrap().as_text(), "Dune");      // rating 5
         assert_eq!(out.rows[1].cells.get("title").unwrap().as_text(), "Snow Crash"); // rating 3
         assert_eq!(out.columns.iter().map(|c| c.key.as_str()).collect::<Vec<_>>(), vec!["title", "rating"]);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn collection_default_order_is_created_then_id() {
+        let root = scratch("order");
+        // `aaa` sorts first alphabetically but was created earliest; a row whose
+        // id sorts late but is older should still precede a newer one.
+        write(&root.join("collections/log/zebra.md"),
+            "---\ntitle: Zebra\ncreated: 2026-01-01\n---\n");
+        write(&root.join("collections/log/apple.md"),
+            "---\ntitle: Apple\ncreated: 2026-06-08\n---\n"); // newest → should be last
+        write(&root.join("collections/log/mango.md"),
+            "---\ntitle: Mango\ncreated: 2026-03-01\n---\n");
+
+        let table = read_collection(&root, "log").unwrap();
+        let order: Vec<&str> = table.rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(order, vec!["zebra", "mango", "apple"]); // by created asc, not id
+
+        // Rows sharing a created date fall back to id order (stable).
+        write(&root.join("collections/log/apple.md"),
+            "---\ntitle: Apple\ncreated: 2026-03-01\n---\n");
+        let table = read_collection(&root, "log").unwrap();
+        let order: Vec<&str> = table.rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(order, vec!["zebra", "apple", "mango"]); // mango & apple tie → a<m
 
         std::fs::remove_dir_all(&root).ok();
     }
