@@ -405,6 +405,61 @@ pub fn rename_note(
     Ok(())
 }
 
+/// Duplicate a note as a `<stem>-copy[-N].md` sibling, bumping its title so the
+/// two are distinguishable. Returns the new vault-relative path.
+#[tauri::command]
+pub fn duplicate_note(
+    path: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<String> {
+    let root = vault_path(&state)?;
+    let from_abs = root.join(&path);
+    if !from_abs.is_file() {
+        return Err(AppError::Other(format!("Not a file: {path}")));
+    }
+    let parent = from_abs.parent().ok_or_else(|| AppError::Other("Invalid path".into()))?;
+    let stem = from_abs.file_stem().and_then(|s| s.to_str()).unwrap_or("note");
+
+    // Find a free `<stem>-copy[-N].md` next to the original.
+    let mut candidate = parent.join(format!("{stem}-copy.md"));
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = parent.join(format!("{stem}-copy-{n}.md"));
+        n += 1;
+    }
+    let new_rel = candidate.strip_prefix(&root).unwrap().to_string_lossy().to_string();
+
+    let content = std::fs::read_to_string(&from_abs)?;
+    let mut dup = note::parse_note(&new_rel, &content)?;
+    if let Some(t) = dup.frontmatter.get("title").and_then(|v| v.as_str()) {
+        dup.frontmatter.insert("title".into(), serde_json::Value::String(format!("{t} copy")));
+    }
+    std::fs::write(&candidate, note::serialize_note(&dup)?)?;
+
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &candidate, db);
+    }
+    Ok(new_rel)
+}
+
+/// Reveal a note in the OS file manager (Finder / Explorer / file manager).
+#[tauri::command]
+pub fn reveal_path(path: String, state: State<'_, VaultState>) -> Result<()> {
+    let root = vault_path(&state)?;
+    let abs = root.join(&path);
+    if !abs.exists() {
+        return Err(AppError::Other(format!("Path not found: {path}")));
+    }
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg("-R").arg(&abs).spawn()?; }
+    #[cfg(target_os = "windows")]
+    { std::process::Command::new("explorer").arg(format!("/select,{}", abs.display())).spawn()?; }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    { std::process::Command::new("xdg-open").arg(abs.parent().unwrap_or(&abs)).spawn()?; }
+    Ok(())
+}
+
 /// Move a note to a different folder, keeping the same filename.
 /// Returns the new vault-relative path.
 #[tauri::command]

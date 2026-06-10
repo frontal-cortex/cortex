@@ -242,6 +242,7 @@ export function Shell({
           favorites={favorites}
           onSelect={setSelectedPath}
           onNewNote={handleNewNote}
+          onDeleteNote={handleDelete}
           onToggleFavorite={toggleFavorite}
           isFavorite={isFavorite}
           onOpenGraph={() => setShowGraph(true)}

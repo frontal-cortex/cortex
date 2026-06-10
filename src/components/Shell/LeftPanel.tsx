@@ -17,6 +17,7 @@ interface Props {
   favorites: string[];
   onSelect: (path: string) => void;
   onNewNote: (parentFolder?: string) => void;
+  onDeleteNote: (path: string) => void;
   onToggleFavorite: (path: string) => void;
   isFavorite: (path: string) => boolean;
   onOpenGraph: () => void;
@@ -36,7 +37,7 @@ interface Props {
 
 export function LeftPanel({
   notes, dirs, selectedPath, status, agentBranches, commits, favorites,
-  onSelect, onNewNote, onToggleFavorite, isFavorite, onOpenGraph,
+  onSelect, onNewNote, onDeleteNote, onToggleFavorite, isFavorite, onOpenGraph,
   onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
   trash, onRestoreTrashed, onDeleteTrashed, onEmptyTrash,
@@ -91,6 +92,36 @@ export function LeftPanel({
     }
   }, [onRefresh, onSelect]);
 
+  // Rename the file (and set its title to match, so the displayed name updates).
+  const handleRenameFile = useCallback(async (path: string) => {
+    const stem = path.split("/").pop()!.replace(/\.md$/, "");
+    const current = notes.find((n) => n.path === path)?.title || stem.replace(/-/g, " ");
+    const input = window.prompt("Rename", current)?.trim();
+    if (!input) return;
+    const slug = input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "untitled";
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const newPath = dir ? `${dir}/${slug}.md` : `${slug}.md`;
+    try {
+      if (newPath !== path) await commands.renameNote(path, newPath);
+      const full = await commands.readNote(newPath);
+      await commands.writeNote(newPath, { ...full, frontmatter: { ...full.frontmatter, title: input } });
+      onRefresh();
+      if (selectedPath === path) onSelect(newPath);
+    } catch (e) { window.alert(String(e)); }
+  }, [notes, onRefresh, onSelect, selectedPath]);
+
+  const handleDuplicateFile = useCallback(async (path: string) => {
+    try {
+      const newPath = await commands.duplicateNote(path);
+      onRefresh();
+      onSelect(newPath);
+    } catch (e) { window.alert(String(e)); }
+  }, [onRefresh, onSelect]);
+
+  const handleRevealFile = useCallback((path: string) => {
+    commands.revealPath(path).catch((e) => window.alert(String(e)));
+  }, []);
+
   const handleCreateFolder = useCallback(async (parentPath: string, name: string) => {
     const cleaned = name.trim().replace(/\/+/g, "");
     if (!cleaned) return;
@@ -121,9 +152,14 @@ export function LeftPanel({
     onNewNoteInFolder: (parentPath: string) => onNewNote(parentPath),
     onDeleteFolder: handleDeleteFolder,
     onMoveNote: handleMoveNote,
+    onRenameFile: handleRenameFile,
+    onDuplicateFile: handleDuplicateFile,
+    onRevealFile: handleRevealFile,
+    onDeleteFile: onDeleteNote,
     onToggleFavorite,
     isFavorite,
-  }), [newFolderIn, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote, onToggleFavorite, isFavorite]);
+  }), [newFolderIn, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote,
+       handleRenameFile, handleDuplicateFile, handleRevealFile, onDeleteNote, onToggleFavorite, isFavorite]);
 
   const notesCount = notes.filter((n) => n.path.startsWith("notes/")).length;
 

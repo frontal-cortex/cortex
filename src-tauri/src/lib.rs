@@ -33,6 +33,8 @@ pub fn run() {
             commands::notes::create_folder,
             commands::notes::delete_folder,
             commands::notes::rename_note,
+            commands::notes::duplicate_note,
+            commands::notes::reveal_path,
             commands::notes::move_note,
             commands::notes::list_vault_dirs,
             commands::notes::save_asset,

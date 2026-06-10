@@ -248,6 +248,12 @@ export const commands = {
   renameNote: (oldPath: string, newPath: string) =>
     invoke<void>("rename_note", { oldPath, newPath }),
 
+  duplicateNote: (path: string) =>
+    invoke<string>("duplicate_note", { path }),
+
+  revealPath: (path: string) =>
+    invoke<void>("reveal_path", { path }),
+
   moveNote: (fromPath: string, toDir: string) =>
     invoke<string>("move_note", { fromPath, toDir }),
 
