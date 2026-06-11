@@ -13,9 +13,18 @@ fn root(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
 
 /// Resolve a schema by its key (a collection name or a note `type`). Returns
 /// `null` when no schema is defined — never an error.
+/// Fill `person` properties with the member roster so callers can render them.
+fn with_members(root: &std::path::Path, schema: Option<TypeSchema>) -> Option<TypeSchema> {
+    schema.map(|mut s| {
+        crate::members::fill_person_options(&mut s, &crate::members::load(root));
+        s
+    })
+}
+
 #[tauri::command]
 pub fn get_schema(key: String, state: State<'_, VaultState>) -> Result<Option<TypeSchema>> {
-    crate::schema::load(&root(&state)?, &key)
+    let root = root(&state)?;
+    Ok(with_members(&root, crate::schema::load(&root, &key)?))
 }
 
 /// Resolve the schema that governs a specific note, using the same key rule the
@@ -27,7 +36,10 @@ pub fn get_schema_for_note(
     state: State<'_, VaultState>,
 ) -> Result<Option<TypeSchema>> {
     match crate::schema::schema_key(&path, note_type.as_deref()) {
-        Some(key) => crate::schema::load(&root(&state)?, &key),
+        Some(key) => {
+            let root = root(&state)?;
+            Ok(with_members(&root, crate::schema::load(&root, &key)?))
+        }
         None => Ok(None),
     }
 }

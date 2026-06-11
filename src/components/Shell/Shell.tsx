@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry } from "../../lib/commands";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome } from "../../lib/commands";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
@@ -13,6 +13,7 @@ import {
 } from "../../lib/database";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { QuickCapture } from "./QuickCapture";
+import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
 import { SettingsModal, applyTheme } from "./SettingsModal";
@@ -24,7 +25,7 @@ interface Props {
   agentBranches: AgentBranch[];
   commits: CommitEntry[];
   syncing: boolean;
-  onSync: () => void;
+  onSync: () => Promise<SyncOutcome | null>;
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
@@ -39,11 +40,32 @@ export function Shell({
   const [showGraph, setShowGraph] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
-
-  // Apply the saved theme preference when the vault opens.
+  // Conflicted files from a sync that hit a merge conflict; non-null shows the
+  // resolution modal. Null = no merge in progress (or user dismissed it).
+  const [conflicts, setConflicts] = useState<string[] | null>(null);
+  // Bumped to force the editor to re-read a note whose file changed under it
+  // (a sync pulled teammate edits, a merge was completed/aborted, …).
+  const [reloadToken, setReloadToken] = useState(0);
+  const [autoSyncMinutes, setAutoSyncMinutes] = useState(0);
+  const [autoCommit, setAutoCommit] = useState(false);
+  // Slug of the current git user, used to nest per-person daily notes.
+  const [userSlug, setUserSlug] = useState("");
   useEffect(() => {
-    commands.getSettings().then((s) => applyTheme(s.theme)).catch(() => {});
+    commands.currentUser()
+      .then((u) => setUserSlug(u.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")))
+      .catch(() => {});
   }, []);
+
+  // Apply the saved theme and cache the sync-loop settings when the vault
+  // opens; re-read when the settings modal closes (it may have changed them).
+  const loadSettings = useCallback(() => {
+    commands.getSettings().then((s) => {
+      applyTheme(s.theme);
+      setAutoSyncMinutes(s.auto_sync_minutes);
+      setAutoCommit(s.auto_commit);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => { loadSettings(); }, [loadSettings]);
 
   const {
     currentPath: selectedPath, canBack, canForward,
@@ -56,6 +78,73 @@ export function Shell({
   const { note, saving, save, applyNote } = useNote(selectedPath);
   const { favorites, toggleFavorite, isFavorite } = useFavorites(!!vault);
   const { trash, refreshTrash, restore, deleteForever, emptyTrash } = useTrash(!!vault);
+
+  // ── Sync loop ────────────────────────────────────────────────────────────────
+
+  // Re-read the open note from disk and remount its editor — used whenever a
+  // sync/merge changed files under the app.
+  const selectedPathRef = useRef(selectedPath);
+  selectedPathRef.current = selectedPath;
+  const reloadOpenNote = useCallback(async () => {
+    const path = selectedPathRef.current;
+    if (!path) return;
+    try {
+      applyNote(await commands.readNote(path));
+      setReloadToken((t) => t + 1);
+    } catch { /* note may have been deleted by the merge */ }
+  }, [applyNote]);
+
+  const handleSync = useCallback(async () => {
+    const outcome = await onSync();
+    if (!outcome) return;
+    if (outcome.status === "conflicts") {
+      setConflicts(outcome.files);
+    } else if (outcome.pulled) {
+      await refresh();
+      await reloadOpenNote();
+    }
+  }, [onSync, refresh, reloadOpenNote]);
+
+  // Auto-sync: on open, on window focus, and every N minutes. The busy flag
+  // stops ticks from stacking; an open conflict modal pauses the loop.
+  const handleSyncRef = useRef(handleSync);
+  handleSyncRef.current = handleSync;
+  const conflictsRef = useRef(conflicts);
+  conflictsRef.current = conflicts;
+  useEffect(() => {
+    if (!vault.has_remote || autoSyncMinutes <= 0) return;
+    let busy = false;
+    const tick = () => {
+      if (busy || conflictsRef.current) return;
+      busy = true;
+      handleSyncRef.current().finally(() => { busy = false; });
+    };
+    tick();
+    const id = setInterval(tick, autoSyncMinutes * 60_000);
+    window.addEventListener("focus", tick);
+    return () => { clearInterval(id); window.removeEventListener("focus", tick); };
+  }, [vault.has_remote, autoSyncMinutes]);
+
+  // Recover a merge that was left half-resolved (e.g. the app was closed
+  // mid-conflict): surface it again on open.
+  useEffect(() => {
+    commands.gitConflicts()
+      .then((files) => { if (files.length) setConflicts(files); })
+      .catch(() => {});
+  }, []);
+
+  // Auto-commit: debounced commit a little after the last save, so edit bursts
+  // become one commit. (Sync also commits dirty work, so this is belt-and-
+  // braces for fine-grained history between syncs.)
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAutoCommit = useCallback(() => {
+    if (!autoCommit) return;
+    if (commitTimer.current) clearTimeout(commitTimer.current);
+    commitTimer.current = setTimeout(() => {
+      onCommit("Auto-commit").catch(() => {});
+    }, 30_000);
+  }, [autoCommit, onCommit]);
+  useEffect(() => () => { if (commitTimer.current) clearTimeout(commitTimer.current); }, []);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -100,9 +189,9 @@ export function Shell({
   }, [createNote]);
 
   const handleToday = useCallback(async () => {
-    const note = await openOrCreateDaily("daily.md");
+    const note = await openOrCreateDaily("daily.md", userSlug);
     setSelectedPath(note.path);
-  }, [openOrCreateDaily]);
+  }, [openOrCreateDaily, userSlug]);
 
   const handleNewFromTemplate = useCallback(async (templateName: string) => {
     const note = await createNoteFromTemplate(templateName, "", "notes");
@@ -126,7 +215,7 @@ export function Shell({
     const p2 = (n: number) => String(n).padStart(2, "0");
     const dateStr = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
     const time = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
-    const path = `notes/journal/${dateStr}.md`;
+    const path = `notes/journal/${userSlug ? `${userSlug}/` : ""}${dateStr}.md`;
 
     let target;
     try {
@@ -141,7 +230,7 @@ export function Shell({
     await refresh();
     // If today's note is the one on screen, re-read so the new line shows.
     if (selectedPath === path) applyNote(await commands.readNote(path));
-  }, [refresh, selectedPath, applyNote]);
+  }, [refresh, selectedPath, applyNote, userSlug]);
 
   // Open a database's `_index.md`, creating it on demand and migrating any legacy
   // index (views embedded as body code-blocks) into the frontmatter-views model.
@@ -225,7 +314,7 @@ export function Shell({
         canForward={canForward}
         onBack={back}
         onForward={forward}
-        onSync={onSync}
+        onSync={handleSync}
         onOpenGraph={() => setShowGraph(true)}
         onOpenSwitcher={() => setShowQuickSwitcher(true)}
         onToday={handleToday}
@@ -264,7 +353,7 @@ export function Shell({
           <DatabaseView
             note={note}
             collectionName={collectionNameFromIndex(note.path)!}
-            onSave={async (updated) => { await save(updated); refresh(); }}
+            onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
           />
         ) : (
           <Editor
@@ -272,7 +361,8 @@ export function Shell({
             saving={saving}
             allNotes={notes}
             vaultPath={vault.path}
-            onSave={async (updated) => { await save(updated); refresh(); }}
+            reloadToken={reloadToken}
+            onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
             onDelete={handleDelete}
             onNavigate={handleNavigate}
             onApplyNote={applyNote}
@@ -290,7 +380,7 @@ export function Shell({
           onOpenGraph={() => setShowGraph(true)}
           onNewFromTemplate={handleNewFromTemplate}
           onNewCollection={handleNewCollection}
-          onSync={onSync}
+          onSync={handleSync}
           onToggleTheme={handleToggleTheme}
           onOpenSettings={() => setShowSettings(true)}
           onQuickCapture={() => setShowCapture(true)}
@@ -316,8 +406,26 @@ export function Shell({
       {showSettings && (
         <SettingsModal
           vault={vault}
-          onClose={() => setShowSettings(false)}
+          onClose={() => { setShowSettings(false); loadSettings(); }}
           onLeaveVault={onLeaveVault}
+        />
+      )}
+
+      {conflicts && (
+        <ConflictModal
+          files={conflicts}
+          onOpenFile={(path) => setSelectedPath(path)}
+          onCompleted={async () => {
+            setConflicts(null);
+            await refresh();
+            await reloadOpenNote();
+          }}
+          onAborted={async () => {
+            setConflicts(null);
+            await refresh();
+            await reloadOpenNote();
+          }}
+          onClose={() => setConflicts(null)}
         />
       )}
     </div>

@@ -30,6 +30,9 @@ pub enum PropType {
     MultiSelect,
     Status,
     Url,
+    /// Like a select, but its options are the vault's members (see `members.rs`),
+    /// not authored inline. Used for assignees.
+    Person,
 }
 
 /// One named choice for a select/multi-select/status property. `color` is a

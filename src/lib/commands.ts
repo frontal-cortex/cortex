@@ -20,7 +20,19 @@ export type PropType =
   | "select"
   | "multi_select"
   | "status"
-  | "url";
+  | "url"
+  | "person";
+
+export interface Member {
+  name: string;
+  email: string;
+  color: string;
+}
+
+export interface CurrentUser {
+  name: string;
+  email: string;
+}
 
 export interface SelectOption {
   name: string;
@@ -157,7 +169,14 @@ export interface Settings {
   journal_template: string;
   theme: "light" | "dark" | "system";
   trash_retention_days: number;
+  /** Minutes between automatic syncs (plus on-launch and on-focus). 0 = off. */
+  auto_sync_minutes: number;
 }
+
+/** Result of a sync: clean (did we pull anything?) or a conflicted merge. */
+export type SyncOutcome =
+  | { status: "ok"; pulled: boolean }
+  | { status: "conflicts"; files: string[] };
 
 export interface TrashEntry {
   id: string;
@@ -199,6 +218,15 @@ export const commands = {
 
   upsertProperty: (key: string, property: PropertyDef) =>
     invoke<void>("upsert_property", { key, property }),
+
+  getMembers: () =>
+    invoke<Member[]>("get_members"),
+
+  setMembers: (members: Member[]) =>
+    invoke<void>("set_members", { members }),
+
+  currentUser: () =>
+    invoke<CurrentUser>("current_user"),
 
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),
@@ -309,7 +337,19 @@ export const commands = {
     invoke<void>("git_commit", { message }),
 
   gitSync: () =>
-    invoke<void>("git_sync"),
+    invoke<SyncOutcome>("git_sync"),
+
+  gitConflicts: () =>
+    invoke<string[]>("git_conflicts"),
+
+  gitResolveConflict: (file: string, side: "ours" | "theirs" | "manual") =>
+    invoke<void>("git_resolve_conflict", { file, side }),
+
+  gitCompleteMerge: () =>
+    invoke<SyncOutcome>("git_complete_merge"),
+
+  gitAbortMerge: () =>
+    invoke<void>("git_abort_merge"),
 
   gitLog: (limit: number) =>
     invoke<CommitEntry[]>("git_log", { limit }),

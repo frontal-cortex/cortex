@@ -8,7 +8,7 @@ import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { useColorScheme } from "../../hooks/useColorScheme";
-import { Note, NoteEntry, commands } from "../../lib/commands";
+import { Note, NoteEntry, CommitEntry, Member, commands } from "../../lib/commands";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -78,6 +78,9 @@ interface Props {
   saving: boolean;
   allNotes: NoteEntry[];
   vaultPath?: string;
+  /** Bumped by the shell when the note's file changed on disk (e.g. a sync
+   *  pulled teammate edits) — remounts the editor so it re-parses content. */
+  reloadToken?: number;
   onSave: (note: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
@@ -85,7 +88,7 @@ interface Props {
 }
 
 export function Editor({
-  note, saving, allNotes, onSave, onDelete, onNavigate, onApplyNote,
+  note, saving, allNotes, reloadToken = 0, onSave, onDelete, onNavigate, onApplyNote,
 }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
@@ -106,7 +109,7 @@ export function Editor({
   return (
     <>
       <NoteEditor
-        key={`${note.path}:${rev}`}
+        key={`${note.path}:${rev}:${reloadToken}`}
         note={note}
         saving={saving}
         allNotes={allNotes}
@@ -138,7 +141,8 @@ interface SuggestionState {
  *  a date to insert as plain text. `display` is what the dropdown renders. */
 type MentionItem =
   | { kind: "note"; note: NoteEntry; display: SuggestItem }
-  | { kind: "date"; value: string; display: SuggestItem };
+  | { kind: "date"; value: string; display: SuggestItem }
+  | { kind: "person"; name: string; display: SuggestItem };
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -174,6 +178,18 @@ function noteItem(note: NoteEntry): MentionItem {
   };
 }
 
+/** Team members offered after `@`, filtered by the typed query. */
+function personItems(members: Member[], query: string): MentionItem[] {
+  const q = query.toLowerCase();
+  return members
+    .filter((m) => m.name && (!q || m.name.toLowerCase().includes(q)))
+    .map((m) => ({
+      kind: "person" as const,
+      name: m.name,
+      display: { key: `person:${m.name}`, title: m.name, badge: "Person" },
+    }));
+}
+
 function NoteEditor({
   note, saving, allNotes, onSave, onDelete, onNavigate, onShowHistory,
 }: {
@@ -206,8 +222,16 @@ function NoteEditor({
     onClose: () => {},
   });
 
-  // Unified item list for the suggestion dropdown: notes for `[[`, plus relative
-  // dates for `@`.
+  // Team roster, for `@person` mentions.
+  const [members, setMembers] = useState<Member[]>([]);
+  useEffect(() => {
+    let alive = true;
+    commands.getMembers().then((m) => { if (alive) setMembers(m); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Unified item list for the suggestion dropdown: notes for `[[`; people, dates,
+  // and notes for `@`.
   const filteredItems = useMemo<MentionItem[]>(() => {
     if (!suggestion) return [];
     const q = suggestion.query.toLowerCase();
@@ -217,10 +241,10 @@ function NoteEditor({
       (n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(q) ?? false);
     const notes = allNotes.filter(matchNote).slice(0, 8).map(noteItem);
     if (suggestion.trigger === "mention") {
-      return [...dateSuggestions(suggestion.query), ...notes];
+      return [...personItems(members, suggestion.query), ...dateSuggestions(suggestion.query), ...notes];
     }
     return notes;
-  }, [suggestion, allNotes]);
+  }, [suggestion, allNotes, members]);
 
   // Keep items accessible in the key handler without stale closure
   const filteredRef = useRef(filteredItems);
@@ -318,7 +342,9 @@ function NoteEditor({
     const to = editor._tiptapEditor.state.selection.from;
     const text = item.kind === "note"
       ? `[[${item.note.title || pathToTitle(item.note.path)}]]`
-      : item.value;
+      : item.kind === "person"
+        ? `@${item.name}`
+        : item.value;
 
     editor._tiptapEditor.commands.command(({ tr, dispatch }) => {
       if (dispatch) {
@@ -436,6 +462,16 @@ function NoteEditor({
   // forcing light mode under a dark OS left light-gray text on a white page.
   const colorScheme = useColorScheme();
 
+  // Who last committed this note (git author) — surfaces teammates' edits.
+  const [lastEdit, setLastEdit] = useState<CommitEntry | null>(null);
+  useEffect(() => {
+    let alive = true;
+    commands.noteHistory(note.path, 1)
+      .then((h) => { if (alive) setLastEdit(h[0] ?? null); })
+      .catch(() => { if (alive) setLastEdit(null); });
+    return () => { alive = false; };
+  }, [note.path]);
+
   const handleIconSelect = useCallback((emoji: { native: string }) => {
     setShowEmojiPicker(false);
     handleFrontmatterChange({ ...noteRef.current.frontmatter, icon: emoji.native });
@@ -487,6 +523,10 @@ function NoteEditor({
             </div>
           )}
 
+          {lastEdit && lastEdit.author && (
+            <div className={styles.lastEdit}>Edited by {lastEdit.author} · {relativeTime(lastEdit.timestamp)}</div>
+          )}
+
           <PropertiesPanel frontmatter={note.frontmatter} notePath={note.path} onChange={handleFrontmatterChange} />
 
           <div className={styles.editorWrap}>
@@ -528,6 +568,15 @@ function NoteEditor({
 
 function pathToTitle(path: string): string {
   return path.split("/").pop()?.replace(/\.md$/, "").replace(/-/g, " ") ?? "Untitled";
+}
+
+function relativeTime(secs: number): string {
+  const diff = Date.now() / 1000 - secs;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(secs * 1000).toLocaleDateString();
 }
 
 // ── Cover image banner ────────────────────────────────────────────────────────

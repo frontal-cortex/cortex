@@ -20,10 +20,10 @@ import { noteEmbedSpec } from "./NoteEmbedBlock";
 import { calloutSpec } from "./CalloutBlock";
 import styles from "./CortexViewBlock.module.css";
 
-/** A select/status/multi-select column renders as colored pills, not a text box. */
+/** A select/status/multi-select/person column renders as colored pills. */
 function isSelectColumn(col: ViewColumn): boolean {
   const t = col.schema?.type;
-  return t === "select" || t === "status" || t === "multi_select";
+  return t === "select" || t === "status" || t === "multi_select" || t === "person";
 }
 
 /** Schema key for a source — its collection name, or null for CSV sources. */
@@ -40,6 +40,7 @@ const COLUMN_TYPES: { value: PropType; label: string }[] = [
   { value: "select", label: "Select" },
   { value: "status", label: "Status" },
   { value: "multi_select", label: "Multi-select" },
+  { value: "person", label: "Person" },
   { value: "url", label: "URL" },
 ];
 
@@ -326,17 +327,21 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
   const renderCell = (c: ViewTable["columns"][number], row: ViewTable["rows"][number]) => {
     if (isSelectColumn(c)) {
       const multi = c.schema!.type === "multi_select";
+      // Person options come from the member roster (managed in Settings), so they
+      // aren't editable inline like a regular select's options.
+      const isPerson = c.schema!.type === "person";
       return (
         <SelectCell
           value={row.cells[c.key]}
           options={c.schema!.options}
           multi={multi}
           editable={c.key !== "$body" && c.key !== "id"}
+          placeholder={isPerson ? "Unassigned" : "Empty"}
           onChange={(next) => {
             const value = Array.isArray(next) ? next.join(", ") : next;
             commit(c, row.id, value, multi ? "list" : "text");
           }}
-          onOptionsChange={schemaKey ? (opts) => {
+          onOptionsChange={schemaKey && !isPerson ? (opts) => {
             commands.upsertProperty(schemaKey, { name: c.key, type: c.schema!.type, options: opts })
               .then(onChanged).catch((e) => setErr(String(e)));
           } : undefined}

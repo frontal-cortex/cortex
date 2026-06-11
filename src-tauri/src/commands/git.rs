@@ -23,35 +23,52 @@ pub fn git_commit(message: String, state: State<'_, VaultState>) -> Result<()> {
     git::stage_all_and_commit(&repo, &message)
 }
 
+fn vault_dir(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
+    state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
+}
+
+/// Full sync: auto-commit dirty work, merge in the remote, push. Returns a
+/// structured outcome — `conflicts` means the repo is mid-merge with marker'd
+/// files awaiting resolution (see `git_resolve_conflict` / `git_complete_merge`).
 #[tauri::command]
-pub fn git_sync(state: State<'_, VaultState>) -> Result<()> {
-    let guard = state.0.lock().unwrap();
-    let path = guard.as_ref().ok_or(AppError::NoVault)?;
+pub fn git_sync(state: State<'_, VaultState>) -> Result<git::SyncOutcome> {
+    git::sync_vault(&vault_dir(&state)?)
+}
 
-    // Shell out to git for push/pull to leverage system credentials / SSH agent
-    let output = std::process::Command::new("git")
-        .args(["pull", "--rebase", "origin", "HEAD"])
-        .current_dir(path)
-        .output()?;
+/// Files currently conflicted (e.g. to recover the resolution UI after a restart).
+#[tauri::command]
+pub fn git_conflicts(state: State<'_, VaultState>) -> Result<Vec<String>> {
+    git::list_conflicts(&vault_dir(&state)?)
+}
 
-    if !output.status.success() {
-        return Err(AppError::Other(
-            String::from_utf8_lossy(&output.stderr).to_string(),
-        ));
+/// Resolve one conflicted file: `side` is "ours", "theirs", or "manual" (the
+/// user already edited the markers away in the editor).
+#[tauri::command]
+pub fn git_resolve_conflict(
+    file: String,
+    side: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<()> {
+    let root = vault_dir(&state)?;
+    git::resolve_conflict(&root, &file, &side)?;
+    // The resolved file changed on disk — keep the search index in step.
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &root.join(&file), db);
     }
-
-    let output = std::process::Command::new("git")
-        .args(["push", "origin", "HEAD"])
-        .current_dir(path)
-        .output()?;
-
-    if !output.status.success() {
-        return Err(AppError::Other(
-            String::from_utf8_lossy(&output.stderr).to_string(),
-        ));
-    }
-
     Ok(())
+}
+
+/// Conclude a fully-resolved merge: commit and push.
+#[tauri::command]
+pub fn git_complete_merge(state: State<'_, VaultState>) -> Result<git::SyncOutcome> {
+    git::complete_merge(&vault_dir(&state)?)
+}
+
+/// Abandon the in-progress merge; local commits stay, remote changes un-apply.
+#[tauri::command]
+pub fn git_abort_merge(state: State<'_, VaultState>) -> Result<()> {
+    git::abort_merge(&vault_dir(&state)?)
 }
 
 #[tauri::command]

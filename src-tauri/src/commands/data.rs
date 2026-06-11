@@ -57,15 +57,20 @@ fn to_wire(table: Table, all_columns: Vec<String>, schema: Option<&TypeSchema>) 
 #[tauri::command]
 pub fn run_view(spec: String, state: State<'_, VaultState>) -> Result<WireTable> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
+    // Resolve `@me` (per-viewer) before querying — "assigned to me" works for all.
+    let spec = crate::members::resolve_me(&spec, &root);
     let table = crate::data::run_view(&root, &spec)?;
     let parsed = crate::data::parse_view_spec(&spec).ok();
     let all_columns = parsed.as_ref()
         .and_then(|s| crate::data::source_columns(&root, &s.source).ok())
         .unwrap_or_else(|| table.columns.iter().map(|c| c.key.clone()).collect());
     // Collection sources resolve to a schema by name; CSV sources have none.
+    // `person` columns get their options from the member roster.
+    let members = crate::members::load(&root);
     let schema = parsed
         .and_then(|s| crate::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
-        .and_then(|key| crate::schema::load(&root, &key).ok().flatten());
+        .and_then(|key| crate::schema::load(&root, &key).ok().flatten())
+        .map(|mut s| { crate::members::fill_person_options(&mut s, &members); s });
     Ok(to_wire(table, all_columns, schema.as_ref()))
 }
 
@@ -85,6 +90,7 @@ pub fn serialize_view_spec(spec: StructuredSpec) -> Result<String> {
 #[tauri::command]
 pub fn run_chart(spec: String, state: State<'_, VaultState>) -> Result<ChartResult> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
+    let spec = crate::members::resolve_me(&spec, &root);
     crate::data::run_chart(&root, &spec)
 }
 

@@ -3,6 +3,7 @@ mod data;
 mod db;
 mod error;
 mod git;
+mod members;
 mod note;
 mod schema;
 
@@ -54,6 +55,10 @@ pub fn run() {
             commands::git::git_status,
             commands::git::git_commit,
             commands::git::git_sync,
+            commands::git::git_conflicts,
+            commands::git::git_resolve_conflict,
+            commands::git::git_complete_merge,
+            commands::git::git_abort_merge,
             commands::git::git_log,
             commands::git::git_diff,
             commands::git::note_history,
@@ -73,6 +78,9 @@ pub fn run() {
             commands::schema::get_schema_for_note,
             commands::schema::set_schema,
             commands::schema::upsert_property,
+            commands::members::get_members,
+            commands::members::set_members,
+            commands::members::current_user,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

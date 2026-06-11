@@ -21,7 +21,7 @@ function schemaKeyFor(path: string, type: string | null): string | null {
 }
 
 function isSelectType(t: PropertyDef["type"]): boolean {
-  return t === "select" || t === "status" || t === "multi_select";
+  return t === "select" || t === "status" || t === "multi_select" || t === "person";
 }
 
 export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
@@ -109,8 +109,9 @@ export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
                 value={frontmatter[prop.name] as string | string[] | null | undefined}
                 options={prop.options}
                 multi={prop.type === "multi_select"}
+                placeholder={prop.type === "person" ? "Unassigned" : "Empty"}
                 onChange={(next) => set(prop.name, next)}
-                onOptionsChange={(opts) => persistOptions(prop, opts)}
+                onOptionsChange={prop.type === "person" ? undefined : (opts) => persistOptions(prop, opts)}
               />
             </div>
           ))}

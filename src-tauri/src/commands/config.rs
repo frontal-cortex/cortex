@@ -35,6 +35,9 @@ pub struct Settings {
     /// Days before trashed notes are auto-pruned. 0 = never.
     #[serde(default = "default_trash_retention")]
     pub trash_retention_days: u32,
+    /// Minutes between automatic syncs (plus on-launch and on-focus). 0 = off.
+    #[serde(default)]
+    pub auto_sync_minutes: u32,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -50,6 +53,7 @@ impl Default for Settings {
             journal_template: default_journal_template(),
             theme: default_theme(),
             trash_retention_days: default_trash_retention(),
+            auto_sync_minutes: 0,
         }
     }
 }

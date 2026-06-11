@@ -300,3 +300,11 @@
   color: var(--text-primary);
   background: var(--bg-panel);
 }
+
+/* Last-edited-by line (collaboration) */
+.lastEdit {
+  padding: 0 54px;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
