@@ -21,7 +21,9 @@ export type PropType =
   | "multi_select"
   | "status"
   | "url"
-  | "person";
+  | "person"
+  | "relation"
+  | "rollup";
 
 export interface Member {
   name: string;
@@ -43,6 +45,14 @@ export interface PropertyDef {
   name: string;
   type: PropType;
   options: SelectOption[];
+  /** Relation: target collection. */
+  collection?: string;
+  /** Rollup: the relation property to follow. */
+  relation?: string;
+  /** Rollup: the target property to aggregate. */
+  property?: string;
+  /** Rollup: count | values | sum | avg | min | max. */
+  function?: string;
 }
 
 export interface TypeSchema {
@@ -65,6 +75,29 @@ export interface FilterClause {
 export interface SortClause {
   field: string;
   desc: boolean;
+}
+
+export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart";
+
+/** One named view in a database / embedded data block. */
+export interface ViewDef {
+  name: string;
+  type: ViewType;
+  filter?: string;
+  sort?: string[];
+  columns?: string[];
+  group?: string;
+  date?: string;
+  x?: string;
+  y?: string;
+  agg?: string;
+  chartType?: string;
+}
+
+/** An embedded data block's multi-view document (source + named views). */
+export interface ViewDoc {
+  source: string;
+  views: ViewDef[];
 }
 
 /** Structured, UI-editable form of a `cortex-view` YAML spec. */
@@ -171,6 +204,8 @@ export interface Settings {
   trash_retention_days: number;
   /** Minutes between automatic syncs (plus on-launch and on-focus). 0 = off. */
   auto_sync_minutes: number;
+  /** Yjs websocket relay for presence + co-editing. Empty = off. */
+  collab_url: string;
 }
 
 /** Result of a sync: clean (did we pull anything?) or a conflicted merge. */
@@ -185,6 +220,15 @@ export interface TrashEntry {
   deleted_at: number;
 }
 
+/** Mark a successful mutation so the collab layer (when enabled) can nudge
+ *  teammates to sync. A plain window event keeps this module dependency-free. */
+function touched<T>(p: Promise<T>): Promise<T> {
+  return p.then((v) => {
+    window.dispatchEvent(new CustomEvent("cortex:local-data-changed"));
+    return v;
+  });
+}
+
 export const commands = {
   runView: (spec: string) =>
     invoke<ViewTable>("run_view", { spec }),
@@ -193,19 +237,40 @@ export const commands = {
     invoke<ChartResult>("run_chart", { spec }),
 
   setCell: (source: string, rowId: string, field: string, value: string, ty: string) =>
-    invoke<void>("set_cell", { source, rowId, field, value, ty }),
+    touched(invoke<void>("set_cell", { source, rowId, field, value, ty })),
 
   addRow: (source: string, id: string, fields: Record<string, string>) =>
-    invoke<void>("add_row", { source, id, fields }),
+    touched(invoke<void>("add_row", { source, id, fields })),
 
   deleteRow: (source: string, rowId: string) =>
-    invoke<void>("delete_row", { source, rowId }),
+    touched(invoke<void>("delete_row", { source, rowId })),
+
+  listRowTemplates: (source: string) =>
+    invoke<string[]>("list_row_templates", { source }),
+
+  addRowFromTemplate: (source: string, id: string, template: string, fields: Record<string, string>) =>
+    touched(invoke<void>("add_row_from_template", { source, id, template, fields })),
+
+  saveRowAsTemplate: (source: string, rowId: string, name: string) =>
+    invoke<void>("save_row_as_template", { source, rowId, name }),
+
+  listCollections: () =>
+    invoke<string[]>("list_collections"),
+
+  exportToFile: (kind: "note-html" | "collection-csv" | "collection-html", target: string, dest: string) =>
+    invoke<void>("export_to_file", { kind, target, dest }),
 
   parseViewSpec: (spec: string) =>
     invoke<StructuredSpec>("parse_view_spec", { spec }),
 
   serializeViewSpec: (spec: StructuredSpec) =>
     invoke<string>("serialize_view_spec", { spec }),
+
+  parseViewDoc: (spec: string) =>
+    invoke<ViewDoc>("parse_view_doc", { spec }),
+
+  serializeViewDoc: (doc: ViewDoc) =>
+    invoke<string>("serialize_view_doc", { doc }),
 
   getSchema: (key: string) =>
     invoke<TypeSchema | null>("get_schema", { key }),
@@ -253,7 +318,7 @@ export const commands = {
     invoke<NoteRef>("resolve_ref", { target }),
 
   writeNote: (path: string, note: Note) =>
-    invoke<void>("write_note", { path, note }),
+    touched(invoke<void>("write_note", { path, note })),
 
   createNote: (path: string, title: string, created: string) =>
     invoke<Note>("create_note", { path, title, created }),
@@ -278,6 +343,18 @@ export const commands = {
 
   duplicateNote: (path: string) =>
     invoke<string>("duplicate_note", { path }),
+
+  /** Convert a checklist note → database; returns the new index path. */
+  convertNoteToDatabase: (path: string, date: string) =>
+    invoke<string>("convert_note_to_database", { path, date }),
+
+  /** Convert a database → checklist note; returns the new note path. */
+  convertDatabaseToNote: (name: string) =>
+    invoke<string>("convert_database_to_note", { name }),
+
+  /** Build a database from selected items; returns its collection name. */
+  createDatabaseFromItems: (name: string, items: { text: string; done: boolean }[], date: string) =>
+    invoke<string>("create_database_from_items", { name, items, date }),
 
   revealPath: (path: string) =>
     invoke<void>("reveal_path", { path }),

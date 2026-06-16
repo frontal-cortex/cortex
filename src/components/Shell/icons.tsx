@@ -32,6 +32,66 @@ export function ThemeIcon({ size = 14 }: IconProps) {
   );
 }
 
+// ── Property-type icons (Notion-style property list) ──────────────────────────
+
+export function TextLinesIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="13" y2="17" />
+    </svg>
+  );
+}
+
+export function CheckSquareIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 12l3 3 5-6" />
+    </svg>
+  );
+}
+
+export function SelectDotIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="8.5" /><path d="M8.5 11l3.5 3.5 3.5-3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function TagsListIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <circle cx="5" cy="7" r="1.4" fill="currentColor" stroke="none" /><line x1="9" y1="7" x2="20" y2="7" />
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" /><line x1="9" y1="12" x2="20" y2="12" />
+      <circle cx="5" cy="17" r="1.4" fill="currentColor" stroke="none" /><line x1="9" y1="17" x2="20" y2="17" />
+    </svg>
+  );
+}
+
+export function PersonIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+
+export function LinkIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 14a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1" /><path d="M14 10a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1" />
+    </svg>
+  );
+}
+
+export function RelationIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 8h7l-2-2M7 8l2 2" /><path d="M17 16h-7l2 2M17 16l-2-2" />
+    </svg>
+  );
+}
+
 // ── Database view-type icons ──────────────────────────────────────────────────
 
 export function TableIcon({ size = 14 }: IconProps) {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { commands, Settings, VaultInfo, Member, CurrentUser } from "../../lib/commands";
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
+import { Dropdown } from "./Dropdown";
 import { CloseIcon } from "./icons";
 import styles from "./SettingsModal.module.css";
 
@@ -67,15 +68,15 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
 
               <label className={styles.row}>
                 <span className={styles.label}>Theme</span>
-                <select
-                  className={styles.select}
+                <Dropdown
                   value={settings.theme}
-                  onChange={(e) => update({ theme: e.target.value as Settings["theme"] })}
-                >
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
+                  options={[
+                    { value: "system", label: "System" },
+                    { value: "light", label: "Light" },
+                    { value: "dark", label: "Dark" },
+                  ]}
+                  onChange={(v) => update({ theme: v as Settings["theme"] })}
+                />
               </label>
 
               <label className={styles.row}>
@@ -89,16 +90,27 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
 
               <label className={styles.row}>
                 <span className={styles.label}>Auto-sync</span>
-                <select
-                  className={styles.select}
-                  value={settings.auto_sync_minutes}
-                  onChange={(e) => update({ auto_sync_minutes: Number(e.target.value) })}
-                >
-                  <option value={0}>Off</option>
-                  <option value={1}>Every minute</option>
-                  <option value={5}>Every 5 minutes</option>
-                  <option value={15}>Every 15 minutes</option>
-                </select>
+                <Dropdown
+                  value={String(settings.auto_sync_minutes)}
+                  options={[
+                    { value: "0", label: "Off" },
+                    { value: "1", label: "Every minute" },
+                    { value: "5", label: "Every 5 minutes" },
+                    { value: "15", label: "Every 15 minutes" },
+                  ]}
+                  onChange={(v) => update({ auto_sync_minutes: Number(v) })}
+                />
+              </label>
+
+              <label className={styles.row}>
+                <span className={styles.label}>Collaboration server</span>
+                <input
+                  className={styles.input}
+                  value={settings.collab_url}
+                  placeholder="ws://host:1234 (empty = off)"
+                  spellCheck={false}
+                  onChange={(e) => update({ collab_url: e.target.value.trim() })}
+                />
               </label>
 
               <label className={styles.row}>

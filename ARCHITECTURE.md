@@ -75,7 +75,19 @@ Sync is a pull-rebase followed by a push to `origin HEAD`. The app shells out to
 
 ### Conflict Strategy
 
-Conflicts are surfaced to the user as a merge conflict in the note file — the same `<<<<<<<` markers you would see in any git merge. The app detects conflict markers and shows a resolution UI rather than silently failing.
+Conflicts are surfaced to the user as a merge conflict in the note file — the same `<<<<<<<` markers you would see in any git merge. Sync uses `pull --no-rebase` (merge, not rebase) precisely so a conflict leaves ONE recoverable state. The app lists conflicted files in a resolution UI: keep mine / take theirs per file, or edit the markers by hand and mark resolved; then the merge is committed and pushed. A merge can always be aborted, restoring the pre-pull state.
+
+---
+
+## Multi-User Collaboration
+
+Three layers, in order of how much infrastructure they need:
+
+1. **Git sync (no infrastructure).** Auto-commit on save (debounced), auto-sync on launch/focus/interval, the conflict UI above. Each row of a database is its own file, so two people editing different rows never conflict. Identity is git identity (`user.name` / `user.email`) — the same name that authors commits.
+
+2. **Members & assignment (a committed file).** `.cortex/members.yaml` is the team roster (name, email, color). A `person` property type draws its options from the roster; `@me` in a view filter resolves per-viewer, so one shared "Assigned to me" view works for everyone. Daily notes nest per user (`journal/<user>/…`).
+
+3. **Real-time (a relay you bring).** An optional Yjs websocket relay (`collab_url` in settings; self-host with `npx y-websocket-server`, any $5 VPS or office machine). It carries three things, all ephemeral: presence (who is in which note), live co-editing of the open note (BlockNote's Yjs collaboration over a per-note room), and "something changed" nudges that trigger an immediate sync instead of waiting for the next interval. **The relay is never the source of truth**: co-edited sessions serialize through the normal markdown save path, files + git remain canonical, and if the relay is down the app degrades to the plain git workflow.
 
 ---
 

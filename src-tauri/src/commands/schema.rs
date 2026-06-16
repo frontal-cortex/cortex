@@ -17,6 +17,7 @@ fn root(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
 fn with_members(root: &std::path::Path, schema: Option<TypeSchema>) -> Option<TypeSchema> {
     schema.map(|mut s| {
         crate::members::fill_person_options(&mut s, &crate::members::load(root));
+        crate::data::fill_relation_options(root, &mut s);
         s
     })
 }

@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { commands, StructuredSpec, FilterClause } from "../../lib/commands";
+import { Dropdown } from "./Dropdown";
 import { CloseIcon } from "./icons";
 import styles from "./ViewToolbar.module.css";
 
@@ -136,14 +137,16 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
                     ) : (
                       <span className={styles.joinWhere}>Where</span>
                     )}
-                    <select className={styles.select} value={f.field}
-                      onChange={(e) => setFilter(i, { field: e.target.value })}>
-                      {allFields.map((fl) => <option key={fl} value={fl}>{fl}</option>)}
-                    </select>
-                    <select className={styles.select} value={f.op}
-                      onChange={(e) => setFilter(i, { op: e.target.value })}>
-                      {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
+                    <Dropdown
+                      value={f.field}
+                      options={allFields.map((fl) => ({ value: fl, label: fl }))}
+                      onChange={(v) => setFilter(i, { field: v })}
+                    />
+                    <Dropdown
+                      value={f.op}
+                      options={OPS}
+                      onChange={(v) => setFilter(i, { op: v })}
+                    />
                     <input className={styles.valueInput} value={f.value} placeholder="value"
                       spellCheck={false}
                       onChange={(e) => setFilter(i, { value: e.target.value })} />
@@ -172,10 +175,11 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
             {s.sort.length === 0 && <div className={styles.empty}>No sorts yet.</div>}
             {s.sort.map((so, i) => (
               <div key={i} className={styles.clauseRow}>
-                <select className={styles.select} value={so.field}
-                  onChange={(e) => setSort(i, { field: e.target.value })}>
-                  {allFields.map((fl) => <option key={fl} value={fl}>{fl}</option>)}
-                </select>
+                <Dropdown
+                  value={so.field}
+                  options={allFields.map((fl) => ({ value: fl, label: fl }))}
+                  onChange={(v) => setSort(i, { field: v })}
+                />
                 <button className={styles.dirToggle}
                   onClick={() => setSort(i, { desc: !so.desc })}
                   title={so.desc ? "Descending" : "Ascending"}>

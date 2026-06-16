@@ -11,6 +11,7 @@ import {
   isDatabaseNote, collectionNameFromIndex, defaultViews,
   viewToFrontmatter, migrateLegacyIndex,
 } from "../../lib/database";
+import { CollabConfig, loadCollabConfig, startVaultRoom, stopVaultRoom } from "../../lib/collab";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { QuickCapture } from "./QuickCapture";
 import { ConflictModal } from "./ConflictModal";
@@ -56,6 +57,9 @@ export function Shell({
       .catch(() => {});
   }, []);
 
+  // Collaboration relay config (presence + co-editing); null = off.
+  const [collab, setCollab] = useState<CollabConfig | null>(null);
+
   // Apply the saved theme and cache the sync-loop settings when the vault
   // opens; re-read when the settings modal closes (it may have changed them).
   const loadSettings = useCallback(() => {
@@ -64,8 +68,16 @@ export function Shell({
       setAutoSyncMinutes(s.auto_sync_minutes);
       setAutoCommit(s.auto_commit);
     }).catch(() => {});
-  }, []);
+    loadCollabConfig(vault.name).then(setCollab).catch(() => setCollab(null));
+  }, [vault.name]);
   useEffect(() => { loadSettings(); }, [loadSettings]);
+
+  // Vault-wide collab room: presence + "something changed" nudges from teammates.
+  useEffect(() => {
+    if (!collab) return;
+    startVaultRoom(collab);
+    return () => stopVaultRoom();
+  }, [collab]);
 
   const {
     currentPath: selectedPath, canBack, canForward,
@@ -102,6 +114,9 @@ export function Shell({
     } else if (outcome.pulled) {
       await refresh();
       await reloadOpenNote();
+      // Tell open data views (tables/boards in the editor or a database tab)
+      // to re-run their queries against the freshly pulled files.
+      window.dispatchEvent(new CustomEvent("cortex:data-changed"));
     }
   }, [onSync, refresh, reloadOpenNote]);
 
@@ -124,6 +139,24 @@ export function Shell({
     window.addEventListener("focus", tick);
     return () => { clearInterval(id); window.removeEventListener("focus", tick); };
   }, [vault.has_remote, autoSyncMinutes]);
+
+  // A teammate's edit arrived over the relay: pull it soon (debounced — bursts
+  // of edits become one sync). The sync itself then refreshes views.
+  useEffect(() => {
+    if (!collab) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onRemote = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!conflictsRef.current) handleSyncRef.current();
+      }, 1500);
+    };
+    window.addEventListener("cortex:remote-data-changed", onRemote);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("cortex:remote-data-changed", onRemote);
+    };
+  }, [collab]);
 
   // Recover a merge that was left half-resolved (e.g. the app was closed
   // mid-conflict): surface it again on open.
@@ -277,6 +310,31 @@ export function Shell({
     await handleOpenCollection(slug);
   }, [handleOpenCollection]);
 
+  // Turn a checklist note into a database, then trash the original (recoverable).
+  const handleTurnIntoDatabase = useCallback(async (path: string) => {
+    try {
+      const date = new Date().toISOString().slice(0, 10);
+      const indexPath = await commands.convertNoteToDatabase(path, date);
+      await deleteNote(path);
+      await refreshTrash();
+      await refresh();
+      setSelectedPath(indexPath);
+    } catch (e) { window.alert(String(e)); }
+  }, [deleteNote, refreshTrash, refresh, setSelectedPath]);
+
+  // Turn a database back into a checklist note, then delete the collection.
+  const handleConvertToNote = useCallback(async (name: string) => {
+    if (!window.confirm(
+      "Convert this database to a checklist note? Each row becomes a checkbox line, and the database (its row files) is deleted.",
+    )) return;
+    try {
+      const notePath = await commands.convertDatabaseToNote(name);
+      await commands.deleteFolder(`collections/${name}`);
+      await refresh();
+      setSelectedPath(notePath);
+    } catch (e) { window.alert(String(e)); }
+  }, [refresh, setSelectedPath]);
+
   const handleDelete = useCallback(async (path: string) => {
     // Soft-delete: the note moves to Trash and can be restored, so no scary
     // confirmation is needed.
@@ -332,6 +390,7 @@ export function Shell({
           onSelect={setSelectedPath}
           onNewNote={handleNewNote}
           onDeleteNote={handleDelete}
+          onTurnIntoDatabase={handleTurnIntoDatabase}
           onToggleFavorite={toggleFavorite}
           isFavorite={isFavorite}
           onOpenGraph={() => setShowGraph(true)}
@@ -354,6 +413,7 @@ export function Shell({
             note={note}
             collectionName={collectionNameFromIndex(note.path)!}
             onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
+            onConvertToNote={handleConvertToNote}
           />
         ) : (
           <Editor
@@ -362,6 +422,7 @@ export function Shell({
             allNotes={notes}
             vaultPath={vault.path}
             reloadToken={reloadToken}
+            collab={collab}
             onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
             onDelete={handleDelete}
             onNavigate={handleNavigate}

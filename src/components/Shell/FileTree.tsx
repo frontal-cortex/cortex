@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, MouseEvent as ReactMouseEvent } from "react";
 import { TreeNode, DirNode, FileNode } from "../../lib/fileTree";
+import { exportToFile } from "../../lib/export";
 import { StarIcon, StarFilledIcon } from "./icons";
 import styles from "./FileTree.module.css";
 
@@ -15,6 +16,7 @@ interface TreeActions {
   onDuplicateFile?: (path: string) => void;
   onRevealFile?: (path: string) => void;
   onDeleteFile?: (path: string) => void;
+  onTurnIntoDatabase?: (path: string) => void;
   onToggleFavorite?: (path: string) => void;
   isFavorite?: (path: string) => boolean;
 }
@@ -255,12 +257,24 @@ function FileContextMenu({
     >
       <button className={styles.ctxItem} onClick={run(actions.onRenameFile)}>Rename</button>
       <button className={styles.ctxItem} onClick={run(actions.onDuplicateFile)}>Duplicate</button>
+      <button className={styles.ctxItem} onClick={run(actions.onTurnIntoDatabase)}>Turn whole note into database</button>
       {onToggleFavorite && (
         <button className={styles.ctxItem} onClick={run(onToggleFavorite)}>
           {fav ? "Remove from favorites" : "Add to favorites"}
         </button>
       )}
       <button className={styles.ctxItem} onClick={run(actions.onRevealFile)}>{revealLabel}</button>
+      <button
+        className={styles.ctxItem}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+          const base = path.split("/").pop()?.replace(/\.md$/, "") || "note";
+          exportToFile("note-html", path, `${base}.html`);
+        }}
+      >
+        Export to HTML
+      </button>
       <button
         className={styles.ctxItem}
         onClick={(e) => { e.stopPropagation(); onClose(); navigator.clipboard?.writeText(path); }}

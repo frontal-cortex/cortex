@@ -19,23 +19,9 @@
 // Each view becomes a `cortex-view` spec by injecting the database's `source`, so
 // the existing query engine + renderers are reused unchanged.
 
-import { Note } from "./commands";
+import { Note, ViewType, ViewDef } from "./commands";
 
-export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart";
-
-export interface ViewDef {
-  name: string;
-  type: ViewType;
-  filter?: string;
-  sort?: string[];
-  columns?: string[];
-  group?: string;
-  date?: string;
-  x?: string;
-  y?: string;
-  agg?: string;
-  chartType?: string;
-}
+export type { ViewType, ViewDef } from "./commands";
 
 export const VIEW_TYPES: { type: ViewType; label: string }[] = [
   { type: "table", label: "Table" },

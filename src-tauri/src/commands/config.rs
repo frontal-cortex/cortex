@@ -38,6 +38,10 @@ pub struct Settings {
     /// Minutes between automatic syncs (plus on-launch and on-focus). 0 = off.
     #[serde(default)]
     pub auto_sync_minutes: u32,
+    /// Yjs websocket relay for presence + real-time co-editing (e.g.
+    /// `ws://office-server:1234`). Empty = collaboration features off.
+    #[serde(default)]
+    pub collab_url: String,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -54,6 +58,7 @@ impl Default for Settings {
             theme: default_theme(),
             trash_retention_days: default_trash_retention(),
             auto_sync_minutes: 0,
+            collab_url: String::new(),
         }
     }
 }

@@ -18,6 +18,7 @@ interface Props {
   onSelect: (path: string) => void;
   onNewNote: (parentFolder?: string) => void;
   onDeleteNote: (path: string) => void;
+  onTurnIntoDatabase: (path: string) => void;
   onToggleFavorite: (path: string) => void;
   isFavorite: (path: string) => boolean;
   onOpenGraph: () => void;
@@ -37,7 +38,7 @@ interface Props {
 
 export function LeftPanel({
   notes, dirs, selectedPath, status, agentBranches, commits, favorites,
-  onSelect, onNewNote, onDeleteNote, onToggleFavorite, isFavorite, onOpenGraph,
+  onSelect, onNewNote, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite, onOpenGraph,
   onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
   trash, onRestoreTrashed, onDeleteTrashed, onEmptyTrash,
@@ -156,10 +157,11 @@ export function LeftPanel({
     onDuplicateFile: handleDuplicateFile,
     onRevealFile: handleRevealFile,
     onDeleteFile: onDeleteNote,
+    onTurnIntoDatabase,
     onToggleFavorite,
     isFavorite,
   }), [newFolderIn, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote,
-       handleRenameFile, handleDuplicateFile, handleRevealFile, onDeleteNote, onToggleFavorite, isFavorite]);
+       handleRenameFile, handleDuplicateFile, handleRevealFile, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite]);
 
   const notesCount = notes.filter((n) => n.path.startsWith("notes/")).length;
 
