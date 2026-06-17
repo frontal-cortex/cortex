@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { commands, Settings, VaultInfo } from "../../lib/commands";
+import { commands, Settings, VaultInfo, Member, CurrentUser } from "../../lib/commands";
+import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
+import { Dropdown } from "./Dropdown";
 import { CloseIcon } from "./icons";
 import styles from "./SettingsModal.module.css";
 
@@ -66,15 +68,15 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
 
               <label className={styles.row}>
                 <span className={styles.label}>Theme</span>
-                <select
-                  className={styles.select}
+                <Dropdown
                   value={settings.theme}
-                  onChange={(e) => update({ theme: e.target.value as Settings["theme"] })}
-                >
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
+                  options={[
+                    { value: "system", label: "System" },
+                    { value: "light", label: "Light" },
+                    { value: "dark", label: "Dark" },
+                  ]}
+                  onChange={(v) => update({ theme: v as Settings["theme"] })}
+                />
               </label>
 
               <label className={styles.row}>
@@ -83,6 +85,31 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
                   type="checkbox"
                   checked={settings.auto_commit}
                   onChange={(e) => update({ auto_commit: e.target.checked })}
+                />
+              </label>
+
+              <label className={styles.row}>
+                <span className={styles.label}>Auto-sync</span>
+                <Dropdown
+                  value={String(settings.auto_sync_minutes)}
+                  options={[
+                    { value: "0", label: "Off" },
+                    { value: "1", label: "Every minute" },
+                    { value: "5", label: "Every 5 minutes" },
+                    { value: "15", label: "Every 15 minutes" },
+                  ]}
+                  onChange={(v) => update({ auto_sync_minutes: Number(v) })}
+                />
+              </label>
+
+              <label className={styles.row}>
+                <span className={styles.label}>Collaboration server</span>
+                <input
+                  className={styles.input}
+                  value={settings.collab_url}
+                  placeholder="ws://host:1234 (empty = off)"
+                  spellCheck={false}
+                  onChange={(e) => update({ collab_url: e.target.value.trim() })}
                 />
               </label>
 
@@ -116,8 +143,75 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
               </label>
             </section>
           )}
+
+          <MembersSection />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Team roster — people who can be assigned to `person` properties. Identity
+ *  ("you") comes from git config, the same name that authors commits. */
+function MembersSection() {
+  const [members, setMembers] = useState<Member[]>([]);
+  const [me, setMe] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    commands.getMembers().then(setMembers).catch(() => {});
+    commands.currentUser().then(setMe).catch(() => {});
+  }, []);
+
+  const persist = (next: Member[]) => { setMembers(next); commands.setMembers(next).catch(() => {}); };
+  const editLocal = (i: number, patch: Partial<Member>) =>
+    setMembers((ms) => ms.map((m, j) => (j === i ? { ...m, ...patch } : m)));
+  const commit = () => commands.setMembers(members).catch(() => {});
+
+  const cycleColor = (i: number) => {
+    const idx = TAG_COLORS.indexOf(members[i].color as (typeof TAG_COLORS)[number]);
+    const next = TAG_COLORS[(idx + 1) % TAG_COLORS.length];
+    persist(members.map((m, j) => (j === i ? { ...m, color: next } : m)));
+  };
+  const add = () => persist([...members, { name: "", email: "", color: autoColor(String(members.length)) }]);
+  const remove = (i: number) => persist(members.filter((_, j) => j !== i));
+  const isMe = (m: Member) => !!me && ((!!m.email && m.email === me.email) || m.name === me.name);
+
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.sectionTitle}>Members</h3>
+      {me?.name && (
+        <div className={styles.infoRow}>
+          <span className={styles.label}>You</span>
+          <span className={styles.value}>{me.name}{me.email ? ` · ${me.email}` : ""}</span>
+        </div>
+      )}
+      {members.length === 0 && (
+        <p className={styles.memberHint}>Add teammates so you can assign tasks with a Person property.</p>
+      )}
+      {members.map((m, i) => (
+        <div key={i} className={styles.memberRow}>
+          <button className={styles.swatch} style={swatchStyle(m.color)} onClick={() => cycleColor(i)} title="Color" />
+          <input
+            className={styles.memberInput}
+            value={m.name}
+            placeholder="Name"
+            onChange={(e) => editLocal(i, { name: e.target.value })}
+            onBlur={commit}
+          />
+          <input
+            className={styles.memberInput}
+            value={m.email}
+            placeholder="email (optional)"
+            onChange={(e) => editLocal(i, { email: e.target.value })}
+            onBlur={commit}
+          />
+          {isMe(m) && <span className={styles.youTag}>you</span>}
+          <button className={styles.removeBtn} onClick={() => remove(i)} title="Remove member">
+            <CloseIcon size={12} />
+          </button>
+        </div>
+      ))}
+      <button className={styles.addMember} onClick={add}>+ Add member</button>
+    </section>
   );
 }

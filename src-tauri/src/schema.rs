@@ -19,9 +19,10 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PropType {
+    #[default]
     Text,
     Number,
     Date,
@@ -30,6 +31,16 @@ pub enum PropType {
     MultiSelect,
     Status,
     Url,
+    /// Like a select, but its options are the vault's members (see `members.rs`),
+    /// not authored inline. Used for assignees.
+    Person,
+    /// Links to rows in another collection (`collection`). The stored value is a
+    /// list of target row titles (wiki-link semantics); options are resolved at
+    /// query time from the target collection.
+    Relation,
+    /// A read-only value computed by following a `relation` to its target rows
+    /// and aggregating one of their `property` values with `function`.
+    Rollup,
 }
 
 /// One named choice for a select/multi-select/status property. `color` is a
@@ -46,7 +57,7 @@ fn default_color() -> String {
     "gray".into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PropertyDef {
     pub name: String,
     #[serde(rename = "type")]
@@ -55,6 +66,18 @@ pub struct PropertyDef {
     /// order, so it is preserved as authored (hence a Vec, not a map).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<SelectOption>,
+    /// Relation: the target collection name this property links to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection: Option<String>,
+    /// Rollup: the relation property to follow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation: Option<String>,
+    /// Rollup: the target property to aggregate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    /// Rollup: count | values | sum | avg | min | max.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function: Option<String>,
 }
 
 /// A database/type's full property schema. `properties` is ordered.
@@ -148,6 +171,7 @@ mod tests {
                     SelectOption { name: "reading".into(), color: "blue".into() },
                     SelectOption { name: "done".into(), color: "green".into() },
                 ],
+                ..Default::default()
             }],
         };
         save(&root, "books", &schema).unwrap();

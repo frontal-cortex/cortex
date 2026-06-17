@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, MouseEvent as ReactMouseEvent } from "react";
 import { TreeNode, DirNode, FileNode } from "../../lib/fileTree";
+import { exportToFile } from "../../lib/export";
 import { StarIcon, StarFilledIcon } from "./icons";
 import styles from "./FileTree.module.css";
 
@@ -11,6 +12,11 @@ interface TreeActions {
   onNewNoteInFolder: (parentPath: string) => void;
   onDeleteFolder: (path: string) => void;
   onMoveNote: (fromPath: string, toDir: string) => void;
+  onRenameFile?: (path: string) => void;
+  onDuplicateFile?: (path: string) => void;
+  onRevealFile?: (path: string) => void;
+  onDeleteFile?: (path: string) => void;
+  onTurnIntoDatabase?: (path: string) => void;
   onToggleFavorite?: (path: string) => void;
   isFavorite?: (path: string) => boolean;
 }
@@ -48,6 +54,7 @@ export function FileTree({
             node={node}
             selected={node.path === selectedPath}
             indent={indent}
+            actions={actions}
             onSelect={onSelect}
             onToggleFavorite={actions.onToggleFavorite}
             isFavorite={actions.isFavorite}
@@ -149,21 +156,25 @@ function DirRow({
 }
 
 function FileRow({
-  node, selected, indent, onSelect, onToggleFavorite, isFavorite,
+  node, selected, indent, actions, onSelect, onToggleFavorite, isFavorite,
 }: {
   node: FileNode;
   selected: boolean;
   indent: number;
+  actions: TreeActions;
   onSelect: (path: string) => void;
   onToggleFavorite?: (path: string) => void;
   isFavorite?: (path: string) => boolean;
 }) {
   const fav = isFavorite?.(node.path) ?? false;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
   return (
     <div
-      className={`${styles.fileRow} ${selected ? styles.fileRowSelected : ""}`}
+      className={`${styles.fileRow} ${selected ? styles.fileRowSelected : ""} ${menu ? styles.fileRowContext : ""}`}
       style={{ paddingLeft: 10 + indent * 14 }}
       onClick={() => onSelect(node.path)}
+      onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
       title={node.path}
       draggable
       onDragStart={(e) => {
@@ -187,6 +198,91 @@ function FileRow({
           {fav ? <StarFilledIcon size={13} /> : <StarIcon size={13} />}
         </button>
       )}
+
+      {menu && (
+        <FileContextMenu
+          x={menu.x}
+          y={menu.y}
+          path={node.path}
+          fav={fav}
+          actions={actions}
+          onToggleFavorite={onToggleFavorite}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FileContextMenu({
+  x, y, path, fav, actions, onToggleFavorite, onClose,
+}: {
+  x: number;
+  y: number;
+  path: string;
+  fav: boolean;
+  actions: TreeActions;
+  onToggleFavorite?: (path: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  // Keep the menu inside the viewport.
+  const left = Math.min(x, window.innerWidth - 200);
+  const top = Math.min(y, window.innerHeight - 240);
+
+  const run = (fn?: (p: string) => void) => (e: ReactMouseEvent) => {
+    e.stopPropagation();
+    onClose();
+    fn?.(path);
+  };
+
+  const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
+  const revealLabel = isMac ? "Reveal in Finder" : "Show in folder";
+
+  return (
+    <div
+      ref={ref}
+      className={styles.ctxMenu}
+      style={{ left, top }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button className={styles.ctxItem} onClick={run(actions.onRenameFile)}>Rename</button>
+      <button className={styles.ctxItem} onClick={run(actions.onDuplicateFile)}>Duplicate</button>
+      <button className={styles.ctxItem} onClick={run(actions.onTurnIntoDatabase)}>Turn whole note into database</button>
+      {onToggleFavorite && (
+        <button className={styles.ctxItem} onClick={run(onToggleFavorite)}>
+          {fav ? "Remove from favorites" : "Add to favorites"}
+        </button>
+      )}
+      <button className={styles.ctxItem} onClick={run(actions.onRevealFile)}>{revealLabel}</button>
+      <button
+        className={styles.ctxItem}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+          const base = path.split("/").pop()?.replace(/\.md$/, "") || "note";
+          exportToFile("note-html", path, `${base}.html`);
+        }}
+      >
+        Export to HTML
+      </button>
+      <button
+        className={styles.ctxItem}
+        onClick={(e) => { e.stopPropagation(); onClose(); navigator.clipboard?.writeText(path); }}
+      >
+        Copy path
+      </button>
+      <div className={styles.ctxSep} />
+      <button className={`${styles.ctxItem} ${styles.ctxItemDanger}`} onClick={run(actions.onDeleteFile)}>Delete</button>
     </div>
   );
 }

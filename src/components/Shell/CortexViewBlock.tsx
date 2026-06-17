@@ -8,22 +8,23 @@
 // codeBlock(language: "cortex-view") <-> our custom block at the load/save
 // boundary, so we never depend on BlockNote's lossy custom-block serializer.
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
-import { commands, ViewTable, ViewColumn, PropType, ChartResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon } from "./icons";
+import { commands, ViewTable, ViewColumn, PropType, PropertyDef, ChartResult } from "../../lib/commands";
+import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
+import { Dropdown } from "./Dropdown";
 import { ViewToolbar } from "./ViewToolbar";
 import { noteEmbedSpec } from "./NoteEmbedBlock";
 import { calloutSpec } from "./CalloutBlock";
 import styles from "./CortexViewBlock.module.css";
 
-/** A select/status/multi-select column renders as colored pills, not a text box. */
+/** Select-like columns render as colored pills (incl. person + relation). */
 function isSelectColumn(col: ViewColumn): boolean {
   const t = col.schema?.type;
-  return t === "select" || t === "status" || t === "multi_select";
+  return t === "select" || t === "status" || t === "multi_select" || t === "person" || t === "relation";
 }
 
 /** Schema key for a source — its collection name, or null for CSV sources. */
@@ -40,6 +41,7 @@ const COLUMN_TYPES: { value: PropType; label: string }[] = [
   { value: "select", label: "Select" },
   { value: "status", label: "Status" },
   { value: "multi_select", label: "Multi-select" },
+  { value: "person", label: "Person" },
   { value: "url", label: "URL" },
 ];
 
@@ -82,6 +84,118 @@ function ColumnHeader({ col, canType, onSetType }: {
               {t.label}{current === t.value ? " ✓" : ""}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "+" column header → a small form to add a new typed property to the schema. */
+// Relation/rollup need extra config the column-header retype menu can't provide,
+// so they're only offered when *adding* a property.
+const ADD_PROP_TYPES: { value: PropType; label: string }[] = [
+  ...COLUMN_TYPES,
+  { value: "relation", label: "Relation" },
+  { value: "rollup", label: "Rollup" },
+];
+const ROLLUP_FNS = ["count", "sum", "avg", "min", "max", "values"];
+
+function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (prop: PropertyDef) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<PropType>("text");
+  const [collection, setCollection] = useState("");
+  const [relation, setRelation] = useState("");
+  const [property, setProperty] = useState("");
+  const [fn, setFn] = useState("count");
+  const [collections, setCollections] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    commands.listCollections().then(setCollections).catch(() => {});
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const relationCols = columns.filter((c) => c.schema?.type === "relation");
+
+  const submit = () => {
+    const n = name.trim();
+    if (!n) return;
+    if (type === "relation" && !collection) return;
+    if (type === "rollup" && (!relation || !fn)) return;
+    const prop: PropertyDef = { name: n, type, options: [] };
+    if (type === "relation") prop.collection = collection;
+    if (type === "rollup") {
+      prop.relation = relation;
+      prop.function = fn;
+      if (fn !== "count" && property.trim()) prop.property = property.trim();
+    }
+    onAdd(prop);
+    setName(""); setType("text"); setCollection(""); setRelation(""); setProperty(""); setFn("count");
+    setOpen(false);
+  };
+
+  return (
+    <div className={styles.addProp} ref={ref}>
+      <button className={styles.addPropBtn} title="Add a property" onClick={() => setOpen((o) => !o)}>+</button>
+      {open && (
+        <div className={styles.addPropMenu}>
+          <input
+            className={styles.addPropInput}
+            autoFocus
+            value={name}
+            placeholder="Property name"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") setOpen(false); }}
+          />
+          <Dropdown
+            fullWidth
+            value={type}
+            options={ADD_PROP_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+            onChange={(v) => setType(v as PropType)}
+          />
+
+          {type === "relation" && (
+            <Dropdown
+              fullWidth
+              value={collection}
+              placeholder="Links to…"
+              options={collections.map((c) => ({ value: c, label: c }))}
+              onChange={setCollection}
+            />
+          )}
+
+          {type === "rollup" && (
+            <>
+              <Dropdown
+                fullWidth
+                value={relation}
+                placeholder="Via relation…"
+                options={relationCols.map((c) => ({ value: c.key, label: c.key }))}
+                onChange={setRelation}
+              />
+              <Dropdown
+                fullWidth
+                value={fn}
+                options={ROLLUP_FNS.map((f) => ({ value: f, label: f }))}
+                onChange={setFn}
+              />
+              {fn !== "count" && (
+                <input
+                  className={styles.addPropInput}
+                  value={property}
+                  placeholder="Property to aggregate"
+                  onChange={(e) => setProperty(e.target.value)}
+                />
+              )}
+              {relationCols.length === 0 && <div className={styles.addPropHint}>Add a Relation property first.</div>}
+            </>
+          )}
+
+          <button className={styles.addPropConfirm} onClick={submit}>Add property</button>
         </div>
       )}
     </div>
@@ -324,19 +438,28 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
   };
 
   const renderCell = (c: ViewTable["columns"][number], row: ViewTable["rows"][number]) => {
+    // Rollups are computed, read-only.
+    if (c.schema?.type === "rollup") {
+      return <span className={styles.cellReadonly}>{formatCell(row.cells[c.key])}</span>;
+    }
     if (isSelectColumn(c)) {
-      const multi = c.schema!.type === "multi_select";
+      const t = c.schema!.type;
+      const multi = t === "multi_select" || t === "relation";
+      // Person + relation options come from elsewhere (roster / target collection),
+      // so they aren't editable inline like a regular select's options.
+      const managed = t === "person" || t === "relation";
       return (
         <SelectCell
           value={row.cells[c.key]}
           options={c.schema!.options}
           multi={multi}
           editable={c.key !== "$body" && c.key !== "id"}
+          placeholder={t === "person" ? "Unassigned" : t === "relation" ? "Link…" : "Empty"}
           onChange={(next) => {
             const value = Array.isArray(next) ? next.join(", ") : next;
             commit(c, row.id, value, multi ? "list" : "text");
           }}
-          onOptionsChange={schemaKey ? (opts) => {
+          onOptionsChange={schemaKey && !managed ? (opts) => {
             commands.upsertProperty(schemaKey, { name: c.key, type: c.schema!.type, options: opts })
               .then(onChanged).catch((e) => setErr(String(e)));
           } : undefined}
@@ -369,6 +492,16 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
                 />
               </th>
             ))}
+            {schemaKey && (
+              <th className={styles.addPropCol}>
+                <AddPropertyHeader
+                  columns={table.columns}
+                  onAdd={(prop) =>
+                    commands.upsertProperty(schemaKey, prop)
+                      .then(onChanged).catch((e) => setErr(String(e)))}
+                />
+              </th>
+            )}
             <th className={styles.rowActionCol} />
           </tr>
         </thead>
@@ -378,6 +511,7 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
               {table.columns.map((c) => (
                 <td key={c.key}>{renderCell(c, row)}</td>
               ))}
+              {schemaKey && <td className={styles.addPropCol} />}
               <td className={styles.rowActionCol}>
                 <div className={styles.rowActions}>
                   {canOpen && (
@@ -395,21 +529,77 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
         </tbody>
       </table>
       <div className={styles.footer}>
-        <button
-          className={styles.newRowBtn}
-          onClick={() => {
-            commands.addRow(source, newRowId(), { title: "Untitled", created: today(), ...seedFromFilter(spec) })
-              .then(onChanged)
-              .catch((e) => setErr(String(e)));
-          }}
-        >
-          + New row
-        </button>
+        <NewRowButton source={source} spec={spec} onChanged={onChanged} onError={setErr} />
         <span className={styles.count}>
           {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
           {err && <span className={styles.error}> · {err}</span>}
         </span>
       </div>
+    </div>
+  );
+}
+
+/** "New row" — a plain button, or a dropdown (Blank / templates / New template)
+ *  when the collection has row templates. */
+function NewRowButton({ source, spec, onChanged, onError }: {
+  source: string; spec: string; onChanged: () => void; onError: (e: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [templates, setTemplates] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+  const collection = collectionKey(source);
+
+  const loadTemplates = useCallback(() => {
+    if (collection) commands.listRowTemplates(source).then(setTemplates).catch(() => {});
+  }, [source, collection]);
+  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const seed = () => ({ title: "Untitled", created: today(), ...seedFromFilter(spec) });
+  const addBlank = () =>
+    commands.addRow(source, newRowId(), seed()).then(onChanged).catch((e) => onError(String(e)));
+  const addFromTemplate = (t: string) => {
+    setOpen(false);
+    commands.addRowFromTemplate(source, newRowId(), t, seed()).then(onChanged).catch((e) => onError(String(e)));
+  };
+  const newTemplate = async () => {
+    setOpen(false);
+    const name = window.prompt("Template name")?.trim();
+    if (!name || !collection) return;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "template";
+    const path = `collections/${collection}/_template-${slug}.md`;
+    try {
+      await commands.createNote(path, name, today());
+      loadTemplates();
+      // Open it so the user can fill in the default properties/body.
+      window.dispatchEvent(new CustomEvent("cortex:open-note", { detail: { path } }));
+    } catch (e) { onError(String(e)); }
+  };
+
+  if (!collection) {
+    return <button className={styles.newRowBtn} onClick={addBlank}>+ New row</button>;
+  }
+
+  return (
+    <div className={styles.newRowWrap} ref={ref}>
+      <button className={styles.newRowBtn} onClick={addBlank}>+ New row</button>
+      <button className={styles.newRowCaret} title="New from template" onClick={() => setOpen((o) => !o)}>▾</button>
+      {open && (
+        <div className={styles.newRowMenu}>
+          <button className={styles.newRowItem} onClick={() => { setOpen(false); addBlank(); }}>Blank</button>
+          {templates.map((t) => (
+            <button key={t} className={styles.newRowItem} onClick={() => addFromTemplate(t)}>{t}</button>
+          ))}
+          <div className={styles.newRowSep} />
+          <button className={styles.newRowItem} onClick={newTemplate}>＋ New template…</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -735,6 +925,151 @@ export function GalleryView({ table, spec, source, onChanged }: {
   );
 }
 
+// ── View configuration helpers — keep the YAML spec out of the user's face ────
+
+/** Set a top-level `key: value` in a spec, replacing the line or appending it. */
+function specSet(spec: string, key: string, value: string): string {
+  const lines = spec.split("\n").map((l) => l.trimEnd()).filter((l) => l.trim() !== "");
+  let found = false;
+  const out = lines.map((l) => {
+    if (l.replace(/\s/g, "").startsWith(`${key}:`)) { found = true; return `${key}: ${value}`; }
+    return l;
+  });
+  if (!found) out.push(`${key}: ${value}`);
+  return out.join("\n") + "\n";
+}
+
+/** Remove a top-level `key:` line from a spec. */
+function specRemove(spec: string, key: string): string {
+  const out = spec.split("\n").filter((l) => l.trim() !== "" && !l.replace(/\s/g, "").startsWith(`${key}:`));
+  return out.length ? out.join("\n") + "\n" : "";
+}
+
+/** Best default group field for a board: a select/status column, else the first
+ *  non-title property. */
+function pickGroupField(table: ViewTable | null): string {
+  const cols = table?.columns ?? [];
+  const sel = cols.find((c) => isSelectColumn(c));
+  if (sel) return sel.key;
+  const other = cols.find((c) => !["title", "id", "$body", "created"].includes(c.key));
+  return other?.key ?? "status";
+}
+
+/** Switch a view's type, pre-filling the config that type needs so it never
+ *  lands in an error state. */
+function specWithType(spec: string, newType: string, table: ViewTable | null): string {
+  let s = specSet(spec, "type", newType);
+  if (newType === "board" && !peek(s, "group")) s = specSet(s, "group", pickGroupField(table));
+  if (newType === "chart" && !peek(s, "chartType")) s = specSet(s, "chartType", "line");
+  return s;
+}
+
+function sourceLabel(source: string): string {
+  return collectionKey(source) ?? source.replace(/^data\//, "").replace(/\.csv$/, "");
+}
+
+const VIEW_TYPE_OPTIONS: { type: string; label: string; render: (s: number) => ReactNode }[] = [
+  { type: "table", label: "Table", render: (s) => <TableIcon size={s} /> },
+  { type: "board", label: "Board", render: (s) => <BoardIcon size={s} /> },
+  { type: "calendar", label: "Calendar", render: (s) => <CalendarIcon size={s} /> },
+  { type: "gallery", label: "Gallery", render: (s) => <GalleryIcon size={s} /> },
+  { type: "chart", label: "Chart", render: (s) => <ChartIcon size={s} /> },
+];
+
+/** A dropdown to pick the view type — current type shown, the rest tucked away
+ *  in a menu (no `type:` editing, no wall of icons). */
+function ViewTypeSwitcher({ current, onChange }: { current: string; onChange: (t: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const active = VIEW_TYPE_OPTIONS.find((o) => o.type === current) ?? VIEW_TYPE_OPTIONS[0];
+  return (
+    <div className={styles.viewType} ref={ref}>
+      <button className={styles.viewTypeBtn} onClick={() => setOpen((o) => !o)} title="Change view type">
+        {active.render(15)}
+        <span className={styles.viewTypeLabel}>{active.label}</span>
+        <span className={styles.viewTypeCaret}>▾</span>
+      </button>
+      {open && (
+        <div className={styles.viewTypeMenu}>
+          {VIEW_TYPE_OPTIONS.map((o) => (
+            <button
+              key={o.type}
+              className={`${styles.viewTypeItem} ${o.type === current ? styles.viewTypeItemActive : ""}`}
+              onClick={() => { setOpen(false); if (o.type !== current) onChange(o.type); }}
+            >
+              {o.render(15)} <span>{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Friendly "this board needs a group" state — pick a property, no YAML. */
+export function BoardSetup({ table, onPick }: { table: ViewTable | null; onPick: (field: string) => void }) {
+  const fields = (table?.columns ?? []).filter((c) => c.key !== "$body" && c.key !== "id");
+  return (
+    <div className={styles.setup}>
+      <BoardIcon size={22} />
+      <div className={styles.setupTitle}>Group cards by a property</div>
+      {fields.length === 0
+        ? <div className={styles.setupHint}>Add a property (like a Status) to this database first.</div>
+        : (
+          <div className={styles.setupChips}>
+            {fields.map((c) => (
+              <button key={c.key} className={styles.setupChip} onClick={() => onPick(c.key)}>{c.key}</button>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
+
+const CHART_AGGS = ["", "sum", "avg", "count", "min", "max"];
+
+/** Inline chart configuration, so charts never need raw spec editing. */
+function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string) => void }) {
+  const [x, setX] = useState(peek(spec, "x") ?? "");
+  const [y, setY] = useState(peek(spec, "y") ?? "");
+  const agg = peek(spec, "agg") ?? "";
+  const ct = peek(spec, "chartType") ?? "line";
+  const commit = (key: string, value: string) =>
+    onChange(value ? specSet(spec, key, value) : specRemove(spec, key));
+  return (
+    <div className={styles.chartConfig}>
+      <label className={styles.chartField}>X
+        <input className={styles.chartInput} value={x} placeholder="date field"
+          onChange={(e) => setX(e.target.value)} onBlur={() => commit("x", x.trim())} />
+      </label>
+      <label className={styles.chartField}>Y
+        <input className={styles.chartInput} value={y} placeholder="number field"
+          onChange={(e) => setY(e.target.value)} onBlur={() => commit("y", y.trim())} />
+      </label>
+      <label className={styles.chartField}>Aggregate
+        <Dropdown
+          value={agg}
+          options={CHART_AGGS.map((a) => ({ value: a, label: a || "none" }))}
+          onChange={(v) => commit("agg", v)}
+        />
+      </label>
+      <label className={styles.chartField}>Type
+        <Dropdown
+          value={ct}
+          options={[{ value: "line", label: "line" }, { value: "bar", label: "bar" }]}
+          onChange={(v) => commit("chartType", v)}
+        />
+      </label>
+    </div>
+  );
+}
+
 function CortexView({ block, editor }: { block: any; editor: any }) {
   const spec = String(block.props.spec ?? "");
   const lang = String(block.props.lang ?? "cortex-view");
@@ -753,7 +1088,16 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(spec);
 
+  const needsGroup = isBoard && !peek(spec, "group");
+  const needsChartFields = isChart && (!peek(spec, "x") || !peek(spec, "y"));
+
   const reload = useCallback(() => {
+    // A chart with no X/Y would error — wait for the inline config instead.
+    if (isChart && (!peek(spec, "x") || !peek(spec, "y"))) {
+      setChart(null);
+      setError(null);
+      return Promise.resolve();
+    }
     setLoading(true);
     setError(null);
     const p = isChart
@@ -766,18 +1110,23 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
 
   useEffect(() => { reload(); }, [reload]);
 
-  const saveSpec = () => {
-    editor.updateBlock(block, { props: { spec: draft, lang } });
-    setEditing(false);
-  };
+  const applySpec = (next: string) => editor.updateBlock(block, { props: { spec: next, lang } });
+
+  // Re-run the query when a sync pulls teammate changes (Shell dispatches this).
+  useEffect(() => {
+    const onChanged = () => reload();
+    window.addEventListener("cortex:data-changed", onChanged);
+    return () => window.removeEventListener("cortex:data-changed", onChanged);
+  }, [reload]);
 
   return (
     <div className={styles.card} contentEditable={false}>
       <div className={styles.header}>
-        <span className={styles.badge}>{lang === "cortex-chart" ? "Chart" : "Data view"}</span>
-        <span className={styles.meta}>{declaredType} · {source}</span>
+        <ViewTypeSwitcher current={declaredType} onChange={(t) => applySpec(specWithType(spec, t, table))} />
+        <span className={styles.sourceLabel}>{sourceLabel(source)}</span>
         <button
           className={styles.editBtn}
+          title="Edit the raw spec (advanced)"
           onClick={() => { setDraft(spec); setEditing((x) => !x); }}
         >
           {editing ? "Close" : "Edit"}
@@ -794,35 +1143,46 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
             onChange={(e) => setDraft(e.target.value)}
           />
           <div className={styles.editActions}>
-            <button className={styles.saveBtn} onClick={saveSpec}>Save</button>
+            <button className={styles.saveBtn} onClick={() => { applySpec(draft); setEditing(false); }}>Save</button>
             <button className={styles.cancelBtn} onClick={() => setEditing(false)}>Cancel</button>
           </div>
         </div>
       )}
 
-      {!editing && !isChart && (
+      {/* Per-type controls: table/board/calendar/gallery get the filter toolbar;
+          charts get the inline X/Y config. */}
+      {!editing && isChart && <ChartConfig spec={spec} onChange={applySpec} />}
+      {!editing && !isChart && !needsGroup && (
         <ViewToolbar
           spec={spec}
           fields={table?.allColumns ?? []}
           visibleColumns={table?.columns.map((c) => c.key).filter((k) => k !== "$body") ?? []}
           isBoard={isBoard}
-          onSpecChange={(next) => editor.updateBlock(block, { props: { spec: next, lang } })}
+          onSpecChange={applySpec}
         />
       )}
 
-      {!editing && error && <div className={styles.error}>{error}</div>}
+      {/* Friendly setup states replace cryptic spec errors. */}
+      {!editing && needsGroup && (
+        <BoardSetup table={table} onPick={(f) => applySpec(specSet(spec, "group", f))} />
+      )}
+      {!editing && needsChartFields && (
+        <div className={styles.stub}>Set the X and Y fields above to draw the chart.</div>
+      )}
+
+      {!editing && error && <div className={styles.errorSoft}>{error}</div>}
 
       {/* Keep the last-loaded data mounted across a refresh so add/remove/drag
           update in place instead of flashing a "Loading…" stub. */}
-      {!editing && !error && (isChart
+      {!editing && !error && !needsGroup && !needsChartFields && (isChart
         ? (chart
             ? (chart.points.length === 0
-                ? <div className={styles.stub}>No data points for this chart.</div>
+                ? <div className={styles.stub}>No data points yet.</div>
                 : <MiniChart chart={chart} />)
             : loading ? <div className={styles.stub}>Loading…</div> : null)
         : (table
             ? (table.rows.length === 0 && !isCalendar
-                ? <div className={styles.stub}>No rows match this view.</div>
+                ? <div className={styles.stub}>Nothing here yet — add a row below.</div>
                 : isBoard
                   ? <BoardView table={table} spec={spec} source={source} onChanged={reload} />
                   : isCalendar

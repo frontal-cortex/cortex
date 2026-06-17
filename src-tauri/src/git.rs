@@ -212,13 +212,176 @@ pub fn stage_all_and_commit(repo: &Repository, message: &str) -> Result<()> {
     index.write()?;
 
     let oid = index.write_tree()?;
-    let tree = repo.find_tree(oid)?;
-    let sig = repo.signature()?;
 
     let parent_commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+    // Nothing actually changed — don't create an empty commit (auto-commit and
+    // pre-sync commits call this unconditionally).
+    if let Some(parent) = &parent_commit {
+        if parent.tree_id() == oid {
+            return Ok(());
+        }
+    }
+
+    let tree = repo.find_tree(oid)?;
+    let sig = repo.signature()?;
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
 
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
+    Ok(())
+}
+
+// ── Sync (multi-user) ───────────────────────────────────────────────────────────
+//
+// Sync = auto-commit dirty work, `pull --no-rebase` (merge), push. Merge — not
+// rebase — because on conflict it leaves ONE recoverable state: standard
+// `<<<<<<<` markers in the files and MERGE_HEAD set, which is exactly what the
+// resolution UI (and any git CLI user) can work with. A failed rebase would
+// strand the repo mid-replay with no good in-app recovery.
+//
+// Push/pull shell out to system git so SSH agents and credential helpers work;
+// everything else uses git2.
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum SyncOutcome {
+    /// Synced cleanly. `pulled` = HEAD moved (remote changes landed on disk),
+    /// so the caller should refresh its in-memory state.
+    Ok { pulled: bool },
+    /// The merge hit conflicts. The repo is mid-merge with marker'd files —
+    /// resolve each (ours/theirs/manual) then `complete_merge`, or `abort_merge`.
+    Conflicts { files: Vec<String> },
+}
+
+fn run_git(path: &Path, args: &[&str]) -> Result<std::process::Output> {
+    Ok(std::process::Command::new("git")
+        .args(args)
+        .current_dir(path)
+        .output()?)
+}
+
+fn git_stdout(path: &Path, args: &[&str]) -> Result<String> {
+    let out = run_git(path, args)?;
+    if !out.status.success() {
+        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn current_branch(path: &Path) -> Result<String> {
+    // symbolic-ref (not rev-parse) so an unborn branch — a fresh vault with no
+    // commits yet — still resolves to its name instead of erroring.
+    git_stdout(path, &["symbolic-ref", "--short", "HEAD"])
+        .map_err(|_| AppError::Other("Cannot sync: detached HEAD".into()))
+}
+
+fn head_oid(path: &Path) -> String {
+    git_stdout(path, &["rev-parse", "HEAD"]).unwrap_or_default()
+}
+
+/// Files currently in the unmerged (conflicted) state.
+pub fn list_conflicts(path: &Path) -> Result<Vec<String>> {
+    let out = git_stdout(path, &["diff", "--name-only", "--diff-filter=U"])?;
+    Ok(out.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+}
+
+/// Full sync: commit dirty work, merge in the remote, push. Never leaves the
+/// repo in a broken state — a conflicted merge is surfaced (recoverable), and
+/// any other pull failure is rolled back with `merge --abort`.
+pub fn sync_vault(path: &Path) -> Result<SyncOutcome> {
+    // A merge already in progress (e.g. app restarted mid-resolution) takes
+    // priority — surface it instead of stacking another pull on top.
+    let existing = list_conflicts(path)?;
+    if !existing.is_empty() {
+        return Ok(SyncOutcome::Conflicts { files: existing });
+    }
+
+    // Commit local work first: a merge needs a clean tree, and "share my
+    // current state" is what the user means by sync.
+    {
+        let repo = Repository::open(path)?;
+        let st = get_status(&repo)?;
+        if !(st.staged.is_empty() && st.unstaged.is_empty() && st.untracked.is_empty()) {
+            stage_all_and_commit(&repo, "Auto-commit before sync")?;
+        }
+    }
+
+    let branch = current_branch(path)?;
+    let before = head_oid(path);
+
+    let out = run_git(path, &["pull", "--no-rebase", "--no-edit", "origin", &branch])?;
+    if !out.status.success() {
+        let conflicts = list_conflicts(path)?;
+        if !conflicts.is_empty() {
+            return Ok(SyncOutcome::Conflicts { files: conflicts });
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        // A brand-new branch the remote doesn't know yet isn't an error — there
+        // is just nothing to pull. Anything else: restore a clean state.
+        if !stderr.contains("couldn't find remote ref") {
+            let _ = run_git(path, &["merge", "--abort"]);
+            return Err(AppError::Other(stderr));
+        }
+    }
+    let pulled = head_oid(path) != before;
+
+    // `-u` keeps the upstream set so ahead/behind tracking works from the start.
+    let out = run_git(path, &["push", "-u", "origin", &branch])?;
+    if !out.status.success() {
+        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
+    }
+
+    Ok(SyncOutcome::Ok { pulled })
+}
+
+/// Resolve one conflicted file: take ours / theirs wholesale, or `manual` when
+/// the user has already edited the markers away in the editor. Stages the file.
+pub fn resolve_conflict(path: &Path, file: &str, side: &str) -> Result<()> {
+    match side {
+        "ours" | "theirs" => {
+            let flag = if side == "ours" { "--ours" } else { "--theirs" };
+            let out = run_git(path, &["checkout", flag, "--", file])?;
+            if !out.status.success() {
+                return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
+            }
+        }
+        "manual" => {}
+        other => return Err(AppError::Other(format!("Unknown resolution side '{other}'"))),
+    }
+    let out = run_git(path, &["add", "--", file])?;
+    if !out.status.success() {
+        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
+    }
+    Ok(())
+}
+
+/// Conclude a fully-resolved merge: commit it and push. If conflicts remain,
+/// returns them instead (the UI keeps the resolution flow open).
+pub fn complete_merge(path: &Path) -> Result<SyncOutcome> {
+    let remaining = list_conflicts(path)?;
+    if !remaining.is_empty() {
+        return Ok(SyncOutcome::Conflicts { files: remaining });
+    }
+    if path.join(".git").join("MERGE_HEAD").exists() {
+        let out = run_git(path, &["commit", "--no-edit"])?;
+        if !out.status.success() {
+            return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
+        }
+    }
+    let branch = current_branch(path)?;
+    let out = run_git(path, &["push", "-u", "origin", &branch])?;
+    if !out.status.success() {
+        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
+    }
+    Ok(SyncOutcome::Ok { pulled: true })
+}
+
+/// Abandon the in-progress merge entirely: local commits stay, remote changes
+/// are un-applied, the working tree returns to the pre-pull state.
+pub fn abort_merge(path: &Path) -> Result<()> {
+    let out = run_git(path, &["merge", "--abort"])?;
+    if !out.status.success() {
+        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
+    }
     Ok(())
 }
 
@@ -289,4 +452,139 @@ pub fn apply_agent_branch(repo: &Repository, branch_name: &str) -> Result<()> {
 pub fn discard_agent_branch(repo: &Repository, branch_name: &str) -> Result<()> {
     repo.find_branch(branch_name, BranchType::Local)?.delete()?;
     Ok(())
+}
+
+// ── Tests: the multi-user sync contract ─────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sh(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git").args(args).current_dir(dir).output().unwrap();
+        assert!(out.status.success(), "git {:?} failed: {}", args, String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// A bare origin plus two clones with distinct identities — the 3-person
+    /// company setup in miniature.
+    fn two_user_setup(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+        let base = std::env::temp_dir().join(format!("cortex-sync-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let origin = base.join("origin.git");
+        std::fs::create_dir_all(&origin).unwrap();
+        sh(&origin, &["init", "--bare", "--initial-branch=main", "."]);
+
+        let mk_clone = |name: &str, user: &str| {
+            let dir = base.join(name);
+            sh(&base, &["clone", origin.to_str().unwrap(), name]);
+            sh(&dir, &["config", "user.name", user]);
+            sh(&dir, &["config", "user.email", &format!("{user}@test.local")]);
+            sh(&dir, &["checkout", "-b", "main"]);
+            dir
+        };
+        let a = mk_clone("alice", "alice");
+        let b = mk_clone("bob", "bob");
+        (base, a, b)
+    }
+
+    fn write(dir: &Path, rel: &str, content: &str) {
+        let p = dir.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, content).unwrap();
+    }
+
+    fn read(dir: &Path, rel: &str) -> String {
+        std::fs::read_to_string(dir.join(rel)).unwrap()
+    }
+
+    #[test]
+    fn sync_round_trip_and_conflict_resolution() {
+        let (base, alice, bob) = two_user_setup("flow");
+
+        // Alice writes and syncs — auto-commits dirty work, pushes, sets upstream.
+        write(&alice, "notes/plan.md", "# Plan\nshared line\n");
+        match sync_vault(&alice).unwrap() {
+            SyncOutcome::Ok { pulled } => assert!(!pulled, "nothing to pull on first push"),
+            other => panic!("expected clean sync, got {other:?}"),
+        }
+
+        // Bob syncs — pulls Alice's note.
+        match sync_vault(&bob).unwrap() {
+            SyncOutcome::Ok { pulled } => assert!(pulled, "bob should have pulled"),
+            other => panic!("expected clean sync, got {other:?}"),
+        }
+        assert_eq!(read(&bob, "notes/plan.md"), "# Plan\nshared line\n");
+
+        // Both edit the same line; Alice syncs first.
+        write(&alice, "notes/plan.md", "# Plan\nalice version\n");
+        assert!(matches!(sync_vault(&alice).unwrap(), SyncOutcome::Ok { .. }));
+
+        write(&bob, "notes/plan.md", "# Plan\nbob version\n");
+        let files = match sync_vault(&bob).unwrap() {
+            SyncOutcome::Conflicts { files } => files,
+            other => panic!("expected conflicts, got {other:?}"),
+        };
+        assert_eq!(files, vec!["notes/plan.md"]);
+        // The file holds standard markers (the documented strategy) and the repo
+        // reports the same conflicts when asked again (e.g. after an app restart).
+        assert!(read(&bob, "notes/plan.md").contains("<<<<<<<"));
+        assert_eq!(list_conflicts(&bob).unwrap(), vec!["notes/plan.md"]);
+        // Re-running sync mid-merge surfaces the same state instead of stacking pulls.
+        assert!(matches!(sync_vault(&bob).unwrap(), SyncOutcome::Conflicts { .. }));
+
+        // Bob takes Alice's version, completes the merge, and pushes.
+        resolve_conflict(&bob, "notes/plan.md", "theirs").unwrap();
+        assert!(matches!(complete_merge(&bob).unwrap(), SyncOutcome::Ok { .. }));
+        assert_eq!(read(&bob, "notes/plan.md"), "# Plan\nalice version\n");
+
+        // Alice syncs and everyone has converged.
+        assert!(matches!(sync_vault(&alice).unwrap(), SyncOutcome::Ok { .. }));
+        assert_eq!(read(&alice, "notes/plan.md"), "# Plan\nalice version\n");
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn abort_merge_restores_pre_pull_state() {
+        let (base, alice, bob) = two_user_setup("abort");
+
+        write(&alice, "n.md", "base\n");
+        sync_vault(&alice).unwrap();
+        sync_vault(&bob).unwrap();
+
+        write(&alice, "n.md", "alice\n");
+        sync_vault(&alice).unwrap();
+        write(&bob, "n.md", "bob\n");
+        assert!(matches!(sync_vault(&bob).unwrap(), SyncOutcome::Conflicts { .. }));
+
+        abort_merge(&bob).unwrap();
+        // Bob's own committed version is back, no markers, no merge state.
+        assert_eq!(read(&bob, "n.md"), "bob\n");
+        assert!(list_conflicts(&bob).unwrap().is_empty());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn stage_all_and_commit_skips_empty_commits() {
+        let dir = std::env::temp_dir().join(format!("cortex-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        sh(&dir, &["init", "--initial-branch=main", "."]);
+        sh(&dir, &["config", "user.name", "t"]);
+        sh(&dir, &["config", "user.email", "t@t"]);
+        std::fs::write(dir.join("a.md"), "x").unwrap();
+
+        let repo = Repository::open(&dir).unwrap();
+        stage_all_and_commit(&repo, "first").unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap().id();
+
+        // Nothing changed — no new commit.
+        stage_all_and_commit(&repo, "noop").unwrap();
+        assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().id(), head);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

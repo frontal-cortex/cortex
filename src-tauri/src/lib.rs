@@ -3,6 +3,7 @@ mod data;
 mod db;
 mod error;
 mod git;
+mod members;
 mod note;
 mod schema;
 
@@ -33,6 +34,11 @@ pub fn run() {
             commands::notes::create_folder,
             commands::notes::delete_folder,
             commands::notes::rename_note,
+            commands::notes::duplicate_note,
+            commands::notes::reveal_path,
+            commands::notes::convert_note_to_database,
+            commands::notes::convert_database_to_note,
+            commands::notes::create_database_from_items,
             commands::notes::move_note,
             commands::notes::list_vault_dirs,
             commands::notes::save_asset,
@@ -52,6 +58,10 @@ pub fn run() {
             commands::git::git_status,
             commands::git::git_commit,
             commands::git::git_sync,
+            commands::git::git_conflicts,
+            commands::git::git_resolve_conflict,
+            commands::git::git_complete_merge,
+            commands::git::git_abort_merge,
             commands::git::git_log,
             commands::git::git_diff,
             commands::git::note_history,
@@ -65,12 +75,22 @@ pub fn run() {
             commands::data::set_cell,
             commands::data::add_row,
             commands::data::delete_row,
+            commands::data::list_row_templates,
+            commands::data::add_row_from_template,
+            commands::data::save_row_as_template,
+            commands::data::export_to_file,
+            commands::data::list_collections,
             commands::data::parse_view_spec,
             commands::data::serialize_view_spec,
+            commands::data::parse_view_doc,
+            commands::data::serialize_view_doc,
             commands::schema::get_schema,
             commands::schema::get_schema_for_note,
             commands::schema::set_schema,
             commands::schema::upsert_property,
+            commands::members::get_members,
+            commands::members::set_members,
+            commands::members::current_user,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

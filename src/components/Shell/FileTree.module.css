@@ -210,3 +210,49 @@
   flex-shrink: 0;
   font-weight: 500;
 }
+
+/* Right-click context menu */
+.fileRowContext {
+  background: var(--bg-hover);
+}
+
+.ctxMenu {
+  position: fixed;
+  z-index: 300;
+  min-width: 180px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ctxItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ctxItem:hover {
+  background: var(--bg-hover);
+}
+
+.ctxItemDanger {
+  color: var(--danger);
+}
+
+.ctxSep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}

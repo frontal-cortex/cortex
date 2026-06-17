@@ -405,6 +405,61 @@ pub fn rename_note(
     Ok(())
 }
 
+/// Duplicate a note as a `<stem>-copy[-N].md` sibling, bumping its title so the
+/// two are distinguishable. Returns the new vault-relative path.
+#[tauri::command]
+pub fn duplicate_note(
+    path: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<String> {
+    let root = vault_path(&state)?;
+    let from_abs = root.join(&path);
+    if !from_abs.is_file() {
+        return Err(AppError::Other(format!("Not a file: {path}")));
+    }
+    let parent = from_abs.parent().ok_or_else(|| AppError::Other("Invalid path".into()))?;
+    let stem = from_abs.file_stem().and_then(|s| s.to_str()).unwrap_or("note");
+
+    // Find a free `<stem>-copy[-N].md` next to the original.
+    let mut candidate = parent.join(format!("{stem}-copy.md"));
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = parent.join(format!("{stem}-copy-{n}.md"));
+        n += 1;
+    }
+    let new_rel = candidate.strip_prefix(&root).unwrap().to_string_lossy().to_string();
+
+    let content = std::fs::read_to_string(&from_abs)?;
+    let mut dup = note::parse_note(&new_rel, &content)?;
+    if let Some(t) = dup.frontmatter.get("title").and_then(|v| v.as_str()) {
+        dup.frontmatter.insert("title".into(), serde_json::Value::String(format!("{t} copy")));
+    }
+    std::fs::write(&candidate, note::serialize_note(&dup)?)?;
+
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &candidate, db);
+    }
+    Ok(new_rel)
+}
+
+/// Reveal a note in the OS file manager (Finder / Explorer / file manager).
+#[tauri::command]
+pub fn reveal_path(path: String, state: State<'_, VaultState>) -> Result<()> {
+    let root = vault_path(&state)?;
+    let abs = root.join(&path);
+    if !abs.exists() {
+        return Err(AppError::Other(format!("Path not found: {path}")));
+    }
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg("-R").arg(&abs).spawn()?; }
+    #[cfg(target_os = "windows")]
+    { std::process::Command::new("explorer").arg(format!("/select,{}", abs.display())).spawn()?; }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    { std::process::Command::new("xdg-open").arg(abs.parent().unwrap_or(&abs)).spawn()?; }
+    Ok(())
+}
+
 /// Move a note to a different folder, keeping the same filename.
 /// Returns the new vault-relative path.
 #[tauri::command]
@@ -448,6 +503,256 @@ pub fn move_note(
     }
 
     Ok(new_path)
+}
+
+// ── Convert between a checklist note and a database ─────────────────────────────
+//
+// A todo list (a note of `- [ ]` / `- [x]` / bullet lines) and a database (a
+// `collections/<name>/` folder of row-notes) hold the same information in two
+// shapes. These commands transform one into the other; the frontend handles
+// removing the source (trash the note / delete the folder) so the destructive
+// step keeps its existing confirmation + recovery path.
+
+#[derive(serde::Deserialize)]
+pub struct TodoItem {
+    text: String,
+    done: bool,
+}
+
+/// Pull checklist items out of markdown: `- [ ]` / `- [x]` checkboxes (with their
+/// checked state) and plain `-`/`*` bullets (unchecked).
+fn parse_todo_items(body: &str) -> Vec<TodoItem> {
+    let mut items = Vec::new();
+    for line in body.lines() {
+        let t = line.trim_start();
+        let checkbox = t.strip_prefix("- [").or_else(|| t.strip_prefix("* ["));
+        if let Some(rest) = checkbox {
+            let b = rest.as_bytes();
+            if b.len() >= 2 && b[1] == b']' {
+                let text = rest[2..].trim().to_string();
+                if !text.is_empty() {
+                    items.push(TodoItem { text, done: b[0] == b'x' || b[0] == b'X' });
+                }
+                continue;
+            }
+        }
+        for p in ["- ", "* "] {
+            if let Some(text) = t.strip_prefix(p) {
+                let text = text.trim();
+                if !text.is_empty() {
+                    items.push(TodoItem { text: text.to_string(), done: false });
+                }
+                break;
+            }
+        }
+    }
+    items
+}
+
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for c in s.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            prev_dash = false;
+        } else if !prev_dash && !out.is_empty() {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let s = out.trim_matches('-').to_string();
+    if s.is_empty() { "untitled".into() } else { s }
+}
+
+/// `notes/<base>[-N].md` that doesn't exist yet.
+fn unique_note_path(root: &std::path::Path, base: &str) -> String {
+    let mut name = base.to_string();
+    let mut n = 2;
+    while root.join("notes").join(format!("{name}.md")).exists() {
+        name = format!("{base}-{n}");
+        n += 1;
+    }
+    format!("notes/{name}.md")
+}
+
+/// Create a `collections/<slug>/` database from a title + items: a board (grouped
+/// by status) + table index, plus one row-note per item. Returns the collection
+/// directory name (slug). Shared by both "convert note" and "convert selection".
+fn build_database(
+    root: &std::path::Path,
+    db_state: &State<'_, DbState>,
+    title: &str,
+    items: &[TodoItem],
+    date: &str,
+) -> Result<String> {
+    // Unique collection directory.
+    let base = slugify(title);
+    let (mut dir_name, mut n) = (base.clone(), 2);
+    while root.join("collections").join(&dir_name).exists() {
+        dir_name = format!("{base}-{n}");
+        n += 1;
+    }
+    let dir = root.join("collections").join(&dir_name);
+    std::fs::create_dir_all(&dir)?;
+
+    let reindex = |abs: &std::path::Path| {
+        if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+            let _ = crate::commands::indexer::index_file(root, abs, db);
+        }
+    };
+
+    // Database index: a board grouped by status + a table.
+    let index_rel = format!("collections/{dir_name}/_index.md");
+    let mut fm: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    fm.insert("type".into(), serde_json::json!("database"));
+    fm.insert("title".into(), serde_json::json!(title));
+    fm.insert("icon".into(), serde_json::json!("✅"));
+    fm.insert("views".into(), serde_json::json!([
+        { "name": "Board", "type": "board", "group": "status" },
+        { "name": "Table", "type": "table" },
+    ]));
+    let index_abs = dir.join("_index.md");
+    std::fs::write(&index_abs, note::serialize_note(&Note { path: index_rel, frontmatter: fm, body: String::new() })?)?;
+    reindex(&index_abs);
+
+    // One row-note per item.
+    for (i, item) in items.iter().enumerate() {
+        let base = slugify(&item.text);
+        let base = if base == "untitled" { format!("row-{}", i + 1) } else { base };
+        let (mut id, mut m) = (base.clone(), 2);
+        while dir.join(format!("{id}.md")).exists() {
+            id = format!("{base}-{m}");
+            m += 1;
+        }
+        let mut rfm: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        rfm.insert("title".into(), serde_json::json!(item.text));
+        rfm.insert("status".into(), serde_json::json!(if item.done { "done" } else { "todo" }));
+        rfm.insert("type".into(), serde_json::json!("task"));
+        rfm.insert("created".into(), serde_json::json!(date));
+        let row_abs = dir.join(format!("{id}.md"));
+        std::fs::write(&row_abs, note::serialize_note(&Note {
+            path: format!("collections/{dir_name}/{id}.md"),
+            frontmatter: rfm,
+            body: String::new(),
+        })?)?;
+        reindex(&row_abs);
+    }
+
+    // Give the database a Status property with categories, so status renders as
+    // colored chips immediately and the board groups by it sensibly.
+    let schema = crate::schema::TypeSchema {
+        properties: vec![crate::schema::PropertyDef {
+            name: "status".into(),
+            ty: crate::schema::PropType::Status,
+            options: vec![
+                crate::schema::SelectOption { name: "todo".into(), color: "gray".into() },
+                crate::schema::SelectOption { name: "in-progress".into(), color: "blue".into() },
+                crate::schema::SelectOption { name: "done".into(), color: "green".into() },
+            ],
+            ..Default::default()
+        }],
+    };
+    let _ = crate::schema::save(root, &dir_name, &schema);
+
+    Ok(dir_name)
+}
+
+/// Turn a whole checklist note into a database. Returns the new index path; the
+/// source note is untouched (the caller trashes it).
+#[tauri::command]
+pub fn convert_note_to_database(
+    path: String,
+    date: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<String> {
+    let root = vault_path(&state)?;
+    let content = std::fs::read_to_string(root.join(&path))?;
+    let note = note::parse_note(&path, &content)?;
+    let title = note::infer_title(&note);
+    let items = parse_todo_items(&note.body);
+    let dir_name = build_database(&root, &db_state, &title, &items, &date)?;
+    Ok(format!("collections/{dir_name}/_index.md"))
+}
+
+/// Create a database from explicit items (a selection of blocks in the editor),
+/// to embed inline. Returns the collection directory name (the view `source` is
+/// `collections/<name>`).
+#[tauri::command]
+pub fn create_database_from_items(
+    name: String,
+    items: Vec<TodoItem>,
+    date: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<String> {
+    let root = vault_path(&state)?;
+    let title = if name.trim().is_empty() { "Tasks".to_string() } else { name };
+    build_database(&root, &db_state, &title, &items, &date)
+}
+
+/// Turn a database into a checklist note: each row becomes a `- [ ]`/`- [x]`
+/// line (checked when its status is "done"), ordered by created then title.
+/// Returns the new note path. The source collection is untouched (the caller
+/// deletes it after confirming).
+#[tauri::command]
+pub fn convert_database_to_note(
+    name: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<String> {
+    let root = vault_path(&state)?;
+    let dir = root.join("collections").join(&name);
+    if !dir.is_dir() {
+        return Err(AppError::Other(format!("Not a database: {name}")));
+    }
+
+    let mut title = name.clone();
+    if let Ok(c) = std::fs::read_to_string(dir.join("_index.md")) {
+        if let Ok(idx) = note::parse_note("_index.md", &c) {
+            if let Some(t) = idx.frontmatter.get("title").and_then(|v| v.as_str()) {
+                title = t.to_string();
+            }
+        }
+    }
+
+    let mut rows: Vec<(String, String, bool)> = Vec::new();
+    for entry in std::fs::read_dir(&dir)?.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if stem.starts_with('_') {
+            continue;
+        }
+        let Ok(c) = std::fs::read_to_string(&p) else { continue };
+        let Ok(n) = note::parse_note(stem, &c) else { continue };
+        let rtitle = n.frontmatter.get("title").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_else(|| stem.to_string());
+        let status = n.frontmatter.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        let created = n.frontmatter.get("created").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        rows.push((created, rtitle, status.eq_ignore_ascii_case("done")));
+    }
+    rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+    let mut body = String::new();
+    for (_, t, done) in &rows {
+        body.push_str(&format!("- [{}] {}\n", if *done { "x" } else { " " }, t));
+    }
+
+    let note_rel = unique_note_path(&root, &slugify(&title));
+    let abs = root.join(&note_rel);
+    if let Some(parent) = abs.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut fm: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    fm.insert("title".into(), serde_json::json!(title));
+    std::fs::write(&abs, note::serialize_note(&Note { path: note_rel.clone(), frontmatter: fm, body })?)?;
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+    }
+    Ok(note_rel)
 }
 
 #[tauri::command]
@@ -651,7 +956,27 @@ pub fn read_template(name: String, state: State<'_, VaultState>) -> Result<Optio
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_section, heading_level};
+    use super::{extract_section, heading_level, parse_todo_items, slugify};
+
+    #[test]
+    fn parse_todo_items_reads_checkboxes_and_bullets() {
+        let body = "# Groceries\n\n- [ ] Milk\n- [x] Eggs\n* [X] Bread\n- Plain bullet\nnot an item\n";
+        let items = parse_todo_items(body);
+        let got: Vec<(&str, bool)> = items.iter().map(|i| (i.text.as_str(), i.done)).collect();
+        assert_eq!(got, vec![
+            ("Milk", false),
+            ("Eggs", true),
+            ("Bread", true),
+            ("Plain bullet", false),
+        ]);
+    }
+
+    #[test]
+    fn slugify_is_filesystem_safe() {
+        assert_eq!(slugify("Grita's To-Do!"), "grita-s-to-do");
+        assert_eq!(slugify("  "), "untitled");
+        assert_eq!(slugify("Café ☕ Plan"), "caf-plan");
+    }
 
     #[test]
     fn heading_level_parses_atx() {

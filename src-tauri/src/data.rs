@@ -978,6 +978,266 @@ pub fn delete_csv_row(root: &Path, source: &str, row_id: &str) -> Result<()> {
     Ok(())
 }
 
+// ── Row templates ───────────────────────────────────────────────────────────────
+//
+// A template is a `collections/<name>/_template-<slug>.md` file — already skipped
+// from rows (the `_` prefix). New rows can copy a template's frontmatter + body,
+// so a "Bug report" template can pre-fill type/status/priority and a checklist.
+
+fn collection_dir(root: &Path, source: &str) -> Result<(String, std::path::PathBuf)> {
+    let name = source
+        .strip_prefix("collections/")
+        .ok_or_else(|| AppError::Other("Templates are only for collections".into()))?
+        .trim_end_matches('/')
+        .to_string();
+    let dir = root.join("collections").join(&name);
+    Ok((name, dir))
+}
+
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for c in s.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() { out.push(c); dash = false; }
+        else if !dash && !out.is_empty() { out.push('-'); dash = true; }
+    }
+    let s = out.trim_matches('-').to_string();
+    if s.is_empty() { "template".into() } else { s }
+}
+
+/// Template names available for a collection (the `<slug>` of each `_template-<slug>.md`).
+pub fn list_row_templates(root: &Path, source: &str) -> Result<Vec<String>> {
+    let (_name, dir) = collection_dir(root, source)?;
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) != Some("md") { continue; }
+            if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                if let Some(t) = stem.strip_prefix("_template-") {
+                    if !t.is_empty() { out.push(t.to_string()); }
+                }
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Create a row from a template: the template's frontmatter + body, with
+/// title/created (and any seed fields, e.g. a board group) overridden.
+pub fn add_row_from_template(
+    root: &Path,
+    source: &str,
+    id: &str,
+    template: &str,
+    fields: &BTreeMap<String, String>,
+) -> Result<Option<std::path::PathBuf>> {
+    if id.is_empty() || id.contains('/') || id.contains("..") {
+        return Err(AppError::Other("Invalid row id".into()));
+    }
+    let (name, dir) = collection_dir(root, source)?;
+    let tpl_path = dir.join(format!("_template-{template}.md"));
+    let content = std::fs::read_to_string(&tpl_path)
+        .map_err(|_| AppError::Other(format!("Template not found: {template}")))?;
+    let tpl = crate::note::parse_note(&format!("_template-{template}.md"), &content)?;
+
+    let path = dir.join(format!("{id}.md"));
+    if path.exists() {
+        return Err(AppError::Other(format!("Row already exists: {id}")));
+    }
+
+    let mut fm = tpl.frontmatter.clone();
+    fm.insert("title".into(), serde_json::Value::String(
+        fields.get("title").cloned().unwrap_or_else(|| "Untitled".into())));
+    if let Some(c) = fields.get("created") {
+        fm.insert("created".into(), serde_json::Value::String(c.clone()));
+    }
+    for (k, v) in fields {
+        if !matches!(k.as_str(), "title" | "created") {
+            fm.insert(k.clone(), serde_json::Value::String(v.clone()));
+        }
+    }
+
+    let note = crate::note::Note {
+        path: format!("collections/{name}/{id}.md"),
+        frontmatter: fm,
+        body: tpl.body.clone(),
+    };
+    std::fs::write(&path, crate::note::serialize_note(&note)?)?;
+    Ok(Some(path))
+}
+
+/// Save an existing row as a reusable template (its title/created are dropped —
+/// a template holds defaults, not one row's identity).
+pub fn save_row_as_template(root: &Path, source: &str, row_id: &str, template_name: &str) -> Result<()> {
+    let (name, dir) = collection_dir(root, source)?;
+    let row_path = dir.join(format!("{row_id}.md"));
+    let content = std::fs::read_to_string(&row_path)
+        .map_err(|_| AppError::Other(format!("Row not found: {row_id}")))?;
+    let mut note = crate::note::parse_note(row_id, &content)?;
+    note.frontmatter.remove("title");
+    note.frontmatter.remove("created");
+    let slug = slugify(template_name);
+    note.path = format!("collections/{name}/_template-{slug}.md");
+    std::fs::write(dir.join(format!("_template-{slug}.md")), crate::note::serialize_note(&note)?)?;
+    Ok(())
+}
+
+// ── Relations & rollups ──────────────────────────────────────────────────────────
+
+/// Fill each `relation` property's options from its target collection's row
+/// titles, so the frontend can render + link them as chips.
+pub fn fill_relation_options(root: &Path, schema: &mut crate::schema::TypeSchema) {
+    for p in &mut schema.properties {
+        if p.ty == crate::schema::PropType::Relation {
+            if let Some(coll) = p.collection.clone() {
+                if let Ok(t) = read_collection(root, &coll) {
+                    p.options = t.rows.iter()
+                        .filter_map(|r| r.cells.get("title").map(CellValue::as_text))
+                        .filter(|s| !s.is_empty())
+                        .map(|name| crate::schema::SelectOption { name, color: "blue".into() })
+                        .collect();
+                }
+            }
+        }
+    }
+}
+
+fn rollup_value(rows: &[&Row], prop: &str, func: &str) -> CellValue {
+    match func {
+        "count" => CellValue::Num(rows.len() as f64),
+        "values" => CellValue::List(
+            rows.iter().filter_map(|r| r.cells.get(prop).map(CellValue::as_text)).filter(|s| !s.is_empty()).collect(),
+        ),
+        "sum" | "avg" | "min" | "max" => {
+            let nums: Vec<f64> = rows.iter().filter_map(|r| r.cells.get(prop).and_then(CellValue::as_num)).collect();
+            if nums.is_empty() {
+                return CellValue::Null;
+            }
+            let v = match func {
+                "sum" => nums.iter().sum(),
+                "avg" => nums.iter().sum::<f64>() / nums.len() as f64,
+                "min" => nums.iter().cloned().fold(f64::INFINITY, f64::min),
+                _ => nums.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            };
+            CellValue::Num(v)
+        }
+        _ => CellValue::Null,
+    }
+}
+
+/// Compute each `rollup` property: follow its relation to the target collection,
+/// aggregate the chosen target property, and inject the result into every row.
+pub fn apply_rollups(root: &Path, table: &mut Table, schema: &crate::schema::TypeSchema) {
+    for p in &schema.properties {
+        if p.ty != crate::schema::PropType::Rollup {
+            continue;
+        }
+        let (Some(rel_name), Some(func)) = (p.relation.clone(), p.function.clone()) else { continue };
+        let target_prop = p.property.clone().unwrap_or_default();
+        let Some(rel) = schema.property(&rel_name) else { continue };
+        let Some(coll) = rel.collection.clone() else { continue };
+        let Ok(target) = read_collection(root, &coll) else { continue };
+
+        let mut by_title: std::collections::HashMap<String, &Row> = std::collections::HashMap::new();
+        for r in &target.rows {
+            if let Some(t) = r.cells.get("title") {
+                by_title.insert(t.as_text(), r);
+            }
+        }
+        for row in &mut table.rows {
+            let titles: Vec<String> = match row.cells.get(&rel_name) {
+                Some(CellValue::List(items)) => items.clone(),
+                Some(other) => {
+                    let t = other.as_text();
+                    if t.is_empty() { vec![] } else { vec![t] }
+                }
+                None => vec![],
+            };
+            let related: Vec<&Row> = titles.iter().filter_map(|t| by_title.get(t).copied()).collect();
+            row.cells.insert(p.name.clone(), rollup_value(&related, &target_prop, &func));
+        }
+    }
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────────
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+const EXPORT_STYLE: &str = "<style>body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;max-width:820px;margin:48px auto;padding:0 24px;line-height:1.6;color:#1a1a1a}h1,h2,h3{line-height:1.25}code{background:#f0f0ef;padding:2px 5px;border-radius:4px;font-size:.9em}pre{background:#f6f6f5;padding:12px 14px;border-radius:8px;overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #e3e1dc;padding:7px 10px;text-align:left;vertical-align:top}th{background:#fafafa}blockquote{border-left:3px solid #e3e1dc;margin:0;padding-left:16px;color:#555}a{color:#2383e2;text-decoration:none}img{max-width:100%}</style>";
+
+fn html_doc(title: &str, body: &str) -> String {
+    format!(
+        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title>{}</head>\n<body>\n{}\n</body></html>\n",
+        html_escape(title), EXPORT_STYLE, body,
+    )
+}
+
+fn md_to_html(md: &str) -> String {
+    use pulldown_cmark::{html, Options, Parser};
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TASKLISTS);
+    let parser = Parser::new_ext(md, opts);
+    let mut out = String::new();
+    html::push_html(&mut out, parser);
+    out
+}
+
+/// A note as a standalone, shareable HTML document.
+pub fn export_note_html(root: &Path, path: &str) -> Result<String> {
+    let content = std::fs::read_to_string(root.join(path))?;
+    let note = crate::note::parse_note(path, &content)?;
+    let title = crate::note::infer_title(&note);
+    let body = format!("<h1>{}</h1>\n{}", html_escape(&title), md_to_html(&note.body));
+    Ok(html_doc(&title, &body))
+}
+
+/// A database's rows as CSV (columns in display order, `$body` excluded).
+pub fn export_collection_csv(root: &Path, source: &str) -> Result<String> {
+    let (name, _) = collection_dir(root, source)?;
+    let table = read_collection(root, &name)?;
+    let cols: Vec<&Column> = table.columns.iter().filter(|c| c.key != "$body").collect();
+
+    let mut out = String::new();
+    out.push_str(&cols.iter().map(|c| csv_escape(&c.key)).collect::<Vec<_>>().join(","));
+    out.push('\n');
+    for row in &table.rows {
+        let line: Vec<String> = cols.iter()
+            .map(|c| csv_escape(&row.cells.get(&c.key).map(CellValue::as_text).unwrap_or_default()))
+            .collect();
+        out.push_str(&line.join(","));
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+/// A database's rows as a standalone HTML table.
+pub fn export_collection_html(root: &Path, source: &str) -> Result<String> {
+    let (name, _) = collection_dir(root, source)?;
+    let table = read_collection(root, &name)?;
+    let cols: Vec<&Column> = table.columns.iter().filter(|c| c.key != "$body").collect();
+
+    let mut body = format!("<h1>{}</h1>\n<table>\n<thead><tr>", html_escape(&name));
+    for c in &cols {
+        body.push_str(&format!("<th>{}</th>", html_escape(&c.key)));
+    }
+    body.push_str("</tr></thead>\n<tbody>\n");
+    for row in &table.rows {
+        body.push_str("<tr>");
+        for c in &cols {
+            body.push_str(&format!("<td>{}</td>", html_escape(&row.cells.get(&c.key).map(CellValue::as_text).unwrap_or_default())));
+        }
+        body.push_str("</tr>\n");
+    }
+    body.push_str("</tbody></table>\n");
+    Ok(html_doc(&name, &body))
+}
+
 // ── Charts ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1317,6 +1577,52 @@ mod tests {
         assert!(m.filter_complex);
         assert_eq!(m.filter_raw.as_deref(), Some("a == '1' and b == '2' or c == '3'"));
         assert!(serialize_view_spec(&m).contains("filter: a == '1' and b == '2' or c == '3'"));
+    }
+
+    #[test]
+    fn rollup_aggregates_across_a_relation() {
+        let root = scratch("rollup");
+        // Tasks with hours.
+        write(&root.join("collections/tasks/a.md"), "---\ntitle: Task A\nhours: 3\n---\n");
+        write(&root.join("collections/tasks/b.md"), "---\ntitle: Task B\nhours: 5\n---\n");
+        write(&root.join("collections/tasks/c.md"), "---\ntitle: Task C\nhours: 2\n---\n");
+        // A project linking two tasks by title.
+        write(&root.join("collections/projects/p.md"),
+            "---\ntitle: Launch\ntasks: [Task A, Task B]\n---\n");
+
+        let schema = crate::schema::TypeSchema {
+            properties: vec![
+                crate::schema::PropertyDef {
+                    name: "tasks".into(),
+                    ty: crate::schema::PropType::Relation,
+                    collection: Some("tasks".into()),
+                    ..Default::default()
+                },
+                crate::schema::PropertyDef {
+                    name: "total_hours".into(),
+                    ty: crate::schema::PropType::Rollup,
+                    relation: Some("tasks".into()),
+                    property: Some("hours".into()),
+                    function: Some("sum".into()),
+                    ..Default::default()
+                },
+                crate::schema::PropertyDef {
+                    name: "task_count".into(),
+                    ty: crate::schema::PropType::Rollup,
+                    relation: Some("tasks".into()),
+                    function: Some("count".into()),
+                    ..Default::default()
+                },
+            ],
+        };
+
+        let mut table = read_collection(&root, "projects").unwrap();
+        apply_rollups(&root, &mut table, &schema);
+        let row = &table.rows[0];
+        assert_eq!(row.cells.get("total_hours").unwrap().as_num(), Some(8.0)); // 3 + 5
+        assert_eq!(row.cells.get("task_count").unwrap().as_num(), Some(2.0));
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

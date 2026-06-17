@@ -131,3 +131,84 @@
   cursor: pointer;
 }
 .leaveBtn:hover { background: color-mix(in srgb, var(--danger) 18%, transparent); }
+
+/* Members roster */
+.memberHint {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.memberRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+}
+
+.swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.memberInput {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  padding: 4px 8px;
+}
+
+.memberInput:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.youTag {
+  font-size: var(--text-xs);
+  color: var(--accent);
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+.removeBtn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.removeBtn:hover {
+  color: var(--danger);
+}
+
+.addMember {
+  font-size: var(--text-sm);
+  border: 1px dashed var(--border-focus);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+  margin-top: var(--space-1);
+}
+
+.addMember:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

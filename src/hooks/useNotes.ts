@@ -97,13 +97,16 @@ export function useNotes(vaultOpen: boolean) {
     [refresh],
   );
 
-  /** Open or create today's journal note using the journal template (if any). */
+  /** Open or create today's journal note using the journal template (if any).
+   *  `userSlug` nests journals per person (`journal/<user>/…`) so a team doesn't
+   *  collide on the same daily file. */
   const openOrCreateDaily = useCallback(
-    async (journalTemplate: string): Promise<Note> => {
+    async (journalTemplate: string, userSlug?: string): Promise<Note> => {
       const date = today();
       // Canonical, stable path — used for BOTH the existence check and creation,
       // so a second click reliably re-opens today's note instead of duplicating.
-      const path = `notes/journal/${date}.md`;
+      const dir = userSlug ? `notes/journal/${userSlug}` : "notes/journal";
+      const path = `${dir}/${date}.md`;
 
       // Open if it already exists (read straight from disk; the notes list may
       // be stale right after creation).

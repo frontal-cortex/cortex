@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, RecentVault } from "../lib/commands";
+import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, RecentVault, SyncOutcome } from "../lib/commands";
 
 const LOG_LIMIT = 10;
 
@@ -97,13 +97,15 @@ export function useVault() {
     }
   }, [state.vault]);
 
-  const sync = useCallback(async () => {
+  const sync = useCallback(async (): Promise<SyncOutcome | null> => {
     setState((s) => ({ ...s, syncing: true, error: null }));
     try {
-      await commands.gitSync();
+      const outcome = await commands.gitSync();
       await refreshStatus();
+      return outcome;
     } catch (e) {
       setState((s) => ({ ...s, error: String(e) }));
+      return null;
     } finally {
       setState((s) => ({ ...s, syncing: false }));
     }

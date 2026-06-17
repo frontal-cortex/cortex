@@ -1,5 +1,8 @@
 import "@blocknote/mantine/style.css";
-import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from "@blocknote/react";
+import {
+  useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems,
+  FormattingToolbar, FormattingToolbarController, getFormattingToolbarItems, useComponentsContext,
+} from "@blocknote/react";
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
@@ -8,14 +11,15 @@ import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { useColorScheme } from "../../hooks/useColorScheme";
-import { Note, NoteEntry, commands } from "../../lib/commands";
+import { Note, NoteEntry, CommitEntry, Member, commands } from "../../lib/commands";
+import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
 import { NoteHistoryModal } from "./NoteHistoryModal";
-import { PlusIcon, HistoryIcon, TrashIcon } from "./icons";
+import { PlusIcon, HistoryIcon, TrashIcon, TableIcon } from "./icons";
 import { cortexSchema, inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
@@ -78,6 +82,11 @@ interface Props {
   saving: boolean;
   allNotes: NoteEntry[];
   vaultPath?: string;
+  /** Bumped by the shell when the note's file changed on disk (e.g. a sync
+   *  pulled teammate edits) — remounts the editor so it re-parses content. */
+  reloadToken?: number;
+  /** Relay config for live co-editing + presence; null = solo mode. */
+  collab?: CollabConfig | null;
   onSave: (note: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
@@ -85,7 +94,7 @@ interface Props {
 }
 
 export function Editor({
-  note, saving, allNotes, onSave, onDelete, onNavigate, onApplyNote,
+  note, saving, allNotes, reloadToken = 0, collab = null, onSave, onDelete, onNavigate, onApplyNote,
 }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
@@ -106,10 +115,13 @@ export function Editor({
   return (
     <>
       <NoteEditor
-        key={`${note.path}:${rev}`}
+        // `collab` in the key: the config loads async, so a session arriving
+        // after first mount remounts the editor into collaborative mode.
+        key={`${note.path}:${rev}:${reloadToken}:${collab ? "c" : "s"}`}
         note={note}
         saving={saving}
         allNotes={allNotes}
+        collab={collab}
         onSave={onSave}
         onDelete={onDelete}
         onNavigate={onNavigate}
@@ -138,7 +150,8 @@ interface SuggestionState {
  *  a date to insert as plain text. `display` is what the dropdown renders. */
 type MentionItem =
   | { kind: "note"; note: NoteEntry; display: SuggestItem }
-  | { kind: "date"; value: string; display: SuggestItem };
+  | { kind: "date"; value: string; display: SuggestItem }
+  | { kind: "person"; name: string; display: SuggestItem };
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -174,12 +187,25 @@ function noteItem(note: NoteEntry): MentionItem {
   };
 }
 
+/** Team members offered after `@`, filtered by the typed query. */
+function personItems(members: Member[], query: string): MentionItem[] {
+  const q = query.toLowerCase();
+  return members
+    .filter((m) => m.name && (!q || m.name.toLowerCase().includes(q)))
+    .map((m) => ({
+      kind: "person" as const,
+      name: m.name,
+      display: { key: `person:${m.name}`, title: m.name, badge: "Person" },
+    }));
+}
+
 function NoteEditor({
-  note, saving, allNotes, onSave, onDelete, onNavigate, onShowHistory,
+  note, saving, allNotes, collab, onSave, onDelete, onNavigate, onShowHistory,
 }: {
   note: Note;
   saving: boolean;
   allNotes: NoteEntry[];
+  collab: CollabConfig | null;
   onSave: (n: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
@@ -190,6 +216,33 @@ function NoteEditor({
 
   const navigateRef = useRef(onNavigate);
   navigateRef.current = onNavigate;
+
+  // ── Live co-editing session (one Yjs room per note path) ───────────────────
+  // Created synchronously so it exists before useCreateBlockNote runs. The
+  // component is keyed by note path + collab mode, so both are fixed per mount.
+  const collabSession = useMemo<CollabSession | null>(
+    () => (collab ? createNoteSession(collab, note.path) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  useEffect(() => () => { collabSession?.destroy(); }, [collabSession]);
+
+  // Other people in this note right now (from the room's awareness states).
+  const [peers, setPeers] = useState<{ name: string; color: string }[]>([]);
+  useEffect(() => {
+    if (!collabSession) return;
+    const aw = collabSession.provider.awareness;
+    const update = () => {
+      const others: { name: string; color: string }[] = [];
+      aw.getStates().forEach((s, id) => {
+        if (id !== aw.clientID && s.user) others.push(s.user as { name: string; color: string });
+      });
+      setPeers(others);
+    };
+    aw.on("change", update);
+    update();
+    return () => aw.off("change", update);
+  }, [collabSession]);
 
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -206,8 +259,16 @@ function NoteEditor({
     onClose: () => {},
   });
 
-  // Unified item list for the suggestion dropdown: notes for `[[`, plus relative
-  // dates for `@`.
+  // Team roster, for `@person` mentions.
+  const [members, setMembers] = useState<Member[]>([]);
+  useEffect(() => {
+    let alive = true;
+    commands.getMembers().then((m) => { if (alive) setMembers(m); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Unified item list for the suggestion dropdown: notes for `[[`; people, dates,
+  // and notes for `@`.
   const filteredItems = useMemo<MentionItem[]>(() => {
     if (!suggestion) return [];
     const q = suggestion.query.toLowerCase();
@@ -217,10 +278,10 @@ function NoteEditor({
       (n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(q) ?? false);
     const notes = allNotes.filter(matchNote).slice(0, 8).map(noteItem);
     if (suggestion.trigger === "mention") {
-      return [...dateSuggestions(suggestion.query), ...notes];
+      return [...personItems(members, suggestion.query), ...dateSuggestions(suggestion.query), ...notes];
     }
     return notes;
-  }, [suggestion, allNotes]);
+  }, [suggestion, allNotes, members]);
 
   // Keep items accessible in the key handler without stale closure
   const filteredRef = useRef(filteredItems);
@@ -285,6 +346,15 @@ function NoteEditor({
   const editor = useCreateBlockNote({
     schema: cortexSchema,
     uploadFile: (file) => saveFileAsAsset(file),
+    // Live co-editing: the shared Y.Doc fragment replaces local block state;
+    // peers' cursors render with their roster name + color.
+    collaboration: collabSession
+      ? {
+          provider: collabSession.provider,
+          fragment: collabSession.doc.getXmlFragment("document-store"),
+          user: collab!.user,
+        }
+      : undefined,
     _tiptapOptions: {
       extensions: [
         wikiLinkExtension((t) => navigateRef.current(t)),
@@ -318,7 +388,9 @@ function NoteEditor({
     const to = editor._tiptapEditor.state.selection.from;
     const text = item.kind === "note"
       ? `[[${item.note.title || pathToTitle(item.note.path)}]]`
-      : item.value;
+      : item.kind === "person"
+        ? `@${item.name}`
+        : item.value;
 
     editor._tiptapEditor.commands.command(({ tr, dispatch }) => {
       if (dispatch) {
@@ -358,7 +430,8 @@ function NoteEditor({
 
   useEffect(() => {
     const finish = () => { hydrating.current = false; };
-    if (note.body.trim()) {
+    const seedFromMarkdown = () => {
+      if (!note.body.trim()) { finish(); return; }
       assetsToDisplayUrls(note.body)
         .then((displayBody) => {
           try {
@@ -373,9 +446,28 @@ function NoteEditor({
           }
         })
         .catch(finish);
-    } else {
-      finish();
+    };
+
+    if (!collabSession) {
+      seedFromMarkdown();
+      return;
     }
+
+    // Collab mode: the shared doc is the live truth. Seed it from markdown only
+    // if it's still empty after the first server sync — i.e. we're the first
+    // one here. If the relay is unreachable, the timeout seeds locally so the
+    // note never appears blank (the doc merges when the connection returns).
+    let decided = false;
+    const fragment = collabSession.doc.getXmlFragment("document-store");
+    const decide = () => {
+      if (decided) return;
+      decided = true;
+      if (fragment.length === 0) seedFromMarkdown();
+      else finish(); // peers already have content — take theirs
+    };
+    collabSession.provider.once("sync", decide);
+    const fallback = setTimeout(decide, 1500);
+    return () => clearTimeout(fallback);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -436,6 +528,16 @@ function NoteEditor({
   // forcing light mode under a dark OS left light-gray text on a white page.
   const colorScheme = useColorScheme();
 
+  // Who last committed this note (git author) — surfaces teammates' edits.
+  const [lastEdit, setLastEdit] = useState<CommitEntry | null>(null);
+  useEffect(() => {
+    let alive = true;
+    commands.noteHistory(note.path, 1)
+      .then((h) => { if (alive) setLastEdit(h[0] ?? null); })
+      .catch(() => { if (alive) setLastEdit(null); });
+    return () => { alive = false; };
+  }, [note.path]);
+
   const handleIconSelect = useCallback((emoji: { native: string }) => {
     setShowEmojiPicker(false);
     handleFrontmatterChange({ ...noteRef.current.frontmatter, icon: emoji.native });
@@ -472,6 +574,16 @@ function NoteEditor({
               onChange={(e) => handleTitleChange(e.target.value)}
             />
             <div className={styles.headerActions}>
+              {peers.map((p, i) => (
+                <span
+                  key={`${p.name}-${i}`}
+                  className={styles.peerChip}
+                  style={{ backgroundColor: p.color }}
+                  title={`${p.name} is in this note`}
+                >
+                  {p.name.slice(0, 1).toUpperCase()}
+                </span>
+              ))}
               {saving && <span className={styles.saving}>Saving…</span>}
               <button className={styles.deleteBtn} onClick={onShowHistory} title="Version history">
                 <HistoryIcon />
@@ -487,10 +599,29 @@ function NoteEditor({
             </div>
           )}
 
+          {lastEdit && lastEdit.author && (
+            <div className={styles.lastEdit}>Edited by {lastEdit.author} · {relativeTime(lastEdit.timestamp)}</div>
+          )}
+
           <PropertiesPanel frontmatter={note.frontmatter} notePath={note.path} onChange={handleFrontmatterChange} />
 
           <div className={styles.editorWrap}>
-            <BlockNoteView editor={editor} slashMenu={false} theme={colorScheme}>
+            <BlockNoteView editor={editor} slashMenu={false} formattingToolbar={false} theme={colorScheme}>
+              {/* Default formatting toolbar + our "Convert to database" action. */}
+              <FormattingToolbarController
+                formattingToolbar={() => {
+                  // Place our button right after the block-type dropdown (item 0),
+                  // before the text-style buttons.
+                  const items = getFormattingToolbarItems();
+                  return (
+                    <FormattingToolbar>
+                      {items.slice(0, 1)}
+                      <ConvertToDatabaseButton key="convert-db" editor={editor} baseName={title} />
+                      {items.slice(1)}
+                    </FormattingToolbar>
+                  );
+                }}
+              />
               <SuggestionMenuController
                 triggerCharacter="/"
                 getItems={async (query) =>
@@ -528,6 +659,61 @@ function NoteEditor({
 
 function pathToTitle(path: string): string {
   return path.split("/").pop()?.replace(/\.md$/, "").replace(/-/g, " ") ?? "Untitled";
+}
+
+// ── "Convert selection to database" (formatting toolbar) ──────────────────────
+
+const LIST_TYPES = ["checkListItem", "bulletListItem", "numberedListItem"];
+
+function blockPlainText(b: any): string {
+  const c = b?.content;
+  if (!Array.isArray(c)) return "";
+  return c.map((n: any) => (typeof n?.text === "string" ? n.text : "")).join("");
+}
+
+/** Take the selected list items, build a database from them, and replace the
+ *  selection with an inline data-view block pointing at it. */
+async function convertSelectionToDatabase(editor: any, baseName: string) {
+  const blocks = editor.getSelection()?.blocks ?? [];
+  const items = blocks
+    .map((b: any) => ({
+      text: blockPlainText(b),
+      done: b.type === "checkListItem" ? !!b.props?.checked : false,
+    }))
+    .filter((i: { text: string }) => i.text.trim());
+  if (items.length === 0) return;
+  try {
+    const date = new Date().toISOString().slice(0, 10);
+    const slug = await commands.createDatabaseFromItems(baseName || "Tasks", items, date);
+    const spec = `source: collections/${slug}\ntype: table\n`;
+    editor.replaceBlocks(blocks, [{ type: "cortexView", props: { spec, lang: "cortex-view" } }]);
+  } catch (e) {
+    window.alert(String(e));
+  }
+}
+
+/** Toolbar button shown only when the selection includes list items. */
+function ConvertToDatabaseButton({ editor, baseName }: { editor: any; baseName: string }) {
+  const Components = useComponentsContext()!;
+  const blocks = editor.getSelection?.()?.blocks ?? [];
+  if (!blocks.some((b: any) => LIST_TYPES.includes(b.type))) return null;
+  return (
+    <Components.FormattingToolbar.Button
+      mainTooltip="Convert these items to a database"
+      label="Convert to database"
+      icon={<TableIcon size={17} />}
+      onClick={() => convertSelectionToDatabase(editor, baseName)}
+    />
+  );
+}
+
+function relativeTime(secs: number): string {
+  const diff = Date.now() / 1000 - secs;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(secs * 1000).toLocaleDateString();
 }
 
 // ── Cover image banner ────────────────────────────────────────────────────────

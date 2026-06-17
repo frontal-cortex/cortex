@@ -38,6 +38,24 @@ export function swatchStyle(color: string): React.CSSProperties {
   return { backgroundColor: `var(--tag-${c}-bg)` };
 }
 
+/** Concrete hex per palette name — for collaboration cursors, which need a real
+ *  color value (they're rendered by BlockNote, outside our CSS variable scope). */
+const CURSOR_HEX: Record<TagColor, string> = {
+  gray: "#787774",
+  brown: "#9f6b53",
+  orange: "#d9730d",
+  yellow: "#cb912f",
+  green: "#448361",
+  blue: "#337ea9",
+  purple: "#9065b0",
+  pink: "#c14c8a",
+  red: "#d44c47",
+};
+
+export function cursorColor(color: string): string {
+  return CURSOR_HEX[normalize(color)];
+}
+
 /** Deterministically assign a color to a never-seen-before option value, so
  *  auto-created options aren't all gray. */
 export function autoColor(seed: string): TagColor {

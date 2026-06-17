@@ -1,7 +1,16 @@
-import { useState, useRef, useEffect, KeyboardEvent } from "react";
-import { PlusIcon, MinusIcon, CloseIcon } from "./icons";
-import { commands, PropertyDef, SelectOption, TypeSchema } from "../../lib/commands";
+// Notion-style property list for a note: one row per property — [type icon]
+// [name] [value] — with colored chips for select/status/person/relation, and an
+// "Add a property" footer. Schema-defined properties show in order (even when
+// empty); any other frontmatter keys appear as inferred-type rows.
+
+import { useState, useEffect, useRef } from "react";
+import { commands, PropertyDef, PropType, SelectOption, TypeSchema } from "../../lib/commands";
 import { SelectCell } from "./SelectCell";
+import { Dropdown } from "./Dropdown";
+import {
+  CalendarIcon, CheckSquareIcon, SelectDotIcon, TagsListIcon, PersonIcon,
+  LinkIcon, RelationIcon, TextLinesIcon, PlusIcon,
+} from "./icons";
 import styles from "./PropertiesPanel.module.css";
 
 interface Props {
@@ -10,28 +19,71 @@ interface Props {
   onChange: (updated: Record<string, unknown>) => void;
 }
 
-// Keys rendered with dedicated UI — everything else shows in the custom section
-const KNOWN_KEYS = ["title", "type", "tags", "created"];
+// App-internal frontmatter that isn't a user-facing property.
+const HIDDEN = new Set(["title", "type", "icon", "cover"]);
 
-/** Mirror of the backend `schema_key` rule: collection name, else note type. */
+// Types a new note property can be (relation/rollup are configured in a table).
+const ADD_TYPES: { value: PropType; label: string }[] = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "select", label: "Select" },
+  { value: "status", label: "Status" },
+  { value: "multi_select", label: "Multi-select" },
+  { value: "person", label: "Person" },
+  { value: "url", label: "URL" },
+];
+
 function schemaKeyFor(path: string, type: string | null): string | null {
   const m = path.match(/^collections\/([^/]+)/);
   if (m) return m[1];
   return type && type.length ? type : null;
 }
 
-function isSelectType(t: PropertyDef["type"]): boolean {
-  return t === "select" || t === "status" || t === "multi_select";
+function isSelectType(t: PropType): boolean {
+  return t === "select" || t === "status" || t === "multi_select" || t === "person" || t === "relation";
+}
+
+function inferType(v: unknown): PropType {
+  if (Array.isArray(v)) return "multi_select";
+  if (typeof v === "boolean") return "checkbox";
+  if (typeof v === "number") return "number";
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return "date";
+  return "text";
+}
+
+function PropIcon({ type }: { type: PropType }) {
+  switch (type) {
+    case "date": return <CalendarIcon size={15} />;
+    case "checkbox": return <CheckSquareIcon size={15} />;
+    case "select":
+    case "status": return <SelectDotIcon size={15} />;
+    case "multi_select": return <TagsListIcon size={15} />;
+    case "person": return <PersonIcon size={15} />;
+    case "url": return <LinkIcon size={15} />;
+    case "relation": return <RelationIcon size={15} />;
+    case "rollup": return <span className={styles.glyph}>Σ</span>;
+    case "number": return <span className={styles.glyph}>#</span>;
+    default: return <TextLinesIcon size={15} />;
+  }
+}
+
+interface Item {
+  name: string;
+  type: PropType;
+  options: SelectOption[];
+  def?: PropertyDef;
 }
 
 export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
-  const [expanded, setExpanded] = useState(false);
   const [schema, setSchema] = useState<TypeSchema | null>(null);
 
   const noteType = typeof frontmatter["type"] === "string" ? (frontmatter["type"] as string) : null;
   const schemaKey = schemaKeyFor(notePath, noteType);
 
-  // (Re)load the governing schema whenever the note or its type changes.
+  const loadSchema = () =>
+    commands.getSchemaForNote(notePath, noteType).then(setSchema).catch(() => setSchema(null));
   useEffect(() => {
     let alive = true;
     commands.getSchemaForNote(notePath, noteType)
@@ -40,220 +92,163 @@ export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
     return () => { alive = false; };
   }, [notePath, noteType]);
 
-  const selectProps = (schema?.properties ?? []).filter((p) => isSelectType(p.type));
-  const selectKeys = new Set(selectProps.map((p) => p.name));
-
-  const set = (key: string, value: unknown) =>
-    onChange({ ...frontmatter, [key]: value });
-
-  const remove = (key: string) => {
+  const set = (key: string, value: unknown) => {
     const next = { ...frontmatter };
-    delete next[key];
+    if (value === "" || value === undefined || value === null || (Array.isArray(value) && value.length === 0)) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
     onChange(next);
   };
 
-  // Persist a property's option set (new option / recolor) back to the schema,
-  // then refresh so the new color sticks immediately.
   const persistOptions = (prop: PropertyDef, options: SelectOption[]) => {
     if (!schemaKey) return;
-    commands.upsertProperty(schemaKey, { ...prop, options })
-      .then(() => commands.getSchemaForNote(notePath, noteType))
-      .then(setSchema)
-      .catch(() => {});
+    commands.upsertProperty(schemaKey, { ...prop, options }).then(loadSchema).catch(() => {});
   };
 
-  const customEntries = Object.entries(frontmatter).filter(
-    ([k]) => !KNOWN_KEYS.includes(k) && !selectKeys.has(k),
-  );
+  const addProperty = (name: string, type: PropType) => {
+    if (schemaKey) {
+      commands.upsertProperty(schemaKey, { name, type, options: [] }).then(loadSchema).catch(() => {});
+    } else {
+      set(name, type === "checkbox" ? false : "");
+    }
+  };
+
+  // Build the ordered property list: schema properties first (rollups excluded —
+  // they're computed in data views), then any other frontmatter keys.
+  const schemaProps = (schema?.properties ?? []).filter((p) => p.type !== "rollup");
+  const schemaNames = new Set(schemaProps.map((p) => p.name));
+  const items: Item[] = [
+    ...schemaProps.map((p) => ({ name: p.name, type: p.type, options: p.options, def: p })),
+    ...Object.keys(frontmatter)
+      .filter((k) => !HIDDEN.has(k) && !schemaNames.has(k))
+      .map((k) => ({ name: k, type: inferType(frontmatter[k]), options: [] as SelectOption[] })),
+  ];
 
   return (
     <div className={styles.root}>
-      <div className={styles.row}>
-        {/* Type */}
-        <InlineField
-          label="Type"
-          value={typeof frontmatter["type"] === "string" ? frontmatter["type"] : ""}
-          placeholder="note"
-          onChange={(v) => set("type", v || "note")}
-        />
-
-        {/* Tags — unless the schema defines `tags` as a typed select (then it
-            renders as colored pills in the schema section below). */}
-        {!selectKeys.has("tags") && (
-          <TagsField
-            tags={Array.isArray(frontmatter["tags"]) ? (frontmatter["tags"] as string[]) : []}
-            onChange={(tags) => set("tags", tags)}
-          />
-        )}
-
-        {/* Created (display only) */}
-        {typeof frontmatter["created"] === "string" && (
-          <span className={styles.created}>{frontmatter["created"]}</span>
-        )}
-
-        <button
-          className={styles.expandBtn}
-          onClick={() => setExpanded((x) => !x)}
-          title="Toggle custom properties"
-        >
-          {expanded ? <MinusIcon size={13} /> : <PlusIcon size={13} />}
-        </button>
-      </div>
-
-      {selectProps.length > 0 && (
-        <div className={styles.schemaProps}>
-          {selectProps.map((prop) => (
-            <div className={styles.field} key={prop.name}>
-              <span className={styles.fieldLabel}>{prop.name}</span>
-              <SelectCell
-                value={frontmatter[prop.name] as string | string[] | null | undefined}
-                options={prop.options}
-                multi={prop.type === "multi_select"}
-                onChange={(next) => set(prop.name, next)}
-                onOptionsChange={(opts) => persistOptions(prop, opts)}
-              />
+      <div className={styles.list}>
+        {items.map((item) => (
+          <div className={styles.propRow} key={item.name}>
+            <div className={styles.propLabel}>
+              <span className={styles.propIcon}><PropIcon type={item.type} /></span>
+              <span className={styles.propName} title={item.name}>{item.name}</span>
             </div>
-          ))}
-        </div>
-      )}
-
-      {expanded && (
-        <div className={styles.custom}>
-          {customEntries.map(([key, val]) => (
-            <div key={key} className={styles.customRow}>
-              <span className={styles.customKey}>{key}</span>
-              <input
-                className={styles.customValue}
-                value={typeof val === "string" ? val : JSON.stringify(val)}
-                onChange={(e) => set(key, e.target.value)}
-              />
-              <button className={styles.removeBtn} onClick={() => remove(key)} title="Remove property">
-                <CloseIcon size={12} />
-              </button>
+            <div className={styles.propValue}>
+              {isSelectType(item.type) ? (
+                <SelectCell
+                  value={frontmatter[item.name] as string | string[] | null | undefined}
+                  options={item.options}
+                  multi={item.type === "multi_select" || item.type === "relation"}
+                  placeholder={item.type === "person" ? "Unassigned" : item.type === "relation" ? "Link…" : "Empty"}
+                  onChange={(next) => set(item.name, next)}
+                  onOptionsChange={
+                    item.def && schemaKey && item.type !== "person" && item.type !== "relation"
+                      ? (opts) => persistOptions(item.def!, opts)
+                      : undefined
+                  }
+                />
+              ) : item.type === "checkbox" ? (
+                <input
+                  type="checkbox"
+                  className={styles.checkbox}
+                  checked={frontmatter[item.name] === true}
+                  onChange={(e) => set(item.name, e.target.checked)}
+                />
+              ) : (
+                <ValueInput
+                  value={frontmatter[item.name]}
+                  type={item.type}
+                  onCommit={(v) => set(item.name, v)}
+                />
+              )}
             </div>
-          ))}
-          <AddPropertyRow onAdd={(k, v) => set(k, v)} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InlineField({
-  label,
-  value,
-  placeholder,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  placeholder: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className={styles.field}>
-      <span className={styles.fieldLabel}>{label}</span>
-      <input
-        className={styles.fieldInput}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-
-function TagsField({
-  tags,
-  onChange,
-}: {
-  tags: string[];
-  onChange: (tags: string[]) => void;
-}) {
-  const [inputVal, setInputVal] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const addTag = (raw: string) => {
-    const tag = raw.trim().toLowerCase();
-    if (tag && !tags.includes(tag)) onChange([...tags, tag]);
-    setInputVal("");
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      addTag(inputVal);
-    }
-    if (e.key === "Backspace" && !inputVal && tags.length > 0) {
-      onChange(tags.slice(0, -1));
-    }
-  };
-
-  return (
-    <div className={styles.tagsField} onClick={() => inputRef.current?.focus()}>
-      <span className={styles.fieldLabel}>Tags</span>
-      <div className={styles.tagsInner}>
-        {tags.map((tag) => (
-          <span key={tag} className={styles.tag}>
-            {tag}
-            <button
-              className={styles.tagRemove}
-              onClick={(e) => {
-                e.stopPropagation();
-                onChange(tags.filter((t) => t !== tag));
-              }}
-              title="Remove tag"
-            >
-              <CloseIcon size={10} />
-            </button>
-          </span>
+          </div>
         ))}
-        <input
-          ref={inputRef}
-          className={styles.tagInput}
-          value={inputVal}
-          placeholder={tags.length === 0 ? "Add tag…" : ""}
-          onChange={(e) => setInputVal(e.target.value)}
-          onKeyDown={onKeyDown}
-          onBlur={() => inputVal.trim() && addTag(inputVal)}
-        />
       </div>
+
+      <AddProperty onAdd={addProperty} />
     </div>
   );
 }
 
-function AddPropertyRow({ onAdd }: { onAdd: (key: string, val: string) => void }) {
-  const [key, setKey] = useState("");
-  const [val, setVal] = useState("");
+function ValueInput({ value, type, onCommit }: {
+  value: unknown;
+  type: PropType;
+  onCommit: (v: unknown) => void;
+}) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  useEffect(() => { setDraft(value == null ? "" : String(value)); }, [value]);
+
+  const commit = () => {
+    const t = draft.trim();
+    if (t === "") { onCommit(undefined); return; }
+    if (type === "number") {
+      const n = parseFloat(t);
+      onCommit(Number.isNaN(n) ? t : n);
+    } else {
+      onCommit(t);
+    }
+  };
+
+  return (
+    <input
+      className={styles.valueInput}
+      value={draft}
+      placeholder="Empty"
+      inputMode={type === "number" ? "decimal" : undefined}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+    />
+  );
+}
+
+function AddProperty({ onAdd }: { onAdd: (name: string, type: PropType) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<PropType>("text");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
 
   const submit = () => {
-    if (key.trim()) {
-      onAdd(key.trim(), val.trim());
-      setKey("");
-      setVal("");
-    }
+    const n = name.trim();
+    if (!n) return;
+    onAdd(n, type);
+    setName(""); setType("text"); setOpen(false);
   };
 
   return (
-    <div className={styles.customRow}>
-      <input
-        className={styles.customKey}
-        value={key}
-        placeholder="property"
-        onChange={(e) => setKey(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-        style={{ minWidth: 80 }}
-      />
-      <input
-        className={styles.customValue}
-        value={val}
-        placeholder="value"
-        onChange={(e) => setVal(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-      />
-      <button className={styles.removeBtn} onClick={submit} style={{ color: "var(--accent)" }} title="Add property">
-        <PlusIcon size={12} />
+    <div className={styles.addProp} ref={ref}>
+      <button className={styles.addPropBtn} onClick={() => setOpen((o) => !o)}>
+        <PlusIcon size={13} /> Add a property
       </button>
+      {open && (
+        <div className={styles.addPropMenu}>
+          <input
+            className={styles.addPropInput}
+            autoFocus
+            value={name}
+            placeholder="Property name"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") setOpen(false); }}
+          />
+          <Dropdown
+            fullWidth
+            value={type}
+            options={ADD_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+            onChange={(v) => setType(v as PropType)}
+          />
+          <button className={styles.addPropConfirm} onClick={submit}>Add</button>
+        </div>
+      )}
     </div>
   );
 }
