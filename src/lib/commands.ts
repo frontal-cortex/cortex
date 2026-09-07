@@ -6,6 +6,18 @@ export interface VaultInfo {
   has_remote: boolean;
 }
 
+/** Payload of the `vault://changed` event from the Rust filesystem watcher:
+ *  what changed on disk outside the app (our own writes are filtered out). */
+export interface VaultChanged {
+  /** Notes created or modified (vault-relative paths, already re-indexed). */
+  notes: string[];
+  /** Notes that no longer exist on disk. */
+  removed: string[];
+  dirs: boolean;
+  config: boolean;
+  git: boolean;
+}
+
 export interface RecentVault {
   path: string;
   name: string;

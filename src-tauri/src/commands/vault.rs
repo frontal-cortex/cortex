@@ -233,6 +233,9 @@ pub fn open_vault(
 
     crate::commands::recent::record_recent(&app, &vault_path);
 
+    // Follow external edits (agents, editors, git) for as long as the vault is open.
+    crate::watcher::start(&app, vault_path.clone())?;
+
     *state.0.lock().unwrap() = Some(vault_path);
 
     Ok(VaultInfo { path, name, has_remote })
@@ -292,9 +295,11 @@ pub fn create_vault_from_template(path: String) -> Result<()> {
 /// the app returns to the landing screen (like signing out).
 #[tauri::command]
 pub fn close_vault(
+    app: tauri::AppHandle,
     state: State<'_, VaultState>,
     db_state: State<'_, DbState>,
 ) -> Result<()> {
+    crate::watcher::stop(&app);
     *state.0.lock().unwrap() = None;
     *db_state.0.lock().unwrap() = None;
     Ok(())

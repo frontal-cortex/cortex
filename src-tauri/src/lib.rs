@@ -6,6 +6,7 @@ mod git;
 mod members;
 mod note;
 mod schema;
+mod watcher;
 
 use commands::vault::{DbState, VaultState};
 
@@ -17,6 +18,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(VaultState::default())
         .manage(DbState::default())
+        .manage(watcher::WatcherState::default())
+        .manage(watcher::SelfWrites::default())
         .invoke_handler(tauri::generate_handler![
             commands::vault::open_vault,
             commands::vault::create_vault_from_template,

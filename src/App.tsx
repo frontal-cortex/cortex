@@ -33,6 +33,7 @@ export default function App() {
           onApplyBranch={vault.applyAgentBranch}
           onDiscardBranch={vault.discardAgentBranch}
           onLeaveVault={vault.closeVault}
+          onRefreshStatus={vault.refreshStatus}
         />
       )}
     </div>

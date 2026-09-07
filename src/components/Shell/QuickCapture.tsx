@@ -1,5 +1,5 @@
 // Quick capture — jot a thought straight into today's daily note without
-// leaving the current one. Opens on ⌘⇧K or the command palette. (A true global
+// leaving the current one. Opens on the quick-capture shortcut or the command palette. (A true global
 // hotkey that fires while the app is unfocused would additionally need the
 // tauri-plugin-global-shortcut plugin; this is the in-app core.)
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { shortcutFor } from "../../lib/keymap";
 import { NoteEntry, VaultStatus, AgentBranch, CommitEntry, TrashEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
 import { buildTree } from "../../lib/fileTree";
@@ -173,7 +174,7 @@ export function LeftPanel({
           <SearchIcon />
           <input
             className={styles.searchInput}
-            placeholder="Search… (⌘K to jump)"
+            placeholder={`Search… (${shortcutFor("quick-switcher")} to jump)`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -245,7 +246,7 @@ export function LeftPanel({
               }}
             >
               {notesTree.length === 0 && newFolderIn !== "notes/"
-                ? <p className={styles.empty}>No notes yet — press ⌘N to create one.</p>
+                ? <p className={styles.empty}>No notes yet — press {shortcutFor("new-note")} to create one.</p>
                 : <FileTree
                     nodes={notesTree}
                     currentPath="notes/"

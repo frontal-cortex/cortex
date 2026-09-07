@@ -1,5 +1,6 @@
 import { VaultStatus } from "../../lib/commands";
 import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon } from "./icons";
+import { shortcutFor } from "../../lib/keymap";
 import styles from "./TopBar.module.css";
 
 interface Props {
@@ -36,10 +37,10 @@ export function TopBar({
   return (
     <header className={styles.bar} data-tauri-drag-region>
       <div className={styles.nav}>
-        <button className={styles.action} onClick={onBack} disabled={!canBack} title="Back (⌘[)">
+        <button className={styles.action} onClick={onBack} disabled={!canBack} title={`Back (${shortcutFor("back")})`}>
           <ChevronLeftIcon size={16} />
         </button>
-        <button className={styles.action} onClick={onForward} disabled={!canForward} title="Forward (⌘])">
+        <button className={styles.action} onClick={onForward} disabled={!canForward} title={`Forward (${shortcutFor("forward")})`}>
           <ChevronRightIcon size={16} />
         </button>
       </div>
@@ -51,13 +52,13 @@ export function TopBar({
       <div className={styles.spacer} data-tauri-drag-region />
 
       <div className={styles.actions}>
-        <button className={styles.action} onClick={onToday} title="Today's note">
+        <button className={styles.action} onClick={onToday} title={`Today's note (${shortcutFor("today")})`}>
           <TodayIcon size={15} />
         </button>
-        <button className={styles.action} onClick={onOpenSwitcher} title="Quick switcher (⌘K)">
+        <button className={styles.action} onClick={onOpenSwitcher} title={`Quick switcher (${shortcutFor("quick-switcher")})`}>
           <SearchIcon size={15} />
         </button>
-        <button className={styles.action} onClick={onOpenGraph} title="Graph view (⌘G)">
+        <button className={styles.action} onClick={onOpenGraph} title={`Graph view (${shortcutFor("graph")})`}>
           <GraphIcon size={15} />
         </button>
         <button

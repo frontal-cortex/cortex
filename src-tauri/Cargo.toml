@@ -37,3 +37,6 @@ walkdir = "2"
 # Base64 for asset binary upload
 base64 = "0.22"
 pulldown-cmark = "0.12"
+
+# Filesystem watcher (external edits, agents, git checkouts → live UI)
+notify = "8"
