@@ -6,6 +6,7 @@ import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
+import { useLayout } from "../../hooks/useLayout";
 import { LeftPanel } from "./LeftPanel";
 import { Editor } from "./Editor";
 import { DatabaseView } from "./DatabaseView";
@@ -19,6 +20,7 @@ import { QuickCapture } from "./QuickCapture";
 import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
+import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
 import { SettingsModal } from "./SettingsModal";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
@@ -43,6 +45,18 @@ export function Shell({
 }: Props) {
   // Quick switcher: null = closed; "actions" opens it straight into `>` mode.
   const [switcher, setSwitcher] = useState<null | "notes" | "actions">(null);
+  const { leftVisible, rightVisible, monk, toggleLeft, toggleRight, toggleMonk } = useLayout();
+  // The terminal mounts the first time its pane opens and then stays mounted
+  // (hidden) so the session survives toggling.
+  const [terminalMounted, setTerminalMounted] = useState(false);
+  useEffect(() => { if (rightVisible) setTerminalMounted(true); }, [rightVisible]);
+  // Opening the terminal puts the cursor in it — that's what Ctrl+L is for.
+  const termRef = useRef<TerminalPaneHandle>(null);
+  const handleToggleTerminal = useCallback(() => {
+    const opening = monk || !rightVisible;
+    toggleRight();
+    if (opening) requestAnimationFrame(() => termRef.current?.focus());
+  }, [monk, rightVisible, toggleRight]);
   const [showGraph, setShowGraph] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -219,7 +233,9 @@ export function Shell({
 
   // App shortcuts come from the keymap registry (lib/keymap.ts). The handlers
   // live in a ref (assigned below, once they exist) so the listener is
-  // registered once yet always calls the latest closures.
+  // registered once yet always calls the latest closures. Capture phase: an
+  // app shortcut wins over whatever the focused editor or terminal would do
+  // with the same keys; Escape is left for them to see too.
   const actionsRef = useRef<Record<ShortcutId, () => void> | null>(null);
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -227,10 +243,11 @@ export function Shell({
       const id = findShortcut(e);
       if (!id) return;
       e.preventDefault();
+      e.stopPropagation();
       actionsRef.current?.[id]();
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
   // Embedded data views (collection rows) dispatch this to open a row as a note.
@@ -410,11 +427,14 @@ export function Shell({
     "back":            back,
     "forward":         forward,
     "settings":        () => setShowSettings(true),
+    "toggle-sidebar":  toggleLeft,
+    "toggle-terminal": handleToggleTerminal,
+    "monk-mode":       toggleMonk,
   };
 
   return (
-    <div className={styles.root}>
-      <TopBar
+    <div className={`${styles.root} ${monk ? styles.monk : ""}`}>
+      {!monk && <TopBar
         vaultName={vault.name}
         status={status}
         syncing={syncing}
@@ -427,9 +447,15 @@ export function Shell({
         onOpenGraph={() => setShowGraph(true)}
         onOpenSwitcher={() => setSwitcher("notes")}
         onToday={handleToday}
-      />
+        leftOpen={leftVisible}
+        rightOpen={rightVisible}
+        onToggleLeft={toggleLeft}
+        onToggleRight={handleToggleTerminal}
+        onToggleMonk={toggleMonk}
+      />}
 
       <div className={styles.body}>
+        <div className={styles.leftSlot} style={leftVisible ? undefined : { display: "none" }}>
         <LeftPanel
           notes={notes}
           dirs={dirs}
@@ -458,6 +484,7 @@ export function Shell({
           onDeleteTrashed={deleteForever}
           onEmptyTrash={emptyTrash}
         />
+        </div>
 
         {note && isDatabaseNote(note) && collectionNameFromIndex(note.path) ? (
           <DatabaseView
@@ -474,11 +501,18 @@ export function Shell({
             vaultPath={vault.path}
             reloadToken={reloadToken}
             collab={collab}
+            monk={monk}
             onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
             onDelete={handleDelete}
             onNavigate={handleNavigate}
             onApplyNote={applyNote}
           />
+        )}
+
+        {terminalMounted && (
+          <aside className={styles.rightPane} style={rightVisible ? undefined : { display: "none" }}>
+            <TerminalPane ref={termRef} cwd={vault.path} visible={rightVisible} />
+          </aside>
         )}
       </div>
 
@@ -497,6 +531,9 @@ export function Shell({
           onToggleTheme={handleToggleTheme}
           onOpenSettings={() => setShowSettings(true)}
           onQuickCapture={() => setShowCapture(true)}
+          onToggleSidebar={toggleLeft}
+          onToggleTerminal={handleToggleTerminal}
+          onToggleMonk={toggleMonk}
           hasRemote={vault.has_remote}
         />
       )}

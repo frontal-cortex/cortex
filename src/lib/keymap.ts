@@ -5,8 +5,10 @@
 // command palette) is rendered from it — so a binding and its label can never
 // drift apart, and the modifier reads as ⌘ on macOS and Ctrl everywhere else.
 //
-// Editor-internal keys (BlockNote's formatting, the wiki-link dropdown) are
-// not app shortcuts and stay where they are.
+// App shortcuts are dispatched in the capture phase, so they win over the
+// editor's own bindings (Ctrl+B is the sidebar, not bold — the formatting
+// toolbar still has bold). Editor-internal keys that don't collide (the
+// wiki-link dropdown, slash menu) are untouched.
 
 export type ShortcutId =
   | "quick-switcher"
@@ -17,7 +19,10 @@ export type ShortcutId =
   | "graph"
   | "back"
   | "forward"
-  | "settings";
+  | "settings"
+  | "toggle-sidebar"
+  | "toggle-terminal"
+  | "monk-mode";
 
 export interface Shortcut {
   /** `mod` = ⌘ on macOS, Ctrl elsewhere. Lower-case, `+`-joined, key last. */
@@ -35,6 +40,9 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "back":            { keys: "mod+[",       label: "Back" },
   "forward":         { keys: "mod+]",       label: "Forward" },
   "settings":        { keys: "mod+,",       label: "Settings" },
+  "toggle-sidebar":  { keys: "mod+b",       label: "Toggle sidebar" },
+  "toggle-terminal": { keys: "mod+l",       label: "Toggle terminal" },
+  "monk-mode":       { keys: "mod+shift+m", label: "Monk mode" },
 };
 
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);

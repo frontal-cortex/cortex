@@ -243,6 +243,18 @@ export interface TrashEntry {
   deleted_at: number;
 }
 
+/** Payload of `terminal://data`: one chunk of shell output, base64-encoded
+ *  because pty bytes are not guaranteed to be valid UTF-8. */
+export interface TerminalData {
+  id: number;
+  data: string;
+}
+
+/** Payload of `terminal://exit`: the shell ended on its own (not via kill). */
+export interface TerminalExit {
+  id: number;
+}
+
 /** Mark a successful mutation so the collab layer (when enabled) can nudge
  *  teammates to sync. A plain window event keeps this module dependency-free. */
 function touched<T>(p: Promise<T>): Promise<T> {
@@ -486,4 +498,23 @@ export const commands = {
 
   discardAgentBranch: (branchName: string) =>
     invoke<void>("discard_agent_branch", { branchName }),
+
+  // ── Terminal ──────────────────────────────────────────────────────────────
+  // A real pty running the user's shell (see src-tauri/src/terminal.rs).
+  // Output arrives on the `terminal://data` event (TerminalData), and
+  // `terminal://exit` (TerminalExit) fires once if the shell ends on its own.
+
+  /** Start a shell; `cwd` defaults to the open vault. Returns the session id. */
+  terminalSpawn: (cwd: string | undefined, cols: number, rows: number) =>
+    invoke<number>("terminal_spawn", { cwd: cwd ?? null, cols, rows }),
+
+  terminalWrite: (id: number, data: string) =>
+    invoke<void>("terminal_write", { id, data }),
+
+  terminalResize: (id: number, cols: number, rows: number) =>
+    invoke<void>("terminal_resize", { id, cols, rows }),
+
+  /** Kill the shell and drop the session. Safe to call after it exited. */
+  terminalKill: (id: number) =>
+    invoke<void>("terminal_kill", { id }),
 };

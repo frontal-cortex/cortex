@@ -88,6 +88,8 @@ interface Props {
   reloadToken?: number;
   /** Relay config for live co-editing + presence; null = solo mode. */
   collab?: CollabConfig | null;
+  /** Monk mode: just the page — no properties, backlinks, or action buttons. */
+  monk?: boolean;
   onSave: (note: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
@@ -95,7 +97,7 @@ interface Props {
 }
 
 export function Editor({
-  note, saving, allNotes, reloadToken = 0, collab = null, onSave, onDelete, onNavigate, onApplyNote,
+  note, saving, allNotes, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote,
 }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
@@ -123,6 +125,7 @@ export function Editor({
         saving={saving}
         allNotes={allNotes}
         collab={collab}
+        monk={monk}
         onSave={onSave}
         onDelete={onDelete}
         onNavigate={onNavigate}
@@ -201,12 +204,13 @@ function personItems(members: Member[], query: string): MentionItem[] {
 }
 
 function NoteEditor({
-  note, saving, allNotes, collab, onSave, onDelete, onNavigate, onShowHistory,
+  note, saving, allNotes, collab, monk, onSave, onDelete, onNavigate, onShowHistory,
 }: {
   note: Note;
   saving: boolean;
   allNotes: NoteEntry[];
   collab: CollabConfig | null;
+  monk: boolean;
   onSave: (n: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
@@ -574,7 +578,7 @@ function NoteEditor({
               placeholder="Untitled"
               onChange={(e) => handleTitleChange(e.target.value)}
             />
-            <div className={styles.headerActions}>
+            {!monk && <div className={styles.headerActions}>
               {peers.map((p, i) => (
                 <span
                   key={`${p.name}-${i}`}
@@ -592,7 +596,7 @@ function NoteEditor({
               <button className={styles.deleteBtn} onClick={() => onDelete(note.path)} title="Delete note">
                 <TrashIcon />
               </button>
-            </div>
+            </div>}
           </div>
           {showEmojiPicker && (
             <div className={styles.emojiPickerWrap}>
@@ -600,11 +604,11 @@ function NoteEditor({
             </div>
           )}
 
-          {lastEdit && lastEdit.author && (
+          {!monk && lastEdit && lastEdit.author && (
             <div className={styles.lastEdit}>Edited by {lastEdit.author} · {relativeTime(lastEdit.timestamp)}</div>
           )}
 
-          <PropertiesPanel frontmatter={note.frontmatter} notePath={note.path} onChange={handleFrontmatterChange} />
+          {!monk && <PropertiesPanel frontmatter={note.frontmatter} notePath={note.path} onChange={handleFrontmatterChange} />}
 
           <div className={styles.editorWrap}>
             <BlockNoteView editor={editor} slashMenu={false} formattingToolbar={false} theme={colorScheme}>
@@ -635,7 +639,7 @@ function NoteEditor({
             </BlockNoteView>
           </div>
 
-          <BacklinksPanel path={note.path} onNavigate={onNavigate} />
+          {!monk && <BacklinksPanel path={note.path} onNavigate={onNavigate} />}
         </div>
       </div>
 
