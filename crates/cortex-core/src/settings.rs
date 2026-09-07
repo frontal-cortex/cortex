@@ -39,6 +39,10 @@ pub struct Settings {
     /// Empty = the default. Chrome fonts are not affected.
     #[serde(default)]
     pub prose_font: String,
+    /// Page tilt: "" (upright), a small number of degrees ("4", "8" — a true
+    /// slant on variable fonts, the italic face otherwise), or "italic".
+    #[serde(default)]
+    pub prose_slant: String,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -58,6 +62,7 @@ impl Default for Settings {
             collab_url: String::new(),
             theme_file: String::new(),
             prose_font: String::new(),
+            prose_slant: String::new(),
         }
     }
 }

@@ -41,3 +41,22 @@ export function resolveProseFont(value: string): string {
 export function applyProseFont(value: string) {
   document.documentElement.style.setProperty("--font-prose", resolveProseFont(value));
 }
+
+// ── Tilt ─────────────────────────────────────────────────────────────────────
+// A few degrees of slant is the difference between "a font" and "my hand".
+// Variable fonts with a slant axis (Recursive, Inter) tilt for real; others
+// fall back to their italic face, which is what the browser does for oblique.
+
+export const PROSE_SLANTS: { id: string; label: string; style: string }[] = [
+  { id: "",       label: "Upright",          style: "normal" },
+  { id: "4",      label: "Slight — 4°",      style: "oblique 4deg" },
+  { id: "8",      label: "Leaning — 8°",     style: "oblique 8deg" },
+  { id: "italic", label: "Italic",           style: "italic" },
+];
+
+export function applyProseSlant(value: string) {
+  const v = value.trim();
+  const preset = PROSE_SLANTS.find((s) => s.id === v);
+  const style = preset ? preset.style : /^\d+$/.test(v) ? `oblique ${v}deg` : "normal";
+  document.documentElement.style.setProperty("--prose-style", style);
+}

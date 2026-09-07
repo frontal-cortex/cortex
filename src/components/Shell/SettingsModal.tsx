@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { commands, Settings, VaultInfo, Member, CurrentUser } from "../../lib/commands";
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
 import { syncTheme } from "../../lib/theme";
-import { PROSE_FONTS, DEFAULT_PROSE_FONT, isPreset } from "../../lib/fonts";
+import { PROSE_FONTS, PROSE_SLANTS, DEFAULT_PROSE_FONT, isPreset } from "../../lib/fonts";
 import { Dropdown } from "./Dropdown";
 import { CloseIcon } from "./icons";
 import styles from "./SettingsModal.module.css";
@@ -31,7 +31,7 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
       if (!s) return s;
       const next = { ...s, ...patch };
       commands.setSettings(next).catch(() => {});
-      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined) syncTheme(next);
+      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined) syncTheme(next);
       return next;
     });
   };
@@ -123,6 +123,15 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
                   />
                 </label>
               )}
+
+              <label className={styles.row}>
+                <span className={styles.label}>Page tilt</span>
+                <Dropdown
+                  value={PROSE_SLANTS.some((s) => s.id === settings.prose_slant) ? settings.prose_slant : ""}
+                  options={PROSE_SLANTS.map((s) => ({ value: s.id, label: s.label }))}
+                  onChange={(v) => update({ prose_slant: v })}
+                />
+              </label>
 
               <label className={styles.row}>
                 <span className={styles.label}>Auto-commit on save</span>

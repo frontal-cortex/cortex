@@ -305,6 +305,7 @@
    prose face, and inline code in the same mono as everything else. */
 .editorWrap :global(.bn-default-styles) {
   font-family: var(--font-prose);
+  font-style: var(--prose-style, normal);
   line-height: 1.6;
 }
 .editorWrap :global(.bn-inline-content code) {
