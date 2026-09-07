@@ -41,6 +41,7 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── LeftPanel.tsx     # Sidebar: sections, tree, trash — one flat keyboard row list (treeRows.ts)
 │   │   ├── treeRows.ts       # Roving tabindex + type-ahead over the sidebar's row model
 │   │   ├── GettingStarted.tsx # First-run steps, rendered as tree rows so the keyboard reaches them
+│   │   ├── SettingsView.tsx  # Full-window settings page: section nav, search, one row per settings.yaml key
 │   │   └── TerminalPane.tsx  # xterm.js over a real PTY; opens into `terminal_command` (an agent CLI)
 │   ├── hooks/                # React hooks (useVault, useNotes)
 │   ├── lib/                  # Shared utilities (commands.ts, fileTree.ts)
@@ -107,6 +108,13 @@ are not in the template: the app writes the current versions on first open,
 so their text lives in code (`vault::VAULT_MD`, `vault::AGENTS_MD`,
 `settings::describe()`) and is versioned with it. To change the starter
 notes, edit the files under `vault-template/`.
+
+**Settings is a page, and the file is the truth**: `SettingsView` renders one
+row per key of `.cortex/settings.yaml` from a data table (`SECTIONS`), so
+search sees every row and each row shows its key. Edits are written to the
+file; edits made elsewhere arrive through the watcher's config event and the
+page reloads. A setting that only the UI could change would be a bug — add
+the field to `describe()` in core first, then a row here.
 
 **The sidebar is one flat row list**: `LeftPanel` derives a `TreeRow[]` (in
 render order, from the same open/closed state the renderer reads) and
