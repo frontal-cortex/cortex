@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/cortex-core", "src-tauri"]
+members = ["crates/cortex-core", "crates/cortex-cli", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
