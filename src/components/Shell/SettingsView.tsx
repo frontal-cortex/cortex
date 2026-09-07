@@ -15,6 +15,7 @@ import {
   SHORTCUTS, ShortcutId, keysFor, formatKeys, isOverridden, comboFromEvent, conflictFor, shortcutFor, isMac,
 } from "../../lib/keymap";
 import { Dropdown } from "./Dropdown";
+import { AgentIcon } from "./agentIcons";
 import {
   CloseIcon, SearchIcon, FolderIcon, ThemeIcon, TextLinesIcon, FileIcon, SyncIcon, TerminalIcon,
   PersonIcon, LinkIcon, OpenIcon,
@@ -567,10 +568,14 @@ function NumberField({ value, unit, min, onChange }: { value: number; unit: stri
 }
 
 /** Which command the terminal pane opens with: a plain shell, one of the
- *  agent CLIs found on $PATH, or anything the user types. */
+ *  agent CLIs, or anything the user types. Installed agents come first with
+ *  a "detected" badge; the rest are listed, dimmed, so the user can see what
+ *  the app knows about — picking one would only print "command not found",
+ *  so they are not selectable. Custom command is the escape hatch. */
 function TerminalAgentControl({ agents, settings, update, customCommand, setCustomCommand }: Ctx) {
   const value = settings.terminal_command;
   const found = agents.filter((a) => a.found);
+  const missing = agents.filter((a) => !a.found);
   const match = found.find((a) => a.command === value.trim());
   const selected = customCommand ? "custom" : !value.trim() ? "shell" : match ? match.id : "custom";
   return (
@@ -579,9 +584,16 @@ function TerminalAgentControl({ agents, settings, update, customCommand, setCust
         fullWidth
         value={selected}
         options={[
-          { value: "shell", label: "Shell only" },
-          ...found.map((a) => ({ value: a.id, label: a.label })),
-          { value: "custom", label: "Custom command…" },
+          { value: "shell", label: "Shell only", icon: <TerminalIcon size={14} /> },
+          ...found.map((a) => ({
+            value: a.id, label: a.label, badge: "detected", hint: a.path ?? undefined,
+            icon: <AgentIcon id={a.id} label={a.label} />,
+          })),
+          ...missing.map((a, i) => ({
+            value: a.id, label: a.label, disabled: true, separator: i === 0,
+            hint: `not installed (${a.command})`, icon: <AgentIcon id={a.id} label={a.label} />,
+          })),
+          { value: "custom", label: "Custom command…", separator: true },
         ]}
         onChange={(v) => {
           if (v === "custom") { setCustomCommand(true); return; }
@@ -599,7 +611,9 @@ function TerminalAgentControl({ agents, settings, update, customCommand, setCust
         />
       )}
       {match?.path && <span className={`${styles.note} ${styles.valueMono}`} title={match.path}>{match.path}</span>}
-      {found.length === 0 && <span className={styles.note}>No agent CLIs found on PATH. Install one (claude, codex, gemini, …) and reopen Settings.</span>}
+      {agents.length > 0 && found.length === 0 && (
+        <span className={styles.note}>No agent CLIs found on PATH. Install one (claude, codex, gemini, …) and reopen Settings.</span>
+      )}
     </div>
   );
 }
