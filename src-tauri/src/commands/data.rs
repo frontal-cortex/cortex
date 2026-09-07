@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use tauri::State;
 
 use crate::commands::vault::{DbState, VaultState};
-use crate::error::{AppError, Result};
-use crate::data::{ChartResult, StructuredSpec, Table};
-use crate::schema::{PropType, PropertyDef, TypeSchema};
+use cortex_core::error::{AppError, Result};
+use cortex_core::data::{ChartResult, StructuredSpec, Table};
+use cortex_core::schema::{PropType, PropertyDef, TypeSchema};
 
 /// Column type label for a schema-only property (one with no row values yet).
 fn prop_ty(ty: PropType) -> &'static str {
@@ -84,26 +84,26 @@ fn to_wire(table: Table, all_columns: Vec<String>, schema: Option<&TypeSchema>) 
 pub fn run_view(spec: String, state: State<'_, VaultState>) -> Result<WireTable> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
     // Resolve `@me` (per-viewer) before querying — "assigned to me" works for all.
-    let spec = crate::members::resolve_me(&spec, &root);
-    let mut table = crate::data::run_view(&root, &spec)?;
-    let parsed = crate::data::parse_view_spec(&spec).ok();
+    let spec = cortex_core::members::resolve_me(&spec, &root);
+    let mut table = cortex_core::data::run_view(&root, &spec)?;
+    let parsed = cortex_core::data::parse_view_spec(&spec).ok();
     let all_columns = parsed.as_ref()
-        .and_then(|s| crate::data::source_columns(&root, &s.source).ok())
+        .and_then(|s| cortex_core::data::source_columns(&root, &s.source).ok())
         .unwrap_or_else(|| table.columns.iter().map(|c| c.key.clone()).collect());
     // Collection sources resolve to a schema by name; CSV sources have none.
     // `person` options come from the roster; `relation` options from the linked
     // collection; `rollup` cells are computed per row.
-    let members = crate::members::load(&root);
+    let members = cortex_core::members::load(&root);
     let schema = parsed
-        .and_then(|s| crate::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
-        .and_then(|key| crate::schema::load(&root, &key).ok().flatten())
+        .and_then(|s| cortex_core::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
+        .and_then(|key| cortex_core::schema::load(&root, &key).ok().flatten())
         .map(|mut s| {
-            crate::members::fill_person_options(&mut s, &members);
-            crate::data::fill_relation_options(&root, &mut s);
+            cortex_core::members::fill_person_options(&mut s, &members);
+            cortex_core::data::fill_relation_options(&root, &mut s);
             s
         });
     if let Some(s) = &schema {
-        crate::data::apply_rollups(&root, &mut table, s);
+        cortex_core::data::apply_rollups(&root, &mut table, s);
     }
     Ok(to_wire(table, all_columns, schema.as_ref()))
 }
@@ -129,7 +129,7 @@ pub fn list_collections(state: State<'_, VaultState>) -> Result<Vec<String>> {
 /// Parse a YAML view spec into the structured form the toolbar edits.
 #[tauri::command]
 pub fn parse_view_spec(spec: String) -> Result<StructuredSpec> {
-    crate::data::parse_view_spec(&spec)
+    cortex_core::data::parse_view_spec(&spec)
 }
 
 // ── Multi-view document (an embedded block holding several named views) ────────
@@ -236,15 +236,15 @@ pub fn serialize_view_doc(doc: ViewDoc) -> Result<String> {
 /// Serialize a structured spec (from the toolbar) back to canonical YAML.
 #[tauri::command]
 pub fn serialize_view_spec(spec: StructuredSpec) -> Result<String> {
-    Ok(crate::data::serialize_view_spec(&spec))
+    Ok(cortex_core::data::serialize_view_spec(&spec))
 }
 
 /// Resolve a `cortex-chart` spec into a single `{x, y}` series.
 #[tauri::command]
 pub fn run_chart(spec: String, state: State<'_, VaultState>) -> Result<ChartResult> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
-    let spec = crate::members::resolve_me(&spec, &root);
-    crate::data::run_chart(&root, &spec)
+    let spec = cortex_core::members::resolve_me(&spec, &root);
+    cortex_core::data::run_chart(&root, &spec)
 }
 
 /// Write one edited cell back to its source (collection note frontmatter or CSV
@@ -260,11 +260,11 @@ pub fn set_cell(
     db_state: State<'_, DbState>,
 ) -> Result<()> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
-    let written = crate::data::set_cell(&root, &source, &row_id, &field, &value, &ty)?;
+    let written = cortex_core::data::set_cell(&root, &source, &row_id, &field, &value, &ty)?;
     // Keep the index in sync when a collection note (a row) changed.
     if let Some(path) = written {
         if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-            let _ = crate::commands::indexer::index_file(&root, &path, db);
+            let _ = cortex_core::index::index_file(&root, &path, db);
         }
     }
     Ok(())
@@ -282,10 +282,10 @@ pub fn add_row(
 ) -> Result<()> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
     let fields: std::collections::BTreeMap<String, String> = fields.into_iter().collect();
-    let written = crate::data::add_row(&root, &source, &id, &fields)?;
+    let written = cortex_core::data::add_row(&root, &source, &id, &fields)?;
     if let Some(path) = written {
         if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-            let _ = crate::commands::indexer::index_file(&root, &path, db);
+            let _ = cortex_core::index::index_file(&root, &path, db);
         }
     }
     Ok(())
@@ -302,9 +302,9 @@ pub fn export_to_file(
 ) -> Result<()> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
     let content = match kind.as_str() {
-        "note-html" => crate::data::export_note_html(&root, &target)?,
-        "collection-csv" => crate::data::export_collection_csv(&root, &target)?,
-        "collection-html" => crate::data::export_collection_html(&root, &target)?,
+        "note-html" => cortex_core::data::export_note_html(&root, &target)?,
+        "collection-csv" => cortex_core::data::export_collection_csv(&root, &target)?,
+        "collection-html" => cortex_core::data::export_collection_html(&root, &target)?,
         other => return Err(AppError::Other(format!("Unknown export kind: {other}"))),
     };
     std::fs::write(&dest, content)?;
@@ -315,7 +315,7 @@ pub fn export_to_file(
 #[tauri::command]
 pub fn list_row_templates(source: String, state: State<'_, VaultState>) -> Result<Vec<String>> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
-    crate::data::list_row_templates(&root, &source)
+    cortex_core::data::list_row_templates(&root, &source)
 }
 
 /// Create a row from a template (its frontmatter + body, with seed fields applied).
@@ -330,10 +330,10 @@ pub fn add_row_from_template(
 ) -> Result<()> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
     let fields: std::collections::BTreeMap<String, String> = fields.into_iter().collect();
-    let written = crate::data::add_row_from_template(&root, &source, &id, &template, &fields)?;
+    let written = cortex_core::data::add_row_from_template(&root, &source, &id, &template, &fields)?;
     if let Some(path) = written {
         if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-            let _ = crate::commands::indexer::index_file(&root, &path, db);
+            let _ = cortex_core::index::index_file(&root, &path, db);
         }
     }
     Ok(())
@@ -351,7 +351,7 @@ pub fn save_row_as_template(
         return Err(AppError::Other("Invalid row id".into()));
     }
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
-    crate::data::save_row_as_template(&root, &source, &row_id, &name)
+    cortex_core::data::save_row_as_template(&root, &source, &row_id, &name)
 }
 
 /// Delete a row. Collection rows go to the trash (recoverable); CSV rows are
@@ -376,6 +376,6 @@ pub fn delete_row(
         }
         Ok(())
     } else {
-        crate::data::delete_csv_row(&root, &source, &row_id)
+        cortex_core::data::delete_csv_row(&root, &source, &row_id)
     }
 }

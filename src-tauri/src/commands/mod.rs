@@ -1,7 +1,6 @@
 pub mod config;
 pub mod data;
 pub mod git;
-pub mod indexer;
 pub mod members;
 pub mod notes;
 pub mod recent;

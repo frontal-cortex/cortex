@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
-use crate::error::{AppError, Result};
+use cortex_core::error::{AppError, Result};
 
 const MAX_RECENT: usize = 8;
 const FILE_NAME: &str = "recent_vaults.json";

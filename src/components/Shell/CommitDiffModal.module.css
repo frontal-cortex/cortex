@@ -148,3 +148,35 @@
 .lineContext {
   color: var(--text-secondary);
 }
+
+/* Proposal review: the same diff view, plus the decision at the bottom */
+.proposalTag {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--git-agent);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--git-agent) 18%, transparent);
+  white-space: nowrap;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.applyBtn, .discardBtn {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.applyBtn { background: var(--git-agent); color: var(--text-inverse); }
+.discardBtn { background: var(--bg-active); color: var(--text-secondary); }
+.applyBtn:disabled, .discardBtn:disabled { opacity: 0.55; cursor: default; }

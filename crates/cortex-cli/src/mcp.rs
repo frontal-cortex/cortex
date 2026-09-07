@@ -1,0 +1,242 @@
+//! `cortex mcp` — the vault as an MCP server over stdio.
+//!
+//! The same operations as the CLI (see `ops.rs`), exposed as tools so an
+//! agent gets typed, discoverable access to a vault without shelling out.
+//! Results are JSON text. Writes land on disk immediately and the app
+//! follows them; anything meant for the user's review goes through
+//! `propose`, which packages changes as an `agent/*` branch.
+
+use crate::ops::{NewNote, Vault};
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::*;
+use rmcp::{schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+const INSTRUCTIONS: &str = "\
+This is a Cortex vault: a folder of Markdown notes with YAML frontmatter that is also a git \
+repository. Notes live under notes/ (organised freely into folders); collections/<name>/ holds \
+database rows (one note per row, properties in frontmatter); templates/ holds note templates. \
+Notes link to each other with [[Title]] wiki links. Frontmatter keys are kept sorted so diffs \
+stay clean — use the tools rather than rewriting files by hand.
+
+Reading: list_notes, search, read_note, links, backlinks, list_collections, query_collection, \
+get_schema. Writing: create_note, write_note, set_properties. Writes are visible in the app \
+immediately. When a change is meant for the user's review rather than applied directly, call \
+propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
+(diff, then Apply or Discard) in the app.";
+
+#[derive(Clone)]
+pub struct CortexMcp {
+    vault: Arc<Vault>,
+}
+
+fn err(e: impl std::fmt::Display) -> McpError {
+    McpError::internal_error(e.to_string(), None)
+}
+
+fn json<T: serde::Serialize>(value: &T) -> Result<CallToolResult, McpError> {
+    let text = serde_json::to_string_pretty(value).map_err(err)?;
+    Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
+}
+
+// ── Parameters ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListArgs {
+    /// Only notes under this folder, e.g. "notes/work"
+    pub dir: Option<String>,
+    /// Only notes whose frontmatter `type` matches
+    #[serde(rename = "type")]
+    pub note_type: Option<String>,
+    /// Only notes carrying this tag
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SearchArgs {
+    /// Words to match in titles and bodies (prefix match per word)
+    pub query: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct TargetArgs {
+    /// A note: its vault-relative path, exact title, or filename stem
+    pub target: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CreateArgs {
+    pub title: String,
+    /// Folder to create in (default "notes")
+    pub dir: Option<String>,
+    /// Frontmatter `type` (default from vault settings)
+    #[serde(rename = "type")]
+    pub note_type: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Seed from templates/<name>.md
+    pub template: Option<String>,
+    /// Markdown body
+    pub body: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct WriteArgs {
+    /// A note: path, title, or filename stem
+    pub target: String,
+    /// New Markdown body (frontmatter is kept)
+    pub body: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SetArgs {
+    /// A note: path, title, or filename stem
+    pub target: String,
+    /// Frontmatter keys to merge; a null value removes the key
+    pub properties: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct QueryArgs {
+    /// Collection name (the folder under collections/)
+    pub collection: String,
+    /// e.g. "status == active and priority > 2"
+    pub filter: Option<String>,
+    /// Fields to sort by; append " desc" for descending
+    #[serde(default)]
+    pub sort: Vec<String>,
+    /// Columns to include (default: all)
+    pub columns: Option<Vec<String>>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SchemaArgs {
+    /// Collection name or note type
+    pub key: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ProposeArgs {
+    /// Short human name, e.g. "Summarise week 36" → branch agent/summarise-week-36
+    pub name: String,
+    /// Commit message (default: the name)
+    pub message: Option<String>,
+    /// Vault-relative paths to include (files you changed or created)
+    #[serde(default)]
+    pub paths: Vec<String>,
+    /// Include every change in the working tree instead of listing paths
+    #[serde(default)]
+    pub all: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ProposalArgs {
+    /// Proposal name — "agent/x" or just "x"
+    pub name: String,
+}
+
+// ── Tools ────────────────────────────────────────────────────────────────────
+
+#[tool_router]
+impl CortexMcp {
+    pub fn new(vault: Vault) -> Self {
+        Self { vault: Arc::new(vault) }
+    }
+
+    #[tool(description = "List notes, newest first. Optionally filter by folder, type, or tag.")]
+    fn list_notes(&self, Parameters(a): Parameters<ListArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.list(a.dir.as_deref(), a.note_type.as_deref(), a.tag.as_deref()))
+    }
+
+    #[tool(description = "Full-text search over note titles and bodies.")]
+    fn search(&self, Parameters(a): Parameters<SearchArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.search(&a.query).map_err(err)?)
+    }
+
+    #[tool(description = "Read a note: its path, frontmatter (properties), and Markdown body.")]
+    fn read_note(&self, Parameters(a): Parameters<TargetArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.read(&a.target).map_err(err)?)
+    }
+
+    #[tool(description = "Create a note. Returns the note, including the path chosen for it.")]
+    fn create_note(&self, Parameters(a): Parameters<CreateArgs>) -> Result<CallToolResult, McpError> {
+        let note = self.vault.create(NewNote {
+            title: a.title, dir: a.dir, note_type: a.note_type, tags: a.tags, template: a.template, body: a.body,
+        }).map_err(err)?;
+        json(&note)
+    }
+
+    #[tool(description = "Replace a note's Markdown body, keeping its frontmatter.")]
+    fn write_note(&self, Parameters(a): Parameters<WriteArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.write_body(&a.target, &a.body).map_err(err)?)
+    }
+
+    #[tool(description = "Merge properties into a note's frontmatter (typed JSON values; null removes a key).")]
+    fn set_properties(&self, Parameters(a): Parameters<SetArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.set_properties(&a.target, a.properties).map_err(err)?)
+    }
+
+    #[tool(description = "Outgoing [[wiki links]] of a note, each resolved to a path where one exists.")]
+    fn links(&self, Parameters(a): Parameters<TargetArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.links(&a.target).map_err(err)?)
+    }
+
+    #[tool(description = "Notes that link to this one.")]
+    fn backlinks(&self, Parameters(a): Parameters<TargetArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.backlinks(&a.target).map_err(err)?)
+    }
+
+    #[tool(description = "List collections (databases). Each is a folder of row notes under collections/.")]
+    fn list_collections(&self) -> Result<CallToolResult, McpError> {
+        json(&self.vault.collections())
+    }
+
+    #[tool(description = "Query a collection like the app's table view: filter, sort, columns, limit. Returns columns and rows.")]
+    fn query_collection(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.view(&a.collection, a.filter.as_deref(), &a.sort, a.columns.as_deref(), a.limit).map_err(err)?)
+    }
+
+    #[tool(description = "The property schema for a collection or note type: typed properties and their options.")]
+    fn get_schema(&self, Parameters(a): Parameters<SchemaArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.schema(&a.key).map_err(err)?)
+    }
+
+    #[tool(description = "Git state: changed files, sync counts, recent commits, pending proposals.")]
+    fn status(&self) -> Result<CallToolResult, McpError> {
+        json(&self.vault.status().map_err(err)?)
+    }
+
+    #[tool(description = "Package your changes as a proposal for the user to review: commits the given paths onto a new agent/<name> branch and restores them in the working tree. Returns the branch name.")]
+    fn propose(&self, Parameters(a): Parameters<ProposeArgs>) -> Result<CallToolResult, McpError> {
+        let branch = self.vault.propose(&a.name, a.message.as_deref(), &a.paths, a.all).map_err(err)?;
+        json(&serde_json::json!({ "branch": branch }))
+    }
+
+    #[tool(description = "List pending proposals (agent/* branches, local or on origin).")]
+    fn list_proposals(&self) -> Result<CallToolResult, McpError> {
+        json(&self.vault.proposals().map_err(err)?)
+    }
+
+    #[tool(description = "The diff a proposal would apply.")]
+    fn proposal_diff(&self, Parameters(a): Parameters<ProposalArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.diff(&a.name).map_err(err)?)
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for CortexMcp {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("cortex", env!("CARGO_PKG_VERSION")))
+            .with_instructions(INSTRUCTIONS.to_string())
+    }
+}
+
+/// Serve over stdio until the client disconnects.
+pub async fn serve(vault: Vault) -> crate::ops::Result<()> {
+    let service = CortexMcp::new(vault).serve(rmcp::transport::stdio()).await?;
+    service.waiting().await?;
+    Ok(())
+}

@@ -4,6 +4,9 @@ dist/
 .env.*
 !.env.example
 
+# Cargo (workspace target dir)
+/target/
+
 # Tauri
 src-tauri/target/
 src-tauri/gen/

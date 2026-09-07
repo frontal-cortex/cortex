@@ -188,9 +188,12 @@ export interface VaultStatus {
 }
 
 export interface AgentBranch {
+  /** Always `agent/<slug>`, even for a proposal that only exists on origin. */
   name: string;
   description: string;
   commit_count: number;
+  /** Exists only on `origin` — pushed by an agent elsewhere; applying creates the local branch. */
+  remote: boolean;
 }
 
 export interface CommitEntry {
@@ -473,6 +476,10 @@ export const commands = {
 
   listAgentBranches: () =>
     invoke<AgentBranch[]>("list_agent_branches"),
+
+  /** The diff a proposal would apply (merge-base → tip). */
+  agentBranchDiff: (branchName: string) =>
+    invoke<CommitDiff>("agent_branch_diff", { branchName }),
 
   applyAgentBranch: (branchName: string) =>
     invoke<void>("apply_agent_branch", { branchName }),

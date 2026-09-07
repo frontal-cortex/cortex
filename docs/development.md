@@ -17,6 +17,10 @@ npm install
 
 # Start dev mode (hot reload for both frontend and Rust)
 npm run tauri dev
+
+# The CLI / MCP server (same core crate)
+cargo run -p cortex-cli -- --vault ../test-vault/cortex-vault ls
+cargo install --path crates/cortex-cli
 ```
 
 The first run compiles the Rust backend (~2 min). Subsequent runs are fast.
@@ -24,7 +28,10 @@ The first run compiles the Rust backend (~2 min). Subsequent runs are fast.
 ## Project structure
 
 ```
-second-brain/
+cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, target/)
+├── crates/
+│   ├── cortex-core/          # The vault model, no UI: notes, index, collections, schema, git, settings
+│   └── cortex-cli/           # `cortex` binary: CLI (main.rs) + MCP server (mcp.rs) over shared ops.rs
 ├── src/                      # React + TypeScript frontend
 │   ├── components/Shell/     # Main UI components
 │   ├── hooks/                # React hooks (useVault, useNotes)
@@ -34,14 +41,10 @@ second-brain/
 │   └── styles/tokens.css     # Design tokens (CSS variables)
 ├── src-tauri/                # Rust backend
 │   └── src/
-│       ├── commands/         # Tauri IPC command handlers
-│       │   ├── vault.rs      # Vault open/info, DbState
+│       ├── commands/         # Tauri IPC command handlers (thin wrappers over cortex-core)
+│       │   ├── vault.rs      # Vault open/info, DbState, VAULT.md + AGENTS.md
 │       │   ├── notes.rs      # CRUD + search + backlinks + folders
-│       │   ├── git.rs        # Status, commit, sync, log, agent branches
-│       │   └── indexer.rs    # SQLite index population
-│       ├── db.rs             # SQLite schema + queries
-│       ├── git.rs            # libgit2 operations
-│       ├── note.rs           # Markdown + frontmatter parse/serialize
+│       │   └── git.rs        # Status, commit, sync, log, proposals (agent branches)
 │       ├── watcher.rs        # Filesystem watcher: external edits → index + `vault://changed` event
 │       ├── theme.rs          # Follows a palette file (Omarchy colors.toml) → `theme://changed` event
 │       └── lib.rs            # App entry, command registration
@@ -103,14 +106,17 @@ Output is in `src-tauri/target/release/bundle/`.
 # TypeScript type check
 npx tsc --noEmit
 
-# Rust tests
-cd src-tauri && cargo test
+# Rust tests (all crates)
+cargo test --workspace
 ```
 
-## Adding a new Tauri command
+## Adding a feature
 
-1. Write the handler function in the appropriate `src-tauri/src/commands/*.rs` file
-2. Add `#[tauri::command]` to the function
-3. Register it in `src-tauri/src/lib.rs` in `tauri::generate_handler![...]`
-4. Add a typed wrapper in `src/lib/commands.ts`
-5. Use it via the `commands` object in your React component or hook
+Logic goes in `crates/cortex-core` (pure functions over a vault root), so the
+app, CLI and MCP server all get it:
+
+1. Implement it in the right core module (`note`, `data`, `git`, …) with a test
+2. App: a `#[tauri::command]` wrapper in `src-tauri/src/commands/*.rs`, registered in
+   `src-tauri/src/lib.rs`, plus a typed wrapper in `src/lib/commands.ts`
+3. CLI / MCP: an op in `crates/cortex-cli/src/ops.rs`, then a `Cmd` arm in `main.rs`
+   and a `#[tool]` in `mcp.rs`

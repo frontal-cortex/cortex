@@ -1,0 +1,24 @@
+[package]
+name = "cortex-core"
+description = "The Cortex vault model: markdown notes, frontmatter, the SQLite index, collections, and git — shared by the app and the CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+
+# Git operations
+git2 = { version = "0.19", default-features = false, features = ["vendored-openssl"] }
+
+# SQLite for the local index
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# File traversal
+walkdir = "2"
+
+# Markdown → HTML for exports
+pulldown-cmark = "0.12"

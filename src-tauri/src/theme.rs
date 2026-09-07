@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::error::{AppError, Result};
+use cortex_core::error::{AppError, Result};
 
 pub const CHANGED_EVENT: &str = "theme://changed";
 

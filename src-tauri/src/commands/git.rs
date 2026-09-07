@@ -1,9 +1,9 @@
 use tauri::State;
 
 use crate::commands::vault::{DbState, VaultState};
-use crate::error::{AppError, Result};
-use crate::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
-use crate::note::{self, Note};
+use cortex_core::error::{AppError, Result};
+use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
+use cortex_core::note::{self, Note};
 
 fn open_repo(state: &State<'_, VaultState>) -> Result<git2::Repository> {
     let guard = state.0.lock().unwrap();
@@ -54,7 +54,7 @@ pub fn git_resolve_conflict(
     git::resolve_conflict(&root, &file, &side)?;
     // The resolved file changed on disk — keep the search index in step.
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &root.join(&file), db);
+        let _ = cortex_core::index::index_file(&root, &root.join(&file), db);
     }
     Ok(())
 }
@@ -121,7 +121,7 @@ pub fn restore_note(
     std::fs::write(&abs, &content)?;
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+        let _ = cortex_core::index::index_file(&root, &abs, db);
     }
 
     note::parse_note(&path, &content)
@@ -131,6 +131,13 @@ pub fn restore_note(
 pub fn list_agent_branches(state: State<'_, VaultState>) -> Result<Vec<AgentBranch>> {
     let repo = open_repo(&state)?;
     git::list_agent_branches(&repo)
+}
+
+/// What a proposal would change — the diff the user reviews before applying.
+#[tauri::command]
+pub fn agent_branch_diff(branch_name: String, state: State<'_, VaultState>) -> Result<CommitDiff> {
+    let repo = open_repo(&state)?;
+    git::get_branch_diff(&repo, &branch_name)
 }
 
 #[tauri::command]

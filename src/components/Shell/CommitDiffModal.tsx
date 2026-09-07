@@ -1,22 +1,28 @@
 import { useEffect, useState } from "react";
-import { commands, CommitDiff } from "../../lib/commands";
+import { commands, CommitDiff, AgentBranch } from "../../lib/commands";
 import { CloseIcon } from "./icons";
 import styles from "./CommitDiffModal.module.css";
 
-interface Props {
-  hash: string;
-  onClose: () => void;
-}
+/** Shows one commit's diff — or, given a proposal, what applying it would
+ *  change, with Apply / Discard right there so the diff is always seen first. */
+type Props =
+  | { hash: string; branch?: undefined; onClose: () => void; onApply?: undefined; onDiscard?: undefined }
+  | { hash?: undefined; branch: AgentBranch; onClose: () => void; onApply: () => void; onDiscard: () => void };
 
-export function CommitDiffModal({ hash, onClose }: Props) {
+export function CommitDiffModal({ hash, branch, onClose, onApply, onDiscard }: Props) {
   const [diff, setDiff] = useState<CommitDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    commands.gitDiff(hash)
-      .then(setDiff)
-      .catch((e) => setError(String(e)));
-  }, [hash]);
+    const load = branch ? commands.agentBranchDiff(branch.name) : commands.gitDiff(hash!);
+    load.then(setDiff).catch((e) => setError(String(e)));
+  }, [hash, branch]);
+
+  const act = async (fn: () => void) => {
+    setBusy(true);
+    try { await fn(); onClose(); } finally { setBusy(false); }
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -29,11 +35,16 @@ export function CommitDiffModal({ hash, onClose }: Props) {
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <div className={styles.headerMeta}>
-            <code className={styles.hash}>{hash}</code>
+            {branch
+              ? <span className={styles.proposalTag}>Proposal{branch.remote ? " · on origin" : ""}</span>
+              : <code className={styles.hash}>{hash}</code>}
             {diff && (
               <>
-                <span className={styles.message}>{diff.message}</span>
-                <span className={styles.author}>{diff.author} · {relTime(diff.timestamp)}</span>
+                <span className={styles.message}>{branch ? branch.description : diff.message}</span>
+                <span className={styles.author}>
+                  {diff.author} · {relTime(diff.timestamp)}
+                  {branch && ` · ${branch.commit_count} commit${branch.commit_count === 1 ? "" : "s"}`}
+                </span>
               </>
             )}
           </div>
@@ -46,9 +57,18 @@ export function CommitDiffModal({ hash, onClose }: Props) {
           {diff && (
             diff.patch
               ? <DiffView patch={diff.patch} />
-              : <p className={styles.empty}>No changes in this commit.</p>
+              : <p className={styles.empty}>{branch ? "This proposal changes nothing beyond the current branch." : "No changes in this commit."}</p>
           )}
         </div>
+
+        {branch && (
+          <div className={styles.footer}>
+            <button className={styles.discardBtn} onClick={() => act(onDiscard)} disabled={busy}>Discard</button>
+            <button className={styles.applyBtn} onClick={() => act(onApply)} disabled={busy || !diff}>
+              {busy ? "Applying…" : "Apply to vault"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::vault::DbState;
-use crate::error::{AppError, Result};
+use cortex_core::error::{AppError, Result};
 
 /// Event name the frontend listens on.
 pub const CHANGED_EVENT: &str = "vault://changed";
@@ -197,7 +197,7 @@ fn classify(app: &AppHandle, root: &Path, paths: HashSet<PathBuf>) -> VaultChang
                 continue; // echo of write_note / create_note — already indexed
             }
             if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-                let _ = crate::commands::indexer::index_file(root, &abs, db);
+                let _ = cortex_core::index::index_file(root, &abs, db);
             }
             out.notes.push(rel);
         } else {

@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 
-use crate::db::Db;
-use crate::error::{AppError, Result};
-use crate::git;
+use cortex_core::db::Db;
+use cortex_core::error::{AppError, Result};
+use cortex_core::git;
 
 const VAULT_MD: &str = r#"# Vault
 
@@ -203,23 +203,28 @@ pub fn open_vault(
     // `.trash/` (soft-deletes) are intentionally committed.
     ensure_gitignored(&vault_path, ".brain/")?;
 
-    // Write VAULT.md only when opening for the first time
+    // Write VAULT.md (for people) and AGENTS.md (for agents) only when
+    // opening for the first time — both are the user's to edit afterwards.
     let vault_doc = vault_path.join("VAULT.md");
     if !vault_doc.exists() {
         std::fs::write(&vault_doc, VAULT_MD)?;
+    }
+    let agents_doc = vault_path.join("AGENTS.md");
+    if !agents_doc.exists() {
+        std::fs::write(&agents_doc, cortex_core::vault::AGENTS_MD)?;
     }
 
     // Best-effort prune of expired trash, using the vault's retention setting.
     let retention = std::fs::read_to_string(vault_path.join(".cortex/settings.yaml"))
         .ok()
-        .and_then(|c| serde_yaml::from_str::<crate::commands::config::Settings>(&c).ok())
+        .and_then(|c| serde_yaml::from_str::<cortex_core::settings::Settings>(&c).ok())
         .unwrap_or_default()
         .trash_retention_days;
     let _ = crate::commands::trash::prune_expired(&vault_path, retention);
 
     // Open / migrate the SQLite index, then re-index all notes
     let db = Db::open(&vault_path)?;
-    crate::commands::indexer::index_vault(&vault_path, &db)?;
+    cortex_core::index::index_vault(&vault_path, &db)?;
     *db_state.0.lock().unwrap() = Some(db);
 
     let name = vault_path
