@@ -24,7 +24,8 @@ export type ShortcutId =
   | "toggle-terminal"
   | "monk-mode"
   | "focus-sidebar"
-  | "focus-editor";
+  | "focus-editor"
+  | "toggle-properties";
 
 export interface Shortcut {
   /** `mod` = ⌘ on macOS, Ctrl elsewhere. Lower-case, `+`-joined, key last. */
@@ -47,6 +48,7 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "monk-mode":       { keys: "mod+shift+m", label: "Monk mode" },
   "focus-sidebar":   { keys: "mod+e",       label: "Focus sidebar" },
   "focus-editor":    { keys: "mod+shift+e", label: "Focus editor" },
+  "toggle-properties": { keys: "mod+shift+i", label: "Toggle properties" },
 };
 
 // ── Overrides from .cortex/settings.yaml (`keybindings: { id: keys }`) ───────

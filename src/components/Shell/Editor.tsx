@@ -102,6 +102,8 @@ interface Props {
 export interface EditorHandle {
   focusTitle(): void;
   focusBody(): void;
+  /** Expand or collapse the note's property panel under the title. */
+  toggleProperties(): void;
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
@@ -115,6 +117,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
   useImperativeHandle(ref, () => ({
     focusTitle: () => inner.current?.focusTitle(),
     focusBody: () => inner.current?.focusBody(),
+    toggleProperties: () => inner.current?.toggleProperties(),
   }), []);
 
   if (!note) {
@@ -217,6 +220,8 @@ function personItems(members: Member[], query: string): MentionItem[] {
       display: { key: `person:${m.name}`, title: m.name, badge: "Person" },
     }));
 }
+
+const PROPS_EXPANDED_KEY = "cortex.propertiesExpanded";
 
 function NoteEditor({
   note, saving, allNotes, collab, monk, handleRef, onSave, onDelete, onNavigate, onShowHistory,
@@ -321,6 +326,19 @@ function NoteEditor({
   const editorRef = useRef<ReturnType<typeof useCreateBlockNote> | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // The property panel is collapsed to one quiet line by default; the choice
+  // persists across notes and launches (it is a way of reading, not a per-note
+  // fact, so it lives in localStorage rather than frontmatter).
+  const [propsExpanded, setPropsExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem(PROPS_EXPANDED_KEY) === "1"; } catch { return false; }
+  });
+  const toggleProperties = useCallback(() => {
+    setPropsExpanded((v) => {
+      try { localStorage.setItem(PROPS_EXPANDED_KEY, v ? "0" : "1"); } catch { /* fine */ }
+      return !v;
+    });
+  }, []);
+
   // Register this note's focus targets with the shell (see EditorHandle).
   useEffect(() => {
     handleRef.current = {
@@ -333,9 +351,10 @@ function NoteEditor({
       focusBody() {
         editorRef.current?.focus();
       },
+      toggleProperties,
     };
     return () => { handleRef.current = null; };
-  }, [handleRef]);
+  }, [handleRef, toggleProperties]);
 
   const imagePasteDropExtension = useMemo(() => Extension.create({
     name: "imagePasteDrop",
@@ -585,6 +604,10 @@ function NoteEditor({
     <div className={styles.root}>
       <div className={styles.docWrap}>
         <div className={styles.docInner}>
+          {/* Everything above the body. Its affordances — add cover, history,
+              delete, add a property — show only while the pointer (or focus)
+              is here, so a note at rest is a title, one quiet line, and prose. */}
+          <div className={styles.topZone}>
           {/* Cover image */}
           <CoverImage
             cover={typeof note.frontmatter["cover"] === "string" ? note.frontmatter["cover"] : null}
@@ -638,11 +661,17 @@ function NoteEditor({
             </div>
           )}
 
-          {!monk && lastEdit && lastEdit.author && (
-            <div className={styles.lastEdit}>Edited by {lastEdit.author} · {relativeTime(lastEdit.timestamp)}</div>
+          {!monk && (
+            <PropertiesPanel
+              frontmatter={note.frontmatter}
+              notePath={note.path}
+              lastEdit={lastEdit}
+              expanded={propsExpanded}
+              onToggle={toggleProperties}
+              onChange={handleFrontmatterChange}
+            />
           )}
-
-          {!monk && <PropertiesPanel frontmatter={note.frontmatter} notePath={note.path} onChange={handleFrontmatterChange} />}
+          </div>
 
           <div className={styles.editorWrap}>
             <BlockNoteView editor={editor} slashMenu={false} formattingToolbar={false} theme={colorScheme}>
@@ -744,15 +773,6 @@ function ConvertToDatabaseButton({ editor, baseName }: { editor: any; baseName: 
       onClick={() => convertSelectionToDatabase(editor, baseName)}
     />
   );
-}
-
-function relativeTime(secs: number): string {
-  const diff = Date.now() / 1000 - secs;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(secs * 1000).toLocaleDateString();
 }
 
 // ── Cover image banner ────────────────────────────────────────────────────────

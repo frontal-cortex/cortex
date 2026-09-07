@@ -59,7 +59,8 @@
   transition: width 0.12s ease, margin-right 0.12s ease;
 }
 
-.header:hover .iconBtnGroupEmpty {
+.topZone:hover .iconBtnGroupEmpty,
+.topZone:focus-within .iconBtnGroupEmpty {
   width: 34px;
   margin-right: var(--space-2);
 }
@@ -82,7 +83,8 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
-.header:hover .iconBtnEmpty { opacity: 1; }
+.topZone:hover .iconBtnEmpty,
+.topZone:focus-within .iconBtnEmpty { opacity: 1; }
 
 .iconEmoji {
   font-size: 28px;
@@ -132,10 +134,16 @@
 }
 
 /* ── Header (icon left of title + actions) ─────────────────────── */
+/* The cover slot, title row, and property line — one hover zone. */
+.topZone {
+  display: flex;
+  flex-direction: column;
+}
+
 .header {
   display: flex;
   align-items: flex-start;
-  margin-bottom: var(--space-2);
+  margin-bottom: 2px;
   /* align with bn-editor's padding-inline: 54px */
   padding-left: 54px;
   padding-right: 54px;
@@ -143,7 +151,7 @@
 
 .titleInput {
   flex: 1;
-  font-size: 28px;
+  font-size: 34px;
   font-weight: 700;
   color: var(--text-primary);
   background: none;
@@ -187,7 +195,8 @@
   transition: opacity 0.1s, color 0.1s, background 0.1s;
 }
 
-.root:hover .deleteBtn {
+.topZone:hover .deleteBtn,
+.topZone:focus-within .deleteBtn {
   opacity: 1;
 }
 
@@ -232,7 +241,8 @@
   transition: opacity 0.15s;
 }
 
-.docInner:hover .coverAddBtn { opacity: 1; }
+.topZone:hover .coverAddBtn,
+.topZone:focus-within .coverAddBtn { opacity: 1; }
 .coverAddBtn:hover { background: var(--bg-hover); color: var(--text-secondary); }
 
 .cover {
@@ -281,6 +291,12 @@
   min-height: 0;
 }
 
+/* Body headings sit under the page title, so they scale from it rather than
+   above it: BlockNote's defaults (h1 = 3em) would out-shout a 34px title. */
+.editorWrap :global([data-content-type="heading"]) { --level: 1.75em; padding-top: 14px; }
+.editorWrap :global([data-content-type="heading"][data-level="2"]) { --level: 1.4em; }
+.editorWrap :global([data-content-type="heading"][data-level="3"]) { --level: 1.15em; }
+
 /* Block drag-and-drop drop indicator */
 :global(.ProseMirror-dropcursor) {
   border-color: var(--accent) !important;
@@ -314,13 +330,6 @@
 }
 
 /* Last-edited-by line (collaboration) */
-.lastEdit {
-  padding: 0 54px;
-  margin-bottom: var(--space-2);
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-
 /* Presence chips — teammates currently in this note */
 .peerChip {
   display: inline-flex;
