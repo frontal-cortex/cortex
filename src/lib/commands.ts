@@ -227,6 +227,21 @@ export interface Settings {
   prose_font: string;
   /** Page tilt: "" upright, degrees ("4", "8"), or "italic". */
   prose_slant: string;
+  /** Shortcut overrides: shortcut id → keys (e.g. "mod+shift+b"). See lib/keymap.ts. */
+  keybindings: Record<string, string>;
+  /** Command run inside the terminal pane when it opens (an agent CLI). Empty = plain shell. */
+  terminal_command: string;
+}
+
+/** An agent CLI the terminal pane can open into (see cortex_core::agents). */
+export interface AgentCli {
+  id: string;
+  label: string;
+  /** What to run — the value `terminal_command` takes. */
+  command: string;
+  found: boolean;
+  /** Absolute path of the executable, when found. */
+  path: string | null;
 }
 
 /** A desktop palette: colour name → hex, plus which side of light/dark it is. */
@@ -429,6 +444,10 @@ export const commands = {
   /** The desktop's own palette file, if this machine has one we recognise. */
   detectDesktopTheme: () =>
     invoke<string | null>("detect_desktop_theme"),
+
+  /** Known agent CLIs (claude, hermes, …) and whether each is on $PATH. */
+  detectAgents: () =>
+    invoke<AgentCli[]>("detect_agents"),
 
   listTrash: () =>
     invoke<TrashEntry[]>("list_trash"),

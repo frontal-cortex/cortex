@@ -1,40 +1,123 @@
-.dirRow {
+/* ── Row ────────────────────────────────────────────────────────────────────
+   Every focusable line in the sidebar — folder, note, database, action —
+   shares this box, so the tree has one rhythm: 28px tall, one icon slot, one
+   indent step per level. `--depth` is set inline; level 0 sits one step in
+   from the section header so children read as belonging to it. */
+.row {
+  --indent: 16px;
   display: flex;
   align-items: center;
-  padding-right: 4px;
-  border-radius: var(--radius-sm);
+  gap: 6px;
   min-height: 28px;
   margin: 0 var(--space-1);
-}
-
-.dirRow:hover {
-  background: var(--bg-hover);
-}
-
-.dirRow:hover .dirActions {
-  opacity: 1;
-}
-
-.dirRow:hover .count {
-  opacity: 0;
-}
-
-.dirToggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: 1;
-  background: none;
-  border: none;
+  padding: 0 var(--space-2) 0 calc(var(--space-2) + (var(--depth, 0) + 1) * var(--indent));
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  text-align: left;
+  user-select: none;
+  outline: none;
+  transition: background 0.1s;
+}
+
+.row:hover { background: var(--bg-hover); }
+.rowSelected { background: var(--bg-active); }
+
+/* Keyboard focus is a ring, distinct from the selected note's fill, so you can
+   see where you are while a different note stays open in the editor. */
+.row:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.row:hover .rowActions,
+.row:focus-within .rowActions { opacity: 1; }
+.row:hover .count,
+.row:focus-within .count { opacity: 0; }
+.row:hover .starBtn,
+.row:focus-visible .starBtn { opacity: 1; }
+
+.rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.rowSelected .rowIcon { color: var(--text-secondary); }
+.toneAccent { color: var(--accent); }
+.toneAgent  { color: var(--git-agent); }
+
+.emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.label {
+  font-size: var(--text-sm);
   color: var(--text-secondary);
-  padding: 4px 4px 4px 0;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dirActions {
+.rowSelected .label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.hint {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Folder row ─────────────────────────────────────────────────────────── */
+/* The chevron is the only thing left of the icon, pulled back one indent so
+   it hangs in the gutter — and gets its own hover so it reads as a control. */
+.dirRow {
+  padding-left: calc(var(--space-2) + var(--depth, 0) * var(--indent));
+}
+
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  transition: transform 0.15s, color 0.1s;
+}
+
+.chevronOpen { transform: rotate(90deg); }
+.dirRow:hover .chevron { color: var(--text-secondary); }
+
+.dirName {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.1s;
+}
+
+.rowActions {
   display: flex;
   align-items: center;
   gap: 1px;
@@ -43,7 +126,7 @@
   flex-shrink: 0;
 }
 
-.dirActionBtn {
+.rowActionBtn {
   background: none;
   border: none;
   padding: 3px;
@@ -55,33 +138,40 @@
   transition: color 0.1s, background 0.1s;
 }
 
-.dirActionBtn:hover {
+.rowActionBtn:hover {
   color: var(--text-secondary);
   background: var(--bg-active);
 }
 
-.dirActionBtnDanger:hover {
-  color: var(--danger) !important;
-  background: color-mix(in srgb, var(--danger) 10%, transparent) !important;
+.rowActionBtnDanger:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .dirRowDropTarget {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--accent);
   background: var(--accent-light);
-  border-radius: var(--radius-sm);
 }
 
+/* ── Action row ─────────────────────────────────────────────────────────── */
+/* Empty states and first-run steps: one quiet line, verb in accent. */
+.actionRow { min-height: 26px; }
+.actionRow .label { font-size: var(--text-xs); }
+.actionText { color: var(--text-tertiary); }
+.actionVerb { color: var(--accent); }
+.actionRow:hover .actionVerb,
+.actionRow:focus-visible .actionVerb { text-decoration: underline; }
+
+/* ── New folder input ───────────────────────────────────────────────────── */
 .newFolderRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  margin: 0 var(--space-1);
+  cursor: default;
+  padding-left: calc(var(--space-2) + var(--depth, 0) * var(--indent));
 }
+.newFolderRow:hover { background: none; }
 
 .newFolderInput {
   flex: 1;
+  min-width: 0;
   font-size: var(--text-xs);
   color: var(--text-primary);
   background: var(--bg-panel);
@@ -92,89 +182,9 @@
   font-family: var(--font-sans);
 }
 
-.newFolderInput::placeholder {
-  color: var(--text-tertiary);
-}
+.newFolderInput::placeholder { color: var(--text-tertiary); }
 
-.arrow {
-  font-size: 8px;
-  color: var(--text-tertiary);
-  transition: transform 0.15s;
-  flex-shrink: 0;
-  display: inline-block;
-}
-
-.arrowOpen {
-  transform: rotate(90deg);
-}
-
-.dirName {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.count {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-  padding-right: 2px;
-  transition: opacity 0.1s;
-}
-
-.fileRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: calc(100% - 8px);
-  margin: 0 var(--space-1);
-  padding: 4px 8px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  border-radius: var(--radius-sm);
-  min-height: 28px;
-  user-select: none;
-  transition: background 0.1s;
-}
-
-.fileRow:hover {
-  background: var(--bg-hover);
-}
-
-.fileRowSelected {
-  background: var(--bg-active);
-}
-
-.fileRowSelected .fileName {
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.fileName {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fileIcon {
-  font-size: 13px;
-  line-height: 1;
-  flex-shrink: 0;
-  width: 14px;
-  text-align: center;
-}
-
+/* ── Favorite star ──────────────────────────────────────────────────────── */
 .starBtn {
   display: inline-flex;
   align-items: center;
@@ -190,31 +200,11 @@
   transition: opacity 0.1s, color 0.1s;
 }
 
-.fileRow:hover .starBtn,
-.starBtnActive {
-  opacity: 1 !important;
-}
+.starBtnActive { opacity: 1; color: var(--git-dirty); }
+.starBtn:hover { color: var(--git-dirty); }
 
-.starBtnActive {
-  color: var(--git-dirty) !important;
-}
-
-.starBtn:hover { color: var(--git-dirty) !important; }
-
-.noteType {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  background: var(--bg-active);
-  padding: 1px 5px;
-  border-radius: 20px;
-  flex-shrink: 0;
-  font-weight: 500;
-}
-
-/* Right-click context menu */
-.fileRowContext {
-  background: var(--bg-hover);
-}
+/* ── Context menu ───────────────────────────────────────────────────────── */
+.rowContext { background: var(--bg-hover); }
 
 .ctxMenu {
   position: fixed;
@@ -223,7 +213,7 @@
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--text-primary) 22%, transparent);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -231,7 +221,9 @@
 }
 
 .ctxItem {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
   border: none;
@@ -241,14 +233,16 @@
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  font-family: var(--font-sans);
 }
 
-.ctxItem:hover {
-  background: var(--bg-hover);
-}
+.ctxItem:hover { background: var(--bg-hover); }
+.ctxItemDanger { color: var(--danger); }
 
-.ctxItemDanger {
-  color: var(--danger);
+.ctxHint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-tertiary);
 }
 
 .ctxSep {

@@ -31,6 +31,7 @@ interface Props {
   onToggleSidebar: () => void;
   onToggleTerminal: () => void;
   onToggleMonk: () => void;
+  onFocusSidebar: () => void;
   hasRemote: boolean;
 }
 
@@ -40,7 +41,7 @@ export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
-  onToggleSidebar, onToggleTerminal, onToggleMonk, hasRemote,
+  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -120,6 +121,13 @@ export function QuickSwitcher({
         run: () => { onToggleSidebar(); onClose(); },
       },
       {
+        id: "focus-sidebar",
+        label: "Focus sidebar",
+        description: `${shortcutFor("focus-sidebar")} · then arrows / j k, Enter to open, n for a new note`,
+        icon: <PanelLeftIcon size={14} />,
+        run: () => { onFocusSidebar(); onClose(); },
+      },
+      {
         id: "toggle-terminal",
         label: "Toggle terminal",
         description: shortcutFor("toggle-terminal"),
@@ -156,7 +164,7 @@ export function QuickSwitcher({
     return [...base, ...tplActions];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
-      onToggleSidebar, onToggleTerminal, onToggleMonk, onClose]);
+      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>

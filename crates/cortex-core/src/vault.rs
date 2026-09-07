@@ -38,10 +38,33 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f]
     cortex schema [key]                      typed properties      cortex status
+    cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)
 
 Add `--json` to any command for machine output. `cortex mcp` serves the same
 operations over the Model Context Protocol (stdio).
+
+## Settings
+
+`.cortex/settings.yaml` is the one config file; every key is always present
+and the app reloads it live when it changes. Edit it with
+`cortex settings set key=value…` (typed per key; unknown keys are rejected):
+
+    auto_commit           true | false — commit after every note save (default false)
+    default_note_type     frontmatter `type` for new notes (default note)
+    journal_template      template under templates/ for daily notes (default daily.md)
+    theme                 light | dark | system (default system)
+    trash_retention_days  days before trashed notes are pruned, 0 = never (default 30)
+    auto_sync_minutes     minutes between automatic git syncs, 0 = off (default 0)
+    collab_url            Yjs websocket relay for co-editing, empty = off
+    theme_file            palette file to follow (Omarchy colors.toml shape), empty = use `theme`
+    prose_font            page typeface preset (ysabeau, quattro, duo, recursive, alegreya, fraunces, crimson, serif, system, mono) or any font-family
+    prose_slant           page tilt: empty (upright), degrees such as 4 or 8, or italic
+    keybindings           shortcut overrides, id → keys; `cortex settings set keybindings.toggle-sidebar=mod+shift+b`
+    terminal_command      command the app's terminal pane opens with (an agent CLI such as claude); empty = shell
+
+`cortex settings describe` prints this table with defaults; `cortex agents`
+lists which agent CLIs (claude, hermes, openclaw, codex, …) are installed.
 
 ## Proposing changes
 

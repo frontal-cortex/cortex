@@ -2,11 +2,13 @@
 //! server (which returns them as JSON). Every op returns data, never output,
 //! and goes through cortex-core, so the semantics are the app's own.
 
+use cortex_core::agents::{self, AgentCli};
 use cortex_core::data::{self, Table};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::schema::TypeSchema;
+use cortex_core::settings::Settings;
 use cortex_core::{index, schema, settings, vault};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -318,6 +320,54 @@ impl Vault {
             .unwrap_or_default();
         keys.sort();
         keys
+    }
+
+    // ── Settings & agents ───────────────────────────────────────────────────
+
+    /// The vault's settings, defaults filled in for any key the file omits.
+    pub fn settings(&self) -> Result<Settings> {
+        Ok(settings::load(&self.root)?)
+    }
+
+    /// One setting by key (`keybindings.<id>` reaches into the map).
+    pub fn setting(&self, key: &str) -> Result<serde_yaml::Value> {
+        Ok(settings::get_field(&self.settings()?, key)?)
+    }
+
+    /// Apply `key=value` edits in order and write the file back. Values are
+    /// typed per field (see `settings::set_field`); every key is validated
+    /// before anything is written, so a typo leaves the file untouched.
+    pub fn update_settings<'a>(&self, edits: impl IntoIterator<Item = (&'a str, &'a str)>) -> Result<Settings> {
+        let mut current = self.settings()?;
+        for (key, raw) in edits {
+            settings::set_field(&mut current, key, raw)?;
+        }
+        settings::save(&self.root, &current)?;
+        Ok(current)
+    }
+
+    /// Merge JSON properties (the MCP shape) into the settings. Strings are
+    /// passed as-is; anything else is re-serialised, which set_field reads as
+    /// YAML — JSON being valid YAML, `{"toggle-sidebar": "mod+shift+b"}` and
+    /// `true` land in the right fields.
+    pub fn merge_settings(&self, props: BTreeMap<String, serde_json::Value>) -> Result<Settings> {
+        let edits: Vec<(String, String)> = props
+            .into_iter()
+            .map(|(k, v)| {
+                let raw = match v {
+                    serde_json::Value::String(s) => s,
+                    serde_json::Value::Null => String::new(),
+                    other => other.to_string(),
+                };
+                (k, raw)
+            })
+            .collect();
+        self.update_settings(edits.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+    }
+
+    /// Known agent CLIs and whether each is installed on this machine.
+    pub fn agents(&self) -> Vec<AgentCli> {
+        agents::detect()
     }
 
     // ── Git & proposals ─────────────────────────────────────────────────────

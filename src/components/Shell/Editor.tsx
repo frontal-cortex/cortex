@@ -1,4 +1,5 @@
 import "@blocknote/mantine/style.css";
+import { forwardRef, useImperativeHandle, type MutableRefObject } from "react";
 import {
   useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems,
   FormattingToolbar, FormattingToolbarController, getFormattingToolbarItems, useComponentsContext,
@@ -96,12 +97,25 @@ interface Props {
   onApplyNote: (note: Note) => void;
 }
 
-export function Editor({
+/** What the shell can do to the editor's focus. Keyboard-first: a new note
+ *  lands you in its title, opening an existing one lands you in its body. */
+export interface EditorHandle {
+  focusTitle(): void;
+  focusBody(): void;
+}
+
+export const Editor = forwardRef<EditorHandle, Props>(function Editor({
   note, saving, allNotes, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote,
-}: Props) {
+}, ref) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
   const [rev, setRev] = useState(0);
+  // NoteEditor remounts per note; it re-registers itself here each time.
+  const inner = useRef<EditorHandle | null>(null);
+  useImperativeHandle(ref, () => ({
+    focusTitle: () => inner.current?.focusTitle(),
+    focusBody: () => inner.current?.focusBody(),
+  }), []);
 
   if (!note) {
     return (
@@ -126,6 +140,7 @@ export function Editor({
         allNotes={allNotes}
         collab={collab}
         monk={monk}
+        handleRef={inner}
         onSave={onSave}
         onDelete={onDelete}
         onNavigate={onNavigate}
@@ -141,7 +156,7 @@ export function Editor({
       )}
     </>
   );
-}
+});
 
 interface SuggestionState {
   query: string;
@@ -204,13 +219,14 @@ function personItems(members: Member[], query: string): MentionItem[] {
 }
 
 function NoteEditor({
-  note, saving, allNotes, collab, monk, onSave, onDelete, onNavigate, onShowHistory,
+  note, saving, allNotes, collab, monk, handleRef, onSave, onDelete, onNavigate, onShowHistory,
 }: {
   note: Note;
   saving: boolean;
   allNotes: NoteEntry[];
   collab: CollabConfig | null;
   monk: boolean;
+  handleRef: MutableRefObject<EditorHandle | null>;
   onSave: (n: Note) => void;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
@@ -303,6 +319,23 @@ function NoteEditor({
 
   // Ref so the paste/drop plugin can access the editor after creation
   const editorRef = useRef<ReturnType<typeof useCreateBlockNote> | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Register this note's focus targets with the shell (see EditorHandle).
+  useEffect(() => {
+    handleRef.current = {
+      focusTitle() {
+        const el = titleInputRef.current;
+        if (!el) return;
+        el.focus();
+        el.select();
+      },
+      focusBody() {
+        editorRef.current?.focus();
+      },
+    };
+    return () => { handleRef.current = null; };
+  }, [handleRef]);
 
   const imagePasteDropExtension = useMemo(() => Extension.create({
     name: "imagePasteDrop",
@@ -573,6 +606,7 @@ function NoteEditor({
             />
             <input
               key={note.path}
+              ref={titleInputRef}
               className={styles.titleInput}
               defaultValue={title}
               placeholder="Untitled"

@@ -40,6 +40,8 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex status` | changed files, sync counts, recent commits, proposals |
 | `cortex propose <name> [-m msg] [--all] <paths…>` | package changes for review |
 | `cortex proposals` / `diff` / `apply` / `discard <name>` | manage proposals from the terminal |
+| `cortex settings [get <key> \| set key=value… \| describe]` | read, edit, or explain `.cortex/settings.yaml` |
+| `cortex agents` | which agent CLIs are installed (for `terminal_command`) |
 | `cortex mcp` | serve all of the above over MCP (stdio) |
 
 Every command takes `--json`. Errors go to stderr with exit code 1.
@@ -50,7 +52,7 @@ Every command takes `--json`. Errors go to stderr with exit code 1.
 same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
 `write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
 `query_collection`, `get_schema`, `status`, `propose`, `list_proposals`,
-`proposal_diff`. Its instructions block teaches the agent the vault's
+`proposal_diff`, `get_settings`, `set_settings`, `list_agents`. Its instructions block teaches the agent the vault's
 conventions and the propose-for-review rule.
 
 Claude Code:
@@ -60,6 +62,51 @@ claude mcp add cortex -- cortex mcp --vault ~/my-vault
 ```
 
 Any other MCP client: run `cortex mcp --vault <dir>` as a stdio server.
+
+## Configuration
+
+Every app setting lives in one file, `.cortex/settings.yaml`, so an agent
+can configure the app the same way it edits notes. The app writes the file
+with **every key present** on first open (defaults filled in), and reloads it
+live whenever it changes on disk — the vault watcher treats anything under
+`.cortex/` as a config change — so an edit takes effect without a restart.
+
+```bash
+cortex settings                     # the whole file (--json for JSON)
+cortex settings describe            # every key: default and meaning
+cortex settings get keybindings     # one key; keybindings.<id> reads a single override
+cortex settings set keybindings.toggle-sidebar=mod+shift+b
+cortex settings set terminal_command=claude
+```
+
+`set` types each value for its key (booleans, numbers, strings, the
+`keybindings` map), validates every key before writing anything, and prints
+the resulting file. An unknown key is rejected with the list of valid ones.
+An empty value clears a string or removes a `keybindings.<id>` override.
+
+Over MCP the same operations are `get_settings` (returns the settings plus
+the key descriptions) and `set_settings` (`properties`: an object of key →
+value, merged the same way). `cortex agents` / `list_agents` report which
+agent CLIs — `claude`, `hermes`, `openclaw`, `codex`, `gemini`, `opencode`,
+`aider`, `goose`, `amp`, `copilot`, `pi` — are on `$PATH`, so an agent can
+set `terminal_command` to one that exists. The app's terminal pane (Ctrl+L)
+then opens straight into that agent, with the shell underneath for when it
+exits.
+
+| Key | Meaning |
+|---|---|
+| `auto_commit` | commit after every note save (`true` / `false`, default `false`) |
+| `default_note_type` | frontmatter `type` for new notes (default `note`) |
+| `journal_template` | template under `templates/` for daily notes (default `daily.md`) |
+| `theme` | `light` / `dark` / `system` (default `system`) |
+| `trash_retention_days` | days before trashed notes are pruned, `0` = never (default `30`) |
+| `auto_sync_minutes` | minutes between automatic git syncs, `0` = off (default `0`) |
+| `collab_url` | Yjs websocket relay for presence and co-editing, empty = off |
+| `theme_file` | palette file to follow (Omarchy `colors.toml` shape, `~` expands), empty = use `theme` |
+| `prose_font` | page typeface preset (`ysabeau`, `quattro`, `duo`, `recursive`, `alegreya`, `fraunces`, `crimson`, `serif`, `system`, `mono`) or any font-family |
+| `prose_slant` | page tilt: empty (upright), degrees such as `4` / `8`, or `italic` |
+| `keybindings` | shortcut overrides, id → keys (e.g. `toggle-sidebar: mod+shift+b`); ids live in `src/lib/keymap.ts` |
+| `terminal_command` | command the terminal pane opens with — an agent CLI such as `claude`; empty = plain shell |
 
 ## `AGENTS.md`
 

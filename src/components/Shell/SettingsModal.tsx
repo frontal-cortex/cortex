@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { commands, Settings, VaultInfo, Member, CurrentUser } from "../../lib/commands";
+import { commands, Settings, VaultInfo, Member, CurrentUser, AgentCli } from "../../lib/commands";
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
 import { syncTheme } from "../../lib/theme";
 import { PROSE_FONTS, PROSE_SLANTS, DEFAULT_PROSE_FONT, isPreset } from "../../lib/fonts";
@@ -17,10 +17,17 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
   // The desktop's palette file, when this machine has one (Omarchy).
   const [desktopTheme, setDesktopTheme] = useState<string | null>(null);
+  // Agent CLIs on $PATH, so the terminal pane can open into one without the
+  // user having to know or type its name.
+  const [agents, setAgents] = useState<AgentCli[]>([]);
+  // The user picked "Custom command…": show the text box even while it is
+  // empty or happens to spell an agent's name.
+  const [customCommand, setCustomCommand] = useState(false);
 
   useEffect(() => {
     commands.getSettings().then(setSettings).catch(() => {});
     commands.detectDesktopTheme().then(setDesktopTheme).catch(() => {});
+    commands.detectAgents().then(setAgents).catch(() => {});
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -133,6 +140,21 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
                 />
               </label>
 
+              <TerminalAgentRow
+                agents={agents}
+                value={settings.terminal_command}
+                custom={customCommand}
+                onCustom={setCustomCommand}
+                onChange={(cmd) => update({ terminal_command: cmd })}
+              />
+
+              <div className={styles.row}>
+                <span className={styles.label}>Keyboard shortcuts</span>
+                <span className={styles.value} title="Shortcut ids and their defaults are listed in src/lib/keymap.ts. The app applies changes live.">
+                  Edit <code>keybindings</code> in .cortex/settings.yaml, or <code>cortex settings set keybindings.&lt;id&gt;=&lt;keys&gt;</code>
+                </span>
+              </div>
+
               <label className={styles.row}>
                 <span className={styles.label}>Auto-commit on save</span>
                 <input
@@ -202,6 +224,58 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Which command the terminal pane (Ctrl+L) opens with: a plain shell, one
+ *  of the agent CLIs found on $PATH, or anything the user types. Agents that
+ *  are not installed are left out — offering them would only produce
+ *  "command not found" in the pane. */
+function TerminalAgentRow({ agents, value, custom, onCustom, onChange }: {
+  agents: AgentCli[];
+  value: string;
+  custom: boolean;
+  onCustom: (on: boolean) => void;
+  onChange: (command: string) => void;
+}) {
+  const found = agents.filter((a) => a.found);
+  const match = found.find((a) => a.command === value.trim());
+  const selected = custom ? "custom" : !value.trim() ? "shell" : match ? match.id : "custom";
+  const showInput = selected === "custom";
+
+  return (
+    <>
+      <label className={styles.row} title={match?.path ?? undefined}>
+        <span className={styles.label}>Terminal agent</span>
+        <Dropdown
+          value={selected}
+          options={[
+            { value: "shell", label: "Shell only" },
+            ...found.map((a) => ({ value: a.id, label: a.label })),
+            { value: "custom", label: "Custom command…" },
+          ]}
+          onChange={(v) => {
+            if (v === "custom") { onCustom(true); return; }
+            onCustom(false);
+            onChange(v === "shell" ? "" : found.find((a) => a.id === v)?.command ?? "");
+          }}
+        />
+      </label>
+
+      {showInput && (
+        <label className={styles.row}>
+          <span className={styles.label}>Command</span>
+          <input
+            className={styles.input}
+            value={value}
+            spellCheck={false}
+            placeholder="e.g. claude --continue (empty = shell)"
+            title="Typed into the shell when the terminal pane opens. The shell stays underneath."
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </label>
+      )}
+    </>
   );
 }
 

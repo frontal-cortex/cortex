@@ -126,20 +126,32 @@ The sync button turns orange when you have unpushed or unpulled commits.
 
 ## Settings
 
-App settings live in `.cortex/settings.yaml` (created automatically if absent).
-`.cortex/` is committed to git so your config travels with the vault; `.brain/`
-is a gitignored cache you can delete at any time.
+All app settings live in one file, `.cortex/settings.yaml`. It is written with
+every key on first open (so you — or an agent — always see the full schema),
+and the app reloads it live whenever it changes on disk. `.cortex/` is
+committed to git so your config travels with the vault; `.brain/` is a
+gitignored cache you can delete at any time.
 
 ```yaml
 auto_commit: false           # commit after every note save
 default_note_type: note      # pre-filled type for new notes
 journal_template: daily.md   # template used for Today / daily notes
 theme: system                # light | dark | system
-theme_file: ""               # follow a palette file, e.g. ~/.local/state/omarchy/current/theme/colors.toml
-prose_font: ysabeau          # page typeface: ysabeau | quattro | duo | recursive | alegreya | fraunces | crimson | serif | system | mono | any font-family name
-prose_slant: ""              # page tilt: "" upright | 4 | 8 (degrees) | italic
 trash_retention_days: 30     # auto-prune trashed notes after N days (0 = never)
+auto_sync_minutes: 0         # minutes between automatic git syncs (0 = off)
+collab_url: ''               # Yjs websocket relay, e.g. ws://host:1234 (empty = off)
+theme_file: ''               # follow a palette file, e.g. ~/.local/state/omarchy/current/theme/colors.toml
+prose_font: ''               # page typeface: ysabeau | quattro | duo | recursive | alegreya | fraunces | crimson | serif | system | mono | any font-family
+prose_slant: ''              # page tilt: '' upright | 4 | 8 (degrees) | italic
+keybindings: {}              # shortcut overrides, id → keys, e.g. {toggle-sidebar: mod+shift+b}
+terminal_command: ''         # command the terminal pane (Ctrl+L) opens with, e.g. claude (empty = shell)
 ```
+
+From the terminal: `cortex settings` prints the file, `cortex settings describe`
+explains every key, and `cortex settings set key=value…` edits it with the
+right types (`cortex settings set terminal_command=claude
+keybindings.toggle-sidebar=mod+shift+b`). `cortex agents` lists which agent
+CLIs are installed.
 "#;
 
 /// Append `entry` to the vault's `.gitignore` if not already present, creating
@@ -216,13 +228,13 @@ pub fn open_vault(
         std::fs::write(&agents_doc, cortex_core::vault::AGENTS_MD)?;
     }
 
+    // Spell out every setting in `.cortex/settings.yaml` (defaults for any
+    // that are missing) so an agent editing the file sees the whole schema.
+    // A malformed file is tolerated, not overwritten.
+    let settings = cortex_core::settings::ensure_complete(&vault_path)?;
+
     // Best-effort prune of expired trash, using the vault's retention setting.
-    let retention = std::fs::read_to_string(vault_path.join(".cortex/settings.yaml"))
-        .ok()
-        .and_then(|c| serde_yaml::from_str::<cortex_core::settings::Settings>(&c).ok())
-        .unwrap_or_default()
-        .trash_retention_days;
-    let _ = crate::commands::trash::prune_expired(&vault_path, retention);
+    let _ = crate::commands::trash::prune_expired(&vault_path, settings.trash_retention_days);
 
     // Open / migrate the SQLite index, then re-index all notes
     let db = Db::open(&vault_path)?;

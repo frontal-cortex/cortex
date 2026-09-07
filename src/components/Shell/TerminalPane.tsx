@@ -22,6 +22,12 @@ export interface TerminalPaneProps {
   cwd?: string;
   /** Whether the pane is currently shown. Flipping to true refits the grid. */
   visible: boolean;
+  /** A command to run once the shell is up — typically an agent CLI such as
+   *  `claude` (the `terminal_command` setting). It is typed into the shell
+   *  exactly once per session, including a restart after the shell exits,
+   *  so when the agent quits the user lands at a normal prompt. Changing it
+   *  while a session is live takes effect on the next spawn. */
+  command?: string;
 }
 
 /** Imperative surface for the parent: focus the terminal (e.g. on a
@@ -34,13 +40,15 @@ const FONT_SIZE = 13;
 const EXIT_NOTICE = "\r\n\x1b[2m[shell exited — press Enter to restart]\x1b[0m\r\n";
 
 export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
-  function TerminalPane({ cwd, visible }, ref) {
+  function TerminalPane({ cwd, visible, command }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
     const fitRef = useRef<FitAddon | null>(null);
-    // Latest cwd for respawns, without re-running the mount effect.
+    // Latest cwd/command for respawns, without re-running the mount effect.
     const cwdRef = useRef(cwd);
     cwdRef.current = cwd;
+    const commandRef = useRef(command);
+    commandRef.current = command;
 
     useImperativeHandle(ref, () => ({ focus: () => termRef.current?.focus() }), []);
 
@@ -93,6 +101,12 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           pending = [];
           // The grid may have been fitted while the spawn was in flight.
           void commands.terminalResize(id, term.cols, term.rows);
+          // Type the opening command as if the user had. The pty buffers
+          // input until the shell reads its first line, so this is safe to
+          // send before the prompt appears. The shell stays underneath: when
+          // the command exits the user is at a prompt, not a dead pane.
+          const opening = commandRef.current?.trim();
+          if (opening) void commands.terminalWrite(id, `${opening}\n`).catch(() => {});
         } catch (e) {
           term.write(`\r\n\x1b[31m${String(e)}\x1b[0m\r\n`);
           exited = true;

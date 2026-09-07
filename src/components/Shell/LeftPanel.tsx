@@ -1,11 +1,21 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { shortcutFor } from "../../lib/keymap";
+import {
+  useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle,
+  KeyboardEvent as ReactKeyboardEvent, ReactNode,
+} from "react";
+import { shortcutFor, SHORTCUTS, ShortcutId, isMac } from "../../lib/keymap";
 import { NoteEntry, VaultStatus, AgentBranch, CommitEntry, TrashEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
-import { buildTree } from "../../lib/fileTree";
-import { FileTree } from "./FileTree";
+import { buildTree, flattenTree, displayTitle, relativeTime } from "../../lib/fileTree";
+import { FileTree, LeafRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT } from "./FileTree";
 import { CommitDiffModal } from "./CommitDiffModal";
-import { CloseIcon, MinusIcon, StarFilledIcon, TemplateIcon } from "./icons";
+import {
+  GettingStarted, GettingStartedStep, loadGettingStartedDismissed, saveGettingStartedDismissed,
+} from "./GettingStarted";
+import { TreeRow, useRovingRows, useTypeAhead } from "./treeRows";
+import {
+  CloseIcon, MinusIcon, StarFilledIcon, PlusIcon, SearchIcon, GraphIcon, GearIcon, ChevronRightIcon,
+  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon,
+} from "./icons";
 import styles from "./LeftPanel.module.css";
 
 interface Props {
@@ -35,21 +45,37 @@ interface Props {
   onRestoreTrashed: (id: string) => void;
   onDeleteTrashed: (id: string) => void;
   onEmptyTrash: () => void;
+  /** Escape on a focused tree row — Shell uses it to hand focus back to the editor. */
+  onEscape?: () => void;
+  /** Opens the command palette. Without it the panel replays the registered
+   *  shortcut, which Shell's global handler already understands. */
+  onOpenCommandPalette?: () => void;
 }
 
-export function LeftPanel({
+/** What Shell can ask of the panel imperatively. */
+export interface LeftPanelHandle {
+  /** Focus the tree on the open note's row, or the first row. */
+  focus(): void;
+}
+
+type SectionId = "favorites" | "notes" | "databases" | "templates" | "trash";
+
+const SECTION_DEFAULT_OPEN: Record<SectionId, boolean> = {
+  favorites: true, notes: true, databases: true, templates: false, trash: false,
+};
+
+export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   notes, dirs, selectedPath, status, agentBranches, commits, favorites,
   onSelect, onNewNote, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite, onOpenGraph,
   onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
   trash, onRestoreTrashed, onDeleteTrashed, onEmptyTrash,
-}: Props) {
-  // Unused until command palette wires the template picker — accepted here so
-  // Shell can pass it down without TS errors.
-  void onNewFromTemplate;
+  onEscape, onOpenCommandPalette,
+}, ref) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<NoteEntry[] | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const [newFolderIn, setNewFolderIn] = useState<string | null>(null);
   const [diffHash, setDiffHash] = useState<string | null>(null);
@@ -57,6 +83,13 @@ export function LeftPanel({
   const [review, setReview] = useState<AgentBranch | null>(null);
   // Notes section root drop zone
   const [notesSectionDragOver, setNotesSectionDragOver] = useState(false);
+
+  // Open/closed state for sections and folders lives here rather than in the
+  // rows, because the keyboard walks a flat list of *visible* rows and that
+  // list has to be derived from the same state the renderer reads.
+  const [sectionOpen, setSectionOpen] = useState<Record<SectionId, boolean>>(SECTION_DEFAULT_OPEN);
+  const [dirOpen, setDirOpen] = useState<Record<string, boolean>>({});
+  const [gettingStartedDismissed, setGettingStartedDismissed] = useState(loadGettingStartedDismissed);
 
   const changedCount = (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
   const isDirty = changedCount > 0;
@@ -77,6 +110,45 @@ export function LeftPanel({
     }, 200);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [query, notes]);
+
+  // ── Folder open state ──────────────────────────────────────────────────
+  // Top-level folders start open, nested ones closed; anything the user
+  // touched keeps its state. Opening a note from elsewhere (quick switcher, a
+  // wiki link) reveals it by opening every folder above it.
+  const isDirOpen = useCallback(
+    (path: string, depth: number) => dirOpen[path] ?? depth === 0,
+    [dirOpen],
+  );
+  const toggleDir = useCallback((path: string, open?: boolean) => {
+    setDirOpen((prev) => {
+      const depth = path.split("/").filter(Boolean).length - 2;
+      const current = prev[path] ?? depth === 0;
+      const next = open ?? !current;
+      return next === current ? prev : { ...prev, [path]: next };
+    });
+  }, []);
+  const toggleSection = useCallback((id: SectionId, open?: boolean) => {
+    setSectionOpen((prev) => {
+      const next = open ?? !prev[id];
+      return next === prev[id] ? prev : { ...prev, [id]: next };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    const parts = selectedPath.split("/");
+    const ancestors: string[] = [];
+    for (let i = 2; i < parts.length; i++) ancestors.push(parts.slice(0, i).join("/") + "/");
+    if (ancestors.length === 0) return;
+    setDirOpen((prev) => {
+      if (ancestors.every((a) => prev[a])) return prev;
+      const next = { ...prev };
+      for (const a of ancestors) next[a] = true;
+      return next;
+    });
+  }, [selectedPath]);
+
+  // ── File operations ────────────────────────────────────────────────────
 
   const handleDeleteFolder = useCallback(async (path: string) => {
     const name = path.replace(/\/$/, "").split("/").pop() ?? path;
@@ -135,6 +207,12 @@ export function LeftPanel({
     onRefresh();
   }, [onRefresh]);
 
+  const requestNewFolder = useCallback((parentPath: string) => {
+    if (parentPath === "notes/") toggleSection("notes", true);
+    else toggleDir(parentPath, true);
+    setNewFolderIn(parentPath);
+  }, [toggleDir, toggleSection]);
+
   const notesTree    = useMemo(() => buildTree(notes, "notes/", dirs),     [notes, dirs]);
   const templateTree = useMemo(() => buildTree(notes, "templates/"),       [notes]);
 
@@ -148,9 +226,9 @@ export function LeftPanel({
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [notes]);
 
-  const treeActions = useMemo(() => ({
+  const treeActions = useMemo<TreeActions>(() => ({
     newFolderIn,
-    onNewFolderRequest: setNewFolderIn,
+    onNewFolderRequest: requestNewFolder,
     onNewFolderSubmit: handleCreateFolder,
     onNewFolderCancel: () => setNewFolderIn(null),
     onNewNoteInFolder: (parentPath: string) => onNewNote(parentPath),
@@ -163,80 +241,342 @@ export function LeftPanel({
     onTurnIntoDatabase,
     onToggleFavorite,
     isFavorite,
-  }), [newFolderIn, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote,
+  }), [newFolderIn, requestNewFolder, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote,
        handleRenameFile, handleDuplicateFile, handleRevealFile, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite]);
 
-  const notesCount = notes.filter((n) => n.path.startsWith("notes/")).length;
+  const templateActions = useMemo<TreeActions>(() => ({
+    ...treeActions, onNewFolderRequest: () => {}, newFolderIn: null,
+  }), [treeActions]);
+
+  const notesCount = useMemo(() => notes.filter((n) => n.path.startsWith("notes/")).length, [notes]);
+
+  // ── Getting started ────────────────────────────────────────────────────
+
+  const openCommandPalette = useCallback(() => {
+    if (onOpenCommandPalette) onOpenCommandPalette();
+    else replayShortcut("command-palette");
+  }, [onOpenCommandPalette]);
+
+  const tryTemplate = useCallback(() => {
+    const files = templateTree.filter((n) => n.type === "file");
+    const pick = files.find((n) => n.path === "templates/note.md") ?? files[0];
+    if (pick) onNewFromTemplate(pick.path.slice("templates/".length));
+    else onNewNote("templates");
+  }, [templateTree, onNewFromTemplate, onNewNote]);
+
+  const openAgentsDoc = useCallback(() => {
+    if (notes.some((n) => n.path === "AGENTS.md")) onSelect("AGENTS.md");
+    else commands.revealPath("AGENTS.md").catch(() => window.alert("This vault has no AGENTS.md yet."));
+  }, [notes, onSelect]);
+
+  const dismissGettingStarted = useCallback(() => {
+    saveGettingStartedDismissed();
+    setGettingStartedDismissed(true);
+  }, []);
+
+  const showGettingStarted = notesCount <= 1 && !gettingStartedDismissed;
+  const gettingStartedSteps = useMemo<GettingStartedStep[]>(() => [
+    { id: "gs:new",      label: "Create your first note",     hint: shortcutFor("new-note"),        run: () => onNewNote() },
+    { id: "gs:palette",  label: "Open the command palette",   hint: shortcutFor("command-palette"), run: openCommandPalette },
+    { id: "gs:template", label: "Try a template",                                                   run: tryTemplate },
+    { id: "gs:agents",   label: "Ask an agent",               hint: "AGENTS.md",                    run: openAgentsDoc },
+  ], [onNewNote, openCommandPalette, tryTemplate, openAgentsDoc]);
+
+  // ── Row list ───────────────────────────────────────────────────────────
+  // The keyboard's view of the sidebar, in render order. Anything rendered
+  // as a row below must be pushed here under the same id, and vice versa.
+
+  const rows = useMemo<TreeRow[]>(() => {
+    const out: TreeRow[] = [];
+
+    if (searchResults) {
+      for (const n of searchResults) {
+        out.push({ id: `result:${n.path}`, kind: "note", label: displayTitle(n), depth: 0, parentId: null, path: n.path, folder: dirOf(n.path) });
+      }
+      return out;
+    }
+
+    const section = (id: SectionId, label: string, folder?: string) => {
+      const rowId = `section:${id}`;
+      out.push({ id: rowId, kind: "section", label, depth: 0, parentId: null, expanded: sectionOpen[id], folder });
+      return sectionOpen[id] ? rowId : null;
+    };
+    const pushTree = (tree: ReturnType<typeof buildTree>, parentId: string, rootFolder: string) => {
+      for (const { node, depth, parentPath } of flattenTree(tree, isDirOpen)) {
+        const pid = parentPath ?? parentId;
+        if (node.type === "dir") {
+          out.push({ id: node.path, kind: "dir", label: node.name, depth: depth + 1, parentId: pid, expanded: isDirOpen(node.path, depth), path: node.path, folder: node.path });
+        } else {
+          out.push({ id: node.path, kind: "note", label: node.name, depth: depth + 1, parentId: pid, path: node.path, folder: parentPath ?? rootFolder });
+        }
+      }
+    };
+
+    if (favorites.length > 0) {
+      const pid = section("favorites", "Favorites");
+      if (pid) for (const path of favorites) {
+        const note = notes.find((n) => n.path === path);
+        if (!note) continue;
+        out.push({
+          id: `fav:${path}`, kind: "note", label: displayTitle(note), depth: 1, parentId: pid, path, folder: dirOf(path),
+          remove: () => onToggleFavorite(path),
+        });
+      }
+    }
+
+    {
+      const pid = section("notes", "Notes", "notes/");
+      if (pid) {
+        if (showGettingStarted) {
+          for (const s of gettingStartedSteps) {
+            out.push({ id: s.id, kind: "action", label: s.label, depth: 1, parentId: pid, run: s.run, remove: dismissGettingStarted, folder: "notes/" });
+          }
+        }
+        if (notesTree.length === 0 && newFolderIn !== "notes/") {
+          out.push({ id: "action:notes-empty", kind: "action", label: "Create a note", depth: 1, parentId: pid, run: () => onNewNote(), folder: "notes/" });
+        } else {
+          pushTree(notesTree, pid, "notes/");
+        }
+      }
+    }
+
+    {
+      const pid = section("databases", "Databases");
+      if (pid) {
+        if (collections.length === 0) {
+          out.push({ id: "action:databases-empty", kind: "action", label: "Create a database", depth: 1, parentId: pid, run: onNewCollection });
+        } else {
+          for (const name of collections) {
+            out.push({ id: `collections/${name}/_index.md`, kind: "collection", label: name, depth: 1, parentId: pid, path: `collections/${name}/_index.md`, run: () => onOpenCollection(name) });
+          }
+        }
+      }
+    }
+
+    {
+      const pid = section("templates", "Templates", "templates/");
+      if (pid) {
+        if (templateTree.length === 0) {
+          out.push({ id: "action:templates-empty", kind: "action", label: "Create a template", depth: 1, parentId: pid, run: () => onNewNote("templates"), folder: "templates/" });
+        } else {
+          pushTree(templateTree, pid, "templates/");
+        }
+      }
+    }
+
+    if (trash.length > 0) {
+      const pid = section("trash", "Trash");
+      if (pid) {
+        for (const t of trash) {
+          out.push({ id: `trash:${t.id}`, kind: "trash", label: t.title || "Untitled", depth: 1, parentId: pid, run: () => onRestoreTrashed(t.id), remove: () => onDeleteTrashed(t.id) });
+        }
+        out.push({ id: "action:empty-trash", kind: "action", label: "Empty trash", depth: 1, parentId: pid, run: onEmptyTrash });
+      }
+    }
+
+    return out;
+  }, [searchResults, sectionOpen, isDirOpen, favorites, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted,
+      notesTree, newFolderIn, collections, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection,
+      onRestoreTrashed, onDeleteTrashed, onEmptyTrash]);
+
+  const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+  const { containerRef, activeId, focusRow, rowA11y } = useRovingRows(rows, selectedPath);
+  const typeAhead = useTypeAhead();
+
+  const a11y = useCallback<A11yFor>((id, selected) => {
+    const row = rowsById.get(id);
+    return row ? rowA11y(row, selected) : undefined;
+  }, [rowsById, rowA11y]);
+
+  useImperativeHandle(ref, () => ({
+    focus() {
+      const selected = selectedPath && rowsById.has(selectedPath) ? selectedPath : null;
+      focusRow(selected ?? activeId ?? rows[0]?.id ?? null);
+    },
+  }), [selectedPath, rowsById, focusRow, activeId, rows]);
+
+  // ── Keyboard ───────────────────────────────────────────────────────────
+
+  const activate = useCallback((row: TreeRow) => {
+    switch (row.kind) {
+      case "section": toggleSection(row.id.slice("section:".length) as SectionId); break;
+      case "dir": toggleDir(row.path!); break;
+      case "note": onSelect(row.path!); break;
+      default: row.run?.();
+    }
+  }, [toggleSection, toggleDir, onSelect]);
+
+  const setExpanded = useCallback((row: TreeRow, open: boolean) => {
+    if (row.kind === "section") toggleSection(row.id.slice("section:".length) as SectionId, open);
+    else if (row.kind === "dir") toggleDir(row.path!, open);
+  }, [toggleSection, toggleDir]);
+
+  const handleTreeKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    // App-level chords belong to Shell; typing in an inline input is typing.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const target = e.target as HTMLElement;
+    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+
+    const idx = activeId ? rows.findIndex((r) => r.id === activeId) : -1;
+    const row = idx >= 0 ? rows[idx] : undefined;
+    const go = (i: number) => {
+      const r = rows[Math.max(0, Math.min(rows.length - 1, i))];
+      if (r) focusRow(r.id);
+    };
+    // Focus a neighbour before the row disappears, so focus never drops to <body>.
+    const removeRow = (r: TreeRow) => {
+      const neighbour = rows[idx + 1] ?? rows[idx - 1];
+      if (neighbour) focusRow(neighbour.id);
+      if (r.remove) r.remove();
+      else if (r.kind === "note" && r.path) onDeleteNote(r.path);
+    };
+
+    let handled = true;
+    switch (e.key) {
+      case "ArrowDown": case "j": go(idx + 1); break;
+      case "ArrowUp":   case "k": go(idx - 1); break;
+      case "Home": go(0); break;
+      case "End":  go(rows.length - 1); break;
+      case "ArrowRight": case "l": {
+        if (!row) { go(0); break; }
+        if (row.expanded === false) setExpanded(row, true);
+        else if (row.expanded === true) {
+          const next = rows[idx + 1];
+          if (next && next.parentId === row.id) focusRow(next.id);
+        }
+        break;
+      }
+      case "ArrowLeft": case "h": {
+        if (!row) break;
+        if (row.expanded === true) setExpanded(row, false);
+        else if (row.parentId) focusRow(row.parentId);
+        break;
+      }
+      case "Enter": if (row) activate(row); break;
+      case " ": if (row && row.expanded !== undefined) activate(row); break;
+      case "n": onNewNote(row?.folder); break;
+      case "Delete": case "Backspace": if (row) removeRow(row); break;
+      case "f": if (row?.kind === "note" && row.path) onToggleFavorite(row.path); break;
+      case "/": searchRef.current?.focus(); searchRef.current?.select(); break;
+      case "Escape": target.blur(); onEscape?.(); break;
+      default: {
+        if (e.key.length === 1 && /\S/.test(e.key)) {
+          const hit = typeAhead(rows, idx, e.key);
+          if (hit) focusRow(hit.id);
+        } else {
+          handled = false;
+        }
+      }
+    }
+    if (handled) { e.preventDefault(); e.stopPropagation(); }
+  };
+
+  const handleSearchKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      focusRow(activeId ?? rows[0]?.id ?? null);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      focusRow(rows[0]?.id ?? null);
+    } else if (e.key === "Enter" && searchResults?.[0]) {
+      onSelect(searchResults[0].path);
+    }
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────
+
+  const sectionProps = (id: SectionId) => ({
+    a11y: a11y(`section:${id}`),
+    open: sectionOpen[id],
+    onToggle: () => toggleSection(id),
+  });
 
   return (
     <div className={styles.root}>
       {/* ── Search ──────────────────────────────────────────────── */}
       <div className={styles.searchRow}>
         <div className={styles.searchBox}>
-          <SearchIcon />
+          <SearchIcon size={13} />
           <input
+            ref={searchRef}
             className={styles.searchInput}
-            placeholder={`Search… (${shortcutFor("quick-switcher")} to jump)`}
+            placeholder={`Search…  /`}
+            title={`Search notes (/ from the tree · ${shortcutFor("quick-switcher")} to jump anywhere)`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
           />
-          {query && <button className={styles.clearBtn} onClick={() => setQuery("")} title="Clear search"><CloseIcon size={13} /></button>}
+          {query && <button className={styles.clearBtn} tabIndex={-1} onClick={() => setQuery("")} title="Clear search"><CloseIcon size={13} /></button>}
         </div>
       </div>
 
       {/* ── Tree / Search results ────────────────────────────────── */}
-      <div className={styles.treeArea}>
+      <div
+        ref={containerRef}
+        className={styles.treeArea}
+        role="tree"
+        aria-label="Sidebar"
+        onKeyDown={handleTreeKeyDown}
+      >
         {searchResults ? (
           <div className={styles.searchResults}>
             {searchResults.length === 0 && <p className={styles.empty}>No matches for "{query}"</p>}
             {searchResults.map((n) => (
-              <button
+              <LeafRow
                 key={n.path}
-                className={`${styles.resultRow} ${n.path === selectedPath ? styles.resultRowSelected : ""}`}
+                id={`result:${n.path}`}
+                a11y={a11y}
+                depth={-1}
+                selected={n.path === selectedPath}
+                icon={n.icon ? <span className={styles.emoji}>{n.icon}</span> : <FileIcon />}
+                label={displayTitle(n)}
+                hint={dirOf(n.path).replace(/\/$/, "")}
+                title={n.path}
                 onClick={() => onSelect(n.path)}
-              >
-                <span className={styles.resultTitle}>{n.title || "Untitled"}</span>
-                <span className={styles.resultPath}>{n.path}</span>
-              </button>
+              />
             ))}
           </div>
         ) : (
           <>
             {favorites.length > 0 && (
-              <Section label="Favorites" defaultOpen count={favorites.length}>
+              <Section {...sectionProps("favorites")} label="Favorites" count={favorites.length}>
                 {favorites.map((path) => {
                   const note = notes.find((n) => n.path === path);
                   if (!note) return null;
                   return (
-                    <button
+                    <LeafRow
                       key={path}
-                      className={`${styles.favRow} ${path === selectedPath ? styles.favRowSelected : ""}`}
+                      id={`fav:${path}`}
+                      a11y={a11y}
+                      depth={0}
+                      selected={path === selectedPath}
+                      icon={note.icon ? <span className={styles.emoji}>{note.icon}</span> : <FileIcon />}
+                      label={displayTitle(note)}
+                      title={`${path} · Delete unpins`}
                       onClick={() => onSelect(path)}
-                    >
-                      {note.icon
-                        ? <span className={styles.favIcon}>{note.icon}</span>
-                        : <DocIcon />}
-                      <span className={styles.favTitle}>{note.title || "Untitled"}</span>
-                      <button
-                        className={styles.favStar}
-                        onClick={(e) => { e.stopPropagation(); onToggleFavorite(path); }}
-                        title="Remove from favorites"
-                      ><StarFilledIcon size={12} /></button>
-                    </button>
+                      trailing={
+                        <button
+                          className={styles.favStar}
+                          tabIndex={-1}
+                          onClick={(e) => { e.stopPropagation(); onToggleFavorite(path); }}
+                          title="Remove from favorites (f)"
+                        ><StarFilledIcon size={12} /></button>
+                      }
+                    />
                   );
                 })}
               </Section>
             )}
 
             <Section
+              {...sectionProps("notes")}
               label="Notes"
-              defaultOpen
               count={notesCount}
-              onNewNote={() => onNewNote()}
-              onNewFolder={() => setNewFolderIn("notes/")}
-              onAction={onOpenGraph}
-              actionTitle="Graph view"
-              actionIcon={<GraphIcon />}
+              actions={[
+                { title: NEW_NOTE_HINT, icon: <PlusIcon size={13} />, run: () => onNewNote() },
+                { title: "New folder", icon: <FolderPlusIcon size={13} />, run: () => requestNewFolder("notes/") },
+                { title: `Graph view (${shortcutFor("graph")})`, icon: <GraphIcon size={12} />, run: onOpenGraph },
+              ]}
               dropActive={notesSectionDragOver}
               onDragOver={(e) => { e.preventDefault(); setNotesSectionDragOver(true); }}
               onDragLeave={() => setNotesSectionDragOver(false)}
@@ -247,99 +587,130 @@ export function LeftPanel({
                 if (path) handleMoveNote(path, "notes/");
               }}
             >
+              {showGettingStarted && (
+                <GettingStarted steps={gettingStartedSteps} a11y={a11y} onDismiss={dismissGettingStarted} />
+              )}
               {notesTree.length === 0 && newFolderIn !== "notes/"
-                ? <p className={styles.empty}>No notes yet — press {shortcutFor("new-note")} to create one.</p>
+                ? <ActionRow
+                    id="action:notes-empty"
+                    a11y={a11y}
+                    depth={0}
+                    icon={<PlusIcon size={12} />}
+                    text="No notes"
+                    action="Create one"
+                    title={NEW_NOTE_HINT}
+                    onClick={() => onNewNote()}
+                  />
                 : <FileTree
                     nodes={notesTree}
                     currentPath="notes/"
                     selectedPath={selectedPath}
-                    defaultOpen
+                    isDirOpen={isDirOpen}
+                    onToggleDir={toggleDir}
                     actions={treeActions}
                     onSelect={onSelect}
+                    a11y={a11y}
                   />}
             </Section>
 
             <Section
+              {...sectionProps("databases")}
               label="Databases"
-              defaultOpen
               count={collections.length}
-              onNewNote={onNewCollection}
-              actionTitle="New database"
+              actions={[{ title: "New database", icon: <PlusIcon size={13} />, run: onNewCollection }]}
             >
               {collections.length === 0
-                ? <p className={styles.empty}>
-                    No databases yet.{" "}
-                    <button className={styles.emptyAction} onClick={onNewCollection}>
-                      Create one
-                    </button>{" "}
-                    — tabbed table / board / calendar views over your notes.
-                  </p>
+                ? <ActionRow
+                    id="action:databases-empty"
+                    a11y={a11y}
+                    depth={0}
+                    icon={<DatabaseIcon size={13} />}
+                    text="No databases"
+                    action="Create one"
+                    title="Tabbed table, board and calendar views over your notes"
+                    onClick={onNewCollection}
+                  />
                 : collections.map((name) => {
                     const indexPath = `collections/${name}/_index.md`;
                     return (
-                      <button
+                      <LeafRow
                         key={name}
-                        className={`${styles.favRow} ${indexPath === selectedPath ? styles.favRowSelected : ""}`}
+                        id={indexPath}
+                        a11y={a11y}
+                        depth={0}
+                        selected={indexPath === selectedPath}
+                        icon={<DatabaseIcon size={13} />}
+                        label={name}
+                        title={indexPath}
                         onClick={() => onOpenCollection(name)}
-                      >
-                        <TemplateIcon size={14} />
-                        <span className={styles.favTitle}>{name}</span>
-                      </button>
+                      />
                     );
                   })}
             </Section>
 
             <Section
+              {...sectionProps("templates")}
               label="Templates"
-              defaultOpen={false}
               count={templateTree.length}
-              onNewFolder={undefined}
-              onNewNote={() => onNewNote("templates")}
+              actions={[{ title: "New template", icon: <PlusIcon size={13} />, run: () => onNewNote("templates") }]}
             >
               {templateTree.length === 0
-                ? <p className={styles.empty}>
-                    No templates yet.{" "}
-                    <button className={styles.emptyAction} onClick={() => onNewNote("templates")}>
-                      Create one
-                    </button>{" "}
-                    to use as a starting point for new notes.
-                  </p>
+                ? <ActionRow
+                    id="action:templates-empty"
+                    a11y={a11y}
+                    depth={0}
+                    icon={<PlusIcon size={12} />}
+                    text="No templates"
+                    action="Create one"
+                    title="A starting point for new notes"
+                    onClick={() => onNewNote("templates")}
+                  />
                 : <FileTree
                     nodes={templateTree}
                     currentPath="templates/"
                     selectedPath={selectedPath}
-                    defaultOpen
-                    actions={{ ...treeActions, onNewFolderRequest: () => {}, newFolderIn: null, onNewNoteInFolder: (p) => onNewNote(p) }}
+                    isDirOpen={isDirOpen}
+                    onToggleDir={toggleDir}
+                    actions={templateActions}
                     onSelect={onSelect}
+                    a11y={a11y}
                   />}
             </Section>
 
             {trash.length > 0 && (
-              <Section label="Trash" defaultOpen={false} count={trash.length}>
+              <Section {...sectionProps("trash")} label="Trash" count={trash.length}>
                 {trash.map((t) => (
-                  <div key={t.id} className={styles.trashRow}>
-                    <span className={styles.trashTitle} title={t.original_path}>
-                      {t.title || "Untitled"}
-                    </span>
-                    <button
-                      className={styles.trashAction}
-                      onClick={() => onRestoreTrashed(t.id)}
-                      title="Restore to original location"
-                    >
-                      Restore
-                    </button>
-                    <button
-                      className={styles.trashDelete}
-                      onClick={() => onDeleteTrashed(t.id)}
-                      title="Delete permanently"
-                    >
-                      <CloseIcon size={12} />
-                    </button>
-                  </div>
+                  <LeafRow
+                    key={t.id}
+                    id={`trash:${t.id}`}
+                    a11y={a11y}
+                    depth={0}
+                    icon={<TrashIcon size={13} />}
+                    label={t.title || "Untitled"}
+                    title={`${t.original_path} · Enter restores · Delete removes permanently`}
+                    onClick={() => onRestoreTrashed(t.id)}
+                    trailing={
+                      <>
+                        <span className={styles.trashAction}>Restore</span>
+                        <button
+                          className={styles.trashDelete}
+                          tabIndex={-1}
+                          onClick={(e) => { e.stopPropagation(); onDeleteTrashed(t.id); }}
+                          title="Delete permanently"
+                        >
+                          <CloseIcon size={12} />
+                        </button>
+                      </>
+                    }
+                  />
                 ))}
-                <button className={styles.emptyTrashBtn} onClick={onEmptyTrash}>
-                  Empty trash
-                </button>
+                <ActionRow
+                  id="action:empty-trash"
+                  a11y={a11y}
+                  depth={0}
+                  action="Empty trash"
+                  onClick={onEmptyTrash}
+                />
               </Section>
             )}
           </>
@@ -361,8 +732,8 @@ export function LeftPanel({
 
       {/* ── Footer (under the change log) ───────────────────────── */}
       <div className={styles.footer}>
-        <button className={styles.footerBtn} onClick={onOpenSettings} title="Settings">
-          <SettingsIcon />
+        <button className={styles.footerBtn} onClick={onOpenSettings} title={`Settings (${shortcutFor("settings")})`}>
+          <GearIcon size={15} />
           <span>Settings</span>
         </button>
       </div>
@@ -380,38 +751,34 @@ export function LeftPanel({
       )}
     </div>
   );
-}
-
-function SettingsIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
+});
 
 // ── Section ───────────────────────────────────────────────────────────────────
+// The header is itself a tree row (Enter/Space/arrows fold it); its buttons
+// are hover affordances and stay out of the tab order.
+
+interface SectionAction {
+  title: string;
+  icon: ReactNode;
+  run: () => void;
+}
 
 function Section({
-  label, count, defaultOpen, onNewFolder, onNewNote, onAction, actionIcon, actionTitle,
+  a11y, label, count, open, onToggle, actions = [],
   dropActive, onDragOver, onDragLeave, onDrop, children,
 }: {
+  a11y: ReturnType<A11yFor>;
   label: string;
   count: number;
-  defaultOpen: boolean;
-  onNewFolder?: () => void;
-  onNewNote?: () => void;
-  onAction?: () => void;
-  actionIcon?: React.ReactNode;
-  actionTitle?: string;
+  open: boolean;
+  onToggle: () => void;
+  actions?: SectionAction[];
   dropActive?: boolean;
   onDragOver?: React.DragEventHandler;
   onDragLeave?: React.DragEventHandler;
   onDrop?: React.DragEventHandler;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
     <div
       className={`${styles.section} ${dropActive ? styles.sectionDropTarget : ""}`}
@@ -419,43 +786,34 @@ function Section({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className={styles.sectionHeader}>
-        <button className={styles.sectionToggle} onClick={() => setOpen((x) => !x)}>
-          <span className={`${styles.sectionArrow} ${open ? styles.sectionArrowOpen : ""}`}>▶</span>
-          <span className={styles.sectionLabel}>{label}</span>
-        </button>
-        <div className={styles.sectionActions}>
-          {onNewNote && (
-            <button
-              className={styles.sectionAction}
-              onClick={(e) => { e.stopPropagation(); setOpen(true); onNewNote(); }}
-              title={`New ${label.toLowerCase().replace(/s$/, "")}`}
-            >
-              <PlusIcon />
-            </button>
-          )}
-          {onNewFolder && (
-            <button
-              className={styles.sectionAction}
-              onClick={(e) => { e.stopPropagation(); setOpen(true); onNewFolder(); }}
-              title="New folder"
-            >
-              <FolderPlusIcon />
-            </button>
-          )}
-          {onAction && (
-            <button
-              className={styles.sectionAction}
-              onClick={(e) => { e.stopPropagation(); onAction(); }}
-              title={actionTitle}
-            >
-              {actionIcon}
-            </button>
-          )}
-        </div>
+      <div
+        {...a11y}
+        className={styles.sectionHeader}
+        onClick={onToggle}
+        title={`${label} · ${count}`}
+      >
+        <span className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`} aria-hidden>
+          <ChevronRightIcon size={12} />
+        </span>
+        <span className={styles.sectionLabel}>{label}</span>
         <span className={styles.sectionCount}>{count}</span>
+        {actions.length > 0 && (
+          <div className={styles.sectionActions}>
+            {actions.map((a) => (
+              <button
+                key={a.title}
+                className={styles.sectionAction}
+                tabIndex={-1}
+                onClick={(e) => { e.stopPropagation(); a.run(); }}
+                title={a.title}
+              >
+                {a.icon}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      {open && <div className={styles.sectionBody}>{children}</div>}
+      {open && <div className={styles.sectionBody} role="group">{children}</div>}
     </div>
   );
 }
@@ -544,7 +902,7 @@ function GitSection({
             >
               <span className={styles.commitHash}>{c.hash.slice(0, 7)}</span>
               <span className={styles.commitMsg}>{c.message}</span>
-              <span className={styles.commitTime}>{relTime(c.timestamp)}</span>
+              <span className={styles.commitTime}>{relativeTime(c.timestamp)}</span>
             </button>
           ))}
         </div>
@@ -553,30 +911,27 @@ function GitSection({
   );
 }
 
-// ── Helpers & icons ───────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function relTime(s: number) {
-  const d = Math.floor(Date.now() / 1000) - s;
-  if (d < 60) return "just now";
-  if (d < 3600) return `${Math.floor(d / 60)}m`;
-  if (d < 86400) return `${Math.floor(d / 3600)}h`;
-  return `${Math.floor(d / 86400)}d`;
+/** Parent folder of a vault path, with trailing slash ("notes/a/b.md" → "notes/a/"). */
+function dirOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i + 1);
 }
 
-function PlusIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-}
-function SearchIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
-}
-function GraphIcon() {
-  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><line x1="7" y1="11.5" x2="17" y2="6.5"/><line x1="7" y1="12.5" x2="17" y2="17.5"/></svg>;
-}
-
-function DocIcon() {
-  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" style={{ flexShrink: 0 }}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>;
-}
-
-function FolderPlusIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>;
+/** Fire a registered shortcut as if typed, so Shell's global handler runs it.
+ *  Lets this panel trigger app actions it has no prop for without a Shell change. */
+function replayShortcut(id: ShortcutId) {
+  const parts = SHORTCUTS[id].keys.toLowerCase().split("+");
+  const key = parts.pop() ?? "";
+  const mod = parts.includes("mod");
+  window.dispatchEvent(new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: mod && !isMac,
+    metaKey: mod && isMac,
+    shiftKey: parts.includes("shift"),
+    altKey: parts.includes("alt"),
+  }));
 }

@@ -22,7 +22,9 @@ export type ShortcutId =
   | "settings"
   | "toggle-sidebar"
   | "toggle-terminal"
-  | "monk-mode";
+  | "monk-mode"
+  | "focus-sidebar"
+  | "focus-editor";
 
 export interface Shortcut {
   /** `mod` = ⌘ on macOS, Ctrl elsewhere. Lower-case, `+`-joined, key last. */
@@ -43,7 +45,30 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "toggle-sidebar":  { keys: "mod+b",       label: "Toggle sidebar" },
   "toggle-terminal": { keys: "mod+l",       label: "Toggle terminal" },
   "monk-mode":       { keys: "mod+shift+m", label: "Monk mode" },
+  "focus-sidebar":   { keys: "mod+e",       label: "Focus sidebar" },
+  "focus-editor":    { keys: "mod+shift+e", label: "Focus editor" },
 };
+
+// ── Overrides from .cortex/settings.yaml (`keybindings: { id: keys }`) ───────
+// Applied by Shell when settings load; the table above stays the default so a
+// bad override can be shrugged off, never crash the keymap.
+let overrides: Partial<Record<ShortcutId, string>> = {};
+
+export function applyKeymapOverrides(map: Record<string, string> | undefined) {
+  const next: Partial<Record<ShortcutId, string>> = {};
+  for (const [id, keys] of Object.entries(map ?? {})) {
+    if (!(id in SHORTCUTS)) { console.warn(`keybindings: unknown shortcut id "${id}"`); continue; }
+    const k = keys.trim().toLowerCase();
+    if (!k || !k.includes("+") && k.length !== 1) { console.warn(`keybindings: bad keys for "${id}": "${keys}"`); continue; }
+    next[id as ShortcutId] = k;
+  }
+  overrides = next;
+}
+
+/** The keys currently bound to a shortcut — the override if set, else the default. */
+export function keysFor(id: ShortcutId): string {
+  return overrides[id] ?? SHORTCUTS[id].keys;
+}
 
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -83,7 +108,7 @@ export function matches(e: KeyboardEvent, keys: string): boolean {
 /** The shortcut this key event triggers, if any. */
 export function findShortcut(e: KeyboardEvent): ShortcutId | null {
   for (const id of Object.keys(SHORTCUTS) as ShortcutId[]) {
-    if (matches(e, SHORTCUTS[id].keys)) return id;
+    if (matches(e, keysFor(id))) return id;
   }
   return null;
 }
@@ -105,5 +130,5 @@ export function formatKeys(keys: string): string {
 
 /** Display keys for a registered shortcut — the only way UI should render a hint. */
 export function shortcutFor(id: ShortcutId): string {
-  return formatKeys(SHORTCUTS[id].keys);
+  return formatKeys(keysFor(id));
 }
