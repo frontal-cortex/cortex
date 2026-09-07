@@ -71,7 +71,7 @@ fn default_trash_retention() -> u32 { 30 }
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            auto_commit: false,
+            auto_commit: true,
             default_note_type: default_note_type(),
             journal_template: default_journal_template(),
             theme: default_theme(),
@@ -92,7 +92,7 @@ impl Default for Settings {
 /// serialised field names exactly, so a new field can't be forgotten here.
 pub fn describe() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("auto_commit", "Commit after every note save. true | false (default false)."),
+        ("auto_commit", "Commit after every note save, debounced so a burst of edits is one commit. true | false (default true)."),
         ("default_note_type", "Frontmatter `type` pre-filled on new notes (default note)."),
         ("journal_template", "Template under templates/ used for Today / daily notes (default daily.md)."),
         ("theme", "Colour scheme: light | dark | system (default system)."),
@@ -325,11 +325,11 @@ mod tests {
         }
 
         // Partial → kept values, missing keys filled.
-        std::fs::write(dir.join(".cortex/settings.yaml"), "auto_commit: true\n").unwrap();
+        std::fs::write(dir.join(".cortex/settings.yaml"), "auto_commit: false\n").unwrap();
         let s = ensure_complete(&dir).unwrap();
-        assert!(s.auto_commit);
+        assert!(!s.auto_commit, "a non-default value in the file must survive");
         let text = std::fs::read_to_string(dir.join(".cortex/settings.yaml")).unwrap();
-        assert!(text.contains("auto_commit: true") && text.contains("terminal_command:"));
+        assert!(text.contains("auto_commit: false") && text.contains("terminal_command:"));
 
         // Malformed → untouched.
         std::fs::write(dir.join(".cortex/settings.yaml"), "auto_commit: [oops\n").unwrap();

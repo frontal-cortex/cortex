@@ -247,6 +247,31 @@ fn upstream_divergence(repo: &Repository) -> Option<(usize, usize)> {
     Some((ahead, behind))
 }
 
+/// Who a commit is from: the configured git identity, or — when the machine
+/// has none — `<login> <login@hostname>`, the guess git itself used to make.
+/// Without this, a fresh install would never commit (auto-commit is on by
+/// default and `New vault` makes an initial commit), and the user would only
+/// learn why from a buried error. Configuring `user.name` / `user.email`
+/// takes over as soon as it exists; earlier commits keep the fallback.
+pub fn signature(repo: &Repository) -> Result<git2::Signature<'static>> {
+    if let Ok(sig) = repo.signature() {
+        return Ok(sig);
+    }
+    let login = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "cortex".into());
+    let host = std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .ok()
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| "localhost".into());
+    Ok(git2::Signature::now(&login, &format!("{login}@{host}"))?)
+}
+
 pub fn stage_all_and_commit(repo: &Repository, message: &str) -> Result<()> {
     let mut index = repo.index()?;
     index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
@@ -264,7 +289,7 @@ pub fn stage_all_and_commit(repo: &Repository, message: &str) -> Result<()> {
     }
 
     let tree = repo.find_tree(oid)?;
-    let sig = repo.signature()?;
+    let sig = signature(repo)?;
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
 
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
@@ -579,7 +604,7 @@ pub fn apply_agent_branch(repo: &Repository, branch_name: &str) -> Result<()> {
         repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;
     } else if analysis.is_normal() {
         repo.merge(&[&annotated], None, None)?;
-        let sig = repo.signature()?;
+        let sig = signature(repo)?;
         let mut index = repo.index()?;
         if index.has_conflicts() {
             return Err(AppError::Other("merge conflicts — resolve manually".into()));

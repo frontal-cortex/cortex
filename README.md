@@ -45,12 +45,16 @@ cargo install --path crates/cortex-cli
 
 ```
 my-vault/
-├── .brain/          # App metadata (gitignored, always safe to delete)
-│   └── index.db     # SQLite index rebuilt from your files
-├── notes/
-├── journal/
-└── *.md             # Notes can live anywhere
+├── notes/           # Your notes, in any folders you like (starter: welcome.md, ideas/, journal/, work/)
+├── templates/       # Note templates; daily.md seeds the Today note
+├── .cortex/         # Settings, favourites — committed YAML, so config travels with the vault
+├── .brain/          # Cache (gitignored, always safe to delete): the SQLite index
+├── VAULT.md         # Conventions, for people      ┐ written by the app on first open
+└── AGENTS.md        # Conventions, for agents      ┘ and by `cortex init`
 ```
+
+"New vault" in the app and `cortex init` create this layout offline, as a git
+repository with an initial commit.
 
 Notes use standard Markdown with optional YAML frontmatter:
 
@@ -67,6 +71,7 @@ Your content here. [[Wiki links]] supported.
 ## Agent integration
 
 ```bash
+cortex init ~/my-vault                       # a new vault, offline — the same one the app's "New vault" makes
 cortex search "weekly review"                # same search the app has
 cortex new "Week 36" --tag summary --body -  # same naming, sorted frontmatter
 cortex propose "Summarise week 36" notes/summaries/week-36-2026-09-07.md

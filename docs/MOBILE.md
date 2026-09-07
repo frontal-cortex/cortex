@@ -36,7 +36,6 @@ cover. The transport refactor (Phase 1) is the actual mobile project.
 | conflict resolve (ours/theirs) | `git.rs:342`, `git.rs:350` | `git checkout --ours/--theirs` + `add` |
 | complete merge | `git.rs:365` | `git commit --no-edit` |
 | branch/state | `git.rs:270`–`285` | `symbolic-ref`, `rev-parse`, `diff` |
-| template clone | `vault.rs:268` | `git clone --depth 1` |
 | user identity | `members.rs:64` | `git config user.name/email` |
 | reveal in OS | `notes.rs:455` | `open -R` / `explorer` (desktop only) |
 
@@ -122,9 +121,9 @@ No folder picker exists in the iOS sandbox, so the open/create flows change:
   (`app_data_dir/vaults/<slug>`) → `open_vault(that path)`. `open_vault`,
   `VaultState`, and `recent.rs` already key off an absolute path, so they work
   unchanged once it is a container path.
-- **`create_vault_from_template`** (`vault.rs:251`) shells out to clone — add a
-  `#[cfg(mobile)]` branch that uses `Git2Remote::clone_to`, or create an empty
-  repo locally and attach a remote.
+- **`create_vault_from_template`** scaffolds from the bundled template
+  (`cortex_core::template`) and inits with `git2` — no shell-out, so it works
+  on mobile as-is. "Add an existing vault" is the clone case above.
 - `reveal_path` (`notes.rs:455`) — `#[cfg]` it off on mobile.
 
 ## Phase 4 — Responsive UI mode

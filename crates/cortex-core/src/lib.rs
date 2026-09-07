@@ -18,4 +18,5 @@ pub mod members;
 pub mod note;
 pub mod schema;
 pub mod settings;
+pub mod template;
 pub mod vault;

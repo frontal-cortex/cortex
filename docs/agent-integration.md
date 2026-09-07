@@ -38,6 +38,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n]` | query a database like the app's table |
 | `cortex schema [key]` | typed properties for a collection or note type |
 | `cortex status` | changed files, sync counts, recent commits, proposals |
+| `cortex init [DIR]` | create a new vault (bundled starter template, git initialised, docs + settings written) — works offline |
 | `cortex propose <name> [-m msg] [--all] <paths…>` | package changes for review |
 | `cortex proposals` / `diff` / `apply` / `discard <name>` | manage proposals from the terminal |
 | `cortex settings [get <key> \| set key=value… \| describe]` | read, edit, or explain `.cortex/settings.yaml` |
@@ -95,7 +96,7 @@ exits.
 
 | Key | Meaning |
 |---|---|
-| `auto_commit` | commit after every note save (`true` / `false`, default `false`) |
+| `auto_commit` | commit after every note save, debounced (`true` / `false`, default `true`) |
 | `default_note_type` | frontmatter `type` for new notes (default `note`) |
 | `journal_template` | template under `templates/` for daily notes (default `daily.md`) |
 | `theme` | `light` / `dark` / `system` (default `system`) |
