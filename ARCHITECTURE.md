@@ -93,21 +93,25 @@ Three layers, in order of how much infrastructure they need:
 
 ## AI Agent Integration
 
-Agents interact with the vault through git. The protocol is:
+The vault model lives in `crates/cortex-core`; the app, the `cortex` CLI and
+the `cortex mcp` server are thin layers over it. So an agent driving the CLI
+or MCP tools gets the *same* semantics the user sees — frontmatter rules, link
+resolution, typed properties, views — instead of re-deriving them from YAML.
 
-1. **Agent clones or fetches** the vault repo.
-2. **Agent creates a branch** named `agent/<description>` (e.g. `agent/plan-project-x`).
-3. **Agent commits changes** to notes on that branch.
-4. **Agent pushes** the branch to the remote (or writes it locally if working in-process).
-5. **App detects** `agent/*` branches and surfaces them as pending reviews.
-6. **User reviews** the diff in the app's built-in diff view.
-7. **User approves** (merge + delete branch) or **discards** (delete branch, no merge).
+Two kinds of change, by design:
 
-The agent needs only: git access + read/write to the vault directory. It does not need to know anything about the app, its API, or its data format beyond "Markdown files with YAML frontmatter."
+- **Direct writes** (CLI, MCP tools, or the files themselves) land immediately;
+  the app watches the filesystem and follows.
+- **Proposals** — `cortex propose <name> <paths>` or the `propose` MCP tool —
+  commit the given paths onto an `agent/<slug>` branch and restore the working
+  tree. The app lists `agent/*` branches (local, or on `origin` after a sync)
+  as proposals; the user opens one, reads the diff, and applies or discards it.
+  Applying merges and deletes the branch (both copies, if it was pushed).
 
-### Configuring an Agent
-
-Agents are configured per-vault in `.brain/agents.json` (not yet implemented). Each entry specifies the trigger (manual, schedule, webhook), the agent executable or API endpoint, and the permissions scope (read-only, can create notes, can modify existing notes, can delete).
+An agent with only git can do the same by hand: branch `agent/<name>`, commit,
+optionally push. Every vault carries an `AGENTS.md` (written on first open,
+the user's to edit) with the layout, rules and cheatsheet. See
+[docs/agent-integration.md](docs/agent-integration.md).
 
 ---
 

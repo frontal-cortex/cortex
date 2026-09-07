@@ -1,115 +1,99 @@
 # Agent Integration
 
-How AI agents interact with a Second Brain vault.
+How AI agents work with a Cortex vault. Three doors, one set of semantics:
+the `cortex` CLI, the `cortex mcp` server, and plain git — all built on
+`cortex-core`, the same crate the app runs on, so an agent sees exactly what
+the user sees: the same frontmatter rules, link resolution, and views.
 
-## Protocol
+## What lands where
 
-Agents interact through standard git. No app-specific API is required.
+An agent has two ways to change a vault, and the choice is the whole design:
 
-```
-1. Agent clones or fetches the vault repo
-2. Agent creates a branch:  agent/<description>
-3. Agent reads/writes .md files on that branch
-4. Agent commits and pushes the branch
-5. App detects agent/* branches → shows as "Agent proposals"
-6. User reviews the diff, then Applies (merge) or Discards (delete branch)
-```
+| Change                                     | How                                 | The user sees                         |
+|--------------------------------------------|-------------------------------------|---------------------------------------|
+| Small and obviously right (fix a tag, add a link, file a capture) | write directly — CLI, MCP, or the file | it appear live; the app follows the filesystem |
+| Anything that deserves a look first        | `propose` it                        | a **proposal** in the sidebar: diff first, then Apply / Discard |
 
-The agent only needs: git access + knowledge that notes are Markdown files
-with YAML frontmatter. It does not need to know the app exists.
+`propose` commits the given paths onto an `agent/<name>` branch and restores
+the working tree, so the user's copy is untouched until they decide. That is
+the "review like a pull request" promise, made concrete.
 
-## Branch naming
+## The `cortex` CLI
 
-All agent branches must start with `agent/`. The text after the slash
-becomes the proposal description shown in the UI.
-
-```
-agent/summarise-meeting-notes
-agent/create-project-plan
-agent/weekly-review
+```bash
+cargo install --path crates/cortex-cli     # puts `cortex` on PATH
+cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 ```
 
-## What agents can do
+| Command | Does |
+|---|---|
+| `cortex ls [dir] [--type t] [--tag t]` | list notes, newest first |
+| `cortex search <words>` | full-text search (prefix match per word) |
+| `cortex show <note> [--body]` | print a note — by path, title, or filename stem |
+| `cortex new <title> [--dir d] [--type t] [--tag t]… [--template x] [--body -]` | create; prints the path |
+| `cortex set <note> key=value… [key=]` | merge typed properties (`3`, `true`, `[a, b]`); `key=` removes |
+| `cortex write <note> < body.md` | replace the body, keep the frontmatter |
+| `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
+| `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
+| `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n]` | query a database like the app's table |
+| `cortex schema [key]` | typed properties for a collection or note type |
+| `cortex status` | changed files, sync counts, recent commits, proposals |
+| `cortex propose <name> [-m msg] [--all] <paths…>` | package changes for review |
+| `cortex proposals` / `diff` / `apply` / `discard <name>` | manage proposals from the terminal |
+| `cortex mcp` | serve all of the above over MCP (stdio) |
 
-| Action | How |
-|--------|-----|
-| Read notes | `git clone` or `git fetch`, read `.md` files |
-| Create notes | Write a new `.md` file with frontmatter |
-| Edit notes | Modify existing `.md` files |
-| Delete notes | `git rm` a file |
-| Create folders | `mkdir` (git tracks via `.gitkeep` or first file) |
-| Link notes | Write `[[Note Title]]` in the body |
+Every command takes `--json`. Errors go to stderr with exit code 1.
+
+## The MCP server
+
+`cortex mcp` speaks the Model Context Protocol over stdio and exposes the
+same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
+`write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
+`query_collection`, `get_schema`, `status`, `propose`, `list_proposals`,
+`proposal_diff`. Its instructions block teaches the agent the vault's
+conventions and the propose-for-review rule.
+
+Claude Code:
+
+```bash
+claude mcp add cortex -- cortex mcp --vault ~/my-vault
+```
+
+Any other MCP client: run `cortex mcp --vault <dir>` as a stdio server.
+
+## `AGENTS.md`
+
+The app writes an `AGENTS.md` into every vault on first open (next to
+`VAULT.md`), so an agent that simply lands in the folder — a Claude Code
+session, a cron job — finds the layout, the rules, and the command
+cheatsheet. It is the user's file after that; edit it freely.
+
+## Plain git
+
+Everything above is sugar over git. An agent with only a shell can still:
+
+```bash
+git checkout -b agent/summarise-week-36
+# … write notes/summaries/week-36.md (sorted frontmatter, [[links]]) …
+git add -A && git commit -m "Summarise week 36"
+git push origin agent/summarise-week-36     # or leave it local
+```
+
+The app lists `agent/*` branches — local, or on `origin` after a sync —
+as proposals. Applying a remote-only proposal creates the local branch,
+merges, and deletes both copies.
 
 ## Frontmatter conventions
 
-Agents should follow the same frontmatter conventions as the app:
-
 ```yaml
 ---
-created: 2024-01-15   # ISO date
-tags: [tag1, tag2]    # list
-title: Note Title     # display name
-type: note            # note type
+created: 2026-09-07      # ISO date
+tags: [tag1, tag2]       # list
+title: Note Title        # display name
+type: note               # note type; also picks the property schema
 ---
 ```
 
-Keys must be **alphabetically sorted** so the app produces identical output
-and diffs stay clean. Any extra fields are preserved.
-
-## Review UX
-
-When an `agent/*` branch exists, the sidebar shows it under "Agent proposals":
-
-- **Apply** — fast-forward merges the branch into main, deletes the branch
-- **Discard** — deletes the branch without merging
-
-If the merge produces conflicts, the app surfaces them as standard git
-conflict markers in the affected notes. The user resolves them in the editor.
-
-## Example: Claude Code agent
-
-```bash
-#!/bin/bash
-# Example: agent that summarises today's meeting notes
-
-VAULT_PATH="$1"
-TODAY=$(date +%Y-%m-%d)
-BRANCH="agent/summarise-$TODAY"
-
-cd "$VAULT_PATH"
-git checkout -b "$BRANCH"
-
-# ... agent reads notes, writes summary ...
-echo "---
-title: Summary $TODAY
-type: note
-tags: [summary]
-created: $TODAY
----
-
-$(cat notes/journal/$TODAY.md | your-llm-summariser)
-" > "notes/summaries/$TODAY.md"
-
-git add .
-git commit -m "Add meeting summary for $TODAY"
-git push origin "$BRANCH"
-```
-
-The app will detect `agent/summarise-YYYY-MM-DD` and show it for review.
-
-## Planned: `.brain/agents.json`
-
-Per-vault agent configuration (not yet implemented):
-
-```json
-{
-  "agents": [
-    {
-      "name": "Daily summariser",
-      "trigger": "manual",
-      "command": "./scripts/summarise.sh",
-      "permissions": ["read", "create"]
-    }
-  ]
-}
-```
+Keys are kept **alphabetically sorted** so every writer produces identical
+output and diffs stay clean. `cortex set` / `cortex fmt` / the MCP tools do
+this for you; if you write files by hand, sort the keys.

@@ -53,6 +53,8 @@ export function LeftPanel({
 
   const [newFolderIn, setNewFolderIn] = useState<string | null>(null);
   const [diffHash, setDiffHash] = useState<string | null>(null);
+  // Proposal under review — its diff is shown before Apply/Discard are offered.
+  const [review, setReview] = useState<AgentBranch | null>(null);
   // Notes section root drop zone
   const [notesSectionDragOver, setNotesSectionDragOver] = useState(false);
 
@@ -352,9 +354,9 @@ export function LeftPanel({
         commits={commits}
         agentBranches={agentBranches}
         onCommit={onCommit}
-        onApplyBranch={onApplyBranch}
         onDiscardBranch={onDiscardBranch}
         onCommitClick={setDiffHash}
+        onReviewBranch={setReview}
       />
 
       {/* ── Footer (under the change log) ───────────────────────── */}
@@ -365,6 +367,14 @@ export function LeftPanel({
         </button>
       </div>
 
+      {review && (
+        <CommitDiffModal
+          branch={review}
+          onClose={() => setReview(null)}
+          onApply={() => onApplyBranch(review.name)}
+          onDiscard={() => onDiscardBranch(review.name)}
+        />
+      )}
       {diffHash && (
         <CommitDiffModal hash={diffHash} onClose={() => setDiffHash(null)} />
       )}
@@ -454,7 +464,7 @@ function Section({
 
 function GitSection({
   status, isDirty, changedCount, commits, agentBranches,
-  onCommit, onApplyBranch, onDiscardBranch, onCommitClick,
+  onCommit, onDiscardBranch, onCommitClick, onReviewBranch,
 }: {
   status: VaultStatus | null;
   isDirty: boolean;
@@ -462,9 +472,9 @@ function GitSection({
   commits: CommitEntry[];
   agentBranches: AgentBranch[];
   onCommit: (msg: string) => Promise<void>;
-  onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
   onCommitClick: (hash: string) => void;
+  onReviewBranch: (branch: AgentBranch) => void;
 }) {
   const [msg, setMsg] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -515,10 +525,10 @@ function GitSection({
       )}
 
       {agentBranches.map((b) => (
-        <div key={b.name} className={styles.agentBranch}>
+        <div key={b.name} className={styles.agentBranch} title={`${b.name}${b.remote ? " (on origin)" : ""} · ${b.commit_count} commit${b.commit_count === 1 ? "" : "s"}`}>
           <span className={styles.agentDot}>●</span>
-          <span className={styles.agentDesc}>{b.description}</span>
-          <button className={styles.applyBtn} onClick={() => onApplyBranch(b.name)}>Apply</button>
+          <button className={styles.agentDesc} onClick={() => onReviewBranch(b)}>{b.description}</button>
+          <button className={styles.applyBtn} onClick={() => onReviewBranch(b)}>Review</button>
           <button className={styles.discardBtn} onClick={() => onDiscardBranch(b.name)} title="Discard proposal"><CloseIcon size={12} /></button>
         </div>
       ))}
