@@ -1,4 +1,4 @@
-/* iA Writer Quattro S — the prose face for the editor and viewer.
+/* iA Writer Quattro S (default) and Duo S — prose faces for the editor and viewer.
    Bundled (SIL Open Font License 1.1, see assets/fonts/LICENSE-iA-Writer.md)
    so every machine renders the same faces — deliberately no `local()`:
    WebKitGTK matched the installed family loosely (bold for regular). */
@@ -29,4 +29,32 @@
   font-weight: 700;
   font-display: swap;
   src: url("../assets/fonts/iAWriterQuattroS-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterDuoS-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterDuoS-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterDuoS-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterDuoS-BoldItalic.ttf") format("truetype");
 }

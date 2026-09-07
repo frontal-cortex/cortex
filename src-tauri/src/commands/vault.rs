@@ -136,6 +136,7 @@ default_note_type: note      # pre-filled type for new notes
 journal_template: daily.md   # template used for Today / daily notes
 theme: system                # light | dark | system
 theme_file: ""               # follow a palette file, e.g. ~/.local/state/omarchy/current/theme/colors.toml
+prose_font: quattro          # page typeface: quattro | duo | serif | system | mono | any font-family name
 trash_retention_days: 30     # auto-prune trashed notes after N days (0 = never)
 ```
 "#;
