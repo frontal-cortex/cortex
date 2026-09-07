@@ -227,6 +227,10 @@ export interface Settings {
   prose_font: string;
   /** Page tilt: "" upright, degrees ("4", "8"), or "italic". */
   prose_slant: string;
+  /** Shortcut overrides: shortcut id → keys (e.g. "mod+shift+b"). See lib/keymap.ts. */
+  keybindings: Record<string, string>;
+  /** Command run inside the terminal pane when it opens (an agent CLI). Empty = plain shell. */
+  terminal_command: string;
 }
 
 /** A desktop palette: colour name → hex, plus which side of light/dark it is. */

@@ -2,6 +2,7 @@
 //! Every field has a default so a missing key (or file) is never an error.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::error::Result;
@@ -44,6 +45,15 @@ pub struct Settings {
     /// slant on variable fonts, the italic face otherwise), or "italic".
     #[serde(default)]
     pub prose_slant: String,
+    /// Keyboard shortcut overrides: shortcut id → keys, e.g.
+    /// `toggle-sidebar: mod+shift+b`. Ids and defaults live in the app's
+    /// keymap (src/lib/keymap.ts); `mod` is ⌘ on macOS, Ctrl elsewhere.
+    #[serde(default)]
+    pub keybindings: BTreeMap<String, String>,
+    /// Command to run inside the terminal pane when it opens — an agent CLI
+    /// such as `claude`, `hermes` or `openclaw`. Empty = a plain shell.
+    #[serde(default)]
+    pub terminal_command: String,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -64,6 +74,8 @@ impl Default for Settings {
             theme_file: String::new(),
             prose_font: String::new(),
             prose_slant: String::new(),
+            keybindings: BTreeMap::new(),
+            terminal_command: String::new(),
         }
     }
 }
