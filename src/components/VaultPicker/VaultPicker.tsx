@@ -11,6 +11,18 @@ interface Props {
   error: string | null;
 }
 
+// Canvas colours come from the design tokens so the brain wears the theme
+// (including a followed desktop palette). Tokens resolve to plain hex.
+type Rgb = [number, number, number];
+function tokenRgb(name: string, fallback: Rgb): Rgb {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(v);
+  if (!m) return fallback;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
 export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, creating, error }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -105,13 +117,28 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
     const tilt = -0.32;
     const focal = 4;
 
+    // Theme colours, re-read every few frames so a live palette switch retints
+    // the brain without a remount. Additive blending only works on dark.
+    let accentRgb: Rgb = [143, 183, 255];
+    let inkRgb: Rgb = [200, 215, 255];
+    let dark = true;
+    let frameNo = 0;
+    const refreshColors = () => {
+      accentRgb = tokenRgb("--accent", accentRgb);
+      inkRgb = tokenRgb("--text-primary", inkRgb);
+      const t = document.documentElement.dataset.theme;
+      dark = t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    };
+    refreshColors();
+
     function frame() {
+      if (frameNo++ % 30 === 0) refreshColors();
       angle += reduceMotion ? 0 : 0.0016;
       const cos = Math.cos(angle), sin = Math.sin(angle);
       const ct = Math.cos(tilt), st = Math.sin(tilt);
 
       ctx.clearRect(0, 0, W, H);
-      ctx.globalCompositeOperation = "lighter";
+      ctx.globalCompositeOperation = dark ? "lighter" : "source-over";
 
       for (let i = 0; i < COUNT; i++) {
         const x = pts[i * 3], y = pts[i * 3 + 1], z = pts[i * 3 + 2];
@@ -157,7 +184,7 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
       ctx.lineWidth = 1;
       for (let b = 0; b < BUCKETS; b++) {
         const d = (b + 0.5) / BUCKETS;
-        ctx.strokeStyle = `rgba(102,156,240,${(0.016 + d * 0.06).toFixed(3)})`;
+        ctx.strokeStyle = `rgba(${accentRgb.join(",")},${(0.016 + d * 0.06).toFixed(3)})`;
         ctx.stroke(paths[b]);
       }
 
@@ -166,11 +193,12 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
         const d = depth[i];
         if (d < 0.04) continue;
         const size = 0.7 + d * 2.2;
-        const a = 0.16 + d * 0.82;
-        let r: number, g: number, bl: number;
-        if (accent[i]) { r = 150; g = 120; bl = 240; }
-        else { r = 70 + d * 120; g = 110 + d * 120; bl = 180 + d * 70; }
-        ctx.fillStyle = `rgba(${r | 0},${g | 0},${bl | 0},${a.toFixed(2)})`;
+        const a = dark ? 0.16 + d * 0.82 : 0.1 + d * 0.55;
+        // Far particles sit in the accent; near ones brighten toward the ink.
+        const src: Rgb = accent[i]
+          ? accentRgb
+          : [lerp(accentRgb[0], inkRgb[0], d), lerp(accentRgb[1], inkRgb[1], d), lerp(accentRgb[2], inkRgb[2], d)];
+        ctx.fillStyle = `rgba(${src[0] | 0},${src[1] | 0},${src[2] | 0},${a.toFixed(2)})`;
         ctx.fillRect(sx[i] - size * 0.5, sy[i] - size * 0.5, size, size);
       }
 
@@ -194,8 +222,8 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
         const d = depth[f] + (depth[to] - depth[f]) * t;
         const rad = (1.4 + d * 2.2) * 4;
         const grad = ctx.createRadialGradient(px, py, 0, px, py, rad);
-        grad.addColorStop(0, `rgba(190,225,255,${(0.85 * d).toFixed(2)})`);
-        grad.addColorStop(1, "rgba(120,170,255,0)");
+        grad.addColorStop(0, `rgba(${inkRgb.join(",")},${(0.85 * d).toFixed(2)})`);
+        grad.addColorStop(1, `rgba(${accentRgb.join(",")},0)`);
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(px, py, rad, 0, Math.PI * 2);
@@ -221,14 +249,14 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
         const px = sx[n], py = sy[n];
         const coreR = 10 + d * 16;
         const g = ctx.createRadialGradient(px, py, 0, px, py, coreR);
-        g.addColorStop(0, `rgba(214,236,255,${(0.85 * fade * d).toFixed(2)})`);
-        g.addColorStop(1, "rgba(140,190,255,0)");
+        g.addColorStop(0, `rgba(${inkRgb.join(",")},${(0.85 * fade * d).toFixed(2)})`);
+        g.addColorStop(1, `rgba(${accentRgb.join(",")},0)`);
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(px, py, coreR, 0, Math.PI * 2);
         ctx.fill();
         const ringR = (5 + fl.life * 30) * (0.55 + d * 0.45);
-        ctx.strokeStyle = `rgba(176,214,255,${(0.45 * fade * d).toFixed(2)})`;
+        ctx.strokeStyle = `rgba(${accentRgb.join(",")},${(0.45 * fade * d).toFixed(2)})`;
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.arc(px, py, ringR, 0, Math.PI * 2);

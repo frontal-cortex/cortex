@@ -218,6 +218,14 @@ export interface Settings {
   auto_sync_minutes: number;
   /** Yjs websocket relay for presence + co-editing. Empty = off. */
   collab_url: string;
+  /** Palette file to follow (Omarchy `colors.toml` shape). Empty = use `theme`. */
+  theme_file: string;
+}
+
+/** A desktop palette: colour name → hex, plus which side of light/dark it is. */
+export interface Palette {
+  mode: "light" | "dark" | string;
+  colors: Record<string, string>;
 }
 
 /** Result of a sync: clean (did we pull anything?) or a conflicted merge. */
@@ -394,6 +402,14 @@ export const commands = {
 
   setSettings: (settings: Settings) =>
     invoke<void>("set_settings", { settings }),
+
+  /** Follow a palette file (empty = stop). Null = no usable file; fall back to `theme`. */
+  watchThemeFile: (path: string) =>
+    invoke<Palette | null>("watch_theme_file", { path }),
+
+  /** The desktop's own palette file, if this machine has one we recognise. */
+  detectDesktopTheme: () =>
+    invoke<string | null>("detect_desktop_theme"),
 
   listTrash: () =>
     invoke<TrashEntry[]>("list_trash"),

@@ -42,6 +42,11 @@ pub struct Settings {
     /// `ws://office-server:1234`). Empty = collaboration features off.
     #[serde(default)]
     pub collab_url: String,
+    /// Palette file to follow — Omarchy's `colors.toml` shape (see theme.rs).
+    /// `~` is expanded per machine; a missing file silently falls back to
+    /// `theme`, so the setting can be committed with the vault.
+    #[serde(default)]
+    pub theme_file: String,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -59,6 +64,7 @@ impl Default for Settings {
             trash_retention_days: default_trash_retention(),
             auto_sync_minutes: 0,
             collab_url: String::new(),
+            theme_file: String::new(),
         }
     }
 }

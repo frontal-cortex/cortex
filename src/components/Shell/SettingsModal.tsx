@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
 import { commands, Settings, VaultInfo, Member, CurrentUser } from "../../lib/commands";
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
+import { syncTheme } from "../../lib/theme";
 import { Dropdown } from "./Dropdown";
 import { CloseIcon } from "./icons";
 import styles from "./SettingsModal.module.css";
-
-/** Apply a theme preference to the document. "system" defers to the OS. */
-export function applyTheme(theme: Settings["theme"]) {
-  const root = document.documentElement;
-  if (theme === "dark" || theme === "light") root.dataset.theme = theme;
-  else delete root.dataset.theme;
-}
 
 interface Props {
   vault: VaultInfo;
@@ -20,9 +14,12 @@ interface Props {
 
 export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
+  // The desktop's palette file, when this machine has one (Omarchy).
+  const [desktopTheme, setDesktopTheme] = useState<string | null>(null);
 
   useEffect(() => {
     commands.getSettings().then(setSettings).catch(() => {});
+    commands.detectDesktopTheme().then(setDesktopTheme).catch(() => {});
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -33,7 +30,7 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
       if (!s) return s;
       const next = { ...s, ...patch };
       commands.setSettings(next).catch(() => {});
-      if (patch.theme) applyTheme(patch.theme);
+      if (patch.theme !== undefined || patch.theme_file !== undefined) syncTheme(next);
       return next;
     });
   };
@@ -69,15 +66,36 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
               <label className={styles.row}>
                 <span className={styles.label}>Theme</span>
                 <Dropdown
-                  value={settings.theme}
+                  value={settings.theme_file ? "desktop" : settings.theme}
                   options={[
                     { value: "system", label: "System" },
                     { value: "light", label: "Light" },
                     { value: "dark", label: "Dark" },
+                    // Offered when the desktop publishes a palette, or one is already set.
+                    ...(desktopTheme || settings.theme_file
+                      ? [{ value: "desktop", label: desktopTheme ? "Desktop (Omarchy)" : "Palette file" }]
+                      : []),
                   ]}
-                  onChange={(v) => update({ theme: v as Settings["theme"] })}
+                  onChange={(v) =>
+                    v === "desktop"
+                      ? update({ theme_file: settings.theme_file || desktopTheme || "" })
+                      : update({ theme: v as Settings["theme"], theme_file: "" })
+                  }
                 />
               </label>
+
+              {settings.theme_file && (
+                <label className={styles.row}>
+                  <span className={styles.label}>Palette file</span>
+                  <input
+                    className={styles.input}
+                    value={settings.theme_file}
+                    spellCheck={false}
+                    title="A colors.toml in Omarchy's shape. The app retints live when it changes."
+                    onChange={(e) => update({ theme_file: e.target.value })}
+                  />
+                </label>
+              )}
 
               <label className={styles.row}>
                 <span className={styles.label}>Auto-commit on save</span>

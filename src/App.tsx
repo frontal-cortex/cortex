@@ -1,11 +1,18 @@
+import { useEffect } from "react";
 import "./styles/tokens.css";
 import { useVault } from "./hooks/useVault";
+import { initThemeListener } from "./lib/theme";
 import { VaultPicker } from "./components/VaultPicker/VaultPicker";
 import { Shell } from "./components/Shell/Shell";
 import styles from "./App.module.css";
 
 export default function App() {
   const vault = useVault();
+  useEffect(() => initThemeListener(), []);
+
+  // While deciding whether to reopen the last vault, show only the app
+  // background rather than a landing page that would vanish a moment later.
+  if (vault.booting) return <div className={styles.root} />;
 
   return (
     <div className={styles.root}>

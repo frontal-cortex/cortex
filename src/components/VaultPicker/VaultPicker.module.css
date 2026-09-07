@@ -1,3 +1,8 @@
+/* The landing page is drawn entirely from design tokens, so it wears the same
+   theme as the shell — including a followed desktop palette. `color-mix`
+   derives every tint from --bg-app / --accent / --text-primary, which keeps
+   the composition intact in both light and dark. */
+
 .root {
   position: relative;
   flex: 1;
@@ -7,7 +12,10 @@
   justify-content: center;
   overflow: hidden;
   isolation: isolate;
-  background: radial-gradient(125% 95% at 50% 36%, #0c1322 0%, #070a13 46%, #030305 100%);
+  background: radial-gradient(125% 95% at 50% 36%,
+    color-mix(in srgb, var(--bg-app) 90%, var(--accent)) 0%,
+    var(--bg-app) 46%,
+    color-mix(in srgb, var(--bg-app) 94%, var(--text-primary)) 100%);
 }
 
 /* slow-drifting aurora blobs behind the particle field */
@@ -25,7 +33,7 @@
   width: 540px;
   height: 540px;
   margin: -270px 0 0 -270px;
-  background: radial-gradient(circle, rgba(42, 96, 210, 0.38), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%);
   animation: drift1 24s ease-in-out infinite;
 }
 
@@ -33,7 +41,7 @@
   width: 440px;
   height: 440px;
   margin: -220px 0 0 -220px;
-  background: radial-gradient(circle, rgba(124, 76, 222, 0.3), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--git-agent) 28%, transparent), transparent 70%);
   animation: drift2 30s ease-in-out infinite;
 }
 
@@ -45,17 +53,17 @@
   height: 100%;
 }
 
-/* darkens the core so the text stays legible while particles glow around it */
+/* quiets the core so the text stays legible while particles glow around it */
 .scrim {
   position: absolute;
   inset: 0;
   z-index: 2;
   pointer-events: none;
   background: radial-gradient(58% 48% at 50% 49%,
-    rgba(5, 7, 13, 0.92) 0%,
-    rgba(5, 7, 13, 0.8) 30%,
-    rgba(5, 7, 13, 0.42) 58%,
-    rgba(5, 7, 13, 0) 82%);
+    color-mix(in srgb, var(--bg-app) 92%, transparent) 0%,
+    color-mix(in srgb, var(--bg-app) 80%, transparent) 30%,
+    color-mix(in srgb, var(--bg-app) 42%, transparent) 58%,
+    transparent 82%);
 }
 
 .content {
@@ -82,14 +90,13 @@
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.92);
-  text-shadow: 0 1px 12px rgba(2, 4, 10, 0.8);
+  color: var(--text-primary);
   animation-delay: 0.05s;
 }
 
 .wordmark svg {
-  color: #8fb7ff;
-  filter: drop-shadow(0 0 8px rgba(110, 160, 255, 0.6));
+  color: var(--accent);
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
 }
 
 .title {
@@ -98,11 +105,12 @@
   line-height: 1.1;
   font-weight: 600;
   letter-spacing: -0.02em;
-  background: linear-gradient(180deg, #ffffff 0%, #b7c5e6 100%);
+  background: linear-gradient(180deg,
+    var(--text-primary) 0%,
+    color-mix(in srgb, var(--text-primary) 72%, var(--accent)) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 2px 18px rgba(2, 4, 10, 0.65));
   animation-delay: 0.12s;
 }
 
@@ -112,8 +120,7 @@
   font-size: 15px;
   line-height: 1.6;
   text-wrap: balance;
-  color: rgba(208, 218, 240, 0.78);
-  text-shadow: 0 1px 10px rgba(2, 4, 10, 0.85);
+  color: var(--text-secondary);
   animation-delay: 0.2s;
 }
 
@@ -140,16 +147,16 @@
 }
 
 .button {
-  color: #fff;
-  border: 1px solid rgba(120, 160, 255, 0.5);
-  background: linear-gradient(180deg, rgba(63, 124, 244, 0.95), rgba(40, 92, 212, 0.95));
-  box-shadow: 0 8px 30px rgba(42, 102, 232, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: var(--text-inverse);
+  border: 1px solid color-mix(in srgb, var(--accent) 75%, var(--text-primary));
+  background: var(--accent);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .button:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.06);
-  box-shadow: 0 12px 40px rgba(60, 120, 244, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .button:active:not(:disabled) {
@@ -157,14 +164,14 @@
 }
 
 .buttonSecondary {
-  color: rgba(216, 224, 244, 0.9);
-  border: 1px solid rgba(140, 160, 200, 0.28);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  border: 1px solid var(--border-focus);
+  background: color-mix(in srgb, var(--bg-hover) 60%, transparent);
 }
 
 .buttonSecondary:hover:not(:disabled) {
-  border-color: rgba(150, 180, 240, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .button:disabled,
@@ -174,20 +181,19 @@
 }
 
 .link {
-  color: rgba(150, 184, 255, 0.85);
+  color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px solid rgba(150, 184, 255, 0.3);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .link:hover {
-  color: #aecbff;
-  border-bottom-color: rgba(174, 203, 255, 0.6);
+  border-bottom-color: var(--accent);
 }
 
 .error {
   margin: 0;
   font-size: 12px;
-  color: #ff8a8a;
+  color: var(--danger);
   animation-delay: 0.32s;
 }
 
@@ -206,8 +212,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(178, 188, 216, 0.55);
-  text-shadow: 0 1px 8px rgba(2, 4, 10, 0.9);
+  color: var(--text-tertiary);
 }
 
 .recentsList {
@@ -229,14 +234,14 @@
   text-align: left;
   cursor: pointer;
   border-radius: 10px;
-  border: 1px solid rgba(140, 160, 200, 0.16);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-hover) 50%, transparent);
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
 }
 
 .recentItem:hover:not(:disabled) {
-  border-color: rgba(150, 180, 240, 0.45);
-  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--accent);
+  background: var(--bg-hover);
   transform: translateY(-1px);
 }
 
@@ -249,14 +254,14 @@
   flex: 0 0 auto;
   font-size: 13px;
   font-weight: 600;
-  color: rgba(224, 230, 246, 0.92);
+  color: var(--text-primary);
 }
 
 .recentPath {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 11px;
-  color: rgba(178, 188, 216, 0.5);
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -268,8 +273,7 @@
   margin: 2px 0 0;
   font-size: 12px;
   line-height: 1.5;
-  color: rgba(178, 188, 216, 0.5);
-  text-shadow: 0 1px 8px rgba(2, 4, 10, 0.9);
+  color: var(--text-tertiary);
   animation-delay: 0.36s;
 }
 

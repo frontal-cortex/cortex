@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged } from "../../lib/commands";
+import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
 import { findShortcut, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
@@ -19,7 +19,8 @@ import { QuickCapture } from "./QuickCapture";
 import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
-import { SettingsModal, applyTheme } from "./SettingsModal";
+import { SettingsModal } from "./SettingsModal";
+import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
 interface Props {
@@ -68,7 +69,7 @@ export function Shell({
   // opens; re-read when the settings modal closes (it may have changed them).
   const loadSettings = useCallback(() => {
     commands.getSettings().then((s) => {
-      applyTheme(s.theme);
+      syncTheme(s);
       setAutoSyncMinutes(s.auto_sync_minutes);
       setAutoCommit(s.auto_commit);
     }).catch(() => {});
@@ -268,14 +269,15 @@ export function Shell({
     setSelectedPath(note.path);
   }, [createNoteFromTemplate]);
 
-  // Flip between light and dark, persisting the choice (forcing an explicit
-  // theme rather than following the OS, matching how the picker behaves).
+  // Flip between light and dark, persisting the choice. An explicit pick is
+  // a deliberate override, so it also stops following a desktop palette.
   const handleToggleTheme = useCallback(async () => {
     const settings = await commands.getSettings();
     const current = document.documentElement.getAttribute("data-theme");
     const next = current === "dark" ? "light" : "dark";
-    applyTheme(next);
-    await commands.setSettings({ ...settings, theme: next });
+    const updated: Settings = { ...settings, theme: next, theme_file: "" };
+    await commands.setSettings(updated);
+    await syncTheme(updated);
   }, []);
 
   // Append a timestamped bullet to today's daily note, creating it if needed —
