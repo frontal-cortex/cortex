@@ -184,7 +184,9 @@ Git already stores every version; surface it.
 Notes can be put on the internet for others to read. Two hosting models,
 one build. Private by default: a note is published only with
 `publish: true` in its frontmatter (or a `public` tag); site-level settings
-live in `.cortex/site.yaml`, so agents can publish through files too.
+are the `site_title` / `site_home` keys in `.cortex/settings.yaml` (one
+config file), so agents can mark notes through files too — but only a person
+builds or pushes the site.
 
 **Now — static site generator in `cortex-core`, `cortex publish --out DIR`.**
 One HTML page per published note, assets, an index, a search JSON. Wiki links
