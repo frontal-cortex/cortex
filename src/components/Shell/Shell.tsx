@@ -21,7 +21,7 @@ import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
 import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
-import { SettingsModal } from "./SettingsModal";
+import { SettingsView } from "./SettingsView";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
@@ -462,7 +462,7 @@ export function Shell({
     "graph":           () => setShowGraph((x) => !x),
     "back":            back,
     "forward":         forward,
-    "settings":        () => setShowSettings(true),
+    "settings":        () => setShowSettings((v) => !v),
     "toggle-sidebar":  () => { if (leftVisible) focusEditor(); toggleLeft(); },
     "toggle-terminal": handleToggleTerminal,
     "monk-mode":       () => { toggleMonk(); requestAnimationFrame(focusEditor); },
@@ -556,6 +556,14 @@ export function Shell({
             <TerminalPane ref={termRef} cwd={vault.path} visible={rightVisible} command={terminalCommand} />
           </aside>
         )}
+
+        {showSettings && (
+          <SettingsView
+            vault={vault}
+            onClose={() => { setShowSettings(false); loadSettings(); focusEditor(); }}
+            onLeaveVault={onLeaveVault}
+          />
+        )}
       </div>
 
       {switcher && (
@@ -596,13 +604,6 @@ export function Shell({
         />
       )}
 
-      {showSettings && (
-        <SettingsModal
-          vault={vault}
-          onClose={() => { setShowSettings(false); loadSettings(); focusEditor(); }}
-          onLeaveVault={onLeaveVault}
-        />
-      )}
 
       {conflicts && (
         <ConflictModal

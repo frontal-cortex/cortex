@@ -79,9 +79,13 @@ interface Combo {
   key: string;
 }
 
+/** Names for keys whose `e.key` is awkward in a `+`-joined string. */
+const KEY_ALIASES: Record<string, string> = { space: " " };
+
 function parse(keys: string): Combo {
   const parts = keys.toLowerCase().split("+");
-  const key = parts.pop() ?? "";
+  const raw = parts.pop() ?? "";
+  const key = KEY_ALIASES[raw] ?? raw;
   return {
     mod: parts.includes("mod"),
     shift: parts.includes("shift"),
@@ -105,6 +109,34 @@ export function matches(e: KeyboardEvent, keys: string): boolean {
   );
 }
 
+/** The combo a key event spells, in the table's notation ("mod+shift+k"),
+ *  or null while only modifiers are down. Used by the settings recorder. */
+export function comboFromEvent(e: KeyboardEvent): string | null {
+  const k = e.key.toLowerCase();
+  if (["control", "meta", "shift", "alt", "altgraph", "capslock", "os", "fn", "hyper", "super", "dead"].includes(k)) return null;
+  const mod = isMac ? e.metaKey : e.ctrlKey;
+  const parts: string[] = [];
+  if (mod) parts.push("mod");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+  parts.push(k === " " ? "space" : k);
+  return parts.join("+");
+}
+
+/** True when the user has overridden this shortcut in settings. */
+export function isOverridden(id: ShortcutId): boolean {
+  return overrides[id] !== undefined;
+}
+
+/** The shortcut (other than `except`) currently bound to `keys`, if any. */
+export function conflictFor(keys: string, except?: ShortcutId): ShortcutId | null {
+  const want = JSON.stringify(parse(keys));
+  for (const id of Object.keys(SHORTCUTS) as ShortcutId[]) {
+    if (id !== except && JSON.stringify(parse(keysFor(id))) === want) return id;
+  }
+  return null;
+}
+
 /** The shortcut this key event triggers, if any. */
 export function findShortcut(e: KeyboardEvent): ShortcutId | null {
   for (const id of Object.keys(SHORTCUTS) as ShortcutId[]) {
@@ -116,7 +148,7 @@ export function findShortcut(e: KeyboardEvent): ShortcutId | null {
 /** Human-readable keys for the current platform: "⌘⇧K" on macOS, "Ctrl+Shift+K" elsewhere. */
 export function formatKeys(keys: string): string {
   const c = parse(keys);
-  const key = c.key.length === 1 ? c.key.toUpperCase() : c.key;
+  const key = c.key === " " ? "Space" : c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1);
   if (isMac) {
     return `${c.mod ? "⌘" : ""}${c.alt ? "⌥" : ""}${c.shift ? "⇧" : ""}${key}`;
   }
