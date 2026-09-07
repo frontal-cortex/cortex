@@ -9,6 +9,156 @@ use crate::note::{self, NoteEntry};
 
 /// Written to a vault's root on first open (next to VAULT.md) so any agent
 /// that lands in the folder knows the rules and the tools. Never overwritten.
+/// `VAULT.md` — the human-readable conventions reference the app (and
+/// `cortex init`) writes into every vault on first open when absent. Kept
+/// beside `AGENTS_MD` so both docs are versioned with the code they describe.
+pub const VAULT_MD: &str = r#"# Vault
+
+This vault is managed by [Second Brain](https://github.com/your-org/second-brain).
+Your data is plain Markdown — readable anywhere, version-controlled with git.
+
+---
+
+## Directory structure
+
+```
+my-vault/
+├── notes/                  ← All your notes. Organise into subdirectories freely.
+│   ├── journal/            ← Example: a folder for daily notes (optional convention).
+│   ├── work/               ← Create any folders you like via the + button in the app.
+│   └── my-note-2024.md
+├── templates/              ← Note templates. See Templates section below.
+├── assets/                 ← Images & files, referenced from notes by relative path.
+├── .trash/                 ← Soft-deleted notes (committed) so you can restore them.
+├── .cortex/                ← Your config (committed, portable, human-readable YAML).
+│   ├── settings.yaml      ← App settings.
+│   └── favorites.yaml     ← Favorited notes.
+├── .brain/                 ← Cache (gitignored). Safe to delete — rebuilt on open.
+│   └── index.db           ← Full-text search index (SQLite).
+└── VAULT.md                ← This file.
+```
+
+## Note format
+
+Every note is a Markdown file with optional YAML frontmatter:
+
+```markdown
+---
+title: My Note
+type: note
+tags: [ideas, project-x]
+created: 2024-01-15
+---
+
+Note body here. Use [[Note Title]] to link to other notes.
+```
+
+### Frontmatter fields
+
+| Field     | Description                                        |
+|-----------|----------------------------------------------------|
+| `title`   | Display name — used in search, links, and the UI.  |
+| `type`    | Note type: `note`, `task`, `meeting`, or anything. |
+| `tags`    | List of tags for filtering.                        |
+| `created` | ISO date the note was created (YYYY-MM-DD).        |
+
+Custom fields are fully supported — add any key/value pair you need.
+Keys are always sorted alphabetically for clean git diffs.
+
+## Wiki links
+
+Type `[[` inside any note to link to another note by title:
+
+```markdown
+See my notes on [[Project Alpha]] and [[Meeting 2024-01-15]].
+```
+
+Links are resolved by `title` frontmatter, falling back to filename stem.
+Backlinks (notes that link *to* the current note) are shown at the bottom of the editor.
+
+## Templates
+
+Place `.md` files in `templates/` to use as note templates.
+
+**Special templates:**
+- `templates/daily.md` — used when creating a journal entry via the Today button.
+
+Supported variables: `{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}`.
+
+Quote placeholders in frontmatter so the file stays valid YAML
+(`title: "{{date}}"`, not `title: {{date}}`).
+
+Example `templates/daily.md`:
+```markdown
+---
+title: "{{date}}"
+type: journal
+tags: [journal]
+---
+
+## What happened today
+
+
+## What I learned
+
+
+## Tomorrow
+```
+
+## AI agent integration
+
+Any AI agent that can read/write files and run git commands can propose changes:
+
+1. Agent creates a branch named `agent/<description>`.
+2. Agent commits note changes to that branch.
+3. The app shows the branch as a pending **proposal**.
+4. You review the diff and **Apply** (merge) or **Discard** (delete branch).
+
+The agent never needs to know about the app — just git and Markdown.
+
+## Sync
+
+The vault syncs to any standard git remote:
+
+```bash
+# Set up a remote once
+git remote add origin git@github.com:you/my-vault.git
+git push -u origin main
+```
+
+After that, use the sync button (↑↓) in the app to push/pull.
+The sync button turns orange when you have unpushed or unpulled commits.
+
+## Settings
+
+All app settings live in one file, `.cortex/settings.yaml`. It is written with
+every key on first open (so you — or an agent — always see the full schema),
+and the app reloads it live whenever it changes on disk. `.cortex/` is
+committed to git so your config travels with the vault; `.brain/` is a
+gitignored cache you can delete at any time.
+
+```yaml
+auto_commit: true            # commit after every note save (debounced; off = commit by hand or on sync)
+default_note_type: note      # pre-filled type for new notes
+journal_template: daily.md   # template used for Today / daily notes
+theme: system                # light | dark | system
+trash_retention_days: 30     # auto-prune trashed notes after N days (0 = never)
+auto_sync_minutes: 0         # minutes between automatic git syncs (0 = off)
+collab_url: ''               # Yjs websocket relay, e.g. ws://host:1234 (empty = off)
+theme_file: ''               # follow a palette file, e.g. ~/.local/state/omarchy/current/theme/colors.toml
+prose_font: ''               # page typeface: ysabeau | quattro | duo | recursive | alegreya | fraunces | crimson | serif | system | mono | any font-family
+prose_slant: ''              # page tilt: '' upright | 4 | 8 (degrees) | italic
+keybindings: {}              # shortcut overrides, id → keys, e.g. {toggle-sidebar: mod+shift+b}
+terminal_command: ''         # command the terminal pane (Ctrl+L) opens with, e.g. claude (empty = shell)
+```
+
+From the terminal: `cortex settings` prints the file, `cortex settings describe`
+explains every key, and `cortex settings set key=value…` edits it with the
+right types (`cortex settings set terminal_command=claude
+keybindings.toggle-sidebar=mod+shift+b`). `cortex agents` lists which agent
+CLIs are installed.
+"#;
+
 pub const AGENTS_MD: &str = r#"# Working in this vault
 
 This folder is a Cortex vault: Markdown notes with YAML frontmatter, tracked
@@ -50,7 +200,7 @@ operations over the Model Context Protocol (stdio).
 and the app reloads it live when it changes. Edit it with
 `cortex settings set key=value…` (typed per key; unknown keys are rejected):
 
-    auto_commit           true | false — commit after every note save (default false)
+    auto_commit           true | false — commit after every note save, debounced (default true)
     default_note_type     frontmatter `type` for new notes (default note)
     journal_template      template under templates/ for daily notes (default daily.md)
     theme                 light | dark | system (default system)

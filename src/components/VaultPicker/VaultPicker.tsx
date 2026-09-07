@@ -339,16 +339,9 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
           </div>
         )}
         <p className={styles.hint}>
-          New vaults start from the{" "}
-          <a
-            className={styles.link}
-            href="https://github.com/frontal-cortex/vault-template"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Cortex template
-          </a>
-          . Opening any folder works too — git is set up automatically.
+          A new vault comes with a welcome note, example folders and two
+          templates, and is a git repository from the start. Opening any folder
+          works too.
         </p>
       </div>
     </div>

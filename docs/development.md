@@ -31,7 +31,9 @@ The first run compiles the Rust backend (~2 min). Subsequent runs are fast.
 cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, target/)
 ├── crates/
 │   ├── cortex-core/          # The vault model, no UI: notes, index, collections, schema, git, settings
+│   │   ├── vault-template/   # The starter vault, compiled in (template.rs) — no network clone
 │   │   ├── src/settings.rs   # `.cortex/settings.yaml`: every key described, typed `set_field`, `ensure_complete`
+│   │   ├── src/vault.rs      # Vault discovery + the VAULT.md / AGENTS.md text written on first open
 │   │   └── src/agents.rs     # Which agent CLIs (claude, hermes, …) are on $PATH, for `terminal_command`
 │   └── cortex-cli/           # `cortex` binary: CLI (main.rs) + MCP server (mcp.rs) over shared ops.rs
 ├── src/                      # React + TypeScript frontend
@@ -73,6 +75,9 @@ rebuilds it. The `.md` files are always the source of truth.
 **Sync shells out to git**: push/pull use the system `git` binary so SSH
 agents and OS credential helpers work. Internal ops (status, commit,
 branch management) use `git2` (libgit2) for cross-platform reliability.
+Commits use the configured git identity; on a machine without one,
+`git::signature()` falls back to `<login> <login@hostname>` so auto-commit
+(on by default) and the initial commit of a new vault still happen.
 
 **The app follows the filesystem**: `watcher.rs` watches the vault and emits
 one debounced `vault://changed` event per burst of external changes (an agent
@@ -93,6 +98,15 @@ whole schema is visible. `cortex settings`, the MCP `get_settings` /
 `set_settings` tools and the Settings modal all go through the same code, and
 the watcher reloads the file live. A new field must be added to `describe()` —
 a test fails otherwise.
+
+**New vaults are scaffolded, not cloned**: `crates/cortex-core/vault-template/`
+is compiled into the binary (`template::FILES`) and written by
+`template::scaffold()`, so "New vault" and `cortex init` work offline and
+produce the same vault. `VAULT.md`, `AGENTS.md` and `.cortex/settings.yaml`
+are not in the template: the app writes the current versions on first open,
+so their text lives in code (`vault::VAULT_MD`, `vault::AGENTS_MD`,
+`settings::describe()`) and is versioned with it. To change the starter
+notes, edit the files under `vault-template/`.
 
 **The sidebar is one flat row list**: `LeftPanel` derives a `TreeRow[]` (in
 render order, from the same open/closed state the renderer reads) and

@@ -1,0 +1,7 @@
+# App metadata — rebuilt by scanning the vault on open. Safe to delete.
+.brain/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*.swo

@@ -32,6 +32,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Create a new vault from the bundled starter template (offline) and print its path
+    Init {
+        /// Directory to create; must be empty or absent (default: current directory)
+        dir: Option<PathBuf>,
+    },
     /// List notes, newest first
     Ls {
         /// Only notes under this folder, e.g. notes/work
@@ -158,10 +163,21 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let v = Vault::open(cli.vault)?;
     let out = Out { json: cli.json };
 
+    // `init` is the one command that runs outside a vault: it makes one.
+    if let Cmd::Init { dir } = &cli.cmd {
+        let dir = dir.clone().or_else(|| cli.vault.clone()).unwrap_or_else(|| PathBuf::from("."));
+        let root = ops::init(dir)?;
+        if out.json { return out.emit(&serde_json::json!({ "path": root })); }
+        println!("{}", root.display());
+        return Ok(());
+    }
+
+    let v = Vault::open(cli.vault)?;
+
     match cli.cmd {
+        Cmd::Init { .. } => unreachable!("handled above"),
         Cmd::Ls { dir, note_type, tag } => {
             out.notes(&v.list(dir.as_deref(), note_type.as_deref(), tag.as_deref()))
         }

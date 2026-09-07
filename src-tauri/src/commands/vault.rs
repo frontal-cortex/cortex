@@ -7,152 +7,6 @@ use cortex_core::db::Db;
 use cortex_core::error::{AppError, Result};
 use cortex_core::git;
 
-const VAULT_MD: &str = r#"# Vault
-
-This vault is managed by [Second Brain](https://github.com/your-org/second-brain).
-Your data is plain Markdown — readable anywhere, version-controlled with git.
-
----
-
-## Directory structure
-
-```
-my-vault/
-├── notes/                  ← All your notes. Organise into subdirectories freely.
-│   ├── journal/            ← Example: a folder for daily notes (optional convention).
-│   ├── work/               ← Create any folders you like via the + button in the app.
-│   └── my-note-2024.md
-├── templates/              ← Note templates. See Templates section below.
-├── assets/                 ← Images & files, referenced from notes by relative path.
-├── .trash/                 ← Soft-deleted notes (committed) so you can restore them.
-├── .cortex/                ← Your config (committed, portable, human-readable YAML).
-│   ├── settings.yaml      ← App settings.
-│   └── favorites.yaml     ← Favorited notes.
-├── .brain/                 ← Cache (gitignored). Safe to delete — rebuilt on open.
-│   └── index.db           ← Full-text search index (SQLite).
-└── VAULT.md                ← This file.
-```
-
-## Note format
-
-Every note is a Markdown file with optional YAML frontmatter:
-
-```markdown
----
-title: My Note
-type: note
-tags: [ideas, project-x]
-created: 2024-01-15
----
-
-Note body here. Use [[Note Title]] to link to other notes.
-```
-
-### Frontmatter fields
-
-| Field     | Description                                        |
-|-----------|----------------------------------------------------|
-| `title`   | Display name — used in search, links, and the UI.  |
-| `type`    | Note type: `note`, `task`, `meeting`, or anything. |
-| `tags`    | List of tags for filtering.                        |
-| `created` | ISO date the note was created (YYYY-MM-DD).        |
-
-Custom fields are fully supported — add any key/value pair you need.
-Keys are always sorted alphabetically for clean git diffs.
-
-## Wiki links
-
-Type `[[` inside any note to link to another note by title:
-
-```markdown
-See my notes on [[Project Alpha]] and [[Meeting 2024-01-15]].
-```
-
-Links are resolved by `title` frontmatter, falling back to filename stem.
-Backlinks (notes that link *to* the current note) are shown at the bottom of the editor.
-
-## Templates
-
-Place `.md` files in `templates/` to use as note templates.
-
-**Special templates:**
-- `templates/daily.md` — used when creating a journal entry via the Today button.
-
-Supported variables: `{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}`.
-
-Quote placeholders in frontmatter so the file stays valid YAML
-(`title: "{{date}}"`, not `title: {{date}}`).
-
-Example `templates/daily.md`:
-```markdown
----
-title: "{{date}}"
-type: journal
-tags: [journal]
----
-
-## What happened today
-
-
-## What I learned
-
-
-## Tomorrow
-```
-
-## AI agent integration
-
-Any AI agent that can read/write files and run git commands can propose changes:
-
-1. Agent creates a branch named `agent/<description>`.
-2. Agent commits note changes to that branch.
-3. The app shows the branch as a pending **proposal**.
-4. You review the diff and **Apply** (merge) or **Discard** (delete branch).
-
-The agent never needs to know about the app — just git and Markdown.
-
-## Sync
-
-The vault syncs to any standard git remote:
-
-```bash
-# Set up a remote once
-git remote add origin git@github.com:you/my-vault.git
-git push -u origin main
-```
-
-After that, use the sync button (↑↓) in the app to push/pull.
-The sync button turns orange when you have unpushed or unpulled commits.
-
-## Settings
-
-All app settings live in one file, `.cortex/settings.yaml`. It is written with
-every key on first open (so you — or an agent — always see the full schema),
-and the app reloads it live whenever it changes on disk. `.cortex/` is
-committed to git so your config travels with the vault; `.brain/` is a
-gitignored cache you can delete at any time.
-
-```yaml
-auto_commit: false           # commit after every note save
-default_note_type: note      # pre-filled type for new notes
-journal_template: daily.md   # template used for Today / daily notes
-theme: system                # light | dark | system
-trash_retention_days: 30     # auto-prune trashed notes after N days (0 = never)
-auto_sync_minutes: 0         # minutes between automatic git syncs (0 = off)
-collab_url: ''               # Yjs websocket relay, e.g. ws://host:1234 (empty = off)
-theme_file: ''               # follow a palette file, e.g. ~/.local/state/omarchy/current/theme/colors.toml
-prose_font: ''               # page typeface: ysabeau | quattro | duo | recursive | alegreya | fraunces | crimson | serif | system | mono | any font-family
-prose_slant: ''              # page tilt: '' upright | 4 | 8 (degrees) | italic
-keybindings: {}              # shortcut overrides, id → keys, e.g. {toggle-sidebar: mod+shift+b}
-terminal_command: ''         # command the terminal pane (Ctrl+L) opens with, e.g. claude (empty = shell)
-```
-
-From the terminal: `cortex settings` prints the file, `cortex settings describe`
-explains every key, and `cortex settings set key=value…` edits it with the
-right types (`cortex settings set terminal_command=claude
-keybindings.toggle-sidebar=mod+shift+b`). `cortex agents` lists which agent
-CLIs are installed.
-"#;
 
 /// Append `entry` to the vault's `.gitignore` if not already present, creating
 /// the file with a sensible header if it doesn't exist. Idempotent.
@@ -221,7 +75,7 @@ pub fn open_vault(
     // opening for the first time — both are the user's to edit afterwards.
     let vault_doc = vault_path.join("VAULT.md");
     if !vault_doc.exists() {
-        std::fs::write(&vault_doc, VAULT_MD)?;
+        std::fs::write(&vault_doc, cortex_core::vault::VAULT_MD)?;
     }
     let agents_doc = vault_path.join("AGENTS.md");
     if !agents_doc.exists() {
@@ -261,52 +115,24 @@ pub fn open_vault(
     Ok(VaultInfo { path, name, has_remote })
 }
 
-/// Public template repo used as the starting point for a new vault.
-const TEMPLATE_URL: &str = "https://github.com/frontal-cortex/vault-template.git";
-
-/// Scaffold a brand-new vault at `path` from the template repo.
+/// Scaffold a brand-new vault at `path` from the bundled starter template
+/// (`cortex_core::template`) — no network, no `git` binary needed.
 ///
-/// Clones the template, strips its git history (so the new vault is the
-/// user's own repo and can never accidentally push to the public template),
-/// then re-initialises a fresh repo with an initial commit. The caller is
-/// expected to follow up with `open_vault(path)`.
+/// Writes the files, initialises a fresh repository and makes an initial
+/// commit, so the vault is the user's own from the first second. The caller
+/// is expected to follow up with `open_vault(path)`, which adds `VAULT.md`,
+/// `AGENTS.md` and `.cortex/settings.yaml`.
 #[tauri::command]
 pub fn create_vault_from_template(path: String) -> Result<()> {
     let target = PathBuf::from(&path);
 
-    // The destination must be empty — never clobber existing files.
-    if target.exists() {
-        let mut entries = std::fs::read_dir(&target)?;
-        if entries.next().is_some() {
-            return Err(AppError::Other(format!(
-                "Directory is not empty: {path}"
-            )));
-        }
-    } else {
-        std::fs::create_dir_all(&target)?;
-    }
-
-    // Shell out to system git so we reuse the user's credentials / proxy
-    // config (same approach as git_sync).
-    let output = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", TEMPLATE_URL, "."])
-        .current_dir(&target)
-        .output()?;
-    if !output.status.success() {
-        return Err(AppError::Other(format!(
-            "Failed to clone template: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-
-    // Drop the template's history + origin so this becomes a clean,
-    // independent repository owned by the user.
-    std::fs::remove_dir_all(target.join(".git"))?;
+    // Refuses a non-empty directory — never clobber existing files.
+    cortex_core::template::scaffold(&target)?;
 
     let repo = git::open_or_init(&target)?;
     // Best-effort initial commit. If the user has no git identity configured,
     // the repo is still valid and the app will index the working tree on open.
-    let _ = git::stage_all_and_commit(&repo, "Initial vault from template");
+    let _ = git::stage_all_and_commit(&repo, "Initial vault");
 
     Ok(())
 }

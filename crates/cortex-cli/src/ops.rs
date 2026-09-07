@@ -52,6 +52,23 @@ pub struct StatusReport {
     pub proposals: Vec<AgentBranch>,
 }
 
+/// Scaffold a new vault at `dir` from the bundled template — the same files
+/// the app's "New vault" writes — as a fresh git repository with an initial
+/// commit, plus the `VAULT.md` / `AGENTS.md` / settings the app would add on
+/// first open, so an agent can hand over a vault that is complete at once.
+/// Returns the absolute path.
+pub fn init(dir: PathBuf) -> Result<PathBuf> {
+    cortex_core::template::scaffold(&dir)?;
+    let root = dir.canonicalize()?;
+    std::fs::write(root.join("VAULT.md"), vault::VAULT_MD)?;
+    std::fs::write(root.join("AGENTS.md"), vault::AGENTS_MD)?;
+    settings::ensure_complete(&root)?;
+    let repo = git::open_or_init(&root)?;
+    // Best-effort: without a git identity the repo still exists and works.
+    let _ = git::stage_all_and_commit(&repo, "Initial vault");
+    Ok(root)
+}
+
 impl Vault {
     /// `root` if given, else the nearest vault above the working directory.
     pub fn open(root: Option<PathBuf>) -> Result<Self> {

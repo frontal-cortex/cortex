@@ -10,6 +10,8 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+# Today's date for scaffolded notes
+chrono.workspace = true
 
 # Git operations
 git2 = { version = "0.19", default-features = false, features = ["vendored-openssl"] }
