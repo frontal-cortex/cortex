@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
-import { findShortcut, ShortcutId } from "../../lib/keymap";
+import { findShortcut, applyKeymapOverrides, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
-import { LeftPanel } from "./LeftPanel";
-import { Editor } from "./Editor";
+import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
+import { Editor, EditorHandle } from "./Editor";
 import { DatabaseView } from "./DatabaseView";
 import {
   isDatabaseNote, collectionNameFromIndex, defaultViews,
@@ -68,6 +68,8 @@ export function Shell({
   const [reloadToken, setReloadToken] = useState(0);
   const [autoSyncMinutes, setAutoSyncMinutes] = useState(0);
   const [autoCommit, setAutoCommit] = useState(false);
+  // Agent CLI the terminal pane launches on open (Settings → Terminal agent).
+  const [terminalCommand, setTerminalCommand] = useState("");
   // Slug of the current git user, used to nest per-person daily notes.
   const [userSlug, setUserSlug] = useState("");
   useEffect(() => {
@@ -84,6 +86,8 @@ export function Shell({
   const loadSettings = useCallback(() => {
     commands.getSettings().then((s) => {
       syncTheme(s);
+      applyKeymapOverrides(s.keybindings);
+      setTerminalCommand(s.terminal_command ?? "");
       setAutoSyncMinutes(s.auto_sync_minutes);
       setAutoCommit(s.auto_commit);
     }).catch(() => {});
@@ -102,11 +106,43 @@ export function Shell({
     currentPath: selectedPath, canBack, canForward,
     navigate: navTo, back, forward,
   } = useNavHistory();
+  const selectedPathRefForFocus = useRef(selectedPath);
+  selectedPathRefForFocus.current = selectedPath;
 
   const setSelectedPath = useCallback((path: string) => navTo(path), [navTo]);
 
+  // ── Focus choreography ──────────────────────────────────────────────────────
+  // Keyboard-first means the cursor is always somewhere useful: a new note
+  // puts you in its title, opening a note puts you in its body, closing a
+  // dialog or the sidebar hands focus back to the page. Because notes load
+  // asynchronously, the intent is parked here and applied once the note is in.
+  const editorRef = useRef<EditorHandle>(null);
+  const leftRef = useRef<LeftPanelHandle>(null);
+  const pendingFocus = useRef<"title" | "body" | null>(null);
+  const focusEditor = useCallback(() => { editorRef.current?.focusBody(); }, []);
+  useEffect(() => {
+    const t = setTimeout(() => { if (!selectedPathRefForFocus.current) leftRef.current?.focus(); }, 250);
+    return () => clearTimeout(t);
+  }, []);
+  /** Open a note and land in its body (or title, for a fresh one). */
+  const openNote = useCallback((path: string, where: "title" | "body" = "body") => {
+    if (path === selectedPathRefForFocus.current) {
+      requestAnimationFrame(() => where === "title" ? editorRef.current?.focusTitle() : editorRef.current?.focusBody());
+    } else {
+      pendingFocus.current = where;
+    }
+    setSelectedPath(path);
+  }, [setSelectedPath]);
+
   const { notes, dirs, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
   const { note, saving, save, applyNote } = useNote(selectedPath);
+  useEffect(() => {
+    const where = pendingFocus.current;
+    if (!where || !note || note.path !== selectedPath) return;
+    pendingFocus.current = null;
+    // Next frame: the editor mounts on this render and registers its handle.
+    requestAnimationFrame(() => where === "title" ? editorRef.current?.focusTitle() : editorRef.current?.focusBody());
+  }, [note, selectedPath]);
   const { favorites, toggleFavorite, isFavorite } = useFavorites(!!vault);
   const { trash, refreshTrash, restore, deleteForever, emptyTrash } = useTrash(!!vault);
 
@@ -254,11 +290,11 @@ export function Shell({
   useEffect(() => {
     function onOpenNote(e: Event) {
       const path = (e as CustomEvent<{ path?: string }>).detail?.path;
-      if (typeof path === "string") setSelectedPath(path);
+      if (typeof path === "string") openNote(path);
     }
     window.addEventListener("cortex:open-note", onOpenNote);
     return () => window.removeEventListener("cortex:open-note", onOpenNote);
-  }, [setSelectedPath]);
+  }, [openNote]);
 
   // Wiki links inside transclusion embeds dispatch this to navigate by ref.
   useEffect(() => {
@@ -273,18 +309,18 @@ export function Shell({
 
   const handleNewNote = useCallback(async (parentFolder?: string) => {
     const created = await createNote("", parentFolder);
-    setSelectedPath(created.path);
-  }, [createNote]);
+    openNote(created.path, "title");
+  }, [createNote, openNote]);
 
   const handleToday = useCallback(async () => {
     const note = await openOrCreateDaily("daily.md", userSlug);
-    setSelectedPath(note.path);
-  }, [openOrCreateDaily, userSlug]);
+    openNote(note.path);
+  }, [openOrCreateDaily, userSlug, openNote]);
 
   const handleNewFromTemplate = useCallback(async (templateName: string) => {
     const note = await createNoteFromTemplate(templateName, "", "notes");
-    setSelectedPath(note.path);
-  }, [createNoteFromTemplate]);
+    openNote(note.path, "title");
+  }, [createNoteFromTemplate, openNote]);
 
   // Flip between light and dark, persisting the choice. An explicit pick is
   // a deliberate override, so it also stops following a desktop palette.
@@ -408,14 +444,14 @@ export function Shell({
   const handleNavigate = useCallback((target: string) => {
     const lower = target.toLowerCase();
     const byPath = notes.find((n) => n.path === target);
-    if (byPath) { setSelectedPath(target); return; }
+    if (byPath) { openNote(target); return; }
     const byTitle = notes.find((n) => (n.title || "").toLowerCase() === lower);
-    if (byTitle) { setSelectedPath(byTitle.path); return; }
+    if (byTitle) { openNote(byTitle.path); return; }
     const byStem = notes.find((n) =>
       n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(lower),
     );
-    if (byStem) setSelectedPath(byStem.path);
-  }, [notes]);
+    if (byStem) openNote(byStem.path);
+  }, [notes, openNote]);
 
   actionsRef.current = {
     "quick-switcher":  () => setSwitcher("notes"),
@@ -427,9 +463,11 @@ export function Shell({
     "back":            back,
     "forward":         forward,
     "settings":        () => setShowSettings(true),
-    "toggle-sidebar":  toggleLeft,
+    "toggle-sidebar":  () => { if (leftVisible) focusEditor(); toggleLeft(); },
     "toggle-terminal": handleToggleTerminal,
-    "monk-mode":       toggleMonk,
+    "monk-mode":       () => { toggleMonk(); requestAnimationFrame(focusEditor); },
+    "focus-sidebar":   () => { if (!leftVisible) toggleLeft(); requestAnimationFrame(() => leftRef.current?.focus()); },
+    "focus-editor":    focusEditor,
   };
 
   return (
@@ -457,6 +495,9 @@ export function Shell({
       <div className={styles.body}>
         <div className={styles.leftSlot} style={leftVisible ? undefined : { display: "none" }}>
         <LeftPanel
+          ref={leftRef}
+          onEscape={focusEditor}
+          onOpenCommandPalette={() => setSwitcher("actions")}
           notes={notes}
           dirs={dirs}
           selectedPath={selectedPath}
@@ -464,7 +505,7 @@ export function Shell({
           agentBranches={agentBranches}
           commits={commits}
           favorites={favorites}
-          onSelect={setSelectedPath}
+          onSelect={(p) => openNote(p)}
           onNewNote={handleNewNote}
           onDeleteNote={handleDelete}
           onTurnIntoDatabase={handleTurnIntoDatabase}
@@ -495,6 +536,7 @@ export function Shell({
           />
         ) : (
           <Editor
+            ref={editorRef}
             note={note}
             saving={saving}
             allNotes={notes}
@@ -511,7 +553,7 @@ export function Shell({
 
         {terminalMounted && (
           <aside className={styles.rightPane} style={rightVisible ? undefined : { display: "none" }}>
-            <TerminalPane ref={termRef} cwd={vault.path} visible={rightVisible} />
+            <TerminalPane ref={termRef} cwd={vault.path} visible={rightVisible} command={terminalCommand} />
           </aside>
         )}
       </div>
@@ -520,8 +562,8 @@ export function Shell({
         <QuickSwitcher
           notes={notes}
           initialQuery={switcher === "actions" ? ">" : ""}
-          onSelect={setSelectedPath}
-          onClose={() => setSwitcher(null)}
+          onSelect={(p) => openNote(p)}
+          onClose={() => { setSwitcher(null); focusEditor(); }}
           onNewNote={() => handleNewNote()}
           onToday={handleToday}
           onOpenGraph={() => setShowGraph(true)}
@@ -534,6 +576,7 @@ export function Shell({
           onToggleSidebar={toggleLeft}
           onToggleTerminal={handleToggleTerminal}
           onToggleMonk={toggleMonk}
+          onFocusSidebar={() => actionsRef.current?.["focus-sidebar"]()}
           hasRemote={vault.has_remote}
         />
       )}
@@ -556,7 +599,7 @@ export function Shell({
       {showSettings && (
         <SettingsModal
           vault={vault}
-          onClose={() => { setShowSettings(false); loadSettings(); }}
+          onClose={() => { setShowSettings(false); loadSettings(); focusEditor(); }}
           onLeaveVault={onLeaveVault}
         />
       )}

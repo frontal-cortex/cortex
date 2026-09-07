@@ -1,0 +1,62 @@
+.card {
+  margin: 2px var(--space-2) var(--space-2) calc(var(--space-2) + 16px);
+  padding: var(--space-1) var(--space-1) var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--space-1) 4px;
+}
+
+.headIcon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.title {
+  flex: 1;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+
+.card:hover .dismiss,
+.card:focus-within .dismiss { opacity: 1; }
+.dismiss:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* Rows inside the card sit at depth -1 so the card's own padding, not the
+   tree indent, sets their left edge. */
+.stepRow { margin: 0; min-height: 26px; }
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

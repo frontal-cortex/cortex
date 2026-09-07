@@ -22,7 +22,8 @@ stay clean — use the tools rather than rewriting files by hand.
 
 Reading: list_notes, search, read_note, links, backlinks, list_collections, query_collection, \
 get_schema. Writing: create_note, write_note, set_properties. Writes are visible in the app \
-immediately. When a change is meant for the user's review rather than applied directly, call \
+immediately. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
+it live); list_agents says which agent CLIs are installed for the terminal_command setting. When a change is meant for the user's review rather than applied directly, call \
 propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
 (diff, then Apply or Discard) in the app.";
 
@@ -137,6 +138,14 @@ pub struct ProposalArgs {
     pub name: String,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SettingsArgs {
+    /// Settings to change, key → value. Values are typed per key (booleans, numbers,
+    /// strings; `keybindings` takes an object of id → keys, or use `keybindings.<id>`
+    /// with a string, empty/null to remove). Unknown keys are rejected with the valid list.
+    pub properties: BTreeMap<String, serde_json::Value>,
+}
+
 // ── Tools ────────────────────────────────────────────────────────────────────
 
 #[tool_router]
@@ -201,6 +210,23 @@ impl CortexMcp {
     #[tool(description = "The property schema for a collection or note type: typed properties and their options.")]
     fn get_schema(&self, Parameters(a): Parameters<SchemaArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.schema(&a.key).map_err(err)?)
+    }
+
+    #[tool(description = "The vault's settings (.cortex/settings.yaml) with every key present, plus a description of each key.")]
+    fn get_settings(&self) -> Result<CallToolResult, McpError> {
+        let settings = self.vault.settings().map_err(err)?;
+        let describe: BTreeMap<&str, &str> = cortex_core::settings::describe().into_iter().collect();
+        json(&serde_json::json!({ "settings": settings, "describe": describe }))
+    }
+
+    #[tool(description = "Change settings: merge the given keys into .cortex/settings.yaml (typed per key; see get_settings for the keys). Returns the full settings. The app applies them live.")]
+    fn set_settings(&self, Parameters(a): Parameters<SettingsArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.merge_settings(a.properties).map_err(err)?)
+    }
+
+    #[tool(description = "Known agent CLIs (claude, hermes, openclaw, codex, …) and whether each is installed on this machine, with its path. Use a found one's `command` as the terminal_command setting.")]
+    fn list_agents(&self) -> Result<CallToolResult, McpError> {
+        json(&self.vault.agents())
     }
 
     #[tool(description = "Git state: changed files, sync counts, recent commits, pending proposals.")]

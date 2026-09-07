@@ -1,10 +1,14 @@
-import { useState, useEffect, useRef, MouseEvent as ReactMouseEvent } from "react";
-import { TreeNode, DirNode, FileNode } from "../../lib/fileTree";
+import { useState, useEffect, useRef, CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from "react";
+import { TreeNode, DirNode, FileNode, isUntitled, relativeTime } from "../../lib/fileTree";
 import { exportToFile } from "../../lib/export";
-import { StarIcon, StarFilledIcon } from "./icons";
+import { shortcutFor } from "../../lib/keymap";
+import {
+  StarIcon, StarFilledIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, FilePlusIcon, FileIcon, TrashIcon,
+} from "./icons";
+import { RowA11y } from "./treeRows";
 import styles from "./FileTree.module.css";
 
-interface TreeActions {
+export interface TreeActions {
   newFolderIn: string | null;
   onNewFolderRequest: (parentPath: string) => void;
   onNewFolderSubmit: (parentPath: string, name: string) => void;
@@ -21,43 +25,53 @@ interface TreeActions {
   isFavorite?: (path: string) => boolean;
 }
 
+/** Roving-tabindex attributes for a row id; undefined when the id isn't a row. */
+export type A11yFor = (id: string, selected?: boolean) => RowA11y | undefined;
+
 interface Props {
   nodes: TreeNode[];
   /** Vault-relative path of this tree level's parent, e.g. "notes/" */
   currentPath: string;
   selectedPath: string | null;
-  defaultOpen?: boolean;
-  indent?: number;
+  /** Nesting depth of this level; 0 directly under a section header. */
+  depth?: number;
+  /** Folder open state lives in LeftPanel so the keyboard's row list and the
+   *  rendered rows can never disagree about what is visible. */
+  isDirOpen: (path: string, depth: number) => boolean;
+  onToggleDir: (path: string, open?: boolean) => void;
   actions: TreeActions;
   onSelect: (path: string) => void;
+  a11y: A11yFor;
 }
 
 export function FileTree({
-  nodes, currentPath, selectedPath, defaultOpen = true, indent = 0, actions, onSelect,
+  nodes, currentPath, selectedPath, depth = 0, isDirOpen, onToggleDir, actions, onSelect, a11y,
 }: Props) {
   return (
-    <div>
+    <div role={depth === 0 ? undefined : "group"}>
       {nodes.map((node) =>
         node.type === "dir" ? (
           <DirRow
             key={node.path}
             node={node}
             selectedPath={selectedPath}
-            defaultOpen={defaultOpen}
-            indent={indent}
+            depth={depth}
+            open={isDirOpen(node.path, depth)}
+            isDirOpen={isDirOpen}
+            onToggleDir={onToggleDir}
             actions={actions}
             onSelect={onSelect}
+            a11y={a11y}
           />
         ) : (
           <FileRow
             key={node.path}
             node={node}
             selected={node.path === selectedPath}
-            indent={indent}
+            depth={depth}
             actions={actions}
             onSelect={onSelect}
-            onToggleFavorite={actions.onToggleFavorite}
-            isFavorite={actions.isFavorite}
+            a11y={a11y}
           />
         ),
       )}
@@ -65,7 +79,7 @@ export function FileTree({
       {/* Inline new-folder input rendered at this tree level */}
       {actions.newFolderIn === currentPath && (
         <NewFolderInput
-          indent={indent}
+          depth={depth}
           onSubmit={(name) => actions.onNewFolderSubmit(currentPath, name)}
           onCancel={actions.onNewFolderCancel}
         />
@@ -74,29 +88,37 @@ export function FileTree({
   );
 }
 
+/** Indent is one CSS variable so every row kind shares the same rhythm. */
+export function rowStyle(depth: number): CSSProperties {
+  return { ["--depth" as string]: depth } as CSSProperties;
+}
+
+// ── Folder row ────────────────────────────────────────────────────────────────
+
 function DirRow({
-  node, selectedPath, defaultOpen, indent, actions, onSelect,
+  node, selectedPath, depth, open, isDirOpen, onToggleDir, actions, onSelect, a11y,
 }: {
   node: DirNode;
   selectedPath: string | null;
-  defaultOpen: boolean;
-  indent: number;
+  depth: number;
+  open: boolean;
+  isDirOpen: Props["isDirOpen"];
+  onToggleDir: Props["onToggleDir"];
   actions: TreeActions;
   onSelect: (path: string) => void;
+  a11y: A11yFor;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   const [dragOver, setDragOver] = useState(false);
-
-  const hasSelected = selectedPath?.startsWith(node.path);
-  useEffect(() => {
-    if (hasSelected) setOpen(true);
-  }, [hasSelected]);
+  const count = countFiles(node);
 
   return (
     <div>
       <div
-        className={`${styles.dirRow} ${dragOver ? styles.dirRowDropTarget : ""}`}
-        style={{ paddingLeft: 10 + indent * 14 }}
+        {...a11y(node.path)}
+        className={`${styles.row} ${styles.dirRow} ${dragOver ? styles.dirRowDropTarget : ""}`}
+        style={rowStyle(depth)}
+        title={`${node.name} · ${count} note${count === 1 ? "" : "s"}`}
+        onClick={() => onToggleDir(node.path)}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
         onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
         onDrop={(e) => {
@@ -108,36 +130,40 @@ function DirRow({
           }
         }}
       >
-        <button className={styles.dirToggle} onClick={() => setOpen((x) => !x)}>
-          <span className={`${styles.arrow} ${open ? styles.arrowOpen : ""}`}>▶</span>
-          <FolderIcon open={open} />
-          <span className={styles.dirName}>{node.name}</span>
-        </button>
+        <span className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`} aria-hidden>
+          <ChevronRightIcon size={12} />
+        </span>
+        <span className={styles.rowIcon}><FolderIcon open={open} /></span>
+        <span className={styles.dirName}>{node.name}</span>
 
-        <div className={styles.dirActions}>
+        {/* Hover affordances only — the keyboard has n / Delete for these. */}
+        <div className={styles.rowActions}>
           <button
-            className={styles.dirActionBtn}
-            title="New note here"
+            className={styles.rowActionBtn}
+            tabIndex={-1}
+            title={`New note here (n)`}
             onClick={(e) => { e.stopPropagation(); actions.onNewNoteInFolder(node.path); }}
           >
-            <NoteIcon />
+            <FilePlusIcon size={13} />
           </button>
           <button
-            className={styles.dirActionBtn}
+            className={styles.rowActionBtn}
+            tabIndex={-1}
             title="New folder here"
-            onClick={(e) => { e.stopPropagation(); setOpen(true); actions.onNewFolderRequest(node.path); }}
+            onClick={(e) => { e.stopPropagation(); onToggleDir(node.path, true); actions.onNewFolderRequest(node.path); }}
           >
-            <FolderPlusIcon />
+            <FolderPlusIcon size={13} />
           </button>
           <button
-            className={`${styles.dirActionBtn} ${styles.dirActionBtnDanger}`}
+            className={`${styles.rowActionBtn} ${styles.rowActionBtnDanger}`}
+            tabIndex={-1}
             title="Delete folder"
             onClick={(e) => { e.stopPropagation(); actions.onDeleteFolder(node.path); }}
           >
-            <TrashIcon />
+            <TrashIcon size={12} />
           </button>
         </div>
-        <span className={styles.count}>{countFiles(node)}</span>
+        <span className={styles.count}>{count}</span>
       </div>
 
       {open && (
@@ -145,60 +171,73 @@ function DirRow({
           nodes={node.children}
           currentPath={node.path}
           selectedPath={selectedPath}
-          defaultOpen={false}
-          indent={indent + 1}
+          depth={depth + 1}
+          isDirOpen={isDirOpen}
+          onToggleDir={onToggleDir}
           actions={actions}
           onSelect={onSelect}
+          a11y={a11y}
         />
       )}
     </div>
   );
 }
 
+// ── Note row ──────────────────────────────────────────────────────────────────
+
 function FileRow({
-  node, selected, indent, actions, onSelect, onToggleFavorite, isFavorite,
+  node, selected, depth, actions, onSelect, a11y,
 }: {
   node: FileNode;
   selected: boolean;
-  indent: number;
+  depth: number;
   actions: TreeActions;
   onSelect: (path: string) => void;
-  onToggleFavorite?: (path: string) => void;
-  isFavorite?: (path: string) => boolean;
+  a11y: A11yFor;
 }) {
+  const { onToggleFavorite, isFavorite } = actions;
   const fav = isFavorite?.(node.path) ?? false;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const { note } = node;
+
+  // Type and tags used to be pills on the row; in a tree they read as noise,
+  // so they live in the tooltip now.
+  const meta = [
+    note.path,
+    note.note_type && note.note_type !== "note" ? note.note_type : null,
+    note.tags.length ? note.tags.map((t) => `#${t}`).join(" ") : null,
+  ].filter(Boolean).join(" · ");
 
   return (
-    <div
-      className={`${styles.fileRow} ${selected ? styles.fileRowSelected : ""} ${menu ? styles.fileRowContext : ""}`}
-      style={{ paddingLeft: 10 + indent * 14 }}
+    <LeafRow
+      id={node.path}
+      a11y={a11y}
+      depth={depth}
+      selected={selected}
+      className={menu ? styles.rowContext : ""}
+      icon={note.icon ? <span className={styles.emoji}>{note.icon}</span> : <FileIcon />}
+      iconTone={note.note_type === "task" ? "accent" : note.note_type === "meeting" ? "agent" : undefined}
+      label={node.name}
+      hint={isUntitled(note.title) ? relativeTime(note.modified) : undefined}
+      title={meta}
       onClick={() => onSelect(node.path)}
       onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
-      title={node.path}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData("text/plain", node.path);
         e.dataTransfer.effectAllowed = "move";
       }}
-    >
-      {node.note.icon
-        ? <span className={styles.fileIcon}>{node.note.icon}</span>
-        : <DocIcon type={node.note.note_type} />}
-      <span className={styles.fileName}>{node.name || "Untitled"}</span>
-      {node.note.note_type && node.note.note_type !== "note" && (
-        <span className={styles.noteType}>{node.note.note_type}</span>
-      )}
-      {onToggleFavorite && (
+      trailing={onToggleFavorite && (
         <button
           className={`${styles.starBtn} ${fav ? styles.starBtnActive : ""}`}
+          tabIndex={-1}
           onClick={(e) => { e.stopPropagation(); onToggleFavorite(node.path); }}
-          title={fav ? "Remove from favorites" : "Add to favorites"}
+          title={fav ? "Remove from favorites (f)" : "Add to favorites (f)"}
         >
-          {fav ? <StarFilledIcon size={13} /> : <StarIcon size={13} />}
+          {fav ? <StarFilledIcon size={12} /> : <StarIcon size={12} />}
         </button>
       )}
-
+    >
       {menu && (
         <FileContextMenu
           x={menu.x}
@@ -210,9 +249,91 @@ function FileRow({
           onClose={() => setMenu(null)}
         />
       )}
+    </LeafRow>
+  );
+}
+
+// ── Shared row primitives ─────────────────────────────────────────────────────
+// Favorites, databases, search results and trash entries render through these
+// too, so the whole sidebar has one row height, one icon slot, one hover.
+
+export function LeafRow({
+  id, a11y, depth, selected, icon, iconTone, label, hint, title, className, trailing, children,
+  onClick, onContextMenu, draggable, onDragStart,
+}: {
+  id: string;
+  a11y: A11yFor;
+  depth: number;
+  selected?: boolean;
+  icon: ReactNode;
+  iconTone?: "accent" | "agent";
+  label: string;
+  /** Secondary, right-aligned hint (an age, a path). */
+  hint?: string;
+  title?: string;
+  className?: string;
+  trailing?: ReactNode;
+  children?: ReactNode;
+  onClick?: () => void;
+  onContextMenu?: (e: ReactMouseEvent<HTMLDivElement>) => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      {...a11y(id, selected)}
+      className={`${styles.row} ${selected ? styles.rowSelected : ""} ${className ?? ""}`}
+      style={rowStyle(depth)}
+      title={title}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      draggable={draggable}
+      onDragStart={onDragStart}
+    >
+      <span className={`${styles.rowIcon} ${iconTone === "accent" ? styles.toneAccent : iconTone === "agent" ? styles.toneAgent : ""}`}>
+        {icon}
+      </span>
+      <span className={styles.label}>{label}</span>
+      {hint && <span className={styles.hint}>{hint}</span>}
+      {trailing}
+      {children}
     </div>
   );
 }
+
+/** A quiet one-line row whose whole surface is the action ("No databases · Create one"). */
+export function ActionRow({
+  id, a11y, depth, icon, text, action, title, onClick,
+}: {
+  id: string;
+  a11y: A11yFor;
+  depth: number;
+  icon?: ReactNode;
+  /** Muted lead-in, e.g. "No databases". */
+  text?: string;
+  /** The accent-coloured verb, e.g. "Create one". */
+  action: string;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      {...a11y(id)}
+      className={`${styles.row} ${styles.actionRow}`}
+      style={rowStyle(depth)}
+      title={title}
+      onClick={onClick}
+    >
+      <span className={styles.rowIcon}>{icon}</span>
+      <span className={styles.label}>
+        {text && <span className={styles.actionText}>{text} · </span>}
+        <span className={styles.actionVerb}>{action}</span>
+      </span>
+    </div>
+  );
+}
+
+// ── Context menu ──────────────────────────────────────────────────────────────
 
 function FileContextMenu({
   x, y, path, fav, actions, onToggleFavorite, onClose,
@@ -254,6 +375,8 @@ function FileContextMenu({
       className={styles.ctxMenu}
       style={{ left, top }}
       onClick={(e) => e.stopPropagation()}
+      // The tree's key handler must not see arrows/letters aimed at the menu.
+      onKeyDown={(e) => e.stopPropagation()}
     >
       <button className={styles.ctxItem} onClick={run(actions.onRenameFile)}>Rename</button>
       <button className={styles.ctxItem} onClick={run(actions.onDuplicateFile)}>Duplicate</button>
@@ -282,15 +405,19 @@ function FileContextMenu({
         Copy path
       </button>
       <div className={styles.ctxSep} />
-      <button className={`${styles.ctxItem} ${styles.ctxItemDanger}`} onClick={run(actions.onDeleteFile)}>Delete</button>
+      <button className={`${styles.ctxItem} ${styles.ctxItemDanger}`} onClick={run(actions.onDeleteFile)}>
+        Delete <span className={styles.ctxHint}>Del</span>
+      </button>
     </div>
   );
 }
 
+// ── New folder input ──────────────────────────────────────────────────────────
+
 function NewFolderInput({
-  indent, onSubmit, onCancel,
+  depth, onSubmit, onCancel,
 }: {
-  indent: number;
+  depth: number;
   onSubmit: (name: string) => void;
   onCancel: () => void;
 }) {
@@ -305,17 +432,17 @@ function NewFolderInput({
   };
 
   return (
-    <div
-      className={styles.newFolderRow}
-      style={{ paddingLeft: 10 + indent * 14 }}
-    >
-      <FolderIcon open={false} />
+    <div className={`${styles.row} ${styles.newFolderRow}`} style={rowStyle(depth)}>
+      <span className={styles.chevron} aria-hidden />
+      <span className={styles.rowIcon}><FolderIcon /></span>
       <input
         ref={ref}
         className={styles.newFolderInput}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
+          // Stop the tree from treating these as navigation keys.
+          e.stopPropagation();
           if (e.key === "Enter") submit();
           if (e.key === "Escape") onCancel();
         }}
@@ -337,54 +464,5 @@ function countFiles(dir: DirNode): number {
   return n;
 }
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
-
-function FolderIcon({ open }: { open: boolean }) {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill={open ? "currentColor" : "none"}
-      stroke="currentColor" strokeWidth="2" style={{ opacity: 0.55, flexShrink: 0 }}>
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-    </svg>
-  );
-}
-
-function DocIcon({ type }: { type: string | null }) {
-  const color = type === "task" ? "var(--accent)" : type === "meeting" ? "var(--git-agent)" : "var(--text-tertiary)";
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" style={{ flexShrink: 0 }}>
-      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-      <polyline points="14 2 14 8 20 8"/>
-    </svg>
-  );
-}
-
-function FolderPlusIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-      <line x1="12" y1="11" x2="12" y2="17"/>
-      <line x1="9" y1="14" x2="15" y2="14"/>
-    </svg>
-  );
-}
-
-function NoteIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-      <line x1="12" y1="11" x2="12" y2="17"/>
-      <line x1="9" y1="14" x2="15" y2="14"/>
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polyline points="3 6 5 6 21 6"/>
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-      <path d="M10 11v6M14 11v6"/>
-      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-    </svg>
-  );
-}
+// Referenced by tooltips so the hint text and the binding can't drift.
+export const NEW_NOTE_HINT = `New note (${shortcutFor("new-note")})`;

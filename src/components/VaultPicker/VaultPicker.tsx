@@ -320,10 +320,11 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
           <div className={styles.recents}>
             <p className={styles.recentsLabel}>Recent vaults</p>
             <ul className={styles.recentsList}>
-              {recentVaults.map((v) => (
+              {recentVaults.map((v, i) => (
                 <li key={v.path}>
                   <button
                     type="button"
+                    autoFocus={i === 0}
                     className={styles.recentItem}
                     onClick={() => onOpenRecent(v.path)}
                     disabled={creating}

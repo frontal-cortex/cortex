@@ -1,3 +1,4 @@
+mod agents;
 mod commands;
 mod terminal;
 mod theme;
@@ -117,6 +118,7 @@ pub fn run() {
             commands::members::get_members,
             commands::members::set_members,
             commands::members::current_user,
+            agents::detect_agents,
             theme::watch_theme_file,
             theme::detect_desktop_theme,
             terminal::terminal_spawn,

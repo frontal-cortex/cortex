@@ -70,9 +70,10 @@ export function buildTree(
   }
 
   // Sort by display name (stable) — sorting by mtime made the sidebar reshuffle
-  // every time a note was opened or saved.
-  const named = files.map((note) => ({ note, name: note.title || pathStem(note.path) }));
-  named.sort((a, b) => a.name.localeCompare(b.name));
+  // every time a note was opened or saved. Same-named notes (three "Untitled")
+  // fall back to newest-first so the one you just made is on top.
+  const named = files.map((note) => ({ note, name: displayTitle(note) }));
+  named.sort((a, b) => a.name.localeCompare(b.name) || b.note.modified - a.note.modified);
   for (const { note, name } of named) {
     result.push({ type: "file", name, path: note.path, note });
   }
@@ -80,6 +81,66 @@ export function buildTree(
   return result;
 }
 
+// ── Display helpers ───────────────────────────────────────────────────────────
+
+/** A title the user never typed — "Untitled", or nothing at all. */
+export function isUntitled(title: string | null | undefined): boolean {
+  return !title || /^untitled$/i.test(title.trim());
+}
+
+/**
+ * What a row calls a note. Untitled notes fall back to the filename stem
+ * minus the date suffix `createNote` appends (`untitled-2026-09-07-2` → still
+ * "Untitled"); an actual stem ("meeting-notes") reads as "meeting notes".
+ * NoteEntry carries no body, so a first-line preview isn't possible here yet —
+ * see the "preview" note in LeftPanel.
+ */
+export function displayTitle(note: Pick<NoteEntry, "title" | "path">): string {
+  if (!isUntitled(note.title)) return note.title;
+  const stem = pathStem(note.path).replace(/-\d{4}-\d{2}-\d{2}(-\d+)?$/, "");
+  return isUntitled(stem) ? "Untitled" : stem.replace(/-/g, " ");
+}
+
+/** Compact age for secondary hints: "now", "2m", "3h", "yesterday", "5d". */
+export function relativeTime(unixSeconds: number, now = Date.now()): string {
+  const d = Math.floor(now / 1000) - unixSeconds;
+  if (d < 60) return "now";
+  if (d < 3600) return `${Math.floor(d / 60)}m`;
+  if (d < 86400) return `${Math.floor(d / 3600)}h`;
+  if (d < 172800) return "yesterday";
+  return `${Math.floor(d / 86400)}d`;
+}
+
 function pathStem(path: string) {
-  return path.split("/").pop()?.replace(/\.md$/, "").replace(/-/g, " ") ?? "Untitled";
+  return path.split("/").pop()?.replace(/\.md$/, "") ?? "";
+}
+
+// ── Flattening ────────────────────────────────────────────────────────────────
+
+export interface FlatNode {
+  node: TreeNode;
+  depth: number;
+  /** Path of the enclosing DirNode, or null at the tree's root level. */
+  parentPath: string | null;
+}
+
+/**
+ * The tree in render order, skipping the children of collapsed folders — the
+ * list keyboard navigation walks. `isOpen` must be the same predicate the
+ * renderer uses, so what the keys see is exactly what is on screen.
+ */
+export function flattenTree(
+  nodes: TreeNode[],
+  isOpen: (dirPath: string, depth: number) => boolean,
+  depth = 0,
+  parentPath: string | null = null,
+): FlatNode[] {
+  const out: FlatNode[] = [];
+  for (const node of nodes) {
+    out.push({ node, depth, parentPath });
+    if (node.type === "dir" && isOpen(node.path, depth)) {
+      out.push(...flattenTree(node.children, isOpen, depth + 1, node.path));
+    }
+  }
+  return out;
 }

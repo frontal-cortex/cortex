@@ -123,8 +123,28 @@ enum Cmd {
     Apply { name: String },
     /// Delete a proposal without merging
     Discard { name: String },
+    /// Show or change vault settings (.cortex/settings.yaml); prints them all if no subcommand
+    Settings {
+        #[command(subcommand)]
+        action: Option<SettingsCmd>,
+    },
+    /// Which agent CLIs (claude, hermes, openclaw, …) are installed, for `terminal_command`
+    Agents,
     /// Serve the vault to an agent over MCP (stdio)
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum SettingsCmd {
+    /// Print one setting; `keybindings.<id>` reads a single override
+    Get { key: String },
+    /// Set settings: key=value (typed per key; `keybindings.<id>=<keys>`, empty value removes); prints the file
+    Set {
+        #[arg(required = true)]
+        pairs: Vec<String>,
+    },
+    /// Every setting with its default and meaning
+    Describe,
 }
 
 type Result<T> = ops::Result<T>;
@@ -267,6 +287,51 @@ fn run() -> Result<()> {
             let b = v.discard(&name)?;
             if out.json { out.emit(&serde_json::json!({ "discarded": b })) } else { println!("discarded {b}"); Ok(()) }
         }
+        Cmd::Settings { action } => match action {
+            None => out.settings(&v.settings()?),
+            Some(SettingsCmd::Get { key }) => {
+                let value = v.setting(&key)?;
+                if out.json { return out.emit(&value); }
+                match &value {
+                    serde_yaml::Value::Null => println!(),
+                    serde_yaml::Value::String(s) => println!("{s}"),
+                    serde_yaml::Value::Mapping(_) | serde_yaml::Value::Sequence(_) => print!("{}", serde_yaml::to_string(&value)?),
+                    other => println!("{}", serde_yaml::to_string(other)?.trim_end()),
+                }
+                Ok(())
+            }
+            Some(SettingsCmd::Set { pairs }) => {
+                let edits = pairs
+                    .iter()
+                    .map(|p| p.split_once('=').ok_or_else(|| format!("expected key=value, got '{p}'")))
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                out.settings(&v.update_settings(edits)?)
+            }
+            Some(SettingsCmd::Describe) => {
+                let defaults = cortex_core::settings::to_value(&cortex_core::settings::Settings::default())?;
+                let rows: Vec<(&str, String, &str)> = cortex_core::settings::describe()
+                    .into_iter()
+                    .map(|(k, d)| {
+                        let dv = defaults.get(k).cloned().unwrap_or(serde_yaml::Value::Null);
+                        (k, yaml_scalar(&dv), d)
+                    })
+                    .collect();
+                if out.json {
+                    return out.emit(&rows.iter().map(|(k, dv, d)| serde_json::json!({ "key": k, "default": dv, "description": d })).collect::<Vec<_>>());
+                }
+                table(&["KEY", "DEFAULT", "DESCRIPTION"], rows.into_iter().map(|(k, dv, d)| vec![k.into(), dv, d.into()]).collect());
+                Ok(())
+            }
+        },
+        Cmd::Agents => {
+            let agents = v.agents();
+            if out.json { return out.emit(&agents); }
+            table(&["ID", "LABEL", "COMMAND", "FOUND", "PATH"], agents.iter().map(|a| vec![
+                a.id.clone(), a.label.clone(), a.command.clone(),
+                if a.found { "yes".into() } else { "no".into() }, a.path.clone().unwrap_or_default(),
+            ]).collect());
+            Ok(())
+        }
         Cmd::Mcp => tokio::runtime::Runtime::new()?.block_on(mcp::serve(v)),
     }
 }
@@ -283,6 +348,11 @@ impl Out {
         Ok(())
     }
 
+    /// The settings file as it is on disk (YAML), or JSON.
+    fn settings(&self, s: &cortex_core::settings::Settings) -> Result<()> {
+        if self.json { self.emit(s) } else { print!("{}", serde_yaml::to_string(s)?); Ok(()) }
+    }
+
     fn notes(&self, notes: &[NoteEntry]) -> Result<()> {
         if self.json {
             return self.emit(&notes);
@@ -291,6 +361,16 @@ impl Out {
             n.path.clone(), n.title.clone(), n.note_type.clone().unwrap_or_default(), n.tags.join(","),
         ]).collect());
         Ok(())
+    }
+}
+
+/// A YAML value on one line, as it would look in the file (`''`, `30`, `{}`).
+fn yaml_scalar(v: &serde_yaml::Value) -> String {
+    match v {
+        serde_yaml::Value::String(s) if s.is_empty() => "''".into(),
+        serde_yaml::Value::String(s) => s.clone(),
+        serde_yaml::Value::Mapping(m) if m.is_empty() => "{}".into(),
+        other => serde_yaml::to_string(other).unwrap_or_default().trim_end().to_string(),
     }
 }
 

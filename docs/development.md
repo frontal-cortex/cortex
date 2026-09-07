@@ -31,9 +31,15 @@ The first run compiles the Rust backend (~2 min). Subsequent runs are fast.
 cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, target/)
 ├── crates/
 │   ├── cortex-core/          # The vault model, no UI: notes, index, collections, schema, git, settings
+│   │   ├── src/settings.rs   # `.cortex/settings.yaml`: every key described, typed `set_field`, `ensure_complete`
+│   │   └── src/agents.rs     # Which agent CLIs (claude, hermes, …) are on $PATH, for `terminal_command`
 │   └── cortex-cli/           # `cortex` binary: CLI (main.rs) + MCP server (mcp.rs) over shared ops.rs
 ├── src/                      # React + TypeScript frontend
 │   ├── components/Shell/     # Main UI components
+│   │   ├── LeftPanel.tsx     # Sidebar: sections, tree, trash — one flat keyboard row list (treeRows.ts)
+│   │   ├── treeRows.ts       # Roving tabindex + type-ahead over the sidebar's row model
+│   │   ├── GettingStarted.tsx # First-run steps, rendered as tree rows so the keyboard reaches them
+│   │   └── TerminalPane.tsx  # xterm.js over a real PTY; opens into `terminal_command` (an agent CLI)
 │   ├── hooks/                # React hooks (useVault, useNotes)
 │   ├── lib/                  # Shared utilities (commands.ts, fileTree.ts)
 │   │   ├── keymap.ts         # Keyboard shortcuts — the single source of truth for bindings + hints
@@ -47,6 +53,8 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │       │   └── git.rs        # Status, commit, sync, log, proposals (agent branches)
 │       ├── watcher.rs        # Filesystem watcher: external edits → index + `vault://changed` event
 │       ├── theme.rs          # Follows a palette file (Omarchy colors.toml) → `theme://changed` event
+│       ├── terminal.rs       # PTY sessions for the terminal pane
+│       ├── agents.rs         # `detect_agents` command (thin wrapper over cortex_core::agents)
 │       └── lib.rs            # App entry, command registration
 ├── docs/                     # Project documentation (this directory)
 ├── ARCHITECTURE.md           # System design overview
@@ -76,6 +84,23 @@ hash and dropped, so the editor never remounts because the user typed.
 shortcut; `Shell` dispatches from it and all hints render from it via
 `shortcutFor(id)`, platform-aware (⌘ on macOS, Ctrl elsewhere). Never hard-code
 a key label in a component.
+
+**Settings are one file, fully spelled out**: `.cortex/settings.yaml` is the
+only configuration surface, for people and agents alike. `settings::describe()`
+documents every key, `set_field()` applies a typed `key=value` edit, and
+`ensure_complete()` writes every key (defaults filled in) on vault open so the
+whole schema is visible. `cortex settings`, the MCP `get_settings` /
+`set_settings` tools and the Settings modal all go through the same code, and
+the watcher reloads the file live. A new field must be added to `describe()` —
+a test fails otherwise.
+
+**The sidebar is one flat row list**: `LeftPanel` derives a `TreeRow[]` (in
+render order, from the same open/closed state the renderer reads) and
+`treeRows.ts` moves focus over it with a roving tabindex, so ArrowDown / `j`
+always lands on the next thing the eye sees, across sections. Anything rendered
+as a row must also be pushed into that list under the same id. Vim keys,
+type-ahead, `n` for a new note in the focused folder, `/` for search, and
+Escape back to the editor all live in `handleTreeKeyDown`.
 
 **The app can wear the desktop's palette**: `settings.theme_file` names a flat
 TOML of colour names → hex (Omarchy's `colors.toml`; `~` expands per machine).
