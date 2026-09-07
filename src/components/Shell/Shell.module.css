@@ -12,3 +12,26 @@
   overflow: hidden;
   min-height: 0;
 }
+
+/* Side panes are hidden, not unmounted, so the sidebar keeps its scroll and
+   open folders and the terminal keeps its session. */
+.leftSlot {
+  display: contents;
+}
+
+.rightPane {
+  width: var(--right-panel-width, 440px);
+  min-width: 280px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+/* Monk mode: nothing on screen but the page. The editor also drops its own
+   chrome (see Editor `monk`). */
+.monk .body {
+  justify-content: center;
+}

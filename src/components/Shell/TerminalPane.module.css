@@ -1,0 +1,25 @@
+/* The pane owns no chrome: it fills whatever the parent gives it and lets
+   xterm's fit addon size the grid to the padded box. `min-height: 0` matters
+   in a flex/grid parent — without it the pane refuses to shrink and the
+   terminal grows past the pane instead of reflowing. */
+.root {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  padding: var(--space-2);
+  box-sizing: border-box;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+/* xterm sizes its own element to the grid; make sure that grid never becomes
+   wider than the pane (fractional cell widths can round up a pixel or two). */
+.root :global(.xterm) {
+  height: 100%;
+}
+
+.root :global(.xterm .xterm-viewport) {
+  overflow-x: hidden;
+  background: transparent !important;
+}

@@ -36,3 +36,5 @@ base64 = "0.22"
 notify = "8"
 # Desktop palette files (Omarchy colors.toml)
 toml = "1"
+# Embedded terminal pane (real PTY for interactive CLI tools)
+portable-pty = "0.9"

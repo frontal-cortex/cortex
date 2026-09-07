@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -28,6 +28,9 @@ interface Props {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onQuickCapture: () => void;
+  onToggleSidebar: () => void;
+  onToggleTerminal: () => void;
+  onToggleMonk: () => void;
   hasRemote: boolean;
 }
 
@@ -36,7 +39,8 @@ type Mode = "notes" | "actions";
 export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-  onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture, hasRemote,
+  onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
+  onToggleSidebar, onToggleTerminal, onToggleMonk, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -109,6 +113,27 @@ export function QuickSwitcher({
         run: () => { onSync(); onClose(); },
       }] : []),
       {
+        id: "toggle-sidebar",
+        label: "Toggle sidebar",
+        description: shortcutFor("toggle-sidebar"),
+        icon: <PanelLeftIcon size={14} />,
+        run: () => { onToggleSidebar(); onClose(); },
+      },
+      {
+        id: "toggle-terminal",
+        label: "Toggle terminal",
+        description: shortcutFor("toggle-terminal"),
+        icon: <TerminalIcon size={14} />,
+        run: () => { onToggleTerminal(); onClose(); },
+      },
+      {
+        id: "monk-mode",
+        label: "Monk mode",
+        description: `${shortcutFor("monk-mode")} · just the page, nothing else`,
+        icon: <MonkIcon size={14} />,
+        run: () => { onToggleMonk(); onClose(); },
+      },
+      {
         id: "toggle-theme",
         label: "Toggle light / dark theme",
         icon: <ThemeIcon size={14} />,
@@ -130,7 +155,8 @@ export function QuickSwitcher({
     }));
     return [...base, ...tplActions];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-      onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture, onClose]);
+      onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
+      onToggleSidebar, onToggleTerminal, onToggleMonk, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>

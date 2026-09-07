@@ -1,4 +1,5 @@
 mod commands;
+mod terminal;
 mod theme;
 mod watcher;
 
@@ -30,6 +31,7 @@ pub fn run() {
         .manage(watcher::WatcherState::default())
         .manage(watcher::SelfWrites::default())
         .manage(theme::ThemeWatcher::default())
+        .manage(terminal::TerminalState::default())
         .setup(|app| {
             #[cfg(target_os = "linux")]
             if is_tiling_desktop() {
@@ -117,6 +119,10 @@ pub fn run() {
             commands::members::current_user,
             theme::watch_theme_file,
             theme::detect_desktop_theme,
+            terminal::terminal_spawn,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_kill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
 import { VaultStatus } from "../../lib/commands";
-import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon } from "./icons";
+import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, TerminalIcon, MonkIcon } from "./icons";
 import { shortcutFor } from "../../lib/keymap";
 import styles from "./TopBar.module.css";
 
@@ -16,11 +16,17 @@ interface Props {
   onOpenGraph: () => void;
   onOpenSwitcher: () => void;
   onToday: () => void;
+  leftOpen: boolean;
+  rightOpen: boolean;
+  onToggleLeft: () => void;
+  onToggleRight: () => void;
+  onToggleMonk: () => void;
 }
 
 export function TopBar({
   vaultName, status, syncing, hasRemote, canBack, canForward, onBack, onForward,
   onSync, onOpenGraph, onOpenSwitcher, onToday,
+  leftOpen, rightOpen, onToggleLeft, onToggleRight, onToggleMonk,
 }: Props) {
   const ahead = status?.ahead ?? 0;
   const behind = status?.behind ?? 0;
@@ -37,6 +43,9 @@ export function TopBar({
   return (
     <header className={styles.bar} data-tauri-drag-region>
       <div className={styles.nav}>
+        <button className={`${styles.action} ${leftOpen ? styles.actionOn : ""}`} onClick={onToggleLeft} title={`Toggle sidebar (${shortcutFor("toggle-sidebar")})`}>
+          <PanelLeftIcon size={15} />
+        </button>
         <button className={styles.action} onClick={onBack} disabled={!canBack} title={`Back (${shortcutFor("back")})`}>
           <ChevronLeftIcon size={16} />
         </button>
@@ -74,6 +83,12 @@ export function TopBar({
               {behind > 0 && <span>{behind}↓</span>}
             </span>
           )}
+        </button>
+        <button className={`${styles.action} ${rightOpen ? styles.actionOn : ""}`} onClick={onToggleRight} title={`Toggle terminal (${shortcutFor("toggle-terminal")})`}>
+          <TerminalIcon size={15} />
+        </button>
+        <button className={styles.action} onClick={onToggleMonk} title={`Monk mode — just the page (${shortcutFor("monk-mode")})`}>
+          <MonkIcon size={15} />
         </button>
       </div>
     </header>
