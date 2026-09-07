@@ -468,6 +468,7 @@ export function Shell({
     "monk-mode":       () => { toggleMonk(); requestAnimationFrame(focusEditor); },
     "focus-sidebar":   () => { if (!leftVisible) toggleLeft(); requestAnimationFrame(() => leftRef.current?.focus()); },
     "focus-editor":    focusEditor,
+    "toggle-properties": () => editorRef.current?.toggleProperties(),
   };
 
   return (
@@ -585,6 +586,7 @@ export function Shell({
           onToggleTerminal={handleToggleTerminal}
           onToggleMonk={toggleMonk}
           onFocusSidebar={() => actionsRef.current?.["focus-sidebar"]()}
+          onToggleProperties={() => editorRef.current?.toggleProperties()}
           hasRemote={vault.has_remote}
         />
       )}

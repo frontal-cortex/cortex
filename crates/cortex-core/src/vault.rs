@@ -175,6 +175,7 @@ follows every change you make on disk.
 ## Rules
 
 - Frontmatter keys are sorted alphabetically; `created` is `YYYY-MM-DD`; `tags` is a list.
+- The app shows `title` as the page heading and `created` under it — don't repeat either as an H1 or a first line in the body.
   Prefer the tools below over editing YAML by hand — they keep files canonical so diffs stay clean.
 - Link notes with `[[Title]]`. Links resolve by title, then by filename.
 - Never write derived data (rollups, counts) into notes; the app computes it.

@@ -1,26 +1,53 @@
-// Notion-style property list for a note: one row per property — [type icon]
-// [name] [value] — with colored chips for select/status/person/relation, and an
-// "Add a property" footer. Schema-defined properties show in order (even when
-// empty); any other frontmatter keys appear as inferred-type rows.
+// The note's metadata, under the title. Collapsed, it is one quiet line:
+// created date, who last edited, and the properties that have values as
+// chips. Expanded (click the line, or Ctrl+Shift+I), it is the Notion-style
+// panel — one row per property: [type icon] [name] [value], coloured chips
+// for select/status/person/relation, and an "Add a property" footer.
+// Schema-defined properties show in order (even when empty); any other
+// frontmatter keys appear as inferred-type rows.
 
-import { useState, useEffect, useRef } from "react";
-import { commands, PropertyDef, PropType, SelectOption, TypeSchema } from "../../lib/commands";
+import { useState, useEffect, useRef, ReactNode } from "react";
+import { commands, CommitEntry, PropertyDef, PropType, SelectOption, TypeSchema } from "../../lib/commands";
+import { tagStyle, autoColor } from "../../lib/colors";
+import { relativeTime } from "../../lib/fileTree";
+import { shortcutFor } from "../../lib/keymap";
 import { SelectCell } from "./SelectCell";
 import { Dropdown } from "./Dropdown";
 import {
   CalendarIcon, CheckSquareIcon, SelectDotIcon, TagsListIcon, PersonIcon,
-  LinkIcon, RelationIcon, TextLinesIcon, PlusIcon,
+  LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon,
 } from "./icons";
 import styles from "./PropertiesPanel.module.css";
 
 interface Props {
   frontmatter: Record<string, unknown>;
   notePath: string;
+  /** Last commit touching this note, for the "edited by" text. */
+  lastEdit?: CommitEntry | null;
+  expanded: boolean;
+  onToggle: () => void;
   onChange: (updated: Record<string, unknown>) => void;
 }
 
 // App-internal frontmatter that isn't a user-facing property.
 const HIDDEN = new Set(["title", "type", "icon", "cover"]);
+// Shown in the quiet line as prose ("Created 7 Sep 2026"), not as a chip.
+const CREATED = "created";
+
+/** "7 Sep 2026" from a YYYY-MM-DD (or fuller ISO) string; the raw text if not a date. */
+function formatDate(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return v || null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function hasValue(v: unknown): boolean {
+  if (v === undefined || v === null || v === "" || v === false) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  return true;
+}
 
 // Types a new note property can be (relation/rollup are configured in a table).
 const ADD_TYPES: { value: PropType; label: string }[] = [
@@ -76,7 +103,7 @@ interface Item {
   def?: PropertyDef;
 }
 
-export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
+export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onToggle, onChange }: Props) {
   const [schema, setSchema] = useState<TypeSchema | null>(null);
 
   const noteType = typeof frontmatter["type"] === "string" ? (frontmatter["type"] as string) : null;
@@ -126,8 +153,58 @@ export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
       .map((k) => ({ name: k, type: inferType(frontmatter[k]), options: [] as SelectOption[] })),
   ];
 
+  // The quiet line: what a reader wants to know about the note at a glance.
+  const chips: ReactNode[] = [];
+  for (const item of items) {
+    if (item.name === CREATED) continue;
+    const v = frontmatter[item.name];
+    if (!hasValue(v)) continue;
+    const colorFor = (name: string) => item.options.find((o) => o.name === name)?.color ?? autoColor(name);
+    if (Array.isArray(v)) {
+      for (const entry of v) {
+        const name = String(entry);
+        chips.push(<span key={`${item.name}:${name}`} className={styles.chip} style={tagStyle(colorFor(name))} title={item.name}>{name}</span>);
+      }
+    } else if (isSelectType(item.type)) {
+      const name = String(v);
+      chips.push(<span key={item.name} className={styles.chip} style={tagStyle(colorFor(name))} title={item.name}>{name}</span>);
+    } else if (item.type === "checkbox") {
+      chips.push(<span key={item.name} className={`${styles.chip} ${styles.chipKV}`}>✓ {item.name}</span>);
+    } else {
+      const text = item.type === "date" ? formatDate(v) ?? String(v) : String(v);
+      chips.push(
+        <span key={item.name} className={`${styles.chip} ${styles.chipKV}`} title={`${item.name}: ${text}`}>
+          <span className={styles.chipName}>{item.name}</span>{text}
+        </span>,
+      );
+    }
+  }
+  const created = formatDate(frontmatter[CREATED]);
+  const edited = lastEdit?.author ? `Edited by ${lastEdit.author} · ${relativeTime(lastEdit.timestamp)}` : null;
+  const emptyLine = !created && !edited && chips.length === 0;
+  const hint = expanded ? "Hide properties" : emptyLine ? "Add a property" : "Properties";
+
   return (
     <div className={styles.root}>
+      <button
+        type="button"
+        className={`${styles.meta} ${expanded ? styles.metaOpen : ""}`}
+        onClick={onToggle}
+        aria-expanded={expanded}
+        title={`${expanded ? "Hide" : "Show"} properties (${shortcutFor("toggle-properties")})`}
+      >
+        {created && <span className={styles.metaText}>Created {created}</span>}
+        {edited && <span className={styles.metaText}>{edited}</span>}
+        {chips}
+        <span className={styles.metaHint}>
+          {emptyLine && !expanded
+            ? <PlusIcon size={11} />
+            : <span className={`${styles.chevron} ${expanded ? styles.chevronOpen : ""}`}><ChevronRightIcon size={11} /></span>}
+          {hint}
+        </span>
+      </button>
+
+      {expanded && <div className={styles.panel}>
       <div className={styles.list}>
         {items.map((item) => (
           <div className={styles.propRow} key={item.name}>
@@ -169,6 +246,7 @@ export function PropertiesPanel({ frontmatter, notePath, onChange }: Props) {
       </div>
 
       <AddProperty onAdd={addProperty} />
+      </div>}
     </div>
   );
 }

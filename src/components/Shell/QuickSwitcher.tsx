@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -32,6 +32,7 @@ interface Props {
   onToggleTerminal: () => void;
   onToggleMonk: () => void;
   onFocusSidebar: () => void;
+  onToggleProperties: () => void;
   hasRemote: boolean;
 }
 
@@ -41,7 +42,7 @@ export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
-  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, hasRemote,
+  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -128,6 +129,13 @@ export function QuickSwitcher({
         run: () => { onFocusSidebar(); onClose(); },
       },
       {
+        id: "toggle-properties",
+        label: "Toggle properties",
+        description: `${shortcutFor("toggle-properties")} · show or hide the note's property panel`,
+        icon: <TagsListIcon size={14} />,
+        run: () => { onToggleProperties(); onClose(); },
+      },
+      {
         id: "toggle-terminal",
         label: "Toggle terminal",
         description: shortcutFor("toggle-terminal"),
@@ -164,7 +172,7 @@ export function QuickSwitcher({
     return [...base, ...tplActions];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
-      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onClose]);
+      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>
