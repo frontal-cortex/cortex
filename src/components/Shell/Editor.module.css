@@ -306,6 +306,7 @@
 .editorWrap :global(.bn-default-styles) {
   font-family: var(--font-prose);
   font-style: var(--prose-style, normal);
+  font-variation-settings: var(--prose-variation, normal);
   line-height: 1.6;
 }
 .editorWrap :global(.bn-inline-content code) {

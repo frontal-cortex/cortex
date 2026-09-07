@@ -3,24 +3,34 @@
 // The page (editor and viewer) has its own voice, separate from the chrome.
 // A preset names a curated face; anything else is taken as a CSS font-family
 // for a font the user has installed. Applied by setting `--font-prose` on
-// <html>, which tokens.css defaults to Quattro.
+// <html>, which tokens.css defaults to Ysabeau.
 
 export interface ProseFont {
   id: string;
   label: string;
   /** CSS font-family list. */
   family: string;
+  /** `font-variation-settings` for faces with character axes (e.g. Recursive's Casual). */
+  variation?: string;
 }
 
+const SANS_FALLBACK = '"Inter", "Noto Sans", system-ui, sans-serif';
+const SERIF_FALLBACK = '"Noto Serif", Georgia, serif';
+
 export const PROSE_FONTS: ProseFont[] = [
-  { id: "quattro", label: "iA Writer Quattro — even, quiet (bundled)", family: '"iA Writer Quattro S", "Inter", "Noto Sans", system-ui, sans-serif' },
-  { id: "duo",     label: "iA Writer Duo — more typewriter (bundled)", family: '"iA Writer Duo S", "iA Writer Quattro S", system-ui, sans-serif' },
-  { id: "serif",   label: "Serif — book-like (Literata if installed)", family: '"Literata", "Source Serif 4", "Charter", "Noto Serif", Georgia, serif' },
-  { id: "system",  label: "System sans", family: 'system-ui, -apple-system, "Segoe UI", "Noto Sans", sans-serif' },
-  { id: "mono",    label: "Monospace — the desktop font", family: "var(--font-mono)" },
+  { id: "ysabeau",   label: "Ysabeau — Garamond's italic forms, upright",  family: `"Ysabeau", ${SANS_FALLBACK}` },
+  { id: "quattro",   label: "iA Writer Quattro — even, quiet",             family: `"iA Writer Quattro S", ${SANS_FALLBACK}` },
+  { id: "duo",       label: "iA Writer Duo — more typewriter",             family: `"iA Writer Duo S", "iA Writer Quattro S", ${SANS_FALLBACK}` },
+  { id: "recursive", label: "Recursive — casual, cursive-adjacent",        family: `"Recursive", ${SANS_FALLBACK}`, variation: '"CASL" 0.7, "CRSV" 1, "MONO" 0' },
+  { id: "alegreya",  label: "Alegreya — calligraphic serif",               family: `"Alegreya", ${SERIF_FALLBACK}` },
+  { id: "fraunces",  label: "Fraunces — soft old-style serif",             family: `"Fraunces", ${SERIF_FALLBACK}` },
+  { id: "crimson",   label: "Crimson Pro — screen-tuned Garamond",         family: `"Crimson Pro", ${SERIF_FALLBACK}` },
+  { id: "serif",     label: "Serif — the system's book face",              family: `"Literata", "Source Serif 4", "Charter", ${SERIF_FALLBACK}` },
+  { id: "system",    label: "System sans",                                 family: `system-ui, -apple-system, "Segoe UI", "Noto Sans", sans-serif` },
+  { id: "mono",      label: "Monospace — the desktop font",                family: "var(--font-mono)" },
 ];
 
-export const DEFAULT_PROSE_FONT = "quattro";
+export const DEFAULT_PROSE_FONT = "ysabeau";
 
 /** True when `value` names a preset rather than a custom family. */
 export function isPreset(value: string): boolean {
@@ -39,7 +49,10 @@ export function resolveProseFont(value: string): string {
 }
 
 export function applyProseFont(value: string) {
-  document.documentElement.style.setProperty("--font-prose", resolveProseFont(value));
+  const root = document.documentElement;
+  root.style.setProperty("--font-prose", resolveProseFont(value));
+  const preset = PROSE_FONTS.find((f) => f.id === value.trim());
+  root.style.setProperty("--prose-variation", preset?.variation ?? "normal");
 }
 
 // ── Tilt ─────────────────────────────────────────────────────────────────────

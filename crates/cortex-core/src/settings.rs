@@ -34,8 +34,9 @@ pub struct Settings {
     /// `theme`, so the setting can be committed with the vault.
     #[serde(default)]
     pub theme_file: String,
-    /// Page (editor/viewer) typeface: a preset key — `quattro` (default),
-    /// `duo`, `serif`, `system`, `mono` — or any CSS font-family name.
+    /// Page (editor/viewer) typeface: a preset key — `ysabeau` (default),
+    /// `quattro`, `duo`, `recursive`, `alegreya`, `fraunces`, `crimson`,
+    /// `serif`, `system`, `mono` — or any CSS font-family name.
     /// Empty = the default. Chrome fonts are not affected.
     #[serde(default)]
     pub prose_font: String,

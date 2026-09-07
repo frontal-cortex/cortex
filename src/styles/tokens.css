@@ -37,12 +37,13 @@
 
   /* Typography. Two voices: the chrome (sidebar, bars, dialogs) stays in a
      neutral sans so it recedes; the page — what you write and read — is set
-     in iA Writer Quattro, a face made for focused writing: personal, with a
-     typewriter's evenness, but proportional enough to disappear into. Code
+     in Ysabeau: Garamond's italic letterforms rebuilt as an upright,
+     low-contrast sans — cursive-rooted, elegant, and quiet at text sizes.
+     Other bundled faces are a setting away (lib/fonts.ts). Code
      follows the desktop's monospace (fontconfig's default on Linux, which is
      the Omarchy font; SF Mono on macOS). */
   --font-sans: "Inter", "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-prose: "iA Writer Quattro S", "Inter", "Noto Sans", system-ui, sans-serif;
+  --font-prose: "Ysabeau", "Inter", "Noto Sans", system-ui, sans-serif;
   --font-mono: ui-monospace, monospace, monospace;
   --text-xs:   11px;
   --text-sm:   13px;
