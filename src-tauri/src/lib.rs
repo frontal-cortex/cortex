@@ -1,11 +1,4 @@
 mod commands;
-mod data;
-mod db;
-mod error;
-mod git;
-mod members;
-mod note;
-mod schema;
 mod theme;
 mod watcher;
 
@@ -98,6 +91,7 @@ pub fn run() {
             commands::git::note_at,
             commands::git::restore_note,
             commands::git::list_agent_branches,
+            commands::git::agent_branch_diff,
             commands::git::apply_agent_branch,
             commands::git::discard_agent_branch,
             commands::data::run_view,

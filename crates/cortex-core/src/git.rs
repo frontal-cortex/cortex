@@ -1,5 +1,7 @@
-use git2::{Repository, Sort, StatusOptions, BranchType};
+pub use git2::Repository;
+use git2::{Sort, StatusOptions, BranchType};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
 use crate::error::{AppError, Result};
 
@@ -14,9 +16,13 @@ pub struct VaultStatus {
 
 #[derive(Debug, Serialize)]
 pub struct AgentBranch {
+    /// Always the bare branch name, `agent/<slug>`, even for a remote one.
     pub name: String,
     pub description: String,
     pub commit_count: usize,
+    /// True when the proposal exists only on `origin` (an agent pushed it
+    /// from elsewhere); applying it creates the local branch first.
+    pub remote: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -142,7 +148,12 @@ pub fn get_commit_diff(repo: &Repository, hash: &str) -> Result<CommitDiff> {
     let parent_tree = parent_commit.as_ref().map(|p| p.tree()).transpose()?;
 
     let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?;
+    let patch = render_patch(&diff)?;
 
+    Ok(CommitDiff { hash: short_hash, message, author, timestamp, patch })
+}
+
+fn render_patch(diff: &git2::Diff<'_>) -> Result<String> {
     let mut patch = String::new();
     diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
         let origin = line.origin();
@@ -153,8 +164,38 @@ pub fn get_commit_diff(repo: &Repository, hash: &str) -> Result<CommitDiff> {
         }
         true
     })?;
+    Ok(patch)
+}
 
+/// What a proposal would change: the diff from its merge-base with HEAD to
+/// its tip — i.e. exactly what applying it adds, whatever HEAD did since.
+pub fn get_branch_diff(repo: &Repository, branch_name: &str) -> Result<CommitDiff> {
+    let tip = find_agent_branch(repo, branch_name)?;
+    let head = repo.head()?.peel_to_commit()?;
+    let base = repo.find_commit(repo.merge_base(head.id(), tip.id())?)?;
+
+    let short_hash = format!("{:.7}", tip.id());
+    let message = tip.summary().unwrap_or("").to_string();
+    let author = tip.author().name().unwrap_or("").to_string();
+    let timestamp = tip.time().seconds() as u64;
+
+    let diff = repo.diff_tree_to_tree(Some(&base.tree()?), Some(&tip.tree()?), None)?;
+    let patch = render_patch(&diff)?;
     Ok(CommitDiff { hash: short_hash, message, author, timestamp, patch })
+}
+
+/// The tip of a proposal, local branch first, then `origin/<name>`.
+fn find_agent_branch<'r>(repo: &'r Repository, branch_name: &str) -> Result<git2::Commit<'r>> {
+    let branch = repo
+        .find_branch(branch_name, BranchType::Local)
+        .or_else(|_| repo.find_branch(&format!("origin/{branch_name}"), BranchType::Remote))
+        .map_err(|_| AppError::Other(format!("No proposal named '{branch_name}'")))?;
+    Ok(branch.get().peel_to_commit()?)
+}
+
+/// Open an existing repository (no init — the CLI never creates one silently).
+pub fn open(vault_path: &Path) -> Result<Repository> {
+    Repository::open(vault_path).map_err(AppError::Git)
 }
 
 pub fn open_or_init(vault_path: &Path) -> Result<Repository> {
@@ -385,33 +426,141 @@ pub fn abort_merge(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Pending proposals: every `agent/*` branch, local or on `origin`. A branch
+/// that exists in both places is listed once, as local.
 pub fn list_agent_branches(repo: &Repository) -> Result<Vec<AgentBranch>> {
+    let head = repo.head()?.peel_to_commit()?;
     let mut branches = Vec::new();
+    let mut seen = HashSet::new();
 
-    for branch in repo.branches(Some(BranchType::Local))? {
-        let (branch, _) = branch?;
-        let name = branch.name()?.unwrap_or("").to_string();
-        if !name.starts_with("agent/") {
-            continue;
+    for (kind, remote) in [(BranchType::Local, false), (BranchType::Remote, true)] {
+        for branch in repo.branches(Some(kind))? {
+            let (branch, _) = branch?;
+            let full = branch.name()?.unwrap_or("").to_string();
+            // Remote-tracking names carry the remote: "origin/agent/x".
+            let name = if remote {
+                match full.split_once('/') { Some((_, n)) => n.to_string(), None => continue }
+            } else {
+                full
+            };
+            if !name.starts_with("agent/") || !seen.insert(name.clone()) {
+                continue;
+            }
+
+            let description = name
+                .strip_prefix("agent/")
+                .unwrap_or(&name)
+                .replace('-', " ");
+
+            let tip = branch.get().peel_to_commit()?;
+            let (commit_count, _) = repo.graph_ahead_behind(tip.id(), head.id())?;
+
+            branches.push(AgentBranch { name, description, commit_count, remote });
         }
-
-        let description = name
-            .strip_prefix("agent/")
-            .unwrap_or(&name)
-            .replace('-', " ");
-
-        let tip = branch.get().peel_to_commit()?;
-        let head = repo.head()?.peel_to_commit()?;
-        let (commit_count, _) = repo.graph_ahead_behind(tip.id(), head.id())?;
-
-        branches.push(AgentBranch { name, description, commit_count });
     }
 
     Ok(branches)
 }
 
-/// Merge an agent branch into the current branch and delete the agent branch.
+/// Delete `origin`'s copy of a proposal, if it has one. Best effort — a
+/// missing remote or no network just leaves it for the next sync to tidy.
+fn delete_remote_branch(repo: &Repository, branch_name: &str) {
+    if repo.find_branch(&format!("origin/{branch_name}"), BranchType::Remote).is_err() {
+        return;
+    }
+    if let Some(dir) = repo.workdir() {
+        let _ = run_git(dir, &["push", "origin", "--delete", branch_name]);
+    }
+}
+
+/// Turn a proposal name into its branch slug: "Summarise week 36" → "summarise-week-36".
+pub fn slugify(name: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for c in name.trim().chars() {
+        if c.is_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            dash = false;
+        } else if !dash && !out.is_empty() {
+            out.push('-');
+            dash = true;
+        }
+    }
+    out.trim_end_matches('-').to_string()
+}
+
+/// Package working-tree changes as a proposal: a new `agent/<slug>` branch
+/// with one commit on top of HEAD holding `paths` (or every change, with
+/// `all`). Those paths are then restored to HEAD in the working tree, so the
+/// current branch is left exactly as it was before the agent's edits — the
+/// proposal lives only on its branch until the user applies it. Returns the
+/// branch name.
+pub fn propose(repo: &Repository, name: &str, message: &str, paths: &[String], all: bool) -> Result<String> {
+    let slug = slugify(name);
+    if slug.is_empty() {
+        return Err(AppError::Other("Proposal name is empty".into()));
+    }
+    let branch = format!("agent/{slug}");
+    if repo.find_branch(&branch, BranchType::Local).is_ok() {
+        return Err(AppError::Other(format!("Proposal '{branch}' already exists — discard it or pick another name")));
+    }
+    if paths.is_empty() && !all {
+        return Err(AppError::Other("Nothing selected: pass the changed paths, or --all for every change in the working tree".into()));
+    }
+
+    let head = repo.head()?.peel_to_commit()?;
+    let head_tree = head.tree()?;
+    let workdir = repo.workdir().ok_or_else(|| AppError::Other("Bare repository".into()))?;
+
+    // Stage into the in-memory index only — it is never written back, so the
+    // user's own staging area is untouched.
+    let mut index = repo.index()?;
+    index.read_tree(&head_tree)?;
+    if all {
+        index.add_all(["*"], git2::IndexAddOption::DEFAULT, None)?;
+        index.update_all(["*"], None)?;
+    } else {
+        for p in paths {
+            let rel = Path::new(p);
+            if workdir.join(rel).exists() {
+                index.add_path(rel)?;
+            } else {
+                index.remove_path(rel)?;
+            }
+        }
+    }
+    let tree_oid = index.write_tree()?;
+    if tree_oid == head_tree.id() {
+        return Err(AppError::Other("Nothing to propose: those paths match HEAD".into()));
+    }
+    let tree = repo.find_tree(tree_oid)?;
+    let sig = repo
+        .signature()
+        .or_else(|_| git2::Signature::now("Cortex agent", "agent@cortex.local"))?;
+    repo.commit(Some(&format!("refs/heads/{branch}")), &sig, &sig, message, &tree, &[&head])?;
+
+    // Put the working tree back to HEAD for what we took; the proposal now
+    // owns those edits. Ignored files (.brain/) are never touched.
+    let mut co = git2::build::CheckoutBuilder::new();
+    co.force().remove_untracked(true);
+    if !all {
+        for p in paths {
+            co.path(p);
+        }
+    }
+    repo.checkout_tree(head.as_object(), Some(&mut co))?;
+
+    Ok(branch)
+}
+
+/// Merge a proposal into the current branch and delete it (locally and, if
+/// it was pushed, on `origin`). A remote-only proposal gets a local branch
+/// first so the merge machinery is the same either way.
 pub fn apply_agent_branch(repo: &Repository, branch_name: &str) -> Result<()> {
+    if repo.find_branch(branch_name, BranchType::Local).is_err() {
+        let tip = find_agent_branch(repo, branch_name)?;
+        repo.branch(branch_name, &tip, false)?;
+    }
     let branch = repo.find_branch(branch_name, BranchType::Local)?;
     let annotated = repo.reference_to_annotated_commit(branch.get())?;
 
@@ -446,11 +595,20 @@ pub fn apply_agent_branch(repo: &Repository, branch_name: &str) -> Result<()> {
 
     // Delete the agent branch after applying
     repo.find_branch(branch_name, BranchType::Local)?.delete()?;
+    delete_remote_branch(repo, branch_name);
     Ok(())
 }
 
+/// Drop a proposal without merging — local branch, remote copy, or both.
 pub fn discard_agent_branch(repo: &Repository, branch_name: &str) -> Result<()> {
-    repo.find_branch(branch_name, BranchType::Local)?.delete()?;
+    let local = repo.find_branch(branch_name, BranchType::Local);
+    let remote = repo.find_branch(&format!("origin/{branch_name}"), BranchType::Remote).is_ok();
+    match local {
+        Ok(mut b) => b.delete()?,
+        Err(_) if remote => {}
+        Err(_) => return Err(AppError::Other(format!("No proposal named '{branch_name}'"))),
+    }
+    delete_remote_branch(repo, branch_name);
     Ok(())
 }
 

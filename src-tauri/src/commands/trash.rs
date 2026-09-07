@@ -9,8 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 
 use crate::commands::vault::{DbState, VaultState};
-use crate::error::{AppError, Result};
-use crate::note;
+use cortex_core::error::{AppError, Result};
+use cortex_core::note;
 
 fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
     state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
@@ -148,7 +148,7 @@ pub fn restore_trashed(
     std::fs::remove_file(&meta_path)?;
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &target_abs, db);
+        let _ = cortex_core::index::index_file(&root, &target_abs, db);
     }
 
     Ok(target_rel)

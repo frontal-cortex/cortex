@@ -1,11 +1,11 @@
 //! Tauri command layer for typed property schemas. The model + storage live in
-//! `crate::schema`; this is the thin IPC surface the frontend calls.
+//! `cortex_core::schema`; this is the thin IPC surface the frontend calls.
 
 use tauri::State;
 
 use crate::commands::vault::VaultState;
-use crate::error::{AppError, Result};
-use crate::schema::{PropertyDef, TypeSchema};
+use cortex_core::error::{AppError, Result};
+use cortex_core::schema::{PropertyDef, TypeSchema};
 
 fn root(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
     state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
@@ -16,8 +16,8 @@ fn root(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
 /// Fill `person` properties with the member roster so callers can render them.
 fn with_members(root: &std::path::Path, schema: Option<TypeSchema>) -> Option<TypeSchema> {
     schema.map(|mut s| {
-        crate::members::fill_person_options(&mut s, &crate::members::load(root));
-        crate::data::fill_relation_options(root, &mut s);
+        cortex_core::members::fill_person_options(&mut s, &cortex_core::members::load(root));
+        cortex_core::data::fill_relation_options(root, &mut s);
         s
     })
 }
@@ -25,7 +25,7 @@ fn with_members(root: &std::path::Path, schema: Option<TypeSchema>) -> Option<Ty
 #[tauri::command]
 pub fn get_schema(key: String, state: State<'_, VaultState>) -> Result<Option<TypeSchema>> {
     let root = root(&state)?;
-    Ok(with_members(&root, crate::schema::load(&root, &key)?))
+    Ok(with_members(&root, cortex_core::schema::load(&root, &key)?))
 }
 
 /// Resolve the schema that governs a specific note, using the same key rule the
@@ -36,10 +36,10 @@ pub fn get_schema_for_note(
     note_type: Option<String>,
     state: State<'_, VaultState>,
 ) -> Result<Option<TypeSchema>> {
-    match crate::schema::schema_key(&path, note_type.as_deref()) {
+    match cortex_core::schema::schema_key(&path, note_type.as_deref()) {
         Some(key) => {
             let root = root(&state)?;
-            Ok(with_members(&root, crate::schema::load(&root, &key)?))
+            Ok(with_members(&root, cortex_core::schema::load(&root, &key)?))
         }
         None => Ok(None),
     }
@@ -47,7 +47,7 @@ pub fn get_schema_for_note(
 
 #[tauri::command]
 pub fn set_schema(key: String, schema: TypeSchema, state: State<'_, VaultState>) -> Result<()> {
-    crate::schema::save(&root(&state)?, &key, &schema)
+    cortex_core::schema::save(&root(&state)?, &key, &schema)
 }
 
 /// Insert or replace a single property in a schema (creating the schema file if
@@ -60,10 +60,10 @@ pub fn upsert_property(
     state: State<'_, VaultState>,
 ) -> Result<()> {
     let root = root(&state)?;
-    let mut schema = crate::schema::load(&root, &key)?.unwrap_or_default();
+    let mut schema = cortex_core::schema::load(&root, &key)?.unwrap_or_default();
     match schema.properties.iter_mut().find(|p| p.name == property.name) {
         Some(existing) => *existing = property,
         None => schema.properties.push(property),
     }
-    crate::schema::save(&root, &key, &schema)
+    cortex_core::schema::save(&root, &key, &schema)
 }

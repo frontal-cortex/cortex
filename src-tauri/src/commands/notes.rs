@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::UNIX_EPOCH;
 use tauri::State;
 use walkdir::WalkDir;
 
 use crate::commands::vault::{DbState, VaultState};
 use crate::watcher::{self, SelfWrites};
-use crate::error::{AppError, Result};
-use crate::note::{self, Note, NoteEntry};
+use cortex_core::error::{AppError, Result};
+use cortex_core::note::{self, Note, NoteEntry};
 
 fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
     state
@@ -22,66 +21,7 @@ fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
 
 #[tauri::command]
 pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
-    let root = vault_path(&state)?;
-    let mut entries = Vec::new();
-
-    for entry in WalkDir::new(&root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let p = e.path();
-            p.extension().and_then(|s| s.to_str()) == Some("md")
-                && !p.components().any(|c| {
-                    matches!(
-                        c.as_os_str().to_str(),
-                        Some(".brain") | Some(".git") | Some(".trash") | Some(".cortex")
-                    )
-                })
-        })
-    {
-        let abs = entry.path();
-        let rel = abs.strip_prefix(&root).unwrap().to_string_lossy().to_string();
-        let Ok(content) = std::fs::read_to_string(abs) else { continue };
-
-        let modified = abs
-            .metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
-        // A file with unparseable frontmatter (e.g. a template with raw
-        // `{{placeholder}}` values) must still appear in the tree rather than
-        // silently vanishing — fall back to a filename-derived title.
-        let (title, note_type, icon, tags) = match note::parse_note(&rel, &content) {
-            Ok(parsed) => {
-                let title = note::infer_title(&parsed);
-                let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
-                let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
-                let tags = parsed
-                    .frontmatter
-                    .get("tags")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-                    .unwrap_or_default();
-                (title, note_type, icon, tags)
-            }
-            Err(_) => {
-                let title = std::path::Path::new(&rel)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Untitled")
-                    .to_string();
-                (title, None, None, Vec::new())
-            }
-        };
-
-        entries.push(NoteEntry { path: rel, title, note_type, icon, tags, modified });
-    }
-
-    entries.sort_by(|a, b| b.modified.cmp(&a.modified));
-    Ok(entries)
+    Ok(cortex_core::vault::list_notes(&vault_path(&state)?))
 }
 
 #[tauri::command]
@@ -221,7 +161,7 @@ pub fn write_note(
 
     // Keep index in sync
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+        let _ = cortex_core::index::index_file(&root, &abs, db);
     }
 
     Ok(())
@@ -258,7 +198,7 @@ pub fn create_note(
     std::fs::write(&abs, &content)?;
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+        let _ = cortex_core::index::index_file(&root, &abs, db);
     }
 
     Ok(note)
@@ -302,7 +242,7 @@ pub fn create_note_from_template(
     std::fs::write(&abs, &to_write)?;
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+        let _ = cortex_core::index::index_file(&root, &abs, db);
     }
 
     note::parse_note(&path, &to_write)
@@ -404,7 +344,7 @@ pub fn rename_note(
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
         let _ = db.rename_note(&old_path, &new_path);
-        let _ = crate::commands::indexer::index_file(&root, &to_abs, db);
+        let _ = cortex_core::index::index_file(&root, &to_abs, db);
     }
 
     Ok(())
@@ -443,7 +383,7 @@ pub fn duplicate_note(
     std::fs::write(&candidate, note::serialize_note(&dup)?)?;
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &candidate, db);
+        let _ = cortex_core::index::index_file(&root, &candidate, db);
     }
     Ok(new_rel)
 }
@@ -504,7 +444,7 @@ pub fn move_note(
     // Update index: rename the path row, then re-index the content at new location
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
         let _ = db.rename_note(&from_path, &new_path);
-        let _ = crate::commands::indexer::index_file(&root, &to_abs, db);
+        let _ = cortex_core::index::index_file(&root, &to_abs, db);
     }
 
     Ok(new_path)
@@ -603,7 +543,7 @@ fn build_database(
 
     let reindex = |abs: &std::path::Path| {
         if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-            let _ = crate::commands::indexer::index_file(root, abs, db);
+            let _ = cortex_core::index::index_file(root, abs, db);
         }
     };
 
@@ -646,19 +586,19 @@ fn build_database(
 
     // Give the database a Status property with categories, so status renders as
     // colored chips immediately and the board groups by it sensibly.
-    let schema = crate::schema::TypeSchema {
-        properties: vec![crate::schema::PropertyDef {
+    let schema = cortex_core::schema::TypeSchema {
+        properties: vec![cortex_core::schema::PropertyDef {
             name: "status".into(),
-            ty: crate::schema::PropType::Status,
+            ty: cortex_core::schema::PropType::Status,
             options: vec![
-                crate::schema::SelectOption { name: "todo".into(), color: "gray".into() },
-                crate::schema::SelectOption { name: "in-progress".into(), color: "blue".into() },
-                crate::schema::SelectOption { name: "done".into(), color: "green".into() },
+                cortex_core::schema::SelectOption { name: "todo".into(), color: "gray".into() },
+                cortex_core::schema::SelectOption { name: "in-progress".into(), color: "blue".into() },
+                cortex_core::schema::SelectOption { name: "done".into(), color: "green".into() },
             ],
             ..Default::default()
         }],
     };
-    let _ = crate::schema::save(root, &dir_name, &schema);
+    let _ = cortex_core::schema::save(root, &dir_name, &schema);
 
     Ok(dir_name)
 }
@@ -755,7 +695,7 @@ pub fn convert_database_to_note(
     fm.insert("title".into(), serde_json::json!(title));
     std::fs::write(&abs, note::serialize_note(&Note { path: note_rel.clone(), frontmatter: fm, body })?)?;
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = crate::commands::indexer::index_file(&root, &abs, db);
+        let _ = cortex_core::index::index_file(&root, &abs, db);
     }
     Ok(note_rel)
 }
