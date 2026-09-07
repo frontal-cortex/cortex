@@ -1,0 +1,32 @@
+/* iA Writer Quattro S — the prose face for the editor and viewer.
+   Bundled (SIL Open Font License 1.1, see assets/fonts/LICENSE-iA-Writer.md)
+   so every machine renders the same faces — deliberately no `local()`:
+   WebKitGTK matched the installed family loosely (bold for regular). */
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterQuattroS-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterQuattroS-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterQuattroS-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/iAWriterQuattroS-BoldItalic.ttf") format("truetype");
+}
