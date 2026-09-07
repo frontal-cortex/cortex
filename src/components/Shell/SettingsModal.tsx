@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { commands, Settings, VaultInfo, Member, CurrentUser } from "../../lib/commands";
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
 import { syncTheme } from "../../lib/theme";
+import { PROSE_FONTS, PROSE_SLANTS, DEFAULT_PROSE_FONT, isPreset } from "../../lib/fonts";
 import { Dropdown } from "./Dropdown";
 import { CloseIcon } from "./icons";
 import styles from "./SettingsModal.module.css";
@@ -30,7 +31,7 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
       if (!s) return s;
       const next = { ...s, ...patch };
       commands.setSettings(next).catch(() => {});
-      if (patch.theme !== undefined || patch.theme_file !== undefined) syncTheme(next);
+      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined) syncTheme(next);
       return next;
     });
   };
@@ -96,6 +97,41 @@ export function SettingsModal({ vault, onClose, onLeaveVault }: Props) {
                   />
                 </label>
               )}
+
+              <label className={styles.row}>
+                <span className={styles.label}>Page font</span>
+                <Dropdown
+                  value={!settings.prose_font ? DEFAULT_PROSE_FONT : isPreset(settings.prose_font) ? settings.prose_font : "custom"}
+                  options={[
+                    ...PROSE_FONTS.map((f) => ({ value: f.id, label: f.label })),
+                    { value: "custom", label: "Custom — any installed font…" },
+                  ]}
+                  onChange={(v) => update({ prose_font: v === "custom" ? (isPreset(settings.prose_font) || !settings.prose_font ? "Literata" : settings.prose_font) : v })}
+                />
+              </label>
+
+              {settings.prose_font && !isPreset(settings.prose_font) && (
+                <label className={styles.row}>
+                  <span className={styles.label}>Font family</span>
+                  <input
+                    className={styles.input}
+                    value={settings.prose_font}
+                    spellCheck={false}
+                    placeholder="e.g. Literata, or Atkinson Hyperlegible Next"
+                    title="A font installed on this machine. Applies as you type."
+                    onChange={(e) => update({ prose_font: e.target.value })}
+                  />
+                </label>
+              )}
+
+              <label className={styles.row}>
+                <span className={styles.label}>Page tilt</span>
+                <Dropdown
+                  value={PROSE_SLANTS.some((s) => s.id === settings.prose_slant) ? settings.prose_slant : ""}
+                  options={PROSE_SLANTS.map((s) => ({ value: s.id, label: s.label }))}
+                  onChange={(v) => update({ prose_slant: v })}
+                />
+              </label>
 
               <label className={styles.row}>
                 <span className={styles.label}>Auto-commit on save</span>

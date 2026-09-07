@@ -1,0 +1,141 @@
+/* Bundled page typefaces (all SIL Open Font License 1.1; each folder under
+   assets/fonts/ carries its licence). Bundled so every machine renders the
+   same faces — deliberately no `local()`: WebKitGTK matched installed
+   families loosely (bold for regular, nothing for bold).
+
+   Static faces for the iA Writer pair; variable fonts for the rest, with
+   the weight range declared so bold headings use the real axis. */
+
+/* iA Writer Quattro S — even, quiet duospace */
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterQuattroS-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterQuattroS-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterQuattroS-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Quattro S";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterQuattroS-BoldItalic.ttf") format("truetype");
+}
+
+/* iA Writer Duo S — more typewriter */
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterDuoS-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterDuoS-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterDuoS-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer/iAWriterDuoS-BoldItalic.ttf") format("truetype");
+}
+
+/* Ysabeau (default) — Garamond's italic letterforms as an upright sans */
+@font-face {
+  font-family: "Ysabeau";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-display: swap;
+  src: url("../assets/fonts/ysabeau/Ysabeau-VF.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Ysabeau";
+  font-style: italic;
+  font-weight: 1 1000;
+  font-display: swap;
+  src: url("../assets/fonts/ysabeau/Ysabeau-Italic-VF.ttf") format("truetype");
+}
+
+/* Alegreya — calligraphic serif for literature */
+@font-face {
+  font-family: "Alegreya";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("../assets/fonts/alegreya/Alegreya-VF.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Alegreya";
+  font-style: italic;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("../assets/fonts/alegreya/Alegreya-Italic-VF.ttf") format("truetype");
+}
+
+/* Fraunces — soft old-style serif (SOFT/WONK axes at their defaults) */
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/fraunces/Fraunces-VF.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/fraunces/Fraunces-Italic-VF.ttf") format("truetype");
+}
+
+/* Crimson Pro — screen-tuned Garamond */
+@font-face {
+  font-family: "Crimson Pro";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("../assets/fonts/crimson-pro/CrimsonPro-VF.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro";
+  font-style: italic;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("../assets/fonts/crimson-pro/CrimsonPro-Italic-VF.ttf") format("truetype");
+}
+
+/* Recursive — one file: Casual, Cursive, Mono and Slant axes. The slant
+   axis maps to oblique angles so the tilt setting leans it for real. */
+@font-face {
+  font-family: "Recursive";
+  font-style: oblique 0deg 15deg;
+  font-weight: 300 1000;
+  font-display: swap;
+  src: url("../assets/fonts/recursive/Recursive-VF.ttf") format("truetype");
+}

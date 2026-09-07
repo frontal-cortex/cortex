@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import "./styles/tokens.css";
+import "./styles/fonts.css";
 import { useVault } from "./hooks/useVault";
 import { initThemeListener } from "./lib/theme";
 import { isMac } from "./lib/keymap";

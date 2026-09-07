@@ -223,6 +223,10 @@ export interface Settings {
   collab_url: string;
   /** Palette file to follow (Omarchy `colors.toml` shape). Empty = use `theme`. */
   theme_file: string;
+  /** Page typeface: a preset key (see lib/fonts.ts) or a CSS font-family. Empty = default. */
+  prose_font: string;
+  /** Page tilt: "" upright, degrees ("4", "8"), or "italic". */
+  prose_slant: string;
 }
 
 /** A desktop palette: colour name → hex, plus which side of light/dark it is. */

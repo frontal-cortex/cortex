@@ -34,6 +34,16 @@ pub struct Settings {
     /// `theme`, so the setting can be committed with the vault.
     #[serde(default)]
     pub theme_file: String,
+    /// Page (editor/viewer) typeface: a preset key — `ysabeau` (default),
+    /// `quattro`, `duo`, `recursive`, `alegreya`, `fraunces`, `crimson`,
+    /// `serif`, `system`, `mono` — or any CSS font-family name.
+    /// Empty = the default. Chrome fonts are not affected.
+    #[serde(default)]
+    pub prose_font: String,
+    /// Page tilt: "" (upright), a small number of degrees ("4", "8" — a true
+    /// slant on variable fonts, the italic face otherwise), or "italic".
+    #[serde(default)]
+    pub prose_slant: String,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -52,6 +62,8 @@ impl Default for Settings {
             auto_sync_minutes: 0,
             collab_url: String::new(),
             theme_file: String::new(),
+            prose_font: String::new(),
+            prose_slant: String::new(),
         }
     }
 }

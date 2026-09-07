@@ -10,6 +10,7 @@
 
 import { listen } from "@tauri-apps/api/event";
 import { commands, Palette, Settings } from "./commands";
+import { applyProseFont, applyProseSlant } from "./fonts";
 
 let lastPref: Settings["theme"] = "system";
 let paletteKeys: string[] = [];
@@ -45,8 +46,10 @@ export function applyPalette(palette: Palette | null) {
 /** Apply a settings object: follow the palette file when set and readable,
  *  otherwise the light/dark preference. A missing file is silent — a vault
  *  whose settings name an Omarchy path still looks right on a Mac. */
-export async function syncTheme(settings: Pick<Settings, "theme" | "theme_file">) {
+export async function syncTheme(settings: Pick<Settings, "theme" | "theme_file" | "prose_font" | "prose_slant">) {
   lastPref = settings.theme;
+  applyProseFont(settings.prose_font ?? "");
+  applyProseSlant(settings.prose_slant ?? "");
   let palette: Palette | null = null;
   try {
     palette = await commands.watchThemeFile(settings.theme_file ?? "");
