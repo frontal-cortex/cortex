@@ -116,6 +116,16 @@ Any AI agent that can read/write files and run git commands can propose changes:
 
 The agent never needs to know about the app — just git and Markdown.
 
+## Publishing
+
+Notes stay private unless you say otherwise. Add `publish: true` to a note's
+frontmatter (or tag it `public`) to mark it for the site; that alone changes
+nothing on the internet. Publishing is always your own act: **Publish site…**
+in the command palette, or `cortex publish --out DIR` from a terminal. The
+result is a plain folder of HTML you can put on any static host, or push to
+GitHub Pages with `cortex publish --gh-pages`. Wiki links to notes you did
+not publish become plain text on the site, so nothing private is revealed.
+
 ## Sync
 
 The vault syncs to any standard git remote:
@@ -150,6 +160,8 @@ prose_font: ''               # page typeface: ysabeau | quattro | duo | recursiv
 prose_slant: ''              # page tilt: '' upright | 4 | 8 (degrees) | italic
 keybindings: {}              # shortcut overrides, id → keys, e.g. {toggle-sidebar: mod+shift+b}
 terminal_command: ''         # command the terminal pane (Ctrl+L) opens with, e.g. claude (empty = shell)
+site_title: ''               # title of the published site (empty = the vault folder's name)
+site_home: ''                # published note shown on the site's front page, e.g. notes/about.md
 ```
 
 From the terminal: `cortex settings` prints the file, `cortex settings describe`
@@ -213,9 +225,20 @@ and the app reloads it live when it changes. Edit it with
     prose_slant           page tilt: empty (upright), degrees such as 4 or 8, or italic
     keybindings           shortcut overrides, id → keys; `cortex settings set keybindings.toggle-sidebar=mod+shift+b`
     terminal_command      command the app's terminal pane opens with (an agent CLI such as claude); empty = shell
+    site_title            title of the published site; empty = the vault folder's name
+    site_home             published note shown on the site's front page, e.g. notes/about.md; empty = list only
 
 `cortex settings describe` prints this table with defaults; `cortex agents`
 lists which agent CLIs (claude, hermes, openclaw, codex, …) are installed.
+
+## Publishing
+
+Nothing is published unless the owner does it. `publish: true` in a note's
+frontmatter (or the `public` tag) only marks it as *eligible*; the site is
+built when the owner runs `cortex publish --out DIR` (or `--gh-pages`) or
+uses Publish in the app. Set the flag only when asked to; never build or
+push a site yourself. `cortex publish` with no target lists what is marked.
+Links from a published note to an unpublished one become plain text.
 
 ## Proposing changes
 

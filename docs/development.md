@@ -34,6 +34,7 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── vault-template/   # The starter vault, compiled in (template.rs) — no network clone
 │   │   ├── src/settings.rs   # `.cortex/settings.yaml`: every key described, typed `set_field`, `ensure_complete`
 │   │   ├── src/vault.rs      # Vault discovery + the VAULT.md / AGENTS.md text written on first open
+│   │   ├── src/publish.rs    # Static site from notes marked publish: true — build, gh-pages push, Action template
 │   │   └── src/agents.rs     # Which agent CLIs (claude, hermes, …) are on $PATH, for `terminal_command`
 │   └── cortex-cli/           # `cortex` binary: CLI (main.rs) + MCP server (mcp.rs) over shared ops.rs
 ├── src/                      # React + TypeScript frontend
@@ -42,6 +43,7 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── treeRows.ts       # Roving tabindex + type-ahead over the sidebar's row model
 │   │   ├── GettingStarted.tsx # First-run steps, rendered as tree rows so the keyboard reaches them
 │   │   ├── SettingsView.tsx  # Full-window settings page: section nav, search, one row per settings.yaml key
+│   │   ├── PublishModal.tsx  # The only path to a published site: shows what goes, where, and the result
 │   │   └── TerminalPane.tsx  # xterm.js over a real PTY; opens into `terminal_command` (an agent CLI)
 │   ├── hooks/                # React hooks (useVault, useNotes)
 │   ├── lib/                  # Shared utilities (commands.ts, fileTree.ts)
@@ -115,6 +117,14 @@ search sees every row and each row shows its key. Edits are written to the
 file; edits made elsewhere arrive through the watcher's config event and the
 page reloads. A setting that only the UI could change would be a bug — add
 the field to `describe()` in core first, then a row here.
+
+**Publishing is never automatic**: `publish::build` runs only from
+`cortex publish` or the app's Publish dialog. `publish: true` (or the `public`
+tag) marks a note as eligible and nothing more. Links to unpublished notes
+degrade to text so a site cannot leak what stayed private; the output folder
+carries a manifest so a rebuild deletes only what it wrote. MCP exposes a
+read-only `list_published` and no build/push tool on purpose. Full user docs:
+`docs/publishing.md`.
 
 **The sidebar is one flat row list**: `LeftPanel` derives a `TreeRow[]` (in
 render order, from the same open/closed state the renderer reads) and

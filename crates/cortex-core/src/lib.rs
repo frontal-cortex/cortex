@@ -16,6 +16,7 @@ pub mod git;
 pub mod index;
 pub mod members;
 pub mod note;
+pub mod publish;
 pub mod schema;
 pub mod settings;
 pub mod template;

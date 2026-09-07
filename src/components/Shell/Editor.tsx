@@ -104,6 +104,8 @@ export interface EditorHandle {
   focusBody(): void;
   /** Expand or collapse the note's property panel under the title. */
   toggleProperties(): void;
+  /** Flip `publish: true` on the note — marks it for the site, publishes nothing. */
+  togglePublic(): void;
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
@@ -118,6 +120,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
     focusTitle: () => inner.current?.focusTitle(),
     focusBody: () => inner.current?.focusBody(),
     toggleProperties: () => inner.current?.toggleProperties(),
+    togglePublic: () => inner.current?.togglePublic(),
   }), []);
 
   if (!note) {
@@ -352,9 +355,12 @@ function NoteEditor({
         editorRef.current?.focus();
       },
       toggleProperties,
+      togglePublic: () => togglePublicRef.current(),
     };
     return () => { handleRef.current = null; };
   }, [handleRef, toggleProperties]);
+  // Assigned once handleFrontmatterChange exists (it is declared further down).
+  const togglePublicRef = useRef<() => void>(() => {});
 
   const imagePasteDropExtension = useMemo(() => Extension.create({
     name: "imagePasteDrop",
@@ -572,6 +578,11 @@ function NoteEditor({
   const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
     onSave({ ...noteRef.current, frontmatter: updated });
   }, [onSave]);
+  togglePublicRef.current = () => {
+    const fm = { ...noteRef.current.frontmatter };
+    if (fm["publish"] === true) delete fm["publish"]; else fm["publish"] = true;
+    handleFrontmatterChange(fm);
+  };
 
   const title =
     typeof note.frontmatter["title"] === "string"

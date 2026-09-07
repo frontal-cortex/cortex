@@ -135,6 +135,30 @@ enum Cmd {
     },
     /// Which agent CLIs (claude, hermes, openclaw, …) are installed, for `terminal_command`
     Agents,
+    /// Build a static site from the notes marked `publish: true` (or tagged `public`)
+    ///
+    /// Nothing is ever published on its own: this command is the act. With no
+    /// target it only lists what would be published.
+    Publish {
+        /// Write the site into this directory (refuses a non-empty one it did not write, see --force)
+        #[arg(long, value_name = "DIR", conflicts_with = "gh_pages")]
+        out: Option<PathBuf>,
+        /// Build and force-push the site as the `gh-pages` branch of the remote
+        #[arg(long, conflicts_with = "out")]
+        gh_pages: bool,
+        /// Remote to push to with --gh-pages
+        #[arg(long, default_value = "origin")]
+        remote: String,
+        /// Branch to push to with --gh-pages
+        #[arg(long, default_value = "gh-pages")]
+        branch: String,
+        /// Write into a non-empty --out directory anyway (never deletes files it did not write)
+        #[arg(long)]
+        force: bool,
+        /// Write .github/workflows/publish.yml — a manual "Run workflow" deploy to GitHub Pages
+        #[arg(long)]
+        github_action: bool,
+    },
     /// Serve the vault to an agent over MCP (stdio)
     Mcp,
 }
@@ -347,6 +371,46 @@ fn run() -> Result<()> {
                 if a.found { "yes".into() } else { "no".into() }, a.path.clone().unwrap_or_default(),
             ]).collect());
             Ok(())
+        }
+        Cmd::Publish { out: out_dir, gh_pages, remote, branch, force, github_action } => {
+            use cortex_core::publish;
+            if github_action {
+                let p = publish::write_github_action(&v.root)?;
+                if out.json { return out.emit(&serde_json::json!({ "written": p })); }
+                println!("wrote {}\nEnable it: GitHub → Settings → Pages → Source: GitHub Actions, then Actions → Publish → Run workflow.", p.display());
+                return Ok(());
+            }
+            let pages_table = |pages: &[publish::PublishEntry]| {
+                table(&["PATH", "TITLE", "URL"], pages.iter().map(|e| vec![e.path.clone(), e.title.clone(), e.url.clone()]).collect());
+            };
+            if let Some(dir) = out_dir {
+                let r = publish::build(&v.root, &dir, force)?;
+                if out.json { return out.emit(&r); }
+                pages_table(&r.pages);
+                println!("\n{} page(s), {} asset(s) → {}{}", r.pages.len(), r.assets.len(), r.out_dir.display(),
+                    if r.removed.is_empty() { String::new() } else { format!(" ({} stale file(s) removed)", r.removed.len()) });
+                Ok(())
+            } else if gh_pages {
+                let r = publish::push_gh_pages(&v.root, &remote, &branch)?;
+                if out.json { return out.emit(&r); }
+                pages_table(&r.report.pages);
+                println!("\n{} page(s) pushed to {} ({})", r.report.pages.len(), r.branch, r.remote_url);
+                match r.url {
+                    Some(u) => println!("GitHub Pages (once enabled for the {} branch): {u}", r.branch),
+                    None => println!("Point your static host at the {} branch.", r.branch),
+                }
+                Ok(())
+            } else {
+                let pages = v.publish_preview()?;
+                if out.json { return out.emit(&pages); }
+                if pages.is_empty() {
+                    println!("Nothing is marked for publishing. Add `publish: true` to a note's frontmatter (or the `public` tag), then run `cortex publish --out DIR`.");
+                } else {
+                    pages_table(&pages);
+                    println!("\n{} note(s) would be published. Run with --out DIR or --gh-pages to build.", pages.len());
+                }
+                Ok(())
+            }
         }
         Cmd::Mcp => tokio::runtime::Runtime::new()?.block_on(mcp::serve(v)),
     }

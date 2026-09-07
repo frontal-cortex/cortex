@@ -231,6 +231,36 @@ export interface Settings {
   keybindings: Record<string, string>;
   /** Command run inside the terminal pane when it opens (an agent CLI). Empty = plain shell. */
   terminal_command: string;
+  /** Title of the published site. Empty = the vault folder's name. */
+  site_title: string;
+  /** Published note shown on the site's front page. Empty = list only. */
+  site_home: string;
+}
+
+/** A note that `publish` would put on the site (see cortex_core::publish). */
+export interface PublishEntry {
+  path: string;
+  title: string;
+  /** Site-relative URL, e.g. `notes/ideas/second-brain/`. */
+  url: string;
+  created: string | null;
+  tags: string[];
+}
+
+export interface PublishReport {
+  out_dir: string;
+  pages: PublishEntry[];
+  assets: string[];
+  removed: string[];
+}
+
+export interface PagesPush {
+  remote: string;
+  remote_url: string;
+  branch: string;
+  /** Best guess at the public URL for github.com remotes. */
+  url: string | null;
+  report: PublishReport;
 }
 
 /** An agent CLI the terminal pane can open into (see cortex_core::agents). */
@@ -448,6 +478,16 @@ export const commands = {
   /** Known agent CLIs (claude, hermes, …) and whether each is on $PATH. */
   detectAgents: () =>
     invoke<AgentCli[]>("detect_agents"),
+
+  // ── Publishing — every call is an explicit user action, never automatic ──
+  publishPreview: () =>
+    invoke<PublishEntry[]>("publish_preview"),
+  publishToDir: (dir: string, force: boolean) =>
+    invoke<PublishReport>("publish_to_dir", { dir, force }),
+  publishGhPages: (remote: string, branch: string) =>
+    invoke<PagesPush>("publish_gh_pages", { remote, branch }),
+  publishWriteGithubAction: () =>
+    invoke<string>("publish_write_github_action"),
 
   listTrash: () =>
     invoke<TrashEntry[]>("list_trash"),

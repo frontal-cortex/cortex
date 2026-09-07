@@ -12,7 +12,7 @@ A local-first, Notion-style knowledge base where your data is a plain git reposi
 
 ## Status
 
-Usable daily. Notes, wiki links, backlinks, graph, databases with typed properties and views, templates, history and restore, trash, git sync with conflict resolution, team members, live collaboration over an optional relay, a filesystem watcher, desktop-palette theming, a CLI, and an MCP server.
+Usable daily. Notes, wiki links, backlinks, graph, databases with typed properties and views, templates, history and restore, trash, git sync with conflict resolution, team members, live collaboration over an optional relay, a filesystem watcher, desktop-palette theming, a CLI, an MCP server, and publishing chosen notes as a static site (see [docs/publishing.md](docs/publishing.md)).
 
 ## Tech stack
 
@@ -76,6 +76,7 @@ cortex search "weekly review"                # same search the app has
 cortex new "Week 36" --tag summary --body -  # same naming, sorted frontmatter
 cortex propose "Summarise week 36" notes/summaries/week-36-2026-09-07.md
 cortex settings set terminal_command=claude  # every app setting lives in .cortex/settings.yaml
+cortex publish --out ./site                  # a static site from the notes marked publish: true — never automatic
 claude mcp add cortex -- cortex mcp --vault ~/my-vault
 ```
 

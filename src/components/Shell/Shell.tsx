@@ -22,6 +22,7 @@ import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
 import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
 import { SettingsView } from "./SettingsView";
+import { PublishModal } from "./PublishModal";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
@@ -59,6 +60,8 @@ export function Shell({
   }, [monk, rightVisible, toggleRight]);
   const [showGraph, setShowGraph] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // The Publish dialog — the only path to a published site, always by hand.
+  const [showPublish, setShowPublish] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   // Conflicted files from a sync that hit a merge conflict; non-null shows the
   // resolution modal. Null = no merge in progress (or user dismissed it).
@@ -587,7 +590,18 @@ export function Shell({
           onToggleMonk={toggleMonk}
           onFocusSidebar={() => actionsRef.current?.["focus-sidebar"]()}
           onToggleProperties={() => editorRef.current?.toggleProperties()}
+          onPublish={() => setShowPublish(true)}
+          onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
+          isPublic={note?.frontmatter["publish"] === true}
           hasRemote={vault.has_remote}
+        />
+      )}
+
+      {showPublish && (
+        <PublishModal
+          vault={vault}
+          onClose={() => { setShowPublish(false); focusEditor(); }}
+          onOpenNote={(p) => openNote(p)}
         />
       )}
 
