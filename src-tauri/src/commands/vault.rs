@@ -135,6 +135,7 @@ auto_commit: false           # commit after every note save
 default_note_type: note      # pre-filled type for new notes
 journal_template: daily.md   # template used for Today / daily notes
 theme: system                # light | dark | system
+theme_file: ""               # follow a palette file, e.g. ~/.local/state/omarchy/current/theme/colors.toml
 trash_retention_days: 30     # auto-prune trashed notes after N days (0 = never)
 ```
 "#;
@@ -233,6 +234,9 @@ pub fn open_vault(
 
     crate::commands::recent::record_recent(&app, &vault_path);
 
+    // Follow external edits (agents, editors, git) for as long as the vault is open.
+    crate::watcher::start(&app, vault_path.clone())?;
+
     *state.0.lock().unwrap() = Some(vault_path);
 
     Ok(VaultInfo { path, name, has_remote })
@@ -292,9 +296,11 @@ pub fn create_vault_from_template(path: String) -> Result<()> {
 /// the app returns to the landing screen (like signing out).
 #[tauri::command]
 pub fn close_vault(
+    app: tauri::AppHandle,
     state: State<'_, VaultState>,
     db_state: State<'_, DbState>,
 ) -> Result<()> {
+    crate::watcher::stop(&app);
     *state.0.lock().unwrap() = None;
     *db_state.0.lock().unwrap() = None;
     Ok(())

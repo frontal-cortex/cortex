@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome } from "../../lib/commands";
+import { listen } from "@tauri-apps/api/event";
+import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
+import { findShortcut, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
@@ -17,7 +19,8 @@ import { QuickCapture } from "./QuickCapture";
 import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
-import { SettingsModal, applyTheme } from "./SettingsModal";
+import { SettingsModal } from "./SettingsModal";
+import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
 interface Props {
@@ -31,13 +34,15 @@ interface Props {
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
   onLeaveVault: () => void;
+  onRefreshStatus: () => Promise<void>;
 }
 
 export function Shell({
   vault, status, agentBranches, commits, syncing, onSync,
-  onCommit, onApplyBranch, onDiscardBranch, onLeaveVault,
+  onCommit, onApplyBranch, onDiscardBranch, onLeaveVault, onRefreshStatus,
 }: Props) {
-  const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
+  // Quick switcher: null = closed; "actions" opens it straight into `>` mode.
+  const [switcher, setSwitcher] = useState<null | "notes" | "actions">(null);
   const [showGraph, setShowGraph] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -64,7 +69,7 @@ export function Shell({
   // opens; re-read when the settings modal closes (it may have changed them).
   const loadSettings = useCallback(() => {
     commands.getSettings().then((s) => {
-      applyTheme(s.theme);
+      syncTheme(s);
       setAutoSyncMinutes(s.auto_sync_minutes);
       setAutoCommit(s.auto_commit);
     }).catch(() => {});
@@ -105,6 +110,39 @@ export function Shell({
       setReloadToken((t) => t + 1);
     } catch { /* note may have been deleted by the merge */ }
   }, [applyNote]);
+
+  // ── Follow the filesystem ───────────────────────────────────────────────────
+  // The Rust watcher emits one event per burst of external changes (an agent
+  // writing on a branch, an editor, a git checkout); echoes of our own writes
+  // are filtered out on that side. Refresh what changed, and only remount the
+  // editor when the open note's content actually differs from what's on screen.
+  const noteRef = useRef(note);
+  noteRef.current = note;
+  const watchDeps = useRef({ refresh, loadSettings, onRefreshStatus, applyNote });
+  watchDeps.current = { refresh, loadSettings, onRefreshStatus, applyNote };
+  useEffect(() => {
+    const unlisten = listen<VaultChanged>("vault://changed", async ({ payload }) => {
+      const { refresh, loadSettings, onRefreshStatus, applyNote } = watchDeps.current;
+      if (payload.notes.length || payload.removed.length || payload.dirs) {
+        await refresh();
+        window.dispatchEvent(new CustomEvent("cortex:data-changed"));
+        const open = selectedPathRef.current;
+        if (open && payload.notes.includes(open)) {
+          try {
+            const fresh = await commands.readNote(open);
+            const cur = noteRef.current;
+            const same = !!cur && fresh.body === cur.body &&
+              JSON.stringify(fresh.frontmatter) === JSON.stringify(cur.frontmatter);
+            if (!same) { applyNote(fresh); setReloadToken((t) => t + 1); }
+          } catch { /* vanished between the event and the read */ }
+        }
+      }
+      if (payload.config) loadSettings();
+      // Any write dirties the working tree; refs moving changes branches/commits.
+      onRefreshStatus();
+    });
+    return () => { unlisten.then((f) => f()); };
+  }, []);
 
   const handleSync = useCallback(async () => {
     const outcome = await onSync();
@@ -179,20 +217,20 @@ export function Shell({
   }, [autoCommit, onCommit]);
   useEffect(() => () => { if (commitTimer.current) clearTimeout(commitTimer.current); }, []);
 
+  // App shortcuts come from the keymap registry (lib/keymap.ts). The handlers
+  // live in a ref (assigned below, once they exist) so the listener is
+  // registered once yet always calls the latest closures.
+  const actionsRef = useRef<Record<ShortcutId, () => void> | null>(null);
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.shiftKey && (e.key === "k" || e.key === "K")) { e.preventDefault(); setShowCapture(true); return; }
-      if (meta && e.key === "k") { e.preventDefault(); setShowQuickSwitcher(true); }
-      if (meta && e.key === "n") { e.preventDefault(); handleNewNote(undefined); }
-      if (meta && e.key === "g") { e.preventDefault(); setShowGraph((x) => !x); }
-      if (meta && e.key === "[") { e.preventDefault(); back(); }
-      if (meta && e.key === "]") { e.preventDefault(); forward(); }
-      if (e.key === "Escape") { setShowQuickSwitcher(false); setShowGraph(false); setShowCapture(false); }
+      if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setShowCapture(false); return; }
+      const id = findShortcut(e);
+      if (!id) return;
+      e.preventDefault();
+      actionsRef.current?.[id]();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Embedded data views (collection rows) dispatch this to open a row as a note.
@@ -231,14 +269,15 @@ export function Shell({
     setSelectedPath(note.path);
   }, [createNoteFromTemplate]);
 
-  // Flip between light and dark, persisting the choice (forcing an explicit
-  // theme rather than following the OS, matching how the picker behaves).
+  // Flip between light and dark, persisting the choice. An explicit pick is
+  // a deliberate override, so it also stops following a desktop palette.
   const handleToggleTheme = useCallback(async () => {
     const settings = await commands.getSettings();
     const current = document.documentElement.getAttribute("data-theme");
     const next = current === "dark" ? "light" : "dark";
-    applyTheme(next);
-    await commands.setSettings({ ...settings, theme: next });
+    const updated: Settings = { ...settings, theme: next, theme_file: "" };
+    await commands.setSettings(updated);
+    await syncTheme(updated);
   }, []);
 
   // Append a timestamped bullet to today's daily note, creating it if needed —
@@ -361,6 +400,18 @@ export function Shell({
     if (byStem) setSelectedPath(byStem.path);
   }, [notes]);
 
+  actionsRef.current = {
+    "quick-switcher":  () => setSwitcher("notes"),
+    "command-palette": () => setSwitcher("actions"),
+    "quick-capture":   () => setShowCapture(true),
+    "new-note":        () => { handleNewNote(undefined); },
+    "today":           () => { handleToday(); },
+    "graph":           () => setShowGraph((x) => !x),
+    "back":            back,
+    "forward":         forward,
+    "settings":        () => setShowSettings(true),
+  };
+
   return (
     <div className={styles.root}>
       <TopBar
@@ -374,7 +425,7 @@ export function Shell({
         onForward={forward}
         onSync={handleSync}
         onOpenGraph={() => setShowGraph(true)}
-        onOpenSwitcher={() => setShowQuickSwitcher(true)}
+        onOpenSwitcher={() => setSwitcher("notes")}
         onToday={handleToday}
       />
 
@@ -431,11 +482,12 @@ export function Shell({
         )}
       </div>
 
-      {showQuickSwitcher && (
+      {switcher && (
         <QuickSwitcher
           notes={notes}
+          initialQuery={switcher === "actions" ? ">" : ""}
           onSelect={setSelectedPath}
-          onClose={() => setShowQuickSwitcher(false)}
+          onClose={() => setSwitcher(null)}
           onNewNote={() => handleNewNote()}
           onToday={handleToday}
           onOpenGraph={() => setShowGraph(true)}

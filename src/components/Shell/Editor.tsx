@@ -23,6 +23,7 @@ import { PlusIcon, HistoryIcon, TrashIcon, TableIcon } from "./icons";
 import { cortexSchema, inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
+import { shortcutFor } from "../../lib/keymap";
 import styles from "./Editor.module.css";
 
 // Maps data URIs → vault-relative paths (e.g. "assets/image-123.png")
@@ -106,7 +107,7 @@ export function Editor({
         <p className={styles.emptyTitle}>No note open</p>
         <p className={styles.emptyHint}>
           Select a note from the sidebar, or press{" "}
-          <kbd className={styles.emptyKbd}>⌘N</kbd> to create one.
+          <kbd className={styles.emptyKbd}>{shortcutFor("new-note")}</kbd> to create one.
         </p>
       </div>
     );

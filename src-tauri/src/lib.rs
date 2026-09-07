@@ -6,8 +6,25 @@ mod git;
 mod members;
 mod note;
 mod schema;
+mod theme;
+mod watcher;
 
 use commands::vault::{DbState, VaultState};
+use tauri::Manager;
+
+/// Tiling compositors own the window frame; GTK's client-side title bar with
+/// min/max/close only gets in the way there. Desktops that need a close button
+/// (GNOME, KDE) keep it.
+#[cfg(target_os = "linux")]
+fn is_tiling_desktop() -> bool {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .or_else(|_| std::env::var("XDG_SESSION_DESKTOP"))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    ["hyprland", "sway", "niri", "river", "i3", "bspwm", "dwm", "qtile"]
+        .iter()
+        .any(|d| desktop.contains(d))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +34,19 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(VaultState::default())
         .manage(DbState::default())
+        .manage(watcher::WatcherState::default())
+        .manage(watcher::SelfWrites::default())
+        .manage(theme::ThemeWatcher::default())
+        .setup(|app| {
+            #[cfg(target_os = "linux")]
+            if is_tiling_desktop() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_decorations(false);
+                }
+            }
+            let _ = app; // silence the unused warning on other platforms
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::vault::open_vault,
             commands::vault::create_vault_from_template,
@@ -91,6 +121,8 @@ pub fn run() {
             commands::members::get_members,
             commands::members::set_members,
             commands::members::current_user,
+            theme::watch_theme_file,
+            theme::detect_desktop_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -5,6 +5,7 @@ use tauri::State;
 use walkdir::WalkDir;
 
 use crate::commands::vault::{DbState, VaultState};
+use crate::watcher::{self, SelfWrites};
 use crate::error::{AppError, Result};
 use crate::note::{self, Note, NoteEntry};
 
@@ -205,6 +206,7 @@ pub fn write_note(
     note: Note,
     state: State<'_, VaultState>,
     db_state: State<'_, DbState>,
+    self_writes: State<'_, SelfWrites>,
 ) -> Result<()> {
     let root = vault_path(&state)?;
     let abs = root.join(&path);
@@ -214,6 +216,7 @@ pub fn write_note(
     }
 
     let content = note::serialize_note(&note)?;
+    watcher::record_self_write(&self_writes, &path, &content);
     std::fs::write(&abs, &content)?;
 
     // Keep index in sync
@@ -231,6 +234,7 @@ pub fn create_note(
     created: String,
     state: State<'_, VaultState>,
     db_state: State<'_, DbState>,
+    self_writes: State<'_, SelfWrites>,
 ) -> Result<Note> {
     let root = vault_path(&state)?;
     let abs = root.join(&path);
@@ -250,6 +254,7 @@ pub fn create_note(
 
     let note = Note { path: path.clone(), frontmatter, body: String::new() };
     let content = note::serialize_note(&note)?;
+    watcher::record_self_write(&self_writes, &path, &content);
     std::fs::write(&abs, &content)?;
 
     if let Some(db) = db_state.0.lock().unwrap().as_ref() {

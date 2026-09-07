@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
+import { shortcutFor } from "../../lib/keymap";
 import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
@@ -13,6 +14,8 @@ interface Action {
 
 interface Props {
   notes: NoteEntry[];
+  /** Seed the input — ">" opens straight into command mode. */
+  initialQuery?: string;
   onSelect: (path: string) => void;
   onClose: () => void;
   // Actions wired from Shell
@@ -31,11 +34,11 @@ interface Props {
 type Mode = "notes" | "actions";
 
 export function QuickSwitcher({
-  notes, onSelect, onClose,
+  notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture, hasRemote,
 }: Props) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
   const [templates, setTemplates] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,28 +69,28 @@ export function QuickSwitcher({
       {
         id: "new-note",
         label: "New note",
-        description: "⌘N",
+        description: shortcutFor("new-note"),
         icon: <PlusIcon size={14} />,
         run: () => { onNewNote(); onClose(); },
       },
       {
         id: "today",
         label: "Today's note",
-        description: "Open or create today's journal entry",
+        description: `${shortcutFor("today")} · open or create today's journal entry`,
         icon: <TodayIcon size={14} />,
         run: () => { onToday(); onClose(); },
       },
       {
         id: "capture",
         label: "Quick capture",
-        description: "⌘⇧K · append a line to today's note",
+        description: `${shortcutFor("quick-capture")} · append a line to today's note`,
         icon: <PlusIcon size={14} />,
         run: () => { onQuickCapture(); onClose(); },
       },
       {
         id: "graph",
         label: "Graph view",
-        description: "⌘G",
+        description: shortcutFor("graph"),
         icon: <GraphIcon size={14} />,
         run: () => { onOpenGraph(); onClose(); },
       },
@@ -101,7 +104,7 @@ export function QuickSwitcher({
       ...(hasRemote ? [{
         id: "sync",
         label: "Sync vault",
-        description: "Pull, rebase, and push to the remote",
+        description: "Pull, merge, and push to the remote",
         icon: <SyncIcon size={14} />,
         run: () => { onSync(); onClose(); },
       }] : []),
@@ -114,6 +117,7 @@ export function QuickSwitcher({
       {
         id: "settings",
         label: "Settings",
+        description: shortcutFor("settings"),
         icon: <GearIcon size={14} />,
         run: () => { onOpenSettings(); onClose(); },
       },
@@ -224,7 +228,7 @@ export function QuickSwitcher({
         )}
 
         {!query && (
-          <p className={styles.hint}>Type <kbd className={styles.hintKbd}>&gt;</kbd> to run commands</p>
+          <p className={styles.hint}>Type <kbd className={styles.hintKbd}>&gt;</kbd> or press <kbd className={styles.hintKbd}>{shortcutFor("command-palette")}</kbd> to run commands</p>
         )}
       </div>
     </div>

@@ -128,3 +128,55 @@
 
   --accent-light: #1c2c3e;
 }
+
+/* ── Desktop palette ────────────────────────────────────────────────────────
+   When `data-palette` is set (lib/theme.ts), every token is derived from the
+   `--palette-*` custom properties it put on <html> — the colour names of an
+   Omarchy colors.toml. Only a few names are required (background, foreground,
+   accent, red/green/yellow/blue/magenta); the rest have fallbacks. color-mix
+   keeps hover/border/secondary tints proportional in light and dark alike. */
+:root[data-palette] {
+  --bg-app:     var(--palette-background);
+  --bg-sidebar: var(--palette-background);
+  --bg-panel:   var(--palette-background);
+  --bg-hover:   color-mix(in srgb, var(--palette-background) 90%, var(--palette-foreground));
+  --bg-active:  var(--palette-selection, color-mix(in srgb, var(--palette-background) 82%, var(--palette-foreground)));
+
+  --text-primary:   var(--palette-foreground);
+  --text-secondary: color-mix(in srgb, var(--palette-foreground) 66%, var(--palette-background));
+  --text-tertiary:  color-mix(in srgb, var(--palette-foreground) 44%, var(--palette-background));
+  --text-inverse:   var(--palette-background);
+
+  --border:       color-mix(in srgb, var(--palette-muted, var(--palette-foreground)) 45%, var(--palette-background));
+  --border-focus: var(--palette-muted, color-mix(in srgb, var(--palette-foreground) 50%, var(--palette-background)));
+
+  --accent:       var(--palette-accent, var(--palette-blue));
+  --accent-light: color-mix(in srgb, var(--palette-accent, var(--palette-blue)) 18%, var(--palette-background));
+  --danger:       var(--palette-red);
+
+  --git-clean:    var(--palette-green);
+  --git-dirty:    var(--palette-orange, var(--palette-yellow));
+  --git-conflict: var(--palette-red);
+  --git-agent:    var(--palette-magenta);
+
+  /* Tag pills: a soft wash of the colour behind text pulled toward the
+     foreground, so they read on either side of light/dark. */
+  --tag-gray-bg:   color-mix(in srgb, var(--palette-muted, var(--palette-foreground)) 40%, var(--palette-background));
+  --tag-gray-fg:   var(--palette-foreground);
+  --tag-brown-bg:  color-mix(in srgb, var(--palette-brown, var(--palette-orange, var(--palette-yellow))) 24%, var(--palette-background));
+  --tag-brown-fg:  color-mix(in srgb, var(--palette-brown, var(--palette-orange, var(--palette-yellow))) 70%, var(--palette-foreground));
+  --tag-orange-bg: color-mix(in srgb, var(--palette-orange, var(--palette-yellow)) 22%, var(--palette-background));
+  --tag-orange-fg: color-mix(in srgb, var(--palette-orange, var(--palette-yellow)) 75%, var(--palette-foreground));
+  --tag-yellow-bg: color-mix(in srgb, var(--palette-yellow) 22%, var(--palette-background));
+  --tag-yellow-fg: color-mix(in srgb, var(--palette-yellow) 75%, var(--palette-foreground));
+  --tag-green-bg:  color-mix(in srgb, var(--palette-green) 22%, var(--palette-background));
+  --tag-green-fg:  color-mix(in srgb, var(--palette-green) 75%, var(--palette-foreground));
+  --tag-blue-bg:   color-mix(in srgb, var(--palette-blue) 22%, var(--palette-background));
+  --tag-blue-fg:   color-mix(in srgb, var(--palette-blue) 75%, var(--palette-foreground));
+  --tag-purple-bg: color-mix(in srgb, var(--palette-magenta) 22%, var(--palette-background));
+  --tag-purple-fg: color-mix(in srgb, var(--palette-magenta) 75%, var(--palette-foreground));
+  --tag-pink-bg:   color-mix(in srgb, color-mix(in srgb, var(--palette-magenta) 65%, var(--palette-red)) 22%, var(--palette-background));
+  --tag-pink-fg:   color-mix(in srgb, color-mix(in srgb, var(--palette-magenta) 65%, var(--palette-red)) 75%, var(--palette-foreground));
+  --tag-red-bg:    color-mix(in srgb, var(--palette-red) 22%, var(--palette-background));
+  --tag-red-fg:    color-mix(in srgb, var(--palette-red) 75%, var(--palette-foreground));
+}

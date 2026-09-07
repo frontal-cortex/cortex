@@ -12,6 +12,8 @@ interface VaultState {
   commits: CommitEntry[];
   syncing: boolean;
   creating: boolean;
+  /** True until we know whether there's a vault to reopen — avoids flashing the picker. */
+  booting: boolean;
   error: string | null;
 }
 
@@ -24,16 +26,21 @@ export function useVault() {
     commits: [],
     syncing: false,
     creating: false,
+    booting: true,
     error: null,
   });
 
   useEffect(() => {
-    commands.getVaultInfo().then((vault) => {
-      if (vault) setState((s) => ({ ...s, vault }));
-    });
-    commands.getRecentVaults().then((recentVaults) => {
-      setState((s) => ({ ...s, recentVaults }));
-    });
+    (async () => {
+      const recentVaults = await commands.getRecentVaults().catch(() => [] as RecentVault[]);
+      let vault = await commands.getVaultInfo().catch(() => null);
+      // Launch straight into the last vault — the picker is for switching, not
+      // a daily doorstep. "Leave vault" (Settings) still lands on the picker.
+      if (!vault && recentVaults[0]) {
+        vault = await commands.openVault(recentVaults[0].path).catch(() => null);
+      }
+      setState((s) => ({ ...s, vault, recentVaults, booting: false }));
+    })();
   }, []);
 
   // Open a vault by an explicit path (e.g. a recent-vaults entry).
