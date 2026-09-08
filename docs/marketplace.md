@@ -354,7 +354,7 @@ revoked.
 | Phase | Work | Effort | Depends on |
 |---|---|---|---|
 | 0 Content | Apply section 1: views + row templates for database packs, Tasks in, Reading List as a database, habit model, quoted placeholders, `{{today}}`, credits field, manifest v1 fields | ½–1 day | — |
-| 1 Core | `marketplace` module: bundled catalog, install (plan / conflicts / merge), record, update, remove, lint; tests; `cortex packs`; MCP tools; docs | 2 days | 0 |
+| 1 Core | `marketplace` module: bundled catalog, install (plan / conflicts / merge), record, update, remove, lint; tests; `cortex packs`; MCP tools; docs — **done** (`crates/cortex-core/src/marketplace.rs`; the remote source, cache and settings of phase 4 came along with it, pending only the Pages index) | 2 days | 0 |
 | 2 App | Marketplace page, pack page, palette / Templates / Getting-started entry points, Installed / Update states, Settings → Templates | 2 days | 1 |
 | 3 Repo | Create `frontal-cortex/marketplace`, move packs, lint + index + release workflows, Pages hosting, CONTRIBUTING, tiers file, `tools/sync-packs.sh` | 1 day | 1 |
 | 4 Remote | Remote source with cache, hash verification, `refresh`, `marketplace_url` / `_extra` / `_tiers` settings, Update flow end to end | 1 day | 2, 3 |

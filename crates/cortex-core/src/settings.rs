@@ -68,6 +68,15 @@ pub struct Settings {
     /// notes, e.g. `notes/about.md`. It must itself be published. Empty = list only.
     #[serde(default)]
     pub site_home: String,
+    /// Marketplace index URL. Empty = the official index; a company points this at its own.
+    #[serde(default)]
+    pub marketplace_url: String,
+    /// Additional index URLs, comma- or space-separated, merged with the first.
+    #[serde(default)]
+    pub marketplace_extra: String,
+    /// Trust tiers shown: any of official, verified, community. Empty = all.
+    #[serde(default)]
+    pub marketplace_tiers: String,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -92,6 +101,9 @@ impl Default for Settings {
             terminal_command: String::new(),
             site_title: String::new(),
             site_home: String::new(),
+            marketplace_url: String::new(),
+            marketplace_extra: String::new(),
+            marketplace_tiers: String::new(),
         }
     }
 }
@@ -115,6 +127,9 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
         ("terminal_command", "Command run when the terminal pane opens — an agent CLI such as claude, hermes, openclaw; empty = plain shell (default empty). See `cortex agents`."),
         ("site_title", "Title of the published site (`cortex publish`); empty = the vault folder's name (default empty)."),
         ("site_home", "Published note shown on the site's front page above the list, e.g. notes/about.md; empty = list only (default empty)."),
+        ("marketplace_url", "Template marketplace index URL; empty = the official one. Point it at a company registry to use your own packs (default empty)."),
+        ("marketplace_extra", "Additional marketplace index URLs, comma-separated, merged with the first (default empty)."),
+        ("marketplace_tiers", "Trust tiers shown in the marketplace: official, verified, community (comma-separated); empty = all (default empty)."),
     ]
 }
 
@@ -186,6 +201,9 @@ pub fn set_field(settings: &mut Settings, key: &str, raw: &str) -> Result<()> {
         "terminal_command" => settings.terminal_command = parse_string(raw),
         "site_title" => settings.site_title = parse_string(raw),
         "site_home" => settings.site_home = parse_string(raw),
+        "marketplace_url" => settings.marketplace_url = parse_string(raw),
+        "marketplace_extra" => settings.marketplace_extra = parse_string(raw),
+        "marketplace_tiers" => settings.marketplace_tiers = parse_string(raw),
         _ => return Err(unknown_key(key)),
     }
     Ok(())

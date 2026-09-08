@@ -8,9 +8,14 @@ readable in a text editor and keeps working in any other Markdown tool.
 
 This directory is the source of the **official** packs. It becomes the first
 commit of `frontal-cortex/marketplace` (see `docs/marketplace.md`, section
-4); the app bundles a snapshot of it. The installer (`cortex packs …`, the
-Marketplace page) is phase 1 of that plan and does not exist yet — until it
-does, a pack is installed by copying its files to the paths below.
+4); the app bundles a snapshot of it — while the packs live here, the
+`cortex-core` build script compiles `packs/` straight in, and once they move,
+`tools/sync-packs.sh` vendors them. The installer is `cortex_core::marketplace`,
+reached as `cortex packs list | show | install | update | remove | lint | new |
+index | refresh`, the MCP tools `list_packs` / `install_pack` / `update_pack` /
+`remove_pack`, and (phase 2) the Marketplace page. `cortex packs lint .` run
+here checks every pack; `cortex packs index .` writes the `index.json` the
+registry serves.
 
 ## Layout
 

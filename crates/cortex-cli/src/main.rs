@@ -159,8 +159,74 @@ enum Cmd {
         #[arg(long)]
         github_action: bool,
     },
+    /// Template packs: browse, install, update, remove, lint, author (see docs/marketplace.md)
+    Packs {
+        #[command(subcommand)]
+        action: PacksCmd,
+    },
     /// Serve the vault to an agent over MCP (stdio)
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum PacksCmd {
+    /// Packs available to this vault: bundled plus the configured indexes
+    List {
+        /// Only packs of this tier: official | verified | community
+        #[arg(long)]
+        tier: Option<String>,
+        /// Only installed packs
+        #[arg(long)]
+        installed: bool,
+        /// Re-fetch the remote index instead of using the cache
+        #[arg(long)]
+        refresh: bool,
+    },
+    /// A pack's manifest, files, and what installing it would write here
+    Show { id: String },
+    /// Install a pack (never overwrites your files unless --force; schemas merge)
+    Install {
+        id: String,
+        /// Overwrite templates that exist and are not from this pack
+        #[arg(long)]
+        force: bool,
+        /// Print the plan and write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Update installed packs to the newest version the indexes offer; files you edited are kept
+    Update {
+        /// One pack; default is every installed pack with an update
+        id: Option<String>,
+    },
+    /// Remove a pack: deletes only the files it installed that you have not changed
+    Remove { id: String },
+    /// Check a pack directory (or every pack under packs/) against the format rules
+    Lint {
+        /// A pack directory, or a marketplace checkout containing packs/
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
+    /// Start a pack from something in this vault: --from templates/x.md or --from collections/name
+    New {
+        id: String,
+        #[arg(long, value_name = "PATH")]
+        from: String,
+        /// Where to write the pack directory (default: current directory)
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
+    },
+    /// Regenerate index.json from packs/ and tiers.yaml (what the marketplace repo's CI runs)
+    Index {
+        /// Marketplace checkout (contains packs/)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Where pack files are served from, absolute or relative to index.json
+        #[arg(long, default_value = "packs/")]
+        base: String,
+    },
+    /// Re-fetch the remote index now
+    Refresh,
 }
 
 #[derive(Subcommand)]
@@ -412,7 +478,126 @@ fn run() -> Result<()> {
                 Ok(())
             }
         }
+        Cmd::Packs { action } => packs(&v, &out, action),
         Cmd::Mcp => tokio::runtime::Runtime::new()?.block_on(mcp::serve(v)),
+    }
+}
+
+fn packs(v: &Vault, out: &Out, action: PacksCmd) -> Result<()> {
+    use cortex_core::marketplace as mk;
+    let tier_label = |t: mk::Tier| match t { mk::Tier::Official => "official", mk::Tier::Verified => "verified", mk::Tier::Community => "community" };
+    match action {
+        PacksCmd::List { tier, installed, refresh } => {
+            let cat = v.packs_catalog(refresh)?;
+            let rows: Vec<&mk::CatalogEntry> = cat.entries.iter()
+                .filter(|e| tier.as_deref().map_or(true, |t| tier_label(e.tier) == t))
+                .filter(|e| !installed || e.installed_version.is_some())
+                .collect();
+            if out.json { return out.emit(&rows); }
+            table(&["ID", "NAME", "KIND", "TIER", "VERSION", "INSTALLED", "SUMMARY"], rows.iter().map(|e| vec![
+                e.manifest.id.clone(), e.manifest.name.clone(), format!("{:?}", e.manifest.kind).to_lowercase(), tier_label(e.tier).into(),
+                e.manifest.version.clone(),
+                match (&e.installed_version, e.update_available) { (Some(v), true) => format!("{v} → update"), (Some(v), false) => v.clone(), _ => String::new() },
+                e.manifest.summary.clone(),
+            ]).collect());
+            for (url, err) in &cat.errors { eprintln!("warning: {url}: {err} (showing bundled packs)"); }
+            Ok(())
+        }
+        PacksCmd::Show { id } => {
+            let pack = v.packs_resolve(&id)?;
+            let plan = mk::plan(&v.root, &pack, false);
+            if out.json { return out.emit(&serde_json::json!({ "pack": pack, "plan": plan })); }
+            let m = &pack.manifest;
+            println!("{} ({})  v{}  {:?}  {}  {}", m.name, m.id, m.version, m.kind, tier_label(pack.tier), m.license);
+            println!("{}\n", m.summary);
+            if !m.description.trim().is_empty() { println!("{}\n", m.description.trim()); }
+            if !m.credits.is_empty() { println!("Credits: {}\n", m.credits); }
+            println!("Installing here would:");
+            for s in &plan.steps {
+                let what = match &s.action { mk::Action::Write => "write".to_string(), mk::Action::Overwrite => "overwrite (ours)".into(), mk::Action::Merge => "merge schema".into(), mk::Action::Skip { reason } => format!("skip — {reason}") };
+                println!("  {:<44} {}", s.dest, what);
+            }
+            Ok(())
+        }
+        PacksCmd::Install { id, force, dry_run } => {
+            let pack = v.packs_resolve(&id)?;
+            if dry_run {
+                let plan = mk::plan(&v.root, &pack, force);
+                if out.json { return out.emit(&plan); }
+                for s in &plan.steps { println!("{:<44} {:?}", s.dest, s.action); }
+                return Ok(());
+            }
+            let reports = v.packs_install(&pack, force)?;
+            if out.json { return out.emit(&reports); }
+            for r in &reports {
+                println!("installed {} {}", r.id, r.version);
+                for w in &r.written { println!("  + {w}"); }
+                for m in &r.merged { println!("  ~ {m} (schema merged)"); }
+                for (s, why) in &r.skipped { println!("  - {s} (skipped: {why})"); }
+            }
+            Ok(())
+        }
+        PacksCmd::Update { id } => {
+            let reports = v.packs_update(id.as_deref())?;
+            if out.json { return out.emit(&reports); }
+            if reports.is_empty() { println!("everything is up to date"); }
+            for r in &reports {
+                println!("updated {} {} → {}", r.id, r.from, r.to);
+                for f in &r.replaced { println!("  ~ {f}"); }
+                for f in &r.added { println!("  + {f}"); }
+                for f in &r.kept { println!("  = {f} (kept your version)"); }
+            }
+            Ok(())
+        }
+        PacksCmd::Remove { id } => {
+            let r = mk::remove(&v.root, &id)?;
+            if out.json { return out.emit(&r); }
+            println!("removed {}", r.id);
+            for f in &r.removed { println!("  - {f}"); }
+            for f in &r.kept { println!("  = {f} (edited since install, kept)"); }
+            Ok(())
+        }
+        PacksCmd::Lint { path } => {
+            let dirs: Vec<PathBuf> = if path.join("manifest.yaml").exists() { vec![path] }
+                else if path.join("packs").is_dir() { let mut d: Vec<_> = std::fs::read_dir(path.join("packs"))?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect(); d.sort(); d }
+                else { return Err(format!("{}: neither a pack (manifest.yaml) nor a marketplace checkout (packs/)", path.display()).into()) };
+            let mut all = Vec::new();
+            let mut errors = 0;
+            for d in dirs {
+                let id = d.file_name().unwrap().to_string_lossy().into_owned();
+                let findings = match mk::load_dir(&d) { Ok(p) => mk::lint(&p), Err(e) => vec![mk::Finding { severity: mk::Severity::Error, file: None, message: e.to_string() }] };
+                for f in &findings {
+                    if f.severity == mk::Severity::Error { errors += 1; }
+                    if !out.json { println!("{}: {}: {}{}", id, if f.severity == mk::Severity::Error { "error" } else { "warning" }, f.file.as_deref().map(|x| format!("{x}: ")).unwrap_or_default(), f.message); }
+                }
+                all.push(serde_json::json!({ "id": id, "findings": findings }));
+            }
+            if out.json { out.emit(&all)?; }
+            else if errors == 0 { println!("ok"); }
+            if errors > 0 { std::process::exit(1); }
+            Ok(())
+        }
+        PacksCmd::New { id, from, out: out_dir } => {
+            let dir = mk::export(&v.root, &id, &from, &out_dir)?;
+            if out.json { return out.emit(&serde_json::json!({ "path": dir })); }
+            println!("wrote {}\nEdit manifest.yaml (summary, description, tags), add seeds if you like, then: cortex packs lint {}", dir.display(), dir.display());
+            Ok(())
+        }
+        PacksCmd::Index { path, base } => {
+            let index = mk::generate_index(&path, &base)?;
+            let dest = path.join("index.json");
+            std::fs::write(&dest, serde_json::to_string_pretty(&index)?)?;
+            if out.json { return out.emit(&index); }
+            println!("{}: {} packs", dest.display(), index.packs.len());
+            Ok(())
+        }
+        PacksCmd::Refresh => {
+            let cat = v.packs_catalog(true)?;
+            if out.json { return out.emit(&serde_json::json!({ "packs": cat.entries.len(), "errors": cat.errors, "generated": cat.fetched_at })); }
+            println!("{} packs available{}", cat.entries.len(), cat.fetched_at.map(|g| format!(" (index generated {g})")).unwrap_or_default());
+            for (url, err) in &cat.errors { eprintln!("warning: {url}: {err}"); }
+            Ok(())
+        }
     }
 }
 

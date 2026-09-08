@@ -387,6 +387,44 @@ impl Vault {
         agents::detect()
     }
 
+    // ── Template packs ──────────────────────────────────────────────────────
+
+    /// Where fetched marketplace indexes are cached for this user.
+    pub fn packs_cache_dir() -> Option<PathBuf> {
+        let base = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from)
+            .or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
+        Some(base.join("cortex").join("marketplace"))
+    }
+
+    pub fn packs_catalog(&self, refresh: bool) -> Result<cortex_core::marketplace::Catalog> {
+        Ok(cortex_core::marketplace::catalog(&self.root, Self::packs_cache_dir().as_deref(), refresh, true))
+    }
+
+    pub fn packs_resolve(&self, id: &str) -> Result<cortex_core::marketplace::Pack> {
+        Ok(cortex_core::marketplace::resolve(&self.root, Self::packs_cache_dir().as_deref(), id, true)?)
+    }
+
+    pub fn packs_install(&self, pack: &cortex_core::marketplace::Pack, force: bool) -> Result<Vec<cortex_core::marketplace::InstallReport>> {
+        let root = self.root.clone();
+        let cache = Self::packs_cache_dir();
+        Ok(cortex_core::marketplace::install(&self.root, pack, force, &move |id| cortex_core::marketplace::resolve(&root, cache.as_deref(), id, true).ok())?)
+    }
+
+    /// Update one pack, or every installed pack that has a newer version.
+    pub fn packs_update(&self, id: Option<&str>) -> Result<Vec<cortex_core::marketplace::UpdateReport>> {
+        use cortex_core::marketplace as mk;
+        let cat = self.packs_catalog(false)?;
+        let mut reports = Vec::new();
+        for e in cat.entries.iter().filter(|e| e.installed_version.is_some()) {
+            if let Some(want) = id { if e.manifest.id != want { continue } } else if !e.update_available { continue }
+            let pack = self.packs_resolve(&e.manifest.id)?;
+            reports.push(mk::update(&self.root, &pack)?);
+        }
+        if let Some(want) = id { if reports.is_empty() { return Err(format!("'{want}' is not installed").into()); } }
+        Ok(reports)
+    }
+
     /// The notes that `cortex publish` would put on a site — a read-only look.
     /// Building or pushing a site is deliberately not an op here: publishing
     /// is the person's decision, made in the CLI or the app, never by an

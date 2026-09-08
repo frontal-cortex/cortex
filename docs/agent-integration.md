@@ -40,6 +40,9 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex status` | changed files, sync counts, recent commits, proposals |
 | `cortex init [DIR]` | create a new vault (bundled starter template, git initialised, docs + settings written) — works offline |
 | `cortex publish [--out DIR \| --gh-pages \| --github-action]` | list, build, or push the site of notes marked `publish: true`; never runs on its own (see `docs/publishing.md`) |
+| `cortex packs list [--tier t] [--installed] [--refresh]` / `show <id>` | browse template packs — bundled official ones plus any configured index (see `docs/marketplace.md`) |
+| `cortex packs install <id> [--force] [--dry-run]` / `update [<id>]` / `remove <id>` | install into `templates/`, `.cortex/schemas/`, `collections/<name>/`, recorded in `.cortex/packs.yaml`; never overwrites a file you edited unless `--force`, and never a collection row |
+| `cortex packs lint [DIR]` / `new <id> --from templates/x.md\|collections/y` / `index [DIR]` | author a pack from your own setup, check it against the format rules, regenerate a registry's `index.json` |
 | `cortex propose <name> [-m msg] [--all] <paths…>` | package changes for review |
 | `cortex proposals` / `diff` / `apply` / `discard <name>` | manage proposals from the terminal |
 | `cortex settings [get <key> \| set key=value… \| describe]` | read, edit, or explain `.cortex/settings.yaml` |
@@ -54,7 +57,11 @@ Every command takes `--json`. Errors go to stderr with exit code 1.
 same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
 `write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
 `query_collection`, `get_schema`, `status`, `propose`, `list_proposals`,
-`proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_published` (read-only — an agent can see what is marked public but cannot build or push a site). Its instructions block teaches the agent the vault's
+`proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_packs`, `install_pack`,
+`update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can
+install one; every result is a plain file the user sees at once, and `.cortex/packs.yaml` makes it
+undoable), `list_published` (read-only — an agent can see what is marked public but cannot build or
+push a site). Its instructions block teaches the agent the vault's
 conventions and the propose-for-review rule.
 
 Claude Code:
@@ -111,6 +118,9 @@ exits.
 | `terminal_command` | command the terminal pane opens with — an agent CLI such as `claude`; empty = plain shell |
 | `site_title` | title of the published site; empty = the vault folder's name |
 | `site_home` | published note shown on the site's front page, e.g. `notes/about.md` |
+| `marketplace_url` | template marketplace index URL; empty = the official one. A company points this at its own registry |
+| `marketplace_extra` | additional index URLs, comma-separated, merged with the first (a team registry alongside the official one) |
+| `marketplace_tiers` | trust tiers shown: `official`, `verified`, `community` (comma-separated); empty = all three |
 
 ## `AGENTS.md`
 

@@ -76,6 +76,7 @@ cortex search "weekly review"                # same search the app has
 cortex new "Week 36" --tag summary --body -  # same naming, sorted frontmatter
 cortex propose "Summarise week 36" notes/summaries/week-36-2026-09-07.md
 cortex settings set terminal_command=claude  # every app setting lives in .cortex/settings.yaml
+cortex packs install tasks                   # a template pack (Markdown + YAML) from the marketplace; never overwrites your files
 cortex publish --out ./site                  # a static site from the notes marked publish: true — never automatic
 claude mcp add cortex -- cortex mcp --vault ~/my-vault
 ```

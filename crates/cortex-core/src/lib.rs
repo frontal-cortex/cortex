@@ -14,6 +14,7 @@ pub mod db;
 pub mod error;
 pub mod git;
 pub mod index;
+pub mod marketplace;
 pub mod members;
 pub mod note;
 pub mod publish;
