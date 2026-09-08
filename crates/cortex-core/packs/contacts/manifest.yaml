@@ -1,21 +1,29 @@
 format: 1
 id: contacts
 name: "Contacts"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "A people database: relationship, company, last contact, next follow-up — with a follow-up calendar."
+summary: "People with a keep-in-touch cadence and a log of every conversation: who to reach out to, follow-ups, history."
 description: |
-  A lightweight personal CRM. One row per person with how you know them, where they work, when you last spoke and when to reach out next. The calendar view turns follow-ups into a to-do you cannot forget; the board groups everyone by relationship. Each row is a note, so the history of a relationship lives under the properties.
+  A personal CRM in two databases. Contacts is one row per person: how you know them, how often you mean to be in touch (monthly, quarterly, twice a year…), when you last spoke and when to reach out next, plus company, role, birthday, and a page for how you met and what to remember. Interactions is one row per conversation — date, who, what kind, one line of summary — and every person's page embeds their own history from it. The Reach out view sorts people by longest silence first, the Follow-ups calendar turns next-contact dates into a schedule, and the month chart shows whether you are actually keeping in touch.
 tags: [people, crm, relationships, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The personal CRM templates that circulate for every notes app, reduced to the fields people actually keep up to date."
+credits: "The keep-in-touch cadence comes from Dex and the tiered personal CRMs in Notion's gallery (Circles of Trust); the one-file-per-interaction log and the person page that lists its own meetings come from Dann Berg's Obsidian people template and the obsidian-personal-crm plugin."
 min_cortex: 0.1.0
 collection: contacts
+collections: [interactions]
 files:
-  - templates/contacts.md
   - schemas/contacts.yaml
+  - schemas/interactions.yaml
   - index.md
-  - seed/example-contact.md
+  - index/interactions.md
+  - templates/contacts.md
+  - templates/interactions.md
+  - seed/contacts/alex-example.md
+  - seed/contacts/jordan-sample.md
+  - seed/contacts/sam-specimen.md
+  - seed/interactions/coffee-with-alex-example.md
+  - seed/interactions/call-with-jordan-sample.md

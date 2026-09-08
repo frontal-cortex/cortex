@@ -6,37 +6,57 @@ properties:
     options:
       - name: to_read
         color: gray
+      - name: up_next
+        color: yellow
       - name: reading
         color: blue
       - name: finished
         color: green
       - name: abandoned
         color: red
-  - name: rating
-    type: select
-    options:
-      - name: "★"
-        color: gray
-      - name: "★★"
-        color: gray
-      - name: "★★★"
-        color: yellow
-      - name: "★★★★"
-        color: yellow
-      - name: "★★★★★"
-        color: yellow
   - name: format
     type: select
     options:
       - name: book
         color: blue
-      - name: audiobook
+      - name: ebook
         color: purple
+      - name: audiobook
+        color: pink
       - name: article
         color: gray
       - name: paper
         color: green
+  - name: genre
+    type: multi_select
+    options:
+      - name: fiction
+        color: purple
+      - name: nonfiction
+        color: blue
+      - name: science
+        color: green
+      - name: history
+        color: brown
+      - name: business
+        color: orange
+      - name: biography
+        color: yellow
+      - name: technology
+        color: gray
+      - name: philosophy
+        color: pink
+  - name: rating
+    type: number
+  - name: pages
+    type: number
+  - name: pages_read
+    type: number
   - name: started
     type: date
   - name: finished
     type: date
+  - name: source
+    type: text
+  - name: link
+    type: url

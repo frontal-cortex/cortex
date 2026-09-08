@@ -12,6 +12,8 @@ properties:
         color: red
       - name: done
         color: blue
+      - name: dropped
+        color: gray
   - name: area
     type: select
     options:
@@ -27,6 +29,32 @@ properties:
         color: pink
       - name: home
         color: brown
+      - name: creative
+        color: orange
+      - name: community
+        color: gray
+  - name: timeframe
+    type: select
+    options:
+      - name: year
+        color: purple
+      - name: quarter
+        color: blue
+      - name: month
+        color: green
+      - name: someday
+        color: gray
+  - name: priority
+    type: select
+    options:
+      - name: high
+        color: red
+      - name: medium
+        color: yellow
+      - name: low
+        color: gray
+  - name: start
+    type: date
   - name: target
     type: date
   - name: progress

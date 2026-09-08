@@ -1,21 +1,35 @@
 format: 1
 id: recipe-box
 name: "Recipe Box"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "Recipes with cuisine, prep time and rating; ingredients and steps in the note body."
+summary: "Recipes as a cookbook gallery, a meal plan on a calendar and a grocery list by aisle; each recipe shows its cook log."
 description: |
-  A recipe database: filter by cuisine on the board, sort by prep time, rate what you cooked. Each row is the recipe itself — ingredients and steps in the body — so the gallery view is a cookbook.
-tags: [personal, food, database]
+  Three collections that work as one kitchen. Recipes carry course, cuisine, main ingredient, diet, difficulty, prep and cook minutes, servings, rating, status and source; the ingredients are a checklist and the method a numbered list in the body, and the page ends with a live cook log. Meals are one row per planned meal — a date, a slot, a recipe — so the calendar is your week and a bar chart counts what you actually cooked. Groceries are items with an aisle and a `bought` box: the To buy table is the shopping list, the board is the shop in aisle order.
+tags: [food, cooking, meal-planning, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "A perennial gallery favourite in both apps."
+credits: "The recipe, meal-plan and grocery trio follows the recipe managers in Notion's gallery (Matthias Frank's meal planner, the Ultimate Home Chef dashboard, the Frugal and Thriving recipe database) and the Recipe Box and Recipe View plugins for Obsidian."
 min_cortex: 0.1.0
 collection: recipes
+collections: [meals, groceries]
 files:
-  - templates/recipes.md
   - schemas/recipes.yaml
+  - schemas/meals.yaml
+  - schemas/groceries.yaml
   - index.md
-  - seed/example-recipe.md
+  - index/meals.md
+  - index/groceries.md
+  - templates/recipes.md
+  - templates/meals.md
+  - templates/groceries.md
+  - seed/recipes/weeknight-tomato-pasta.md
+  - seed/recipes/overnight-oats.md
+  - seed/recipes/chicken-tikka-masala.md
+  - seed/meals/tonight-pasta.md
+  - seed/meals/breakfast-oats.md
+  - seed/groceries/chopped-tomatoes.md
+  - seed/groceries/spaghetti.md
+  - seed/groceries/basil.md

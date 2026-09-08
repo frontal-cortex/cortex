@@ -3,20 +3,61 @@ properties:
     type: date
   - name: amount
     type: number
+  - name: kind
+    type: select
+    options:
+      - name: expense
+        color: red
+      - name: income
+        color: green
+      - name: transfer
+        color: gray
   - name: category
     type: select
     options:
-      - name: income
-        color: green
       - name: housing
         color: blue
-      - name: food
+      - name: groceries
         color: yellow
+      - name: dining
+        color: orange
       - name: transport
         color: gray
+      - name: utilities
+        color: brown
+      - name: health
+        color: green
       - name: subscriptions
         color: purple
+      - name: shopping
+        color: pink
+      - name: leisure
+        color: red
+      - name: travel
+        color: blue
+      - name: education
+        color: purple
+      - name: gifts
+        color: pink
+      - name: savings
+        color: green
+      - name: income
+        color: green
       - name: other
         color: gray
   - name: account
+    type: select
+    options:
+      - name: checking
+        color: blue
+      - name: savings
+        color: green
+      - name: credit
+        color: red
+      - name: cash
+        color: yellow
+  - name: payee
     type: text
+  - name: bill
+    type: relation
+    collection: budget-bills

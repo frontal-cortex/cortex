@@ -1,0 +1,31 @@
+properties:
+  - name: aisle
+    type: select
+    options:
+      - name: produce
+        color: green
+      - name: dairy
+        color: yellow
+      - name: meat
+        color: red
+      - name: fish
+        color: blue
+      - name: bakery
+        color: brown
+      - name: pantry
+        color: orange
+      - name: frozen
+        color: purple
+      - name: spices
+        color: pink
+      - name: drinks
+        color: gray
+      - name: household
+        color: gray
+  - name: quantity
+    type: text
+  - name: bought
+    type: checkbox
+  - name: recipe
+    type: relation
+    collection: recipes

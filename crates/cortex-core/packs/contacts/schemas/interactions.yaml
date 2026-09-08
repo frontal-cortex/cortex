@@ -1,0 +1,23 @@
+properties:
+  - name: date
+    type: date
+  - name: people
+    type: relation
+    collection: contacts
+  - name: kind
+    type: select
+    options:
+      - name: call
+        color: blue
+      - name: meeting
+        color: green
+      - name: meal
+        color: orange
+      - name: message
+        color: gray
+      - name: email
+        color: yellow
+      - name: event
+        color: purple
+  - name: summary
+    type: text

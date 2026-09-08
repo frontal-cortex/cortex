@@ -4,15 +4,22 @@ type: note
 tags: [book]
 author:
 status: to_read
-rating:
 format: book
+genre: []
+rating:
+pages:
+pages_read:
 started:
 finished:
+source:
+link:
+cover:
 created: "{{date}}"
 ---
 
 ## Why I picked this up
 
+Who recommended it, or what question sent you to it.
 
 ## Key ideas
 
@@ -22,7 +29,27 @@ created: "{{date}}"
 
 >
 
-## How I'll use this
+## Verdict
 
+One line, and how you will use what you read. Set `rating` (1–5) and
+`finished` in the properties when you are done.
 
-## Verdict in one line
+## Sittings
+
+```cortex-view
+source: collections/reading
+type: tracker
+log: collections/reading-log
+date: date
+done: book
+range: year
+filter: title == '{{title}}'
+```
+
+```cortex-view
+source: collections/reading-log
+type: table
+columns: [date, pages, title]
+filter: book contains '{{title}}'
+sort: [date desc]
+```

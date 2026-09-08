@@ -109,7 +109,7 @@ exits.
 |---|---|
 | `auto_commit` | commit after every note save, debounced (`true` / `false`, default `true`) |
 | `default_note_type` | frontmatter `type` for new notes (default `note`) |
-| `journal_template` | template under `templates/` for daily notes (default `daily.md`) |
+| `journal_template` | what Today opens: a template under `templates/` (default `daily.md`), or `collections/<name>` to make Today that collection's row for the day |
 | `theme` | `light` / `dark` / `system` (default `system`) |
 | `trash_retention_days` | days before trashed notes are pruned, `0` = never (default `30`) |
 | `auto_sync_minutes` | minutes between automatic git syncs, `0` = off (default `0`) |

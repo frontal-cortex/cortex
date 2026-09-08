@@ -1,0 +1,48 @@
+properties:
+  - name: amount
+    type: number
+  - name: cycle
+    type: select
+    options:
+      - name: weekly
+        color: yellow
+      - name: monthly
+        color: blue
+      - name: quarterly
+        color: green
+      - name: yearly
+        color: purple
+  - name: next_due
+    type: date
+  - name: category
+    type: select
+    options:
+      - name: housing
+        color: blue
+      - name: utilities
+        color: brown
+      - name: subscriptions
+        color: purple
+      - name: transport
+        color: gray
+      - name: health
+        color: green
+      - name: savings
+        color: green
+      - name: other
+        color: gray
+  - name: account
+    type: select
+    options:
+      - name: checking
+        color: blue
+      - name: savings
+        color: green
+      - name: credit
+        color: red
+      - name: cash
+        color: yellow
+  - name: active
+    type: checkbox
+  - name: url
+    type: url

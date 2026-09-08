@@ -1,17 +1,22 @@
 format: 1
 id: weekly-review
 name: "Weekly Review"
-version: 1.0.0
-kind: note
-summary: "A Sunday review: wins, what slipped, open loops, next week's focus."
+version: 2.0.0
+kind: collection
+summary: "One row per week: Monday plan, Friday review with the get-clear / get-current checklist; rating and carry-over charted."
 description: |
-  The habit that keeps any note system alive. Look back at the week, close what can be closed, pick three things for the next one. Pairs with Daily Note (reflections feed in) and the PARA index (move finished projects to Archive).
-tags: [productivity, review, journal]
+  A weekly review as a database. Each week is a row with a `status` (planned, reviewed, skipped), a `rating` out of ten, a one-line `focus`, the `areas` it touched and a `carried_over` count of what slipped. The page has two halves: a Monday plan (focus and Top 3) and a review — the Getting Things Done checklist (get clear, get current), then wins, what slipped, lessons, what gave and drained energy, the carried-over list, and next week's three. A board shows which weeks are still unreviewed, a calendar puts each review on its Monday, and two charts plot the rating and the carry-over count week by week, so a slow decline or a growing backlog is visible. Pairs with Daily Note (read the week's pages first).
+tags: [productivity, review, journal, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The weekly review from Getting Things Done, as practised in both communities."
+credits: "The get-clear / get-current / get-creative checklist is David Allen's Weekly Review from Getting Things Done. Weeks as rated rows with monthly trends follows the weekly review databases in Notion's gallery (Thomas Cerulis, Sharky Progress, Simone Smerilli); the plan-then-review page with a carried-over list is the shape of the Vaultorial and Pensio weekly notes for Obsidian; the wins / slipped / energy prompts follow Michelle Mac's."
 min_cortex: 0.1.0
+collection: weeks
 files:
-  - templates/weekly-review.md
+  - schemas/weeks.yaml
+  - index.md
+  - templates/weeks.md
+  - seed/example-week.md
+  - seed/example-planned-week.md

@@ -6,18 +6,41 @@ properties:
         color: gray
       - name: doing
         color: blue
+      - name: waiting
+        color: yellow
+      - name: someday
+        color: purple
       - name: done
         color: green
   - name: priority
     type: select
     options:
-      - name: low
-        color: gray
-      - name: medium
-        color: yellow
-      - name: high
+      - name: p1
         color: red
+      - name: p2
+        color: yellow
+      - name: p3
+        color: gray
+  - name: today
+    type: checkbox
   - name: due
     type: date
+  - name: completed
+    type: date
+  - name: area
+    type: select
+    options:
+      - name: work
+        color: blue
+      - name: personal
+        color: green
+      - name: home
+        color: brown
+      - name: health
+        color: pink
+      - name: learning
+        color: purple
+      - name: admin
+        color: gray
   - name: project
     type: text

@@ -1,0 +1,17 @@
+properties:
+  - name: goal
+    type: relation
+    collection: goals
+  - name: date
+    type: date
+  - name: progress
+    type: number
+  - name: confidence
+    type: select
+    options:
+      - name: high
+        color: green
+      - name: medium
+        color: yellow
+      - name: low
+        color: red

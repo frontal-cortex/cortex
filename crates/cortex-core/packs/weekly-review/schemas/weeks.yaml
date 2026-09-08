@@ -1,0 +1,37 @@
+properties:
+  - name: week
+    type: date
+  - name: status
+    type: status
+    options:
+      - name: planned
+        color: gray
+      - name: reviewed
+        color: green
+      - name: skipped
+        color: red
+  - name: rating
+    type: number
+  - name: focus
+    type: text
+  - name: areas
+    type: multi_select
+    options:
+      - name: work
+        color: blue
+      - name: health
+        color: green
+      - name: family
+        color: pink
+      - name: friends
+        color: orange
+      - name: learning
+        color: purple
+      - name: creative
+        color: yellow
+      - name: money
+        color: brown
+      - name: home
+        color: gray
+  - name: carried_over
+    type: number

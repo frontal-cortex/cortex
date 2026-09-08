@@ -1,17 +1,22 @@
 format: 1
 id: daily-note
 name: "Daily Note"
-version: 1.0.0
-kind: note
-summary: "A focused daily log: top three priorities, a running log, a short reflection."
+version: 2.0.0
+kind: collection
+summary: "One page per day with mood, energy and sleep: a calendar of the days you wrote, weekly trend charts, a running log."
 description: |
-  The one template every note-taking app is built around. Three priorities at the top so the day has a shape, a log to capture as you go, and a two-minute reflection at the end that feeds the weekly review. Wire it to Today by setting `journal_template: daily.md`.
-tags: [productivity, journal, daily]
+  A journal as a database: every day is one row with a `mood`, an `energy` and `sleep` number, the areas it touched and a one-line highlight, plus a page whose body is the day — an intention and three priorities in the morning, a timestamped log as you go, a short evening reflection. The calendar shows the days you wrote (and the gaps); the Energy and Sleep charts average each week so a bad month is visible before you feel it; the Moods chart counts how the year has felt. New row gives you today in one keystroke, already titled with the date. Pairs with Weekly Review (read the week's pages before you review it) and Habit Tracker (habits stay in their own log).
+tags: [productivity, journal, daily, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The shape shared by Obsidian's daily notes and Notion's daily journal templates."
+credits: "Mood, energy and sleep as properties with a calendar and weekly trend charts is the shape of the best-rated daily journals in Notion's gallery (Eve Jiyū's Daily Reflection Journal, mrpugo's Energy Journal, Easlo's minimal journal); the morning-intention / log / evening-highlight body follows the Obsidian daily-note templates of Sébastien Dubois and Vault of Josh."
 min_cortex: 0.1.0
+collection: journal
 files:
-  - templates/daily.md
+  - schemas/journal.yaml
+  - index.md
+  - templates/journal.md
+  - seed/example-day.md
+  - seed/example-rough-day.md

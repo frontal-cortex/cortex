@@ -1181,12 +1181,19 @@ mod tests {
 
     #[test]
     fn excerpts_describe_note_and_collection_packs() {
-        let e = excerpt(&pack("daily-note"));
+        let note = Pack {
+            manifest: Manifest { format: 1, id: "note".into(), name: "Note".into(), version: "1.0.0".into(), kind: Kind::Note, summary: "s".into(), description: String::new(), tags: vec![], author: Author::default(), license: "CC0-1.0".into(), credits: String::new(), min_cortex: String::new(), collection: None, collections: vec![], includes: vec![], files: vec!["templates/daily.md".into()] },
+            tier: Tier::Official, source: "test".into(),
+            files: vec![PackFile { path: "templates/daily.md".into(), contents: b"---\ntitle: \"{{date}}\"\n---\n\n## Top 3 today\n\n## Log\n".to_vec() }],
+        };
+        let e = excerpt(&note);
         assert!(e.headings.iter().any(|h| h.contains("Top 3")), "{e:?}");
         assert!(e.properties.is_empty() && e.views.is_empty());
         let e = excerpt(&pack("tasks"));
         assert!(e.properties.iter().any(|(n, t)| n == "status" && t == "status"), "{e:?}");
-        assert!(e.views.iter().any(|(n, t)| n == "Board" && t == "board"), "{e:?}");
+        assert!(e.views.iter().any(|(_, t)| t == "board"), "{e:?}");
+        assert!(e.options.iter().any(|(p, opts)| p == "status" && !opts.is_empty()), "{e:?}");
+        assert!(!e.seeds.is_empty());
     }
 
     #[test]
@@ -1223,17 +1230,19 @@ mod tests {
     fn install_writes_records_and_skips_on_reinstall() {
         let root = vault("install");
         let tasks = pack("tasks");
+        let expected = tasks.files.iter().filter(|f| destination(&tasks.manifest, &f.path).is_some()).count();
+        let seed_dest = tasks.files.iter().find(|f| f.path.starts_with("seed/")).and_then(|f| destination(&tasks.manifest, &f.path)).expect("tasks ships a seed");
         let reports = install(&root, &tasks, false, &|_| None).unwrap();
         let r = &reports[0];
-        assert_eq!(r.written.len(), 4, "{r:?}");
+        assert_eq!(r.written.len(), expected, "{r:?}");
         assert!(root.join("collections/tasks/_index.md").exists());
         assert!(root.join(".cortex/schemas/tasks.yaml").exists());
         assert!(root.join("collections/tasks/_template-tasks.md").exists());
-        let seed = std::fs::read_to_string(root.join("collections/tasks/example-task.md")).unwrap();
+        let seed = std::fs::read_to_string(root.join(&seed_dest)).unwrap();
         assert!(!seed.contains("{{today}}") && seed.contains("created: \""));
         let rec = installed(&root);
         assert_eq!(rec.len(), 1);
-        assert_eq!(rec[0].files.len(), 4);
+        assert_eq!(rec[0].files.len(), expected);
 
         // Reinstall: our own untouched files are refreshed, nothing skipped.
         let again = install(&root, &tasks, false, &|_| None).unwrap();
@@ -1241,28 +1250,29 @@ mod tests {
 
         // The seed row became a real task and the template was tweaked:
         // a reinstall keeps both and still records them as this pack's.
-        let seed_path = root.join("collections/tasks/example-task.md");
+        let seed_path = root.join(&seed_dest);
         std::fs::write(&seed_path, "---\ntitle: Renew passport\n---\n").unwrap();
         std::fs::write(root.join("collections/tasks/_template-tasks.md"), "mine").unwrap();
         let kept = install(&root, &tasks, false, &|_| None).unwrap();
         assert_eq!(kept[0].skipped.len(), 2, "{kept:?}");
-        assert_eq!(kept[0].written.len(), 2);
+        assert_eq!(kept[0].written.len(), expected - 2);
         assert!(std::fs::read_to_string(&seed_path).unwrap().contains("Renew passport"));
-        assert_eq!(installed(&root)[0].files.len(), 4);
+        assert_eq!(installed(&root)[0].files.len(), expected);
         // force resets the template but never a collection row.
         let forced = install(&root, &tasks, true, &|_| None).unwrap();
         assert!(forced[0].written.iter().any(|w| w == "collections/tasks/_template-tasks.md"), "{forced:?}");
         assert!(std::fs::read_to_string(&seed_path).unwrap().contains("Renew passport"));
-        assert_eq!(installed(&root)[0].files.len(), 4);
+        assert_eq!(installed(&root)[0].files.len(), expected);
 
-        // A note pack over an existing template: skipped unless forced.
-        std::fs::write(root.join("templates/daily.md"), "mine").unwrap();
-        let daily = pack("daily-note");
-        let r = install(&root, &daily, false, &|_| None).unwrap();
-        assert_eq!(r[0].skipped.len(), 1);
-        assert_eq!(std::fs::read_to_string(root.join("templates/daily.md")).unwrap(), "mine");
-        let r = install(&root, &daily, true, &|_| None).unwrap();
-        assert_eq!(r[0].written, vec!["templates/daily.md"]);
+        // A note template over an existing file of the user's: skipped unless forced.
+        // (habit-tracker ships templates/daily-with-habits.md, a vault note template.)
+        std::fs::write(root.join("templates/daily-with-habits.md"), "mine").unwrap();
+        let habits = pack("habit-tracker");
+        let r = install(&root, &habits, false, &|_| None).unwrap();
+        assert_eq!(r[0].skipped.len(), 1, "{:?}", r[0].skipped);
+        assert_eq!(std::fs::read_to_string(root.join("templates/daily-with-habits.md")).unwrap(), "mine");
+        let r = install(&root, &habits, true, &|_| None).unwrap();
+        assert!(r[0].written.contains(&"templates/daily-with-habits.md".to_string()), "{r:?}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1276,7 +1286,7 @@ mod tests {
         let r = install(&root, &pack("tasks"), false, &|_| None).unwrap();
         assert_eq!(r[0].merged, vec![".cortex/schemas/tasks.yaml"]);
         assert!(r[0].skipped.iter().any(|(p, _)| p.ends_with("_index.md")));
-        assert!(r[0].skipped.iter().any(|(p, _)| p.ends_with("example-task.md")), "seeds not added to an existing collection");
+        assert!(r[0].skipped.iter().any(|(p, _)| p.starts_with("collections/tasks/") && !p.ends_with("_index.md") && !p.contains("/_template-")), "seeds not added to an existing collection: {:?}", r[0].skipped);
         let s: schema::TypeSchema = serde_yaml::from_str(&std::fs::read_to_string(root.join(".cortex/schemas/tasks.yaml")).unwrap()).unwrap();
         assert_eq!(s.property("status").unwrap().options[0].name, "open", "existing property untouched");
         assert!(s.property("owner").is_some() && s.property("priority").is_some() && s.property("due").is_some());
@@ -1287,20 +1297,22 @@ mod tests {
     #[test]
     fn update_replaces_untouched_and_keeps_edited_and_deleted() {
         let root = vault("update");
-        install(&root, &pack("project-tracker"), false, &|_| None).unwrap();
+        let current = pack("project-tracker");
+        let seed_dest = current.files.iter().find(|f| f.path.starts_with("seed/projects/") || (f.path.starts_with("seed/") && !f.path.contains("/milestones/"))).and_then(|f| destination(&current.manifest, &f.path)).expect("project-tracker ships a project seed");
+        install(&root, &current, false, &|_| None).unwrap();
         std::fs::write(root.join("collections/projects/_template-projects.md"), "my own row template").unwrap();
-        std::fs::remove_file(root.join("collections/projects/example-project.md")).unwrap();
+        std::fs::remove_file(root.join(&seed_dest)).unwrap();
         let mut newer = pack("project-tracker");
-        newer.manifest.version = "1.1.0".into();
+        newer.manifest.version = "9.9.9".into();
         let idx = newer.files.iter_mut().find(|f| f.path == "index.md").unwrap();
         idx.contents.extend_from_slice(b"\nNew in 1.1\n");
         let r = update(&root, &newer).unwrap();
         assert!(r.replaced.contains(&"collections/projects/_index.md".to_string()), "{r:?}");
         assert!(r.kept.contains(&"collections/projects/_template-projects.md".to_string()), "{r:?}");
-        assert!(r.kept.contains(&"collections/projects/example-project.md".to_string()), "deleted seed stays deleted: {r:?}");
-        assert!(!root.join("collections/projects/example-project.md").exists());
+        assert!(r.kept.contains(&seed_dest), "deleted seed stays deleted: {r:?}");
+        assert!(!root.join(&seed_dest).exists());
         assert_eq!(std::fs::read_to_string(root.join("collections/projects/_template-projects.md")).unwrap(), "my own row template");
-        assert_eq!(installed(&root)[0].version, "1.1.0");
+        assert_eq!(installed(&root)[0].version, "9.9.9");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1308,12 +1320,12 @@ mod tests {
     fn remove_deletes_only_unchanged_files_and_leaves_user_rows() {
         let root = vault("remove");
         install(&root, &pack("budget-tracker"), false, &|_| None).unwrap();
-        std::fs::write(root.join("collections/budget/rent.md"), "---\ntitle: Rent\n---\n").unwrap();
+        std::fs::write(root.join("collections/budget/my-own-row.md"), "---\ntitle: Rent\n---\n").unwrap();
         std::fs::write(root.join("collections/budget/_template-budget.md"), "edited").unwrap();
         let r = remove(&root, "budget-tracker").unwrap();
-        assert!(r.removed.contains(&"collections/budget/_index.md".to_string()));
-        assert!(r.kept == vec!["collections/budget/_template-budget.md".to_string()], "{r:?}");
-        assert!(root.join("collections/budget/rent.md").exists(), "user rows survive");
+        assert!(r.removed.contains(&"collections/budget/_index.md".to_string()), "{r:?}");
+        assert_eq!(r.kept, vec!["collections/budget/_template-budget.md".to_string()], "{r:?}");
+        assert!(root.join("collections/budget/my-own-row.md").exists(), "user rows survive");
         assert!(root.join("collections/budget").exists(), "folder kept because it is not empty");
         assert!(installed(&root).is_empty());
         assert!(!root.join(RECORD).exists());
@@ -1398,7 +1410,7 @@ mod tests {
         let cat = catalog(&root, Some(&dir.join("cache")), true, true);
         let t = cat.entries.iter().find(|e| e.manifest.id == "tasks").unwrap();
         assert_eq!(t.manifest.version, "9.0.0");
-        assert_eq!(t.installed_version.as_deref(), Some("1.0.0"));
+        assert_eq!(t.installed_version.as_deref(), Some(pack("tasks").manifest.version.as_str()));
         assert!(t.update_available);
         assert_eq!(t.source, url);
         // Offline with a cache: still served.

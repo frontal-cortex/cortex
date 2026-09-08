@@ -1,4 +1,23 @@
 properties:
+  - name: course
+    type: select
+    options:
+      - name: breakfast
+        color: yellow
+      - name: lunch
+        color: green
+      - name: dinner
+        color: blue
+      - name: snack
+        color: orange
+      - name: dessert
+        color: pink
+      - name: side
+        color: brown
+      - name: drink
+        color: purple
+      - name: sauce
+        color: gray
   - name: cuisine
     type: select
     options:
@@ -6,13 +25,74 @@ properties:
         color: red
       - name: mexican
         color: green
-      - name: asian
+      - name: indian
+        color: orange
+      - name: chinese
         color: yellow
-      - name: american
+      - name: japanese
+        color: pink
+      - name: thai
+        color: purple
+      - name: french
         color: blue
+      - name: middle eastern
+        color: brown
+      - name: american
+        color: gray
       - name: other
         color: gray
+  - name: main
+    type: select
+    options:
+      - name: chicken
+        color: orange
+      - name: beef
+        color: red
+      - name: pork
+        color: pink
+      - name: fish
+        color: blue
+      - name: eggs
+        color: yellow
+      - name: beans
+        color: brown
+      - name: tofu
+        color: green
+      - name: pasta
+        color: yellow
+      - name: rice
+        color: gray
+      - name: grains
+        color: brown
+      - name: vegetables
+        color: green
+  - name: diet
+    type: multi_select
+    options:
+      - name: vegetarian
+        color: green
+      - name: vegan
+        color: green
+      - name: gluten-free
+        color: yellow
+      - name: dairy-free
+        color: blue
+      - name: nut-free
+        color: orange
+  - name: difficulty
+    type: select
+    options:
+      - name: easy
+        color: green
+      - name: medium
+        color: yellow
+      - name: hard
+        color: red
   - name: prep_minutes
+    type: number
+  - name: cook_minutes
+    type: number
+  - name: servings
     type: number
   - name: rating
     type: select
@@ -27,3 +107,18 @@ properties:
         color: yellow
       - name: "★★★★★"
         color: yellow
+  - name: status
+    type: status
+    options:
+      - name: to try
+        color: gray
+      - name: tried
+        color: yellow
+      - name: keeper
+        color: green
+      - name: retired
+        color: red
+  - name: source
+    type: url
+  - name: freezes
+    type: checkbox

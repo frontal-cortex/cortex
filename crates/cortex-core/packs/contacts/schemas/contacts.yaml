@@ -12,7 +12,22 @@ properties:
         color: purple
       - name: mentor
         color: yellow
+      - name: community
+        color: orange
       - name: acquaintance
+        color: gray
+  - name: cadence
+    type: select
+    options:
+      - name: monthly
+        color: red
+      - name: quarterly
+        color: orange
+      - name: twice a year
+        color: yellow
+      - name: yearly
+        color: blue
+      - name: as needed
         color: gray
   - name: company
     type: text
@@ -20,7 +35,17 @@ properties:
     type: text
   - name: email
     type: text
+  - name: phone
+    type: text
+  - name: location
+    type: text
+  - name: website
+    type: url
+  - name: birthday
+    type: date
   - name: last_contact
     type: date
   - name: follow_up
     type: date
+  - name: archived
+    type: checkbox

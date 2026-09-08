@@ -1,21 +1,35 @@
 format: 1
 id: budget-tracker
 name: "Budget Tracker"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "A row per transaction: date, amount, category, account — simple enough to keep filled in."
+summary: "A row per transaction, a monthly limit per category, a calendar of bills; month-by-month charts summed from the rows."
 description: |
-  Every budget template that survives contact with real life is this one: a transaction a row, negative for spending, positive for income, a category to group by on the board, and a date the calendar view shows. Add a chart block over it for the monthly picture.
-tags: [finance, budget, database]
+  Three small databases that stay filled in. `budget` is the ledger: one row per transaction with a date, an amount, a kind (expense, income, transfer), a category and an account. `budget-limits` holds one row per category with the monthly amount you mean to spend; open a limit and its page charts what you actually spent, month by month, under it. `budget-bills` is every recurring charge with its cycle and next due date, on a calendar, and each bill's page lists the payments you logged against it. The ledger's own views chart income against spending per month and each category over time — all summed from the rows when you open them, nothing to update by hand.
+tags: [finance, budget, money, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The free budget trackers near the top of every Notion template list."
+credits: "The transactions / limits / bills split and the budget-versus-actual page follow the budget trackers in Notion's gallery (Easlo, Thomas Frank, Matthias Frank) and the envelope spreadsheets they copy; the charts-on-read design is our own."
 min_cortex: 0.1.0
 collection: budget
+collections: [budget-limits, budget-bills]
 files:
-  - templates/budget.md
   - schemas/budget.yaml
+  - schemas/budget-limits.yaml
+  - schemas/budget-bills.yaml
   - index.md
-  - seed/example-transaction.md
+  - index/budget-limits.md
+  - index/budget-bills.md
+  - templates/budget.md
+  - templates/budget-limits.md
+  - templates/budget-bills.md
+  - seed/budget/weekly-shop.md
+  - seed/budget/salary.md
+  - seed/budget/rent.md
+  - seed/budget-limits/groceries.md
+  - seed/budget-limits/dining.md
+  - seed/budget-limits/subscriptions.md
+  - seed/budget-bills/rent.md
+  - seed/budget-bills/music-streaming.md

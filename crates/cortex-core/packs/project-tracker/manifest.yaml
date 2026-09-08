@@ -1,21 +1,29 @@
 format: 1
 id: project-tracker
 name: "Project Tracker"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "A solo-friendly project database: status, priority, deadline, next action."
+summary: "Projects with status, priority, area, deadline, progress and one next action; milestones on a calendar; a page each."
 description: |
-  What is the project, what is next, what is stalled. Deliberately four properties, not fifteen: a status board, a priority, a deadline for the calendar, and a single next action so a stalled project is obvious. Pair with Tasks by naming the project in each task's project field.
-tags: [work, projects, database]
+  One row per project, and a second small collection of milestones — the dated steps a project is made of. A project has a status (planned / active / on_hold / done / dropped), a priority, an `area`, `start` and `deadline` dates, a `completed` date, a `progress` percentage you set, and one `next_action` so a stalled project is obvious. Views: Open (what is live, p1 first), Board by status, Deadlines on a calendar, Stalled (active projects with no next action) and Finished per month. Each project's page states the outcome, embeds its own milestones, and — if the Tasks pack is installed — a board of the tasks that name it. Milestones have their own calendar, so every key date across every project is on one page.
+tags: [work, projects, database, planning]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The project tracker that tops Notion's gallery, cut down to the solo version."
+credits: "Follows the project databases in Notion's gallery (Notion's Projects & Tasks, Thomas Frank's Ultimate Brain projects, Easlo's Project Tracker); the single next action is from Getting Things Done."
 min_cortex: 0.1.0
 collection: projects
+collections: [milestones]
 files:
-  - templates/projects.md
   - schemas/projects.yaml
+  - schemas/milestones.yaml
   - index.md
-  - seed/example-project.md
+  - index/milestones.md
+  - templates/projects.md
+  - templates/milestones.md
+  - seed/projects/website-relaunch.md
+  - seed/projects/learn-to-cook-ten-dishes.md
+  - seed/projects/move-flat.md
+  - seed/milestones/brief-signed-off.md
+  - seed/milestones/design-approved.md

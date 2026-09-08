@@ -134,6 +134,7 @@ pub fn run() {
             commands::tracker::tracker_toggle,
             commands::tracker::list_trackers,
             commands::trash::trash_collection,
+            commands::data::ensure_row,
             theme::watch_theme_file,
             theme::detect_desktop_theme,
             terminal::terminal_spawn,

@@ -1,17 +1,37 @@
 format: 1
 id: para-index
 name: "PARA Index"
-version: 1.0.0
-kind: note
-summary: "Projects, Areas, Resources, Archive as one index note — the second-brain backbone."
+version: 2.0.0
+kind: collection
+summary: "Projects, Areas and Resources as three linked databases; archive is a status, and an index note shows it all live."
 description: |
-  Everything you keep falls into one of four buckets, sorted by how actionable it is right now rather than by topic. This is the index note that holds the buckets; each entry is a wiki link to a real note. Review it weekly: finished projects move to Archive, a resource that just became actionable becomes a project.
-tags: [second-brain, para, index]
+  The PARA method as databases instead of folders. Areas are the ongoing responsibilities (Health, Finances, Career) with a standard to keep and a review date; Projects have an outcome, a deadline and the area they serve; Resources are the articles, books and tools you keep, tied to the area or project they are for. Nothing is ever moved to an Archive folder — a project is `done` or `dropped`, an area or resource is `archived`, and the Archive views filter on that, so relations and history survive. Each area's page lists its own active projects and resources; each project's page lists its resources and next actions. The `Second Brain` note template is the one-page index: active projects, areas, recent resources and the archive, all live.
+tags: [second-brain, para, projects, areas, resources, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The PARA method by Tiago Forte (Building a Second Brain)."
+credits: "The PARA method by Tiago Forte (Building a Second Brain). Archive-as-a-status and the area page that lists its own projects and resources come from the PARA templates in Notion's gallery, notably Thomas Frank's and Notion Mastery's."
 min_cortex: 0.1.0
+collection: para-areas
+collections: [para-projects, para-resources]
 files:
+  - schemas/para-areas.yaml
+  - schemas/para-projects.yaml
+  - schemas/para-resources.yaml
+  - index.md
+  - index/para-projects.md
+  - index/para-resources.md
+  - templates/para-areas.md
+  - templates/para-projects.md
+  - templates/para-resources.md
   - templates/para-index.md
+  - seed/para-areas/health.md
+  - seed/para-areas/finances.md
+  - seed/para-areas/career.md
+  - seed/para-projects/run-a-10k.md
+  - seed/para-projects/file-the-tax-return.md
+  - seed/para-projects/set-up-the-home-office.md
+  - seed/para-resources/couch-to-10k-plan.md
+  - seed/para-resources/the-para-method-explained.md
+  - seed/para-resources/index-fund-comparison.md

@@ -539,6 +539,10 @@ export const commands = {
   listRowTemplates: (source: string) =>
     invoke<string[]>("list_row_templates", { source }),
 
+  /** A row's vault-relative path, created from the collection's row template when it does not exist. */
+  ensureRow: (source: string, id: string, fields: Record<string, string>) =>
+    touched(invoke<string>("ensure_row", { source, id, fields })),
+
   addRowFromTemplate: (source: string, id: string, template: string, fields: Record<string, string>) =>
     touched(invoke<void>("add_row_from_template", { source, id, template, fields })),
 

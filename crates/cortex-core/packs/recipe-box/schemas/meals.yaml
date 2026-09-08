@@ -1,0 +1,19 @@
+properties:
+  - name: date
+    type: date
+  - name: slot
+    type: select
+    options:
+      - name: breakfast
+        color: yellow
+      - name: lunch
+        color: green
+      - name: dinner
+        color: blue
+      - name: snack
+        color: orange
+  - name: recipe
+    type: relation
+    collection: recipes
+  - name: cooked
+    type: checkbox

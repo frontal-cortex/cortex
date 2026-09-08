@@ -1,21 +1,28 @@
 format: 1
 id: reading-list
 name: "Reading List"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "Books and articles with status, rating and dates; each row is a full reading note."
+summary: "Books, articles and papers as rows with a note each; an optional log of sittings adds a heatmap and pages per week."
 description: |
-  A reading database rather than a loose note: to-read, reading, finished as a board; a rating; started and finished dates. Each row opens into a reading note — why you picked it up, key ideas, quotes worth keeping, how you will use it — so the list and the notes live in one place.
-tags: [reading, notes, second-brain, database]
+  One row per thing you read — book, ebook, audiobook, article or paper — with author, status, format, genre, rating, page count and progress, who recommended it and when you started and finished. The row's page is the reading note: why you picked it up, the ideas, the quotes, the verdict. A second collection, `reading-log`, holds one small row per sitting (date, book, pages); from those the Reading list draws a week grid of what you are reading, a year heatmap on each book's page and a pages-per-week chart, and the Finished view and per-month chart show how the year is going. The log is optional — the list works without it.
+tags: [reading, books, notes, second-brain, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The reading-list databases in Notion's gallery and Obsidian's literature notes."
+credits: "Shaped by the reading trackers in Notion's gallery (Thomas Frank's Books, the Bookworm and Book Tracker templates) and by the Obsidian book-tracking write-ups that keep a list of read dates per book."
 min_cortex: 0.1.0
 collection: reading
+collections: [reading-log]
 files:
-  - templates/reading.md
   - schemas/reading.yaml
+  - schemas/reading-log.yaml
   - index.md
-  - seed/example-book.md
+  - index/reading-log.md
+  - templates/reading.md
+  - templates/reading-log.md
+  - seed/reading/thinking-in-systems.md
+  - seed/reading/the-left-hand-of-darkness.md
+  - seed/reading/how-to-do-great-work.md
+  - seed/reading-log/first-sitting.md

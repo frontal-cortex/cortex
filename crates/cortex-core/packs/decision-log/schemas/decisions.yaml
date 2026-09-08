@@ -1,0 +1,66 @@
+properties:
+  - name: status
+    type: status
+    options:
+      - name: proposed
+        color: yellow
+      - name: accepted
+        color: green
+      - name: rejected
+        color: gray
+      - name: deprecated
+        color: brown
+      - name: superseded
+        color: purple
+  - name: decided
+    type: date
+  - name: review
+    type: date
+  - name: area
+    type: select
+    options:
+      - name: engineering
+        color: gray
+      - name: product
+        color: purple
+      - name: team
+        color: blue
+      - name: money
+        color: green
+      - name: personal
+        color: pink
+      - name: other
+        color: brown
+  - name: impact
+    type: select
+    options:
+      - name: low
+        color: gray
+      - name: medium
+        color: yellow
+      - name: high
+        color: red
+  - name: reversible
+    type: checkbox
+  - name: confidence
+    type: number
+  - name: owner
+    type: person
+  - name: outcome
+    type: select
+    options:
+      - name: pending
+        color: gray
+      - name: as_expected
+        color: green
+      - name: better
+        color: blue
+      - name: worse
+        color: red
+      - name: unclear
+        color: yellow
+  - name: supersedes
+    type: relation
+    collection: decisions
+  - name: link
+    type: url

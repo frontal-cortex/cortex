@@ -1,0 +1,25 @@
+properties:
+  - name: person
+    type: relation
+    collection: people
+  - name: one_on_one
+    type: relation
+    collection: one-on-ones
+  - name: owner
+    type: select
+    options:
+      - name: me
+        color: blue
+      - name: them
+        color: green
+  - name: due
+    type: date
+  - name: status
+    type: status
+    options:
+      - name: open
+        color: gray
+      - name: done
+        color: green
+      - name: dropped
+        color: red
