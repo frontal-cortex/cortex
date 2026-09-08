@@ -673,25 +673,38 @@ fn prop_ty(ty: crate::schema::PropType) -> &'static str {
 /// empty columns, `$body` hidden. The app's table, the CLI and MCP all go
 /// through here, so they cannot drift.
 pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
-    let spec = crate::members::resolve_me(spec_yaml, root);
-    let mut table = run_view(root, &spec)?;
-    let parsed = parse_view_spec(&spec).ok();
-    let all_columns = parsed.as_ref()
-        .and_then(|s| source_columns(root, &s.source).ok())
-        .unwrap_or_else(|| table.columns.iter().map(|c| c.key.clone()).collect());
+    let spec_text = crate::members::resolve_me(spec_yaml, root);
+    let spec: ViewSpec = serde_yaml::from_str(&spec_text)?;
+    let all_columns = source_columns(root, &spec.source).ok().unwrap_or_default();
     let members = crate::members::load(root);
-    let schema = parsed
-        .and_then(|s| crate::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
+    let schema = crate::schema::schema_key(&format!("{}/_.md", spec.source.trim_end_matches('/')), None)
         .and_then(|key| crate::schema::load(root, &key).ok().flatten())
         .map(|mut s| {
             crate::members::fill_person_options(&mut s, &members);
             fill_relation_options(root, &mut s);
             s
         });
+    // Computed columns first, then the query — so a view may filter or sort
+    // on a rollup or a formula (`progress < 100`, `sort: [days_left]`).
+    let mut table = resolve_source(root, &spec.source)?;
     if let Some(s) = &schema {
         apply_rollups(root, &mut table, s);
         apply_formulas(&mut table, s);
     }
+    let query = Query {
+        filter: match &spec.filter { Some(f) if !f.trim().is_empty() => Some(parse_filter(f)?), _ => None },
+        sort: spec.sort.clone().unwrap_or_default().iter().map(|s| parse_sort(s)).collect(),
+        columns: spec.columns.clone(),
+        limit: spec.limit,
+        option_order: option_order(schema.as_ref()),
+    };
+    let table = query.apply(&table);
+    let all_columns = if all_columns.is_empty() { table.columns.iter().map(|c| c.key.clone()).collect() } else {
+        // Computed properties are fields too, for the toolbar's pickers.
+        let mut all = all_columns;
+        if let Some(s) = &schema { for p in &s.properties { if !all.contains(&p.name) { all.push(p.name.clone()); } } }
+        all
+    };
     let mut columns: Vec<ResolvedColumn> = table.columns.into_iter()
         .filter(|c| c.key != "$body")
         .map(|c| ResolvedColumn { schema: schema.as_ref().and_then(|s| s.property(&c.key)).cloned(), key: c.key, ty: c.ty.as_str().to_string() })
@@ -1058,6 +1071,34 @@ pub fn set_cell_effects(root: &Path, source: &str, row_id: &str, field: &str, va
     } else {
         Err(AppError::Other(format!("Unknown source '{source}'")))
     }
+}
+
+/// What follows any edit to a collection row, however it was made — the
+/// app's cell editor, `cortex set`, an MCP `set_properties`: auto-stamped
+/// dates, and the next occurrence of a repeating row. `changed` names the
+/// frontmatter keys the edit touched. Returns every file written.
+pub fn apply_row_effects(root: &Path, rel_path: &str, changed: &[String]) -> Result<Vec<std::path::PathBuf>> {
+    let rel = rel_path.trim_start_matches("./");
+    let Some(rest) = rel.strip_prefix("collections/") else { return Ok(vec![]) };
+    let Some((name, file)) = rest.split_once('/') else { return Ok(vec![]) };
+    let row_id = file.trim_end_matches(".md");
+    if row_id.starts_with('_') || row_id.contains('/') { return Ok(vec![]); }
+    let dir = root.join("collections").join(name);
+    let path = dir.join(format!("{row_id}.md"));
+    let content = std::fs::read_to_string(&path)?;
+    let mut note = crate::note::parse_note(row_id, &content)?;
+    let schema = crate::schema::load(root, name).ok().flatten();
+    let before = note.frontmatter.clone();
+    stamp_auto_dates(&mut note, schema.as_ref());
+    let mut written = Vec::new();
+    if changed.iter().any(|f| is_finishing_edit(&note, f, schema.as_ref())) {
+        if let Some(extra) = recur(&dir, row_id, &mut note, schema.as_ref())? { written.push(extra); }
+    }
+    if note.frontmatter != before {
+        std::fs::write(&path, crate::note::serialize_note(&note)?)?;
+        written.insert(0, path);
+    }
+    Ok(written)
 }
 
 /// A note's frontmatter as a row, for evaluating filters against it.
@@ -1891,6 +1932,35 @@ mod tests {
         // No repeat: nothing extra happens.
         put(&root, "collections/tasks/once.md", "---\ntitle: Once\nstatus: todo\n---\n");
         assert_eq!(set_cell_effects(&root, "collections/tasks", "once", "status", "done", "text").unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn views_filter_and_sort_on_computed_columns() {
+        let root = gap_root("computed");
+        put(&root, ".cortex/schemas/goals.yaml", "properties:\n  - name: target\n    type: number\n  - name: current\n    type: number\n  - name: pct\n    type: formula\n    expr: round(current / target * 100)\n");
+        put(&root, "collections/goals/a.md", "---\ntitle: A\ntarget: 10\ncurrent: 10\n---\n");
+        put(&root, "collections/goals/b.md", "---\ntitle: B\ntarget: 10\ncurrent: 3\n---\n");
+        put(&root, "collections/goals/c.md", "---\ntitle: C\ntarget: 10\ncurrent: 7\n---\n");
+        let t = resolve_view(&root, "source: collections/goals\nfilter: pct < 100\nsort: [pct desc]\n").unwrap();
+        let names: Vec<&str> = t.rows.iter().map(|r| r.cells["title"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["C", "B"]);
+        assert!(t.all_columns.contains(&"pct".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn row_effects_apply_to_direct_frontmatter_writes() {
+        let root = gap_root("effects");
+        put(&root, ".cortex/schemas/tasks.yaml", "properties:\n  - name: status\n    type: status\n    options:\n      - name: todo\n      - name: done\n  - name: completed\n    type: date\n    auto: status == done\n");
+        put(&root, "collections/tasks/gym-2026-09-08.md", "---\ntitle: Gym\nstatus: done\ndue: 2026-09-08\nrepeat: every 2 days\n---\n");
+        let written = apply_row_effects(&root, "collections/tasks/gym-2026-09-08.md", &["status".into()]).unwrap();
+        assert_eq!(written.len(), 2, "{written:?}");
+        assert!(root.join("collections/tasks/gym-2026-09-10.md").exists());
+        assert!(std::fs::read_to_string(root.join("collections/tasks/gym-2026-09-08.md")).unwrap().contains("completed:"));
+        // Not a collection row: nothing happens.
+        put(&root, "notes/a.md", "---\ntitle: A\n---\n");
+        assert!(apply_row_effects(&root, "notes/a.md", &["status".into()]).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 

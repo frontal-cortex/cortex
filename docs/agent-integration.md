@@ -144,7 +144,9 @@ alphabetically — `priority: [p1, p2, p3]` puts p1 first whatever the words are
 Charts over a select follow the same order.
 
 **Computed properties** live in the schema (`.cortex/schemas/<collection>.yaml`)
-and are computed on read, never written to a file:
+and are computed on read, never written to a file. They are computed before a
+view's filter and sort run, so `filter: progress < 100` and `sort: [days_left]`
+work:
 
 ```yaml
 properties:
@@ -184,9 +186,9 @@ finished — its status set to the last option or a done-word, or a `done` /
 `paid` checkbox ticked: every date property moves forward by the interval and
 the result is written as a **new row** (history stays), or the same row is moved
 forward with `repeat_mode: advance` (a bill's `next_due`). The trigger and any
-auto-stamped dates are reset. This runs when a cell is edited in the app or
-through `set_cell`; `cortex set` writes frontmatter directly and does not
-trigger it.
+auto-stamped dates are reset. This follows any edit to a collection row —
+the app, `cortex set`, MCP `set_properties` — so an agent that marks a task
+done creates next week's task.
 
 **Date placeholders** in templates and seeds use the same words: `{{today}}`,
 `{{today+7}}`, `{{monday}}`, `{{month}}`, `{{week}}`; row templates also get
