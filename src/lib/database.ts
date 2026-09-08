@@ -30,6 +30,7 @@ export const VIEW_TYPES: { type: ViewType; label: string }[] = [
   { type: "gallery", label: "Gallery" },
   { type: "chart", label: "Chart" },
   { type: "tracker", label: "Tracker" },
+  { type: "timeline", label: "Timeline" },
 ];
 
 export function isDatabaseNote(note: Note | null): boolean {
@@ -53,6 +54,8 @@ export function defaultViewOfType(type: ViewType, name: string): ViewDef {
     case "chart": return { name, type, chartType: "line", x: "created", y: "" };
     // The log collection is picked in the view's setup state.
     case "tracker": return { name, type, log: "", date: "date", done: "done", range: "week" };
+    // Field names are resolved at render time (`start`/`end`, else the date columns).
+    case "timeline": return { name, type };
     default: return { name, type };
   }
 }
@@ -73,7 +76,7 @@ function asStringArray(v: unknown): string[] | undefined {
 
 /** Keys with a fixed place in a spec; every other option follows alphabetically. */
 const LIST_KEYS = ["sort", "columns"] as const;
-const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "limit", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range"];
+const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "limit", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range", "start", "end"];
 const orderOf = (k: string) => { const i = KEY_ORDER.indexOf(k); return i < 0 ? KEY_ORDER.length : i; };
 const optionKeys = (v: ViewDef) =>
   Object.keys(v).filter((k) => k !== "name" && k !== "type").sort((p, q) => orderOf(p) - orderOf(q) || p.localeCompare(q));

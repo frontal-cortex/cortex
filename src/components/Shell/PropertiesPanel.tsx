@@ -91,6 +91,7 @@ function PropIcon({ type }: { type: PropType }) {
     case "url": return <LinkIcon size={15} />;
     case "relation": return <RelationIcon size={15} />;
     case "rollup": return <span className={styles.glyph}>Σ</span>;
+    case "formula": return <span className={styles.glyph}>ƒ</span>;
     case "number": return <span className={styles.glyph}>#</span>;
     default: return <TextLinesIcon size={15} />;
   }
@@ -142,9 +143,13 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
     }
   };
 
-  // Build the ordered property list: schema properties first (rollups excluded —
-  // they're computed in data views), then any other frontmatter keys.
-  const schemaProps = (schema?.properties ?? []).filter((p) => p.type !== "rollup");
+  // Build the ordered property list: schema properties first, then any other
+  // frontmatter keys. Computed properties — rollups, formulas, the reverse side
+  // of a relation — are never in the frontmatter and only exist in data views,
+  // so they are left out rather than shown as empty inputs.
+  const schemaProps = (schema?.properties ?? []).filter(
+    (p) => p.type !== "rollup" && p.type !== "formula" && !(p.type === "relation" && p.from),
+  );
   const schemaNames = new Set(schemaProps.map((p) => p.name));
   const items: Item[] = [
     ...schemaProps.map((p) => ({ name: p.name, type: p.type, options: p.options, def: p })),

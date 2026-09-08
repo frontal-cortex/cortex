@@ -103,14 +103,14 @@ export interface SortClause {
   desc: boolean;
 }
 
-export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart" | "tracker";
+export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart" | "tracker" | "timeline";
 
 /** One named view in a database / embedded data block.
  *
  *  Beyond the query keys every view shares (filter, sort, columns, group,
  *  date, limit), a view is a bag of string options its type reads — charts
- *  `x` `y` `agg` `chartType` `bucket` `series`, trackers `log` `done` `range`
- *  and field mappings. The parsers and serializers in `database.ts` treat
+ *  `x` `y` `agg` `chartType` `bucket` `series`, trackers `log` `done` `range`,
+ *  timelines `start` `end`, and field mappings. The parsers and serializers in `database.ts` treat
  *  every option generically, so a new view type or option needs no change
  *  there; the well-known ones are declared here only for editor help. */
 export interface ViewDef {
@@ -137,6 +137,10 @@ export interface ViewDef {
   done?: string;
   /** Tracker: today | week | month | year. */
   range?: string;
+  /** Timeline: the bar's first day (default `start`, else the first date property). */
+  start?: string;
+  /** Timeline: the bar's last day (default `end`, else the second date property; none = one-day bars). */
+  end?: string;
   /** Any other option a view type defines. */
   [option: string]: string | string[] | undefined;
 }

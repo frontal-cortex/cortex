@@ -9,13 +9,14 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { commands, ViewTable, ChartResult, ViewDef, ViewType } from "../../lib/commands";
 import { VIEW_TYPES, defaultViewOfType, viewFromSpec, specFromView } from "../../lib/database";
 import {
-  DataTable, BoardView, CalendarView, GalleryView, MiniChart, BoardSetup,
+  DataTable, BoardView, CalendarView, GalleryView, MiniChart, BoardSetup, MissingCollection, missingCollection,
   newRowId, today, seedFromFilter,
 } from "./CortexViewBlock";
 import { ViewToolbar } from "./ViewToolbar";
 import { TrackerView, TrackerRange } from "./TrackerView";
+import { TimelineView } from "./TimelineView";
 import { Dropdown } from "./Dropdown";
-import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon } from "./icons";
+import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon, TimelineIcon } from "./icons";
 import styles from "./DatabaseView.module.css";
 
 const AGGS = ["", "sum", "avg", "count", "min", "max"];
@@ -28,6 +29,7 @@ export function viewIcon(type: ViewType, size = 14) {
     case "gallery": return <GalleryIcon size={size} />;
     case "chart": return <ChartIcon size={size} />;
     case "tracker": return <TrackerIcon size={size} />;
+    case "timeline": return <TimelineIcon size={size} />;
     default: return <TableIcon size={size} />;
   }
 }
@@ -159,7 +161,9 @@ export function DataViews({ source, views, onViewsChange }: Props) {
       )}
 
       <div className={styles.content}>
-        {error && <div className={styles.error}>{error}</div>}
+        {error && (missingCollection(error)
+          ? <MissingCollection name={missingCollection(error)!} />
+          : <div className={styles.error}>{error}</div>)}
         {isTracker ? (
           <TrackerView
             key={active.name}
@@ -183,7 +187,9 @@ export function DataViews({ source, views, onViewsChange }: Props) {
                     ? <CalendarView table={table} spec={activeSpec} source={source} onChanged={reload} />
                     : active.type === "gallery"
                       ? <GalleryView table={table} spec={activeSpec} source={source} onChanged={reload} />
-                      : <DataTable table={table} spec={activeSpec} source={source} onChanged={reload} />)
+                      : active.type === "timeline"
+                        ? <TimelineView table={table} spec={activeSpec} source={source} onStartChange={(f) => updateActive({ ...active, start: f })} />
+                        : <DataTable table={table} spec={activeSpec} source={source} onChanged={reload} />)
               : loading ? <div className={styles.stub}>Loading…</div> : null)}
       </div>
     </>

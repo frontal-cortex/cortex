@@ -12,17 +12,31 @@ import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, PropType, PropertyDef, ChartResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon, CheckIcon } from "./icons";
+import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon, TimelineIcon, CheckIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
+import { TimelineView } from "./TimelineView";
 import { Dropdown } from "./Dropdown";
 import { ViewToolbar } from "./ViewToolbar";
 import styles from "./CortexViewBlock.module.css";
 
-/** Select-like columns render as colored pills (incl. person + relation). */
+/** Select-like columns render as colored pills (incl. person + relation). The
+ *  reverse side of a relation (`from:`) is computed on read, so it is not one. */
 function isSelectColumn(col: ViewColumn): boolean {
   const t = col.schema?.type;
-  return t === "select" || t === "status" || t === "multi_select" || t === "person" || t === "relation";
+  return t === "select" || t === "status" || t === "multi_select" || t === "person" || (t === "relation" && !col.schema?.from);
+}
+
+/** Rollups, formulas and reverse relations: computed by the engine, read-only here. */
+function isComputedColumn(col: ViewColumn): boolean {
+  const t = col.schema?.type;
+  return t === "rollup" || t === "formula" || (t === "relation" && !!col.schema?.from);
+}
+
+/** Columns whose values are numbers and can carry a display format. */
+function isNumericColumn(col: ViewColumn): boolean {
+  const t = col.schema?.type;
+  return t === "number" || t === "rollup" || t === "formula" || (!t && col.ty === "number");
 }
 
 /** Schema key for a source — its collection name, or null for CSV sources. */
@@ -45,12 +59,14 @@ const COLUMN_TYPES: { value: PropType; label: string }[] = [
 
 /** Column header with a Notion-style "property type" menu. Setting a select-like
  *  type creates the schema property, which turns the cells into colored pills. */
-function ColumnHeader({ col, canType, onSetType }: {
+function ColumnHeader({ col, canType, onSetType, onSetFormat }: {
   col: ViewColumn;
   canType: boolean;
   onSetType: (type: PropType) => void;
+  onSetFormat: (patch: Partial<PropertyDef>) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [fmtOpen, setFmtOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,23 +81,73 @@ function ColumnHeader({ col, canType, onSetType }: {
   if (!canType) return <span>{col.key}</span>;
 
   const current = col.schema?.type;
+  const computed = isComputedColumn(col);
+  const numeric = isNumericColumn(col);
+  const format = col.schema?.format ?? "";
+  const computedLabel = col.schema?.type === "formula"
+    ? `Formula · ${col.schema.expr ?? ""}`
+    : col.schema?.type === "rollup"
+      ? `Rollup · ${col.schema.function ?? "count"}${col.schema.from ? ` from ${col.schema.from}` : ` via ${col.schema.relation ?? ""}`}`
+      : `Rows of ${col.schema?.from ?? ""} linking here`;
+  const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); };
   return (
     <div className={styles.colHeader} ref={ref}>
-      <button className={styles.colHeaderBtn} onClick={() => setOpen((o) => !o)} title="Property type">
+      <button className={styles.colHeaderBtn} onClick={() => setOpen((o) => !o)} title={computed ? computedLabel : "Property type"}>
         {col.key}
       </button>
       {open && (
         <div className={styles.colMenu}>
-          <div className={styles.colMenuLabel}>Property type</div>
-          {COLUMN_TYPES.map((t) => (
-            <button
-              key={t.value}
-              className={styles.colMenuItem}
-              onClick={() => { onSetType(t.value); setOpen(false); }}
-            >
-              {t.label}{current === t.value ? " ✓" : ""}
-            </button>
-          ))}
+          {computed ? (
+            <div className={styles.colMenuLabel}>{computedLabel}</div>
+          ) : (
+            <>
+              <div className={styles.colMenuLabel}>Property type</div>
+              {COLUMN_TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  className={styles.colMenuItem}
+                  onClick={() => { onSetType(t.value); setOpen(false); }}
+                >
+                  {t.label}{current === t.value ? " ✓" : ""}
+                </button>
+              ))}
+            </>
+          )}
+          {numeric && (
+            <>
+              <div className={styles.colMenuSep} />
+              <button className={styles.colMenuItem} onClick={() => setFmtOpen((o) => !o)}>
+                Format… <span className={styles.colMenuHint}>{NUMBER_FORMATS.find((f) => f.value === format)?.label ?? format}</span>
+              </button>
+              {fmtOpen && (
+                <div className={styles.colSub}>
+                  {NUMBER_FORMATS.map((f) => (
+                    <button key={f.value} className={styles.colMenuItem} onClick={() => onSetFormat({ format: f.value || undefined })}>
+                      {f.label}{format === f.value ? " ✓" : ""}
+                    </button>
+                  ))}
+                  {(format === "currency" || format === "progress") && (
+                    <label className={styles.colSubRow}>Unit
+                      <input className={styles.colSubInput} defaultValue={col.schema?.unit ?? ""} placeholder={format === "currency" ? "€" : "kg"}
+                        onBlur={(e) => onSetFormat({ unit: e.target.value.trim() || undefined })} onKeyDown={blurOnEnter} />
+                    </label>
+                  )}
+                  {format === "progress" && (
+                    <label className={styles.colSubRow}>Min
+                      <input className={styles.colSubInput} type="number" defaultValue={col.schema?.min ?? ""} placeholder="0"
+                        onBlur={(e) => onSetFormat({ min: e.target.value === "" ? undefined : Number(e.target.value) })} onKeyDown={blurOnEnter} />
+                    </label>
+                  )}
+                  {(format === "progress" || format === "stars") && (
+                    <label className={styles.colSubRow}>Max
+                      <input className={styles.colSubInput} type="number" defaultValue={col.schema?.max ?? ""} placeholder={format === "stars" ? "5" : "100"}
+                        onBlur={(e) => onSetFormat({ max: e.target.value === "" ? undefined : Number(e.target.value) })} onKeyDown={blurOnEnter} />
+                    </label>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -89,23 +155,32 @@ function ColumnHeader({ col, canType, onSetType }: {
 }
 
 /** "+" column header → a small form to add a new typed property to the schema. */
-// Relation/rollup need extra config the column-header retype menu can't provide,
-// so they're only offered when *adding* a property.
+// Relation/rollup/formula need extra config the column-header retype menu can't
+// provide, so they're only offered when *adding* a property.
 const ADD_PROP_TYPES: { value: PropType; label: string }[] = [
   ...COLUMN_TYPES,
   { value: "relation", label: "Relation" },
   { value: "rollup", label: "Rollup" },
+  { value: "formula", label: "Formula" },
 ];
 const ROLLUP_FNS = ["count", "sum", "avg", "min", "max", "values"];
+/** `percent` is the share of the reverse rows matching `where`; it only makes sense from the reverse side. */
+const REVERSE_ROLLUP_FNS = ["count", "percent", "sum", "avg", "min", "max", "values"];
+const FORMULA_HINT = "+ - * / %, comparisons, and or not · days_until, days_since, days_between, today, year, month, round, abs, min, max, if, coalesce, len, contains, concat, lower, upper, empty";
 
 function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (prop: PropertyDef) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<PropType>("text");
   const [collection, setCollection] = useState("");
+  // Rollup source: "rel:<column>" follows one of this collection's relations;
+  // "from:<collection>" collects the rows over there that point back here.
+  const [via, setVia] = useState("");
   const [relation, setRelation] = useState("");
   const [property, setProperty] = useState("");
   const [fn, setFn] = useState("count");
+  const [where, setWhere] = useState("");
+  const [expr, setExpr] = useState("");
   const [collections, setCollections] = useState<string[]>([]);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -117,22 +192,36 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const relationCols = columns.filter((c) => c.schema?.type === "relation");
+  const relationCols = columns.filter((c) => c.schema?.type === "relation" && !c.schema.from);
+  const reverse = via.startsWith("from:");
+  const fns = reverse ? REVERSE_ROLLUP_FNS : ROLLUP_FNS;
+  const viaOptions = [
+    ...relationCols.map((c) => ({ value: `rel:${c.key}`, label: `via ${c.key}` })),
+    ...collections.map((c, i) => ({ value: `from:${c}`, label: `from ${c}`, hint: "rows that link here", separator: i === 0 && relationCols.length > 0 })),
+  ];
 
   const submit = () => {
     const n = name.trim();
     if (!n) return;
     if (type === "relation" && !collection) return;
-    if (type === "rollup" && (!relation || !fn)) return;
+    if (type === "rollup" && (!via || !fn || (reverse && !relation.trim()))) return;
+    if (type === "formula" && !expr.trim()) return;
     const prop: PropertyDef = { name: n, type, options: [] };
     if (type === "relation") prop.collection = collection;
     if (type === "rollup") {
-      prop.relation = relation;
+      if (reverse) {
+        prop.from = via.slice("from:".length);
+        prop.relation = relation.trim();
+        if (where.trim()) prop.where = where.trim();
+      } else {
+        prop.relation = via.slice("rel:".length);
+      }
       prop.function = fn;
-      if (fn !== "count" && property.trim()) prop.property = property.trim();
+      if (fn !== "count" && fn !== "percent" && property.trim()) prop.property = property.trim();
     }
+    if (type === "formula") prop.expr = expr.trim();
     onAdd(prop);
-    setName(""); setType("text"); setCollection(""); setRelation(""); setProperty(""); setFn("count");
+    setName(""); setType("text"); setCollection(""); setVia(""); setRelation(""); setProperty(""); setFn("count"); setWhere(""); setExpr("");
     setOpen(false);
   };
 
@@ -170,18 +259,26 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
             <>
               <Dropdown
                 fullWidth
-                value={relation}
+                value={via}
                 placeholder="Via relation…"
-                options={relationCols.map((c) => ({ value: c.key, label: c.key }))}
-                onChange={setRelation}
+                options={viaOptions}
+                onChange={(v) => { setVia(v); if (!v.startsWith("from:") && fn === "percent") setFn("count"); }}
               />
+              {reverse && (
+                <input
+                  className={styles.addPropInput}
+                  value={relation}
+                  placeholder="Their property that links here"
+                  onChange={(e) => setRelation(e.target.value)}
+                />
+              )}
               <Dropdown
                 fullWidth
                 value={fn}
-                options={ROLLUP_FNS.map((f) => ({ value: f, label: f }))}
+                options={fns.map((f) => ({ value: f, label: f }))}
                 onChange={setFn}
               />
-              {fn !== "count" && (
+              {fn !== "count" && fn !== "percent" && (
                 <input
                   className={styles.addPropInput}
                   value={property}
@@ -189,7 +286,29 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
                   onChange={(e) => setProperty(e.target.value)}
                 />
               )}
-              {relationCols.length === 0 && <div className={styles.addPropHint}>Add a Relation property first.</div>}
+              {reverse && (
+                <input
+                  className={styles.addPropInput}
+                  value={where}
+                  placeholder={fn === "percent" ? "where, e.g. done == true" : "where (optional)"}
+                  onChange={(e) => setWhere(e.target.value)}
+                />
+              )}
+              {viaOptions.length === 0 && <div className={styles.addPropHint}>Add a Relation property first.</div>}
+            </>
+          )}
+
+          {type === "formula" && (
+            <>
+              <textarea
+                className={styles.addPropInput}
+                rows={3}
+                value={expr}
+                spellCheck={false}
+                placeholder="budget - spent"
+                onChange={(e) => setExpr(e.target.value)}
+              />
+              <div className={styles.addPropHint}>{FORMULA_HINT}</div>
             </>
           )}
 
@@ -231,6 +350,86 @@ function formatCell(v: unknown): string {
 function fmtNum(n: number): string {
   if (!isFinite(n)) return "—";
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+/** Number display formats a schema can declare (`format:`). */
+const NUMBER_FORMATS: { value: string; label: string }[] = [
+  { value: "", label: "Plain" },
+  { value: "integer", label: "Integer" },
+  { value: "decimal", label: "Decimal" },
+  { value: "percent", label: "Percent" },
+  { value: "progress", label: "Progress bar" },
+  { value: "currency", label: "Currency" },
+  { value: "stars", label: "Stars" },
+];
+
+function toNumber(v: unknown): number | null {
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim() !== "") { const n = Number(v); return isFinite(n) ? n : null; }
+  return null;
+}
+
+/** A column's number format, when it declares one we know how to draw. */
+function numberFormat(c: ViewColumn): string | undefined {
+  const f = c.schema?.format;
+  return f && NUMBER_FORMATS.some((o) => o.value === f) ? f : undefined;
+}
+
+/** The text of a formatted number — what a bar or the stars carry as a label. */
+export function formatNumber(n: number, schema: PropertyDef | undefined): string {
+  const unit = schema?.unit ?? "";
+  switch (schema?.format) {
+    case "percent": return `${fmtNum(n)}%`;
+    case "currency": return `${unit}${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+    case "integer": return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
+    case "decimal": return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
+    case "progress": {
+      // A bare 0–100 bar is a share, so it reads as one; a custom range or unit reads as itself.
+      const bare = schema.min === undefined && schema.max === undefined && !unit;
+      return `${fmtNum(n)}${bare ? "%" : unit}`;
+    }
+    default: return fmtNum(n);
+  }
+}
+
+/** At-rest rendering of a formatted number: a bar, stars, or text. Stars are
+ *  clickable when `onSet` is given — the n-th star writes n. */
+function FormattedNumber({ value, schema, onSet }: { value: unknown; schema: PropertyDef; onSet?: (n: number) => void }) {
+  const n = toNumber(value);
+  if (schema.format === "stars") {
+    const max = Math.max(1, Math.round(schema.max ?? 5));
+    const filled = n === null ? 0 : Math.round(n);
+    return (
+      <span className={`${styles.stars} ${onSet ? styles.starsSet : ""}`} title={n === null ? "—" : `${formatNumber(n, schema)} of ${max}`}>
+        {Array.from({ length: max }, (_, i) => (
+          <span
+            key={i}
+            className={`${styles.star} ${i < filled ? styles.starOn : ""}`}
+            onClick={onSet ? (e) => { e.stopPropagation(); onSet(i + 1); } : undefined}
+            role={onSet ? "button" : undefined}
+            aria-label={`${i + 1} of ${max}`}
+          >★</span>
+        ))}
+      </span>
+    );
+  }
+  if (n === null) return <>{formatCell(value)}</>;
+  if (schema.format === "progress") {
+    const lo = schema.min ?? 0, hi = schema.max ?? 100;
+    const pct = hi > lo ? Math.min(100, Math.max(0, ((n - lo) / (hi - lo)) * 100)) : 0;
+    return (
+      <span className={styles.progress}>
+        <span className={styles.progressTrack}><span className={styles.progressFill} style={{ width: `${pct}%` }} /></span>
+        <span className={styles.progressNum}>{formatNumber(n, schema)}</span>
+      </span>
+    );
+  }
+  return <>{formatNumber(n, schema)}</>;
+}
+
+/** A cell for display only: formatted when its column declares a number format, else plain text. */
+function displayCell(c: ViewColumn, v: unknown): ReactNode {
+  return numberFormat(c) ? <FormattedNumber value={v} schema={c.schema!} /> : formatCell(v);
 }
 
 /** Today's date in the user's own timezone — the same day the calendar shows. */
@@ -283,6 +482,11 @@ export const STARTER_TRACKER_SPEC = `source: collections/habits
 type: tracker
 log: collections/habit-log
 range: week`;
+
+export const STARTER_TIMELINE_SPEC = `source: collections/projects
+type: timeline
+start: start
+end: end`;
 
 /** Series colours: the accent first, then the tag palette — theme tokens, never hex. */
 const SERIES_COLORS = ["var(--accent)", "var(--tag-green-fg)", "var(--tag-orange-fg)", "var(--tag-purple-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-brown-fg)", "var(--tag-red-fg)", "var(--tag-blue-fg)"];
@@ -453,17 +657,20 @@ function toInput(v: unknown): string {
   return String(v);
 }
 
-function EditableCell({ value, editable, saving, onCommit }: {
+function EditableCell({ value, editable, saving, onCommit, render }: {
   value: unknown;
   editable: boolean;
   saving: boolean;
   onCommit: (v: string) => void;
+  /** At-rest rendering (a formatted number); the editor still edits the raw value. */
+  render?: (v: unknown) => ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
+  const shown = render ? render(value) : formatCell(value);
   if (!editable) {
-    return <span className={styles.cellReadonly}>{formatCell(value)}</span>;
+    return <span className={styles.cellReadonly}>{shown}</span>;
   }
 
   if (!editing) {
@@ -473,7 +680,7 @@ function EditableCell({ value, editable, saving, onCommit }: {
         title="Click to edit"
         onClick={() => { setDraft(toInput(value)); setEditing(true); }}
       >
-        {saving ? "…" : formatCell(value)}
+        {saving ? "…" : shown}
       </span>
     );
   }
@@ -523,15 +730,28 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
 
   const setColumnType = (col: ViewTable["columns"][number], type: PropType) => {
     if (!schemaKey) return;
-    commands.upsertProperty(schemaKey, { name: col.key, type, options: col.schema?.options ?? [] })
+    const { format, unit, min, max } = col.schema ?? {};
+    commands.upsertProperty(schemaKey, { name: col.key, type, options: col.schema?.options ?? [], format, unit, min, max })
       .then(onChanged)
       .catch((e) => setErr(String(e)));
   };
 
+  // Display settings for a number column. An untyped number column gets a
+  // schema property on first use; an unset field is dropped, not sent as "".
+  const setColumnFormat = (col: ViewTable["columns"][number], patch: Partial<PropertyDef>) => {
+    if (!schemaKey) return;
+    const base: PropertyDef = col.schema ?? { name: col.key, type: "number", options: [] };
+    const next: PropertyDef = { ...base, ...patch };
+    for (const k of ["format", "unit", "min", "max"] as const) {
+      if (next[k] === undefined || next[k] === "") delete next[k];
+    }
+    commands.upsertProperty(schemaKey, next).then(onChanged).catch((e) => setErr(String(e)));
+  };
+
   const renderCell = (c: ViewTable["columns"][number], row: ViewTable["rows"][number]) => {
     // Computed columns — rollups, formulas, the reverse side of a relation — are read-only.
-    if (c.schema?.type === "rollup" || c.schema?.type === "formula" || (c.schema?.type === "relation" && c.schema?.from)) {
-      return <span className={styles.cellReadonly}>{formatCell(row.cells[c.key])}</span>;
+    if (isComputedColumn(c)) {
+      return <span className={styles.cellReadonly}>{displayCell(c, row.cells[c.key])}</span>;
     }
     if (isSelectColumn(c)) {
       const t = c.schema!.type;
@@ -567,12 +787,25 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
         />
       );
     }
+    const editable = c.key !== "$body" && c.key !== "id";
+    const fmt = numberFormat(c);
+    // Stars are set by clicking one; every other format keeps the text editor.
+    if (fmt === "stars") {
+      return (
+        <FormattedNumber
+          value={row.cells[c.key]}
+          schema={c.schema!}
+          onSet={editable ? (n) => commit(c, row.id, String(n), "number") : undefined}
+        />
+      );
+    }
     return (
       <EditableCell
         value={row.cells[c.key]}
-        editable={c.key !== "$body" && c.key !== "id"}
+        editable={editable}
         saving={savingKey === `${row.id}:${c.key}`}
         onCommit={(v) => commit(c, row.id, v)}
+        render={fmt ? (v) => <FormattedNumber value={v} schema={c.schema!} /> : undefined}
       />
     );
   };
@@ -590,6 +823,7 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
                   col={c}
                   canType={!!schemaKey && c.key !== "id" && c.key !== "$body"}
                   onSetType={(ty) => setColumnType(c, ty)}
+                  onSetFormat={(patch) => setColumnFormat(c, patch)}
                 />
               </th>
             ))}
@@ -723,6 +957,9 @@ export function BoardView({ table, spec, source, onChanged }: {
   }
 
   const groupCol = table.columns.find((c) => c.key === groupField);
+  if (groupCol && isComputedColumn(groupCol)) {
+    return <div className={styles.stub}>A board can't group by <code>{groupField}</code> — it is computed. Pick another property under Group.</div>;
+  }
 
   const groups = new Map<string, ViewTable["rows"]>();
   for (const row of rows) {
@@ -829,7 +1066,7 @@ export function BoardView({ table, spec, source, onChanged }: {
                         onChange={() => {}}
                       />
                     ) : (
-                      <span>{formatCell(row.cells[c.key])}</span>
+                      <span>{displayCell(c, row.cells[c.key])}</span>
                     )}
                   </div>
                 ))}
@@ -1008,7 +1245,7 @@ export function GalleryView({ table, spec, source, onChanged }: {
                   {isSelectColumn(c)
                     ? <SelectCell value={row.cells[c.key]} options={c.schema!.options}
                         multi={c.schema!.type === "multi_select"} editable={false} onChange={() => {}} />
-                    : <span>{formatCell(row.cells[c.key])}</span>}
+                    : <span>{displayCell(c, row.cells[c.key])}</span>}
                 </div>
               ))}
             </div>
@@ -1077,6 +1314,7 @@ const VIEW_TYPE_OPTIONS: { type: string; label: string; render: (s: number) => R
   { type: "gallery", label: "Gallery", render: (s) => <GalleryIcon size={s} /> },
   { type: "chart", label: "Chart", render: (s) => <ChartIcon size={s} /> },
   { type: "tracker", label: "Tracker", render: (s) => <TrackerIcon size={s} /> },
+  { type: "timeline", label: "Timeline", render: (s) => <TimelineIcon size={s} /> },
 ];
 
 /** A dropdown to pick the view type — current type shown, the rest tucked away
@@ -1196,6 +1434,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   const isCalendar = declaredType === "calendar";
   const isGallery = declaredType === "gallery";
   const isTracker = declaredType === "tracker";
+  const isTimeline = declaredType === "timeline";
 
   const [table, setTable] = useState<ViewTable | null>(null);
   const [chart, setChart] = useState<ChartResult | null>(null);
@@ -1296,7 +1535,9 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
         <div className={styles.stub}>Set the X and Y fields above to draw the chart.</div>
       )}
 
-      {!editing && error && <div className={styles.errorSoft}>{error}</div>}
+      {!editing && error && (missingCollection(error)
+        ? <MissingCollection name={missingCollection(error)!} />
+        : <div className={styles.errorSoft}>{error}</div>)}
 
       {/* Keep the last-loaded data mounted across a refresh so add/remove/drag
           update in place instead of flashing a "Loading…" stub. */}
@@ -1315,8 +1556,27 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
                     ? <CalendarView table={table} spec={spec} source={source} onChanged={reload} />
                     : isGallery
                       ? <GalleryView table={table} spec={spec} source={source} onChanged={reload} />
-                      : <DataTable table={table} spec={spec} source={source} onChanged={reload} />)
+                      : isTimeline
+                        ? <TimelineView table={table} spec={spec} source={source} onStartChange={(f) => applySpec(specSet(spec, "start", f))} />
+                        : <DataTable table={table} spec={spec} source={source} onChanged={reload} />)
             : loading ? <div className={styles.stub}>Loading…</div> : null))}
+    </div>
+  );
+}
+
+/** The collection named by a "Collection not found: x" error, else null. A
+ *  pack's row template may embed another pack's collection that isn't here. */
+export function missingCollection(err: string | null): string | null {
+  const m = err?.match(/Collection not found:?\s*["'`]?([^"'`\s]+)/);
+  return m ? m[1] : null;
+}
+
+/** Quiet stand-in for a view over a collection that isn't installed. */
+export function MissingCollection({ name }: { name: string }) {
+  return (
+    <div className={styles.stub}>
+      <div>Collection "{name}" is not installed here.</div>
+      <div className={styles.stubSub}>Install a pack that provides it, or remove this block.</div>
     </div>
   );
 }
@@ -1383,6 +1643,13 @@ export function cortexSlashItems(editor: any): DefaultReactSuggestionItem[] {
       aliases: ["tracker", "habit", "habits", "streak", "heatmap"],
       group: "Data",
       onItemClick: () => insert(STARTER_TRACKER_SPEC, "cortex-view"),
+    },
+    {
+      title: "Timeline",
+      subtext: "Bars from a start date to an end date on a week axis",
+      aliases: ["timeline", "gantt", "roadmap", "schedule"],
+      group: "Data",
+      onItemClick: () => insert(STARTER_TIMELINE_SPEC, "cortex-view"),
     },
   ];
 }
