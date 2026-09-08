@@ -23,6 +23,7 @@ import { TopBar } from "./TopBar";
 import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
 import { SettingsView } from "./SettingsView";
 import { MarketplaceView } from "./MarketplaceView";
+import { LogHabitModal } from "./LogHabitModal";
 import { PublishModal } from "./PublishModal";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
@@ -63,6 +64,8 @@ export function Shell({
   const [showSettings, setShowSettings] = useState(false);
   // The template marketplace — a full-window page like Settings.
   const [showMarketplace, setShowMarketplace] = useState(false);
+  // Today's habits as a checklist — every tracker view in the vault, compact.
+  const [showLogHabit, setShowLogHabit] = useState(false);
   // The Publish dialog — the only path to a published site, always by hand.
   const [showPublish, setShowPublish] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -483,6 +486,7 @@ export function Shell({
     "focus-editor":    focusEditor,
     "toggle-properties": () => editorRef.current?.toggleProperties(),
     "marketplace":     () => setShowMarketplace((v) => !v),
+    "log-habit":       () => setShowLogHabit((v) => !v),
   };
 
   return (
@@ -604,6 +608,7 @@ export function Shell({
           onToggleTheme={handleToggleTheme}
           onOpenSettings={() => setShowSettings(true)}
           onOpenMarketplace={() => setShowMarketplace(true)}
+          onLogHabit={() => setShowLogHabit(true)}
           onQuickCapture={() => setShowCapture(true)}
           onToggleSidebar={toggleLeft}
           onToggleTerminal={handleToggleTerminal}
@@ -615,6 +620,10 @@ export function Shell({
           isPublic={note?.frontmatter["publish"] === true}
           hasRemote={vault.has_remote}
         />
+      )}
+
+      {showLogHabit && (
+        <LogHabitModal onClose={() => { setShowLogHabit(false); focusEditor(); }} onChanged={() => { refresh(); scheduleAutoCommit(); }} />
       )}
 
       {showPublish && (

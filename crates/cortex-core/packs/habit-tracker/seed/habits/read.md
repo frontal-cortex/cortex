@@ -1,18 +1,19 @@
 ---
-title: "{{title}}"
+title: Read
 type: note
 tags: []
-category: health
+icon: 📖
+category: mind
 frequency: daily
 target: 7
-start: "{{date}}"
+start: "{{today}}"
 archived: false
-created: "{{date}}"
+created: "{{today}}"
 ---
 
 ## Why
 
-What this habit is for, what counts as done, and what does not.
+Twenty pages of a book. Articles and feeds do not count.
 
 ## History
 
@@ -23,5 +24,5 @@ log: collections/habit-log
 date: date
 done: done
 range: year
-filter: title == '{{title}}'
+filter: title == 'Read'
 ```

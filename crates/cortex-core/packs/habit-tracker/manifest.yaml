@@ -1,21 +1,28 @@
 format: 1
 id: habit-tracker
 name: "Habit Tracker"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "One row per habit per week, a checkbox per day — history kept, calendar view included."
+summary: "Habits as rows, one file per day; streaks, day scores and a year heatmap computed on read, never stored."
 description: |
-  The simplest habit tracker that keeps working: each week, add a row per habit (New row, pick the habit, the week's Monday is the date). Tick the days. Because every week is its own row, the calendar view shows the history and nothing has to be reset. Review it in the Weekly Review.
-tags: [health, habits, database]
+  Each habit is a row with its own page; each day is one small file whose `done:` list names what you did. Tick today in the Today view (Space on a habit, or `mod+shift+h` for "Log habit…" from anywhere), and the week grid, month, and year heatmap fill in on their own — current and longest streaks, perfect days, completion — all computed from the files, so nothing is ever reset and nothing goes stale. A day with no file is a day with nothing done; the first tick creates it. Pair it with `templates/daily-with-habits.md` as your daily note so today's habits sit at the top of your journal.
+tags: [health, habits, database, tracker]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "Habit trackers from Notion's gallery, remodelled so history is kept."
+credits: "The streak, heatmap and week-grid ideas come from the habit trackers in Notion's gallery; the day-file model is our own so history is never reset."
 min_cortex: 0.1.0
 collection: habits
+collections: [habit-log]
 files:
-  - templates/habits.md
   - schemas/habits.yaml
+  - schemas/habit-log.yaml
   - index.md
-  - seed/example-week.md
+  - index/habit-log.md
+  - templates/habits.md
+  - templates/habit-log.md
+  - templates/daily-with-habits.md
+  - seed/habits/exercise.md
+  - seed/habits/read.md
+  - seed/habits/sleep-by-11.md

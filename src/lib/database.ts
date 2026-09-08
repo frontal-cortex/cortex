@@ -29,6 +29,7 @@ export const VIEW_TYPES: { type: ViewType; label: string }[] = [
   { type: "calendar", label: "Calendar" },
   { type: "gallery", label: "Gallery" },
   { type: "chart", label: "Chart" },
+  { type: "tracker", label: "Tracker" },
 ];
 
 export function isDatabaseNote(note: Note | null): boolean {
@@ -50,6 +51,8 @@ export function defaultViewOfType(type: ViewType, name: string): ViewDef {
     case "board": return { name, type, group: "status" };
     case "calendar": return { name, type, date: "created" };
     case "chart": return { name, type, chartType: "line", x: "created", y: "" };
+    // The log collection is picked in the view's setup state.
+    case "tracker": return { name, type, log: "", date: "date", done: "done", range: "week" };
     default: return { name, type };
   }
 }
@@ -90,6 +93,11 @@ export function parseViews(frontmatter: Record<string, unknown>): ViewDef[] {
       y: typeof o["y"] === "string" ? (o["y"] as string) : undefined,
       agg: typeof o["agg"] === "string" ? (o["agg"] as string) : undefined,
       chartType: typeof o["chartType"] === "string" ? (o["chartType"] as string) : undefined,
+      bucket: typeof o["bucket"] === "string" ? (o["bucket"] as string) : undefined,
+      series: typeof o["series"] === "string" ? (o["series"] as string) : undefined,
+      log: typeof o["log"] === "string" ? (o["log"] as string) : undefined,
+      done: typeof o["done"] === "string" ? (o["done"] as string) : undefined,
+      range: typeof o["range"] === "string" ? (o["range"] as string) : undefined,
     });
   }
   return views;
@@ -107,6 +115,11 @@ export function viewToFrontmatter(v: ViewDef): Record<string, unknown> {
   if (v.y) o.y = v.y;
   if (v.agg) o.agg = v.agg;
   if (v.chartType) o.chartType = v.chartType;
+  if (v.bucket) o.bucket = v.bucket;
+  if (v.series) o.series = v.series;
+  if (v.log) o.log = v.log;
+  if (v.done) o.done = v.done;
+  if (v.range) o.range = v.range;
   return o;
 }
 
@@ -124,6 +137,11 @@ export function specFromView(v: ViewDef, source: string): string {
   if (v.y) s += `y: ${v.y}\n`;
   if (v.agg) s += `agg: ${v.agg}\n`;
   if (v.chartType) s += `chartType: ${v.chartType}\n`;
+  if (v.bucket) s += `bucket: ${v.bucket}\n`;
+  if (v.series) s += `series: ${v.series}\n`;
+  if (v.log) s += `log: ${v.log}\n`;
+  if (v.done) s += `done: ${v.done}\n`;
+  if (v.range) s += `range: ${v.range}\n`;
   return s;
 }
 
@@ -153,6 +171,11 @@ export function viewFromSpec(spec: string, name: string): ViewDef {
     y: specGet(spec, "y"),
     agg: specGet(spec, "agg"),
     chartType: specGet(spec, "chartType"),
+    bucket: specGet(spec, "bucket"),
+    series: specGet(spec, "series"),
+    log: specGet(spec, "log"),
+    done: specGet(spec, "done"),
+    range: specGet(spec, "range"),
   };
 }
 

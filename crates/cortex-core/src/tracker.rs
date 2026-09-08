@@ -342,10 +342,10 @@ pub fn run_tracker(root: &Path, spec_yaml: &str, anchor: Option<&str>) -> Result
         let (mut range_done, mut range_expected) = (0u32, 0u32);
         for (i, d) in dates.iter().enumerate() {
             let d = *d;
-            let cell = if !h.expected(d) {
+            let cell = if done_on(d) {
+                Cell::Done // an extra workout on a rest day still counts
+            } else if !h.expected(d) {
                 if d > today { Cell::Future } else { Cell::Off }
-            } else if done_on(d) {
-                Cell::Done
             } else if d > today {
                 Cell::Future
             } else if d == today {
@@ -357,7 +357,7 @@ pub fn run_tracker(root: &Path, spec_yaml: &str, anchor: Option<&str>) -> Result
             };
             // A day's score counts what the habit asked for up to today; a
             // weekly habit asks for `target` days a week, spread as "any day".
-            if d <= today && h.expected(d) {
+            if d <= today && (h.expected(d) || cell == Cell::Done) {
                 let counts = match h.freq { Freq::Weekly => done_on(d), _ => true };
                 if counts { day_expected[i] += 1; range_expected += 1; }
                 if cell == Cell::Done { day_done[i] += 1; range_done += 1; }

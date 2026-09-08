@@ -13,11 +13,13 @@ import {
   newRowId, today, seedFromFilter,
 } from "./CortexViewBlock";
 import { ViewToolbar } from "./ViewToolbar";
+import { TrackerView, TrackerRange } from "./TrackerView";
 import { Dropdown } from "./Dropdown";
-import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon } from "./icons";
+import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon } from "./icons";
 import styles from "./DatabaseView.module.css";
 
 const AGGS = ["", "sum", "avg", "count", "min", "max"];
+const BUCKETS = ["", "day", "week", "month", "year"];
 
 export function viewIcon(type: ViewType, size = 14) {
   switch (type) {
@@ -25,6 +27,7 @@ export function viewIcon(type: ViewType, size = 14) {
     case "calendar": return <CalendarIcon size={size} />;
     case "gallery": return <GalleryIcon size={size} />;
     case "chart": return <ChartIcon size={size} />;
+    case "tracker": return <TrackerIcon size={size} />;
     default: return <TableIcon size={size} />;
   }
 }
@@ -50,6 +53,7 @@ export function DataViews({ source, views, onViewsChange }: Props) {
   const active = views[Math.min(activeIdx, views.length - 1)] ?? views[0];
   const activeSpec = useMemo(() => specFromView(active, source), [active, source]);
   const isChart = active.type === "chart";
+  const isTracker = active.type === "tracker";
 
   // ── data load ──
   const [table, setTable] = useState<ViewTable | null>(null);
@@ -58,13 +62,15 @@ export function DataViews({ source, views, onViewsChange }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
+    // The tracker loads its own data (items + log, computed streaks).
+    if (isTracker) { setTable(null); setChart(null); setError(null); return Promise.resolve(); }
     setLoading(true);
     setError(null);
     const p = isChart
       ? commands.runChart(activeSpec).then((c) => { setChart(c); setTable(null); })
       : commands.runView(activeSpec).then((t) => { setTable(t); setChart(null); });
     return p.catch((e) => setError(String(e))).finally(() => setLoading(false));
-  }, [activeSpec, isChart]);
+  }, [activeSpec, isChart, isTracker]);
   useEffect(() => { reload(); }, [reload]);
 
   // Re-run when a sync pulls teammate changes.
@@ -142,7 +148,7 @@ export function DataViews({ source, views, onViewsChange }: Props) {
 
       {isChart ? (
         <ChartConfigBar view={active} onChange={updateActive} />
-      ) : (
+      ) : isTracker ? null : (
         <ViewToolbar
           spec={activeSpec}
           fields={table?.allColumns ?? []}
@@ -154,7 +160,15 @@ export function DataViews({ source, views, onViewsChange }: Props) {
 
       <div className={styles.content}>
         {error && <div className={styles.error}>{error}</div>}
-        {isChart
+        {isTracker ? (
+          <TrackerView
+            key={active.name}
+            spec={activeSpec}
+            source={source}
+            onRangeChange={(r: TrackerRange) => updateActive({ ...active, range: r })}
+            onLogChange={(l) => updateActive({ ...active, log: l })}
+          />
+        ) : isChart
           ? (chart
               ? (chart.points.length === 0
                   ? <div className={styles.stub}>Set the chart's X and Y fields above.</div>
@@ -222,6 +236,17 @@ function ChartConfigBar({ view, onChange }: { view: ViewDef; onChange: (v: ViewD
           options={[{ value: "line", label: "line" }, { value: "bar", label: "bar" }]}
           onChange={(v) => set({ chartType: v })}
         />
+      </label>
+      <label className={styles.chartField}>By
+        <Dropdown
+          value={view.bucket ?? ""}
+          options={BUCKETS.map((b) => ({ value: b, label: b || "exact x" }))}
+          onChange={(v) => set({ bucket: v || undefined })}
+        />
+      </label>
+      <label className={styles.chartField}>Series
+        <input className={styles.chartInput} value={view.series ?? ""} placeholder="field (one line each)"
+          onChange={(e) => set({ series: e.target.value || undefined })} />
       </label>
     </div>
   );

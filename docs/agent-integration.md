@@ -31,7 +31,9 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex search <words>` | full-text search (prefix match per word) |
 | `cortex show <note> [--body]` | print a note — by path, title, or filename stem |
 | `cortex new <title> [--dir d] [--type t] [--tag t]… [--template x] [--body -]` | create; prints the path |
-| `cortex set <note> key=value… [key=]` | merge typed properties (`3`, `true`, `[a, b]`); `key=` removes |
+| `cortex set <note> key=value… [key+=v] [key-=v] [key=]` | merge typed properties (`3`, `true`, `[a, b]`); `key+=v` / `key-=v` add to or remove from a list; `key=` removes. A missing `collections/<c>/<id>` row is created first from the collection's row template, so a tracker's day file needs no setup |
+| `cortex tracker [<coll>] [--range today\|week\|month\|year] [--at DATE] [--view NAME]` | list the vault's tracker views, or print one as a grid with streaks, week counts and per-day scores (computed, never stored) |
+| `cortex tracker <coll> --log <item> [--date DATE] [--off]` | tick (or untick) one item for a day and print its streak — `cortex tracker habits --log Exercise` |
 | `cortex write <note> < body.md` | replace the body, keep the frontmatter |
 | `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
@@ -60,7 +62,8 @@ same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
 `proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_packs`, `install_pack`,
 `update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can
 install one; every result is a plain file the user sees at once, and `.cortex/packs.yaml` makes it
-undoable), `list_published` (read-only — an agent can see what is marked public but cannot build or
+undoable), `run_view` (any cortex-view spec), `tracker` and `track` (a tracker view's grid with
+streaks, and ticking one item for a day — "I ran today" is one `track` call), `list_published` (read-only — an agent can see what is marked public but cannot build or
 push a site). Its instructions block teaches the agent the vault's
 conventions and the propose-for-review rule.
 

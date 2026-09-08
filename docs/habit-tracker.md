@@ -9,6 +9,15 @@ cannot render today, and lays out the pack and the app features that close
 the gap — in a way that leaves the app better for every other database,
 not just this one.
 
+Status 2026-09-08: built. Everything in section 4 is on the
+`feat/habit-tracker` branch — checkbox cells, row templates that install and
+expand placeholders, local-time dates, multi-collection packs, the `tracker`
+view with its four ranges and keyboard grid, the palette's "Log habit…"
+(`mod+shift+h`), `cortex set … done+=X` and `cortex tracker`, MCP `run_view`
+/ `tracker` / `track`, chart `bucket:` and `series:`, and the pack at 2.0.0
+(marketplace repo branch `habit-tracker-2`, vendored). Not yet done: a
+clicked-through pass in the running app, and the pack's `preview.png`.
+
 The north star applies throughout: files are truth and derived numbers are
 never written into them; every file reads fine in a plain editor; the
 keyboard is the primary input; an agent can log a habit as easily as a
@@ -297,11 +306,11 @@ An agent told "I ran this morning" should need one call.
 - **AGENTS.md** in the pack's README explains the two collections in three
   lines, so an agent reading the vault knows what `done:` means.
 
-### 3.6 What the pack ships
+### 3.6 What the pack ships — shipped as `habit-tracker` 2.0.0 (marketplace branch `habit-tracker-2`)
 
 ```
 habit-tracker/
-├── manifest.yaml                    # version 2.0.0, kind: collection, collections: [habits, habit-log]
+├── manifest.yaml                    # version 2.0.0, kind: collection, collection: habits, collections: [habit-log]
 ├── README.md
 ├── preview.png                      # the week grid in the default palette
 ├── schemas/habits.yaml              # title, icon, category (select), frequency (select), target (number), start (date), archived (checkbox)

@@ -13,8 +13,9 @@ import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, PropType, PropertyDef, ChartResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon } from "./icons";
+import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon, CheckIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
+import { TrackerView } from "./TrackerView";
 import { Dropdown } from "./Dropdown";
 import { ViewToolbar } from "./ViewToolbar";
 import { noteEmbedSpec } from "./NoteEmbedBlock";
@@ -235,8 +236,10 @@ function fmtNum(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
+/** Today's date in the user's own timezone — the same day the calendar shows. */
 export function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function newRowId(): string {
@@ -279,8 +282,18 @@ chartType: line
 x: date
 y: weight`;
 
-/** Dependency-free SVG line/bar chart. Single series; responsive via viewBox. */
+export const STARTER_TRACKER_SPEC = `source: collections/habits
+type: tracker
+log: collections/habit-log
+range: week`;
+
+/** Series colours: the accent first, then the tag palette — theme tokens, never hex. */
+const SERIES_COLORS = ["var(--accent)", "var(--tag-green-fg)", "var(--tag-orange-fg)", "var(--tag-purple-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-brown-fg)", "var(--tag-red-fg)", "var(--tag-blue-fg)"];
+
+/** Dependency-free SVG line/bar chart. One series, or several when the spec
+ *  sets `series:` (lines overlaid, bars grouped). Responsive via viewBox. */
 export function MiniChart({ chart }: { chart: ChartResult }) {
+  if (chart.series && chart.series.length > 1) return <MultiChart chart={chart} />;
   const W = 640, H = 240;
   const padL = 46, padR = 16, padT = 14, padB = 38;
   const innerW = W - padL - padR;
@@ -353,6 +366,87 @@ export function MiniChart({ chart }: { chart: ChartResult }) {
       </svg>
       <div className={styles.count}>{chart.yLabel} by {chart.xLabel} · {n} point{n === 1 ? "" : "s"}</div>
     </div>
+  );
+}
+
+function MultiChart({ chart }: { chart: ChartResult }) {
+  const W = 640, H = 260;
+  const padL = 46, padR = 16, padT = 14, padB = 58;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xs = [...new Set(chart.series.flatMap((s) => s.points.map((p) => p.x)))].sort((a, b) => {
+    const [p, q] = [parseFloat(a), parseFloat(b)];
+    return !isNaN(p) && !isNaN(q) ? p - q : a.localeCompare(b);
+  });
+  const ys = chart.series.flatMap((s) => s.points.map((p) => p.y));
+  let min = Math.min(0, ...ys), max = Math.max(...ys);
+  if (min === max) { max = min + 1; }
+  const span = max - min; max += span * 0.06;
+  const n = xs.length;
+  const isBar = chart.chartType === "bar";
+  const xAt = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const yAt = (v: number) => padT + innerH - ((v - min) / (max - min)) * innerH;
+  const slot = innerW / Math.max(1, n);
+  const bw = Math.max(1, (slot * 0.7) / chart.series.length);
+  const ticks = 3;
+  const labelEvery = Math.max(1, Math.ceil(n / 6));
+  return (
+    <div className={styles.chartWrap}>
+      <svg className={styles.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        {Array.from({ length: ticks + 1 }, (_, i) => {
+          const v = min + ((max - min) * i) / ticks;
+          return (
+            <g key={i}>
+              <line x1={padL} x2={W - padR} y1={yAt(v)} y2={yAt(v)} className={styles.grid} />
+              <text x={padL - 6} y={yAt(v) + 3} textAnchor="end" className={styles.axisLabel}>{fmtNum(v)}</text>
+            </g>
+          );
+        })}
+        {chart.series.map((s, si) => {
+          const byX = new Map(s.points.map((p) => [p.x, p.y]));
+          const color = SERIES_COLORS[si % SERIES_COLORS.length];
+          if (isBar) {
+            return xs.map((x, i) => {
+              const y = byX.get(x) ?? 0;
+              const x0 = padL + i * slot + (slot - bw * chart.series.length) / 2 + si * bw;
+              return <rect key={`${si}-${x}`} x={x0} y={yAt(y)} width={bw} height={Math.max(0, yAt(min) - yAt(y))} fill={color} opacity={0.9} rx={1} />;
+            });
+          }
+          const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yAt(byX.get(x) ?? 0)}`).join(" ");
+          return <path key={si} d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />;
+        })}
+        {xs.map((x, i) => (i % labelEvery === 0 || i === n - 1) && (
+          <text key={x} x={isBar ? padL + i * slot + slot / 2 : xAt(i)} y={H - padB + 16} textAnchor="middle" className={styles.axisLabel}>{x}</text>
+        ))}
+        {chart.series.map((s, si) => (
+          <g key={`l${si}`} transform={`translate(${padL + si * 100}, ${H - 14})`}>
+            <rect width={10} height={10} rx={2} fill={SERIES_COLORS[si % SERIES_COLORS.length]} />
+            <text x={14} y={9} className={styles.axisLabel}>{s.name.length > 12 ? s.name.slice(0, 11) + "…" : s.name}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/** A real checkbox for bool columns: one click flips it and writes a typed
+ *  bool; Space toggles when focused. */
+function CheckboxCell({ value, editable, saving, onCommit }: {
+  value: unknown; editable: boolean; saving: boolean; onCommit: (v: string) => void;
+}) {
+  const on = value === true || value === "true";
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      className={`${styles.checkbox} ${on ? styles.checkboxOn : ""}`}
+      disabled={!editable || saving}
+      onClick={(e) => { e.stopPropagation(); onCommit(on ? "false" : "true"); }}
+      title={on ? "Yes — click to clear" : "No — click to tick"}
+    >
+      {on && <CheckIcon size={11} />}
+    </button>
   );
 }
 
@@ -463,6 +557,16 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
             commands.upsertProperty(schemaKey, { name: c.key, type: c.schema!.type, options: opts })
               .then(onChanged).catch((e) => setErr(String(e)));
           } : undefined}
+        />
+      );
+    }
+    if (c.ty === "bool" || c.schema?.type === "checkbox") {
+      return (
+        <CheckboxCell
+          value={row.cells[c.key]}
+          editable={c.key !== "$body" && c.key !== "id"}
+          saving={savingKey === `${row.id}:${c.key}`}
+          onCommit={(v) => commit(c, row.id, v, "bool")}
         />
       );
     }
@@ -961,6 +1065,7 @@ function specWithType(spec: string, newType: string, table: ViewTable | null): s
   let s = specSet(spec, "type", newType);
   if (newType === "board" && !peek(s, "group")) s = specSet(s, "group", pickGroupField(table));
   if (newType === "chart" && !peek(s, "chartType")) s = specSet(s, "chartType", "line");
+  if (newType === "tracker" && !peek(s, "range")) s = specSet(s, "range", "week");
   return s;
 }
 
@@ -974,6 +1079,7 @@ const VIEW_TYPE_OPTIONS: { type: string; label: string; render: (s: number) => R
   { type: "calendar", label: "Calendar", render: (s) => <CalendarIcon size={s} /> },
   { type: "gallery", label: "Gallery", render: (s) => <GalleryIcon size={s} /> },
   { type: "chart", label: "Chart", render: (s) => <ChartIcon size={s} /> },
+  { type: "tracker", label: "Tracker", render: (s) => <TrackerIcon size={s} /> },
 ];
 
 /** A dropdown to pick the view type — current type shown, the rest tucked away
@@ -1033,6 +1139,7 @@ export function BoardSetup({ table, onPick }: { table: ViewTable | null; onPick:
 }
 
 const CHART_AGGS = ["", "sum", "avg", "count", "min", "max"];
+const CHART_BUCKETS = ["", "day", "week", "month", "year"];
 
 /** Inline chart configuration, so charts never need raw spec editing. */
 function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string) => void }) {
@@ -1066,6 +1173,17 @@ function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string
           onChange={(v) => commit("chartType", v)}
         />
       </label>
+      <label className={styles.chartField}>By
+        <Dropdown
+          value={peek(spec, "bucket") ?? ""}
+          options={CHART_BUCKETS.map((b) => ({ value: b, label: b || "exact x" }))}
+          onChange={(v) => commit("bucket", v)}
+        />
+      </label>
+      <label className={styles.chartField}>Series
+        <input className={styles.chartInput} defaultValue={peek(spec, "series") ?? ""} placeholder="field (one line each)"
+          onBlur={(e) => commit("series", e.target.value.trim())} />
+      </label>
     </div>
   );
 }
@@ -1080,6 +1198,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   const isBoard = declaredType === "board";
   const isCalendar = declaredType === "calendar";
   const isGallery = declaredType === "gallery";
+  const isTracker = declaredType === "tracker";
 
   const [table, setTable] = useState<ViewTable | null>(null);
   const [chart, setChart] = useState<ChartResult | null>(null);
@@ -1098,6 +1217,8 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
       setError(null);
       return Promise.resolve();
     }
+    // The tracker loads its own data (two collections, computed streaks).
+    if (isTracker) { setTable(null); setChart(null); setError(null); return Promise.resolve(); }
     setLoading(true);
     setError(null);
     const p = isChart
@@ -1106,7 +1227,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
     return p
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [spec, isChart]);
+  }, [spec, isChart, isTracker]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -1152,7 +1273,15 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
       {/* Per-type controls: table/board/calendar/gallery get the filter toolbar;
           charts get the inline X/Y config. */}
       {!editing && isChart && <ChartConfig spec={spec} onChange={applySpec} />}
-      {!editing && !isChart && !needsGroup && (
+      {!editing && isTracker && (
+        <TrackerView
+          spec={spec}
+          source={source}
+          onRangeChange={(r) => applySpec(specSet(spec, "range", r))}
+          onLogChange={(l) => applySpec(specSet(spec, "log", l))}
+        />
+      )}
+      {!editing && !isChart && !isTracker && !needsGroup && (
         <ViewToolbar
           spec={spec}
           fields={table?.allColumns ?? []}
@@ -1174,7 +1303,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
 
       {/* Keep the last-loaded data mounted across a refresh so add/remove/drag
           update in place instead of flashing a "Loading…" stub. */}
-      {!editing && !error && !needsGroup && !needsChartFields && (isChart
+      {!editing && !error && !needsGroup && !needsChartFields && !isTracker && (isChart
         ? (chart
             ? (chart.points.length === 0
                 ? <div className={styles.stub}>No data points yet.</div>
@@ -1258,6 +1387,13 @@ export function cortexSlashItems(editor: any): DefaultReactSuggestionItem[] {
       aliases: ["chart", "graph", "plot"],
       group: "Data",
       onItemClick: () => insert(STARTER_CHART_SPEC, "cortex-chart"),
+    },
+    {
+      title: "Tracker",
+      subtext: "Habits × days with streaks, from a collection and its daily log",
+      aliases: ["tracker", "habit", "habits", "streak", "heatmap"],
+      group: "Data",
+      onItemClick: () => insert(STARTER_TRACKER_SPEC, "cortex-view"),
     },
   ];
 }

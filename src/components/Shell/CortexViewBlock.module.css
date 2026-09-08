@@ -966,3 +966,16 @@
   background: var(--border);
   margin: 3px 2px;
 }
+
+/* Checkbox cells: one click, a typed bool. */
+.checkbox {
+  width: 16px; height: 16px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--border-focus); border-radius: 4px;
+  background: var(--bg-app); color: var(--text-inverse); cursor: pointer;
+  vertical-align: middle; transition: background 0.1s, border-color 0.1s;
+}
+.checkbox:hover { border-color: var(--accent); }
+.checkboxOn { background: var(--accent); border-color: var(--accent); }
+.checkbox:disabled { cursor: default; opacity: 0.6; }
+.checkbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

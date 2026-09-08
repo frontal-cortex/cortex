@@ -158,6 +158,16 @@ struct ViewDocView {
     agg: Option<String>,
     #[serde(rename = "chartType", skip_serializing_if = "Option::is_none", default)]
     chart_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    bucket: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    series: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    log: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    done: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    range: Option<String>,
 }
 
 fn default_table() -> String { "table".into() }
@@ -195,6 +205,16 @@ struct RawDoc {
     agg: Option<String>,
     #[serde(rename = "chartType", default)]
     chart_type: Option<String>,
+    #[serde(default)]
+    bucket: Option<String>,
+    #[serde(default)]
+    series: Option<String>,
+    #[serde(default)]
+    log: Option<String>,
+    #[serde(default)]
+    done: Option<String>,
+    #[serde(default)]
+    range: Option<String>,
 }
 
 /// Parse an embedded block's spec into a multi-view document. A legacy single
@@ -216,6 +236,11 @@ pub fn parse_view_doc(spec: String) -> Result<ViewDoc> {
             y: raw.y,
             agg: raw.agg,
             chart_type: raw.chart_type,
+            bucket: raw.bucket,
+            series: raw.series,
+            log: raw.log,
+            done: raw.done,
+            range: raw.range,
         }],
     };
     for v in &mut views {
