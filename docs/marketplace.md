@@ -6,9 +6,11 @@ a contributor flow. Everything a pack installs is Markdown and YAML — the
 same materials a vault is already made of — so a template is never a black
 box, never code, and keeps working in any other Markdown tool.
 
-Status 2026-09-08: ten packs drafted under `marketplace/` in this repo by the
-overnight orchestrator (not yet committed). No installer, no UI, no remote
-repo. Section 1 reviews the draft; the rest is the plan.
+Status 2026-09-08: phase 0 done — eleven packs under `marketplace/` in the
+v1 format (section 3), every finding in section 1 applied, an index
+generated from the manifests, `tiers.yaml` and `featured.yaml`. No installer,
+no UI, no remote repo yet (phases 1–5). Section 1 is kept as the record of
+what the first draft got wrong.
 
 ---
 

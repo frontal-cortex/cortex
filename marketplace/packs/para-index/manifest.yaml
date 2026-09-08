@@ -1,0 +1,17 @@
+format: 1
+id: para-index
+name: "PARA Index"
+version: 1.0.0
+kind: note
+summary: "Projects, Areas, Resources, Archive as one index note — the second-brain backbone."
+description: |
+  Everything you keep falls into one of four buckets, sorted by how actionable it is right now rather than by topic. This is the index note that holds the buckets; each entry is a wiki link to a real note. Review it weekly: finished projects move to Archive, a resource that just became actionable becomes a project.
+tags: [second-brain, para, index]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The PARA method by Tiago Forte (Building a Second Brain)."
+min_cortex: 0.1.0
+files:
+  - templates/para-index.md

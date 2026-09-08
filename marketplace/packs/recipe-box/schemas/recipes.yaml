@@ -1,0 +1,29 @@
+properties:
+  - name: cuisine
+    type: select
+    options:
+      - name: italian
+        color: red
+      - name: mexican
+        color: green
+      - name: asian
+        color: yellow
+      - name: american
+        color: blue
+      - name: other
+        color: gray
+  - name: prep_minutes
+    type: number
+  - name: rating
+    type: select
+    options:
+      - name: "★"
+        color: gray
+      - name: "★★"
+        color: gray
+      - name: "★★★"
+        color: yellow
+      - name: "★★★★"
+        color: yellow
+      - name: "★★★★★"
+        color: yellow

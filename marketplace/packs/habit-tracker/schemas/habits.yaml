@@ -1,0 +1,28 @@
+properties:
+  - name: habit
+    type: select
+    options:
+      - name: exercise
+        color: green
+      - name: read
+        color: blue
+      - name: sleep_by_11
+        color: purple
+      - name: no_phone_in_bed
+        color: gray
+  - name: week
+    type: date
+  - name: mon
+    type: checkbox
+  - name: tue
+    type: checkbox
+  - name: wed
+    type: checkbox
+  - name: thu
+    type: checkbox
+  - name: fri
+    type: checkbox
+  - name: sat
+    type: checkbox
+  - name: sun
+    type: checkbox

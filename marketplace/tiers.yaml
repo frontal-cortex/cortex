@@ -1,0 +1,13 @@
+# Trust tier per pack, set by maintainers — not by the pack's own manifest.
+# official | verified | community
+daily-note: official
+weekly-review: official
+meeting-notes: official
+one-on-one: official
+para-index: official
+tasks: official
+project-tracker: official
+reading-list: official
+habit-tracker: official
+budget-tracker: official
+recipe-box: official

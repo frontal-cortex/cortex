@@ -1,0 +1,17 @@
+format: 1
+id: daily-note
+name: "Daily Note"
+version: 1.0.0
+kind: note
+summary: "A focused daily log: top three priorities, a running log, a short reflection."
+description: |
+  The one template every note-taking app is built around. Three priorities at the top so the day has a shape, a log to capture as you go, and a two-minute reflection at the end that feeds the weekly review. Wire it to Today by setting `journal_template: daily.md`.
+tags: [productivity, journal, daily]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The shape shared by Obsidian's daily notes and Notion's daily journal templates."
+min_cortex: 0.1.0
+files:
+  - templates/daily.md

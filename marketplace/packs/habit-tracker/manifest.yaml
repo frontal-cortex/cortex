@@ -1,0 +1,21 @@
+format: 1
+id: habit-tracker
+name: "Habit Tracker"
+version: 1.0.0
+kind: collection
+summary: "One row per habit per week, a checkbox per day — history kept, calendar view included."
+description: |
+  The simplest habit tracker that keeps working: each week, add a row per habit (New row, pick the habit, the week's Monday is the date). Tick the days. Because every week is its own row, the calendar view shows the history and nothing has to be reset. Review it in the Weekly Review.
+tags: [health, habits, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "Habit trackers from Notion's gallery, remodelled so history is kept."
+min_cortex: 0.1.0
+collection: habits
+files:
+  - templates/habits.md
+  - schemas/habits.yaml
+  - index.md
+  - seed/example-week.md

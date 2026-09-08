@@ -1,0 +1,17 @@
+format: 1
+id: one-on-one
+name: "1:1 Notes"
+version: 1.0.0
+kind: note
+summary: "A running note per person: talking points that carry over, dated entries below."
+description: |
+  One note per person for recurring 1:1s, mentorship, or just keeping up with someone. Each meeting adds a dated block at the top; older ones stay below, so context carries forward instead of being reinvented each time. Link the person with a wiki link so the note shows up in their backlinks.
+tags: [work, people, meetings]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The 1:1 template pattern from Notion's team galleries and Obsidian's people notes."
+min_cortex: 0.1.0
+files:
+  - templates/one-on-one.md

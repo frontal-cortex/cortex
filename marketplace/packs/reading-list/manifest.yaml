@@ -1,0 +1,21 @@
+format: 1
+id: reading-list
+name: "Reading List"
+version: 1.0.0
+kind: collection
+summary: "Books and articles with status, rating and dates; each row is a full reading note."
+description: |
+  A reading database rather than a loose note: to-read, reading, finished as a board; a rating; started and finished dates. Each row opens into a reading note — why you picked it up, key ideas, quotes worth keeping, how you will use it — so the list and the notes live in one place.
+tags: [reading, notes, second-brain, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The reading-list databases in Notion's gallery and Obsidian's literature notes."
+min_cortex: 0.1.0
+collection: reading
+files:
+  - templates/reading.md
+  - schemas/reading.yaml
+  - index.md
+  - seed/example-book.md

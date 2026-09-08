@@ -1,0 +1,21 @@
+format: 1
+id: tasks
+name: "Tasks"
+version: 1.0.0
+kind: collection
+summary: "A to-do database: status, priority, due date, project — with board and calendar views."
+description: |
+  The most-used database there is. One row per task with a status board (To do / Doing / Done), a priority, a due date the calendar view shows, and a free-text project field to group by. Start here if you use one database only.
+tags: [productivity, tasks, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The task databases in Notion's gallery and the purpose of the Obsidian Tasks plugin."
+min_cortex: 0.1.0
+collection: tasks
+files:
+  - templates/tasks.md
+  - schemas/tasks.yaml
+  - index.md
+  - seed/example-task.md

@@ -1,0 +1,21 @@
+format: 1
+id: recipe-box
+name: "Recipe Box"
+version: 1.0.0
+kind: collection
+summary: "Recipes with cuisine, prep time and rating; ingredients and steps in the note body."
+description: |
+  A recipe database: filter by cuisine on the board, sort by prep time, rate what you cooked. Each row is the recipe itself — ingredients and steps in the body — so the gallery view is a cookbook.
+tags: [personal, food, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "A perennial gallery favourite in both apps."
+min_cortex: 0.1.0
+collection: recipes
+files:
+  - templates/recipes.md
+  - schemas/recipes.yaml
+  - index.md
+  - seed/example-recipe.md

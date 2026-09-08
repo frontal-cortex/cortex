@@ -1,0 +1,17 @@
+format: 1
+id: weekly-review
+name: "Weekly Review"
+version: 1.0.0
+kind: note
+summary: "A Sunday review: wins, what slipped, open loops, next week's focus."
+description: |
+  The habit that keeps any note system alive. Look back at the week, close what can be closed, pick three things for the next one. Pairs with Daily Note (reflections feed in) and the PARA index (move finished projects to Archive).
+tags: [productivity, review, journal]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The weekly review from Getting Things Done, as practised in both communities."
+min_cortex: 0.1.0
+files:
+  - templates/weekly-review.md

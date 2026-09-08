@@ -1,0 +1,25 @@
+properties:
+  - name: status
+    type: status
+    options:
+      - name: not_started
+        color: gray
+      - name: in_progress
+        color: blue
+      - name: blocked
+        color: red
+      - name: done
+        color: green
+  - name: priority
+    type: select
+    options:
+      - name: low
+        color: gray
+      - name: medium
+        color: yellow
+      - name: high
+        color: red
+  - name: deadline
+    type: date
+  - name: next_action
+    type: text

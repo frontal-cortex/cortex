@@ -1,0 +1,21 @@
+format: 1
+id: project-tracker
+name: "Project Tracker"
+version: 1.0.0
+kind: collection
+summary: "A solo-friendly project database: status, priority, deadline, next action."
+description: |
+  What is the project, what is next, what is stalled. Deliberately four properties, not fifteen: a status board, a priority, a deadline for the calendar, and a single next action so a stalled project is obvious. Pair with Tasks by naming the project in each task's project field.
+tags: [work, projects, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The project tracker that tops Notion's gallery, cut down to the solo version."
+min_cortex: 0.1.0
+collection: projects
+files:
+  - templates/projects.md
+  - schemas/projects.yaml
+  - index.md
+  - seed/example-project.md
