@@ -346,10 +346,10 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     }
 
     {
-      const pid = section("databases", "Databases");
+      const pid = section("databases", "Collections");
       if (pid) {
         if (collections.length === 0) {
-          out.push({ id: "action:databases-empty", kind: "action", label: "Create a database", depth: 1, parentId: pid, run: onNewCollection });
+          out.push({ id: "action:databases-empty", kind: "action", label: "Create a collection", depth: 1, parentId: pid, run: onNewCollection });
         } else {
           for (const name of collections) {
             out.push({ id: `collections/${name}/_index.md`, kind: "collection", label: name, depth: 1, parentId: pid, path: `collections/${name}/_index.md`, run: () => onOpenCollection(name) });
@@ -623,9 +623,9 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
             <Section
               {...sectionProps("databases")}
-              label="Databases"
+              label="Collections"
               count={collections.length}
-              actions={[{ title: "New database", icon: <PlusIcon size={13} />, run: onNewCollection }]}
+              actions={[{ title: "New collection", icon: <PlusIcon size={13} />, run: onNewCollection }]}
             >
               {collections.length === 0
                 ? <ActionRow
@@ -633,7 +633,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                     a11y={a11y}
                     depth={0}
                     icon={<DatabaseIcon size={13} />}
-                    text="No databases"
+                    text="No collections"
                     action="Create one"
                     title="Tabbed table, board and calendar views over your notes"
                     onClick={onNewCollection}
@@ -693,7 +693,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                   depth={0}
                   icon={<SparkleIcon size={12} />}
                   action="Get more templates"
-                  title="Browse the template marketplace — note templates and databases, installed as plain files"
+                  title="Browse the template marketplace — note templates and collections, installed as plain files"
                   onClick={onOpenMarketplace}
                 />
               )}
@@ -758,7 +758,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
           <button
             className={styles.footerBtn}
             onClick={onOpenMarketplace}
-            title={`Browse templates (${shortcutFor("marketplace")}) — note templates and databases, installed as plain files`}
+            title={`Browse templates (${shortcutFor("marketplace")}) — note templates and collections, installed as plain files`}
           >
             <SparkleIcon size={15} />
             <span>Templates</span>

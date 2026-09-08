@@ -34,8 +34,8 @@ const RECORD_FILE = ".cortex/packs.yaml";
 
 type Filter = "all" | "installed" | "updates" | `kind:${PackKind}` | `tag:${string}`;
 
-const KIND_LABEL: Record<PackKind, string> = { note: "Note templates", collection: "Databases", bundle: "Bundles" };
-const KIND_ONE: Record<PackKind, string> = { note: "Note template", collection: "Database", bundle: "Bundle" };
+const KIND_LABEL: Record<PackKind, string> = { note: "Note templates", collection: "Collections", bundle: "Bundles" };
+const KIND_ONE: Record<PackKind, string> = { note: "Note template", collection: "Collection", bundle: "Bundle" };
 const TIER_LABEL: Record<PackTier, string> = { official: "Official", verified: "Verified", community: "Community" };
 const TIER_HINT: Record<PackTier, string> = {
   official: "Written or adopted by the Cortex team and bundled with the app.",
@@ -241,7 +241,7 @@ export function MarketplaceView({ onClose, onChanged }: Props) {
           ) : (
             <Grid
               title={q ? `Results for “${query}”` : filter === "all" ? "All templates" : filter === "installed" ? "Installed" : filter === "updates" ? "Updates" : filter.startsWith("kind:") ? KIND_LABEL[filter.slice(5) as PackKind] : `#${filter.slice(4)}`}
-              blurb={filter === "all" && !q ? "Note templates and databases, as Markdown and YAML — readable in any editor, never code." : undefined}
+              blurb={filter === "all" && !q ? "Note templates and collections, as Markdown and YAML — readable in any editor, never code." : undefined}
               entries={shown}
               onOpen={setOpenId}
               onChanged={() => { onChanged(); load(false); }}

@@ -109,8 +109,8 @@ export function QuickSwitcher({
       },
       {
         id: "new-database",
-        label: "New database",
-        description: "Tabbed table / board / calendar over notes",
+        label: "New collection",
+        description: "A folder of notes with table / board / calendar / tracker views — and prose around them",
         icon: <BrainIcon size={14} />,
         run: () => { onNewCollection(); onClose(); },
       },

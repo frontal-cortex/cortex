@@ -9,7 +9,6 @@
 // boundary, so we never depend on BlockNote's lossy custom-block serializer.
 
 import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
-import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, PropType, PropertyDef, ChartResult } from "../../lib/commands";
@@ -18,8 +17,6 @@ import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
 import { Dropdown } from "./Dropdown";
 import { ViewToolbar } from "./ViewToolbar";
-import { noteEmbedSpec } from "./NoteEmbedBlock";
-import { calloutSpec } from "./CalloutBlock";
 import styles from "./CortexViewBlock.module.css";
 
 /** Select-like columns render as colored pills (incl. person + relation). */
@@ -1126,7 +1123,7 @@ export function BoardSetup({ table, onPick }: { table: ViewTable | null; onPick:
       <BoardIcon size={22} />
       <div className={styles.setupTitle}>Group cards by a property</div>
       {fields.length === 0
-        ? <div className={styles.setupHint}>Add a property (like a Status) to this database first.</div>
+        ? <div className={styles.setupHint}>Add a property (like a Status) to this collection first.</div>
         : (
           <div className={styles.setupChips}>
             {fields.map((c) => (
@@ -1324,7 +1321,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   );
 }
 
-const cortexViewSpec = createReactBlockSpec(
+export const cortexViewSpec = createReactBlockSpec(
   {
     type: "cortexView",
     propSchema: {
@@ -1339,14 +1336,6 @@ const cortexViewSpec = createReactBlockSpec(
 )();
 
 /** Editor schema = all default blocks + our in-memory view block. */
-export const cortexSchema = BlockNoteSchema.create({
-  blockSpecs: {
-    ...defaultBlockSpecs,
-    cortexView: cortexViewSpec,
-    noteEmbed: noteEmbedSpec,
-    callout: calloutSpec,
-  },
-});
 
 /** Slash-menu items that insert a starter data block at the cursor. */
 export function cortexSlashItems(editor: any): DefaultReactSuggestionItem[] {
