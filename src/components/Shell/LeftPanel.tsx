@@ -754,6 +754,16 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
       {/* ── Footer (under the change log) ───────────────────────── */}
       <div className={styles.footer}>
+        {onOpenMarketplace && (
+          <button
+            className={styles.footerBtn}
+            onClick={onOpenMarketplace}
+            title={`Browse templates (${shortcutFor("marketplace")}) — note templates and databases, installed as plain files`}
+          >
+            <SparkleIcon size={15} />
+            <span>Templates</span>
+          </button>
+        )}
         <button className={styles.footerBtn} onClick={onOpenSettings} title={`Settings (${shortcutFor("settings")})`}>
           <GearIcon size={15} />
           <span>Settings</span>
