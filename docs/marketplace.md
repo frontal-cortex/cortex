@@ -1,131 +1,382 @@
-# Template marketplace — plan
+# Template marketplace — the full plan
 
-Give a new vault the ten templates people actually reach for in Notion and
-Obsidian, installable in one click, in the same materials a vault is already
-made of: Markdown and YAML. No plugins, no JavaScript, nothing that stops
-working if the user leaves Cortex.
+From a marketplace repository of curated packs, through installation,
+updates and removal, to community submissions with review, trust tiers and
+a contributor flow. Everything a pack installs is Markdown and YAML — the
+same materials a vault is already made of — so a template is never a black
+box, never code, and keeps working in any other Markdown tool.
 
-Status: content drafted (`marketplace/`, 2026-09-08, ten packs). Installer,
-UI, and distribution not started.
+Status 2026-09-08: ten packs drafted under `marketplace/` in this repo by the
+overnight orchestrator (not yet committed). No installer, no UI, no remote
+repo. Section 1 reviews the draft; the rest is the plan.
 
-## The ten packs
+---
 
-What the two apps' galleries and community lists converge on, and what Cortex
-already has the machinery for (templates with `{{date}}`-style variables,
-typed-property schemas, collections with table / board / calendar views).
+## 1. Review of the current draft
 
-| # | Pack | Kind | Where it comes from | Status |
-|---|------|------|---------------------|--------|
-| 1 | Daily note | note | Obsidian's core habit; Notion "Daily journal" | drafted |
-| 2 | Weekly review | note | Both; GTD lineage | drafted |
-| 3 | Meeting notes | note | Notion's most-duplicated work template | drafted |
-| 4 | Book / reading notes | note | Notion reading list; Obsidian literature note | drafted |
-| 5 | 1:1 / person note | note | Notion 1:1; Obsidian "people" notes | drafted |
-| 6 | PARA index | note | Building a Second Brain; both communities | drafted |
-| 7 | Project tracker | database | Notion's #1 database template | drafted |
-| 8 | Habit tracker | database | Notion; Obsidian Dataview equivalents | drafted |
-| 9 | Budget / expense tracker | database | Notion finance templates | drafted |
-| 10 | **Tasks** | database | Notion's most-used database of all; Obsidian Tasks plugin | **replace Recipe Box** |
+**Keep.** The format is right in spirit: a pack is a folder with a manifest,
+`templates/`, `schemas/`, `seed/`. The pack choice is close to the real top
+ten. Descriptions explain *why* a template exists, which the galleries of
+both apps mostly fail to do.
 
-Recipe Box is charming but is not a top-ten template anywhere. A Tasks
-database (title, status, priority, due, project) with a board view is, and
-it exercises the calendar view. Keep Recipe Box in the repo as pack eleven;
-the catalog is not limited to ten.
+**Fix before anything ships.**
 
-Near misses worth a second batch: content calendar, job-applications
-tracker, contacts / lightweight CRM, goals / OKRs, Zettelkasten literature
-note, map of content (MOC).
+| Finding | Where | Fix |
+|---|---|---|
+| Database packs have no views. A schema and a seed row make a table with no `_index.md`, so the collection gets no table / board / calendar and does not even appear as a database until something creates that file. The views are half of what a Notion database template *is*. | all four `kind: collection` packs | Each ships `index.md` → `collections/<name>/_index.md` with `views:`. |
+| No row template. New row from the pack's table has no shape; the pack is also invisible under New from template. | collection packs | Each ships `templates/<name>.md` with the schema's properties pre-filled. |
+| Seed rows hardcode `created: 2026-09-08`. | all `seed/*.md` | Use `{{today}}`, substituted at install (the starter vault already does this). |
+| `created: {{date}}` and `title: "1:1 — {{title}}"` — the first is unquoted. `{{…}}` unquoted is a YAML flow mapping; the app tolerates it (it substitutes before parsing, and the sidebar falls back to the filename) but the vault's own docs say to quote placeholders. | daily, meeting, book, one-on-one, para | Quote every placeholder in frontmatter. `lint` enforces it. |
+| Habit tracker models "this week" as seven checkbox columns. It needs a manual reset every week and keeps no history, so the calendar view and any streak are meaningless. | habit-tracker | One row per habit per week: `habit` (select or relation), `week` (date, Monday), the seven checkboxes, `streak` dropped (compute later, or leave to the weekly review). Calendar view on `week`. |
+| Meeting notes carries `attendees: []` in frontmatter *and* a bold "Attendees:" line in the body. | meeting-notes | Keep one. Frontmatter `attendees` as a `person` property once Members exist; body line otherwise. |
+| Book notes is a note, but the Notion original (and what people want) is a reading *list*: a database with status, rating, author, dates. | book-notes | Make it a collection pack (`reading-list`) whose row template is the current note. |
+| Recipe Box is not a top-ten template anywhere. | catalog | Replace with **Tasks** (title, status, priority, due, project) — Notion's most-used database and the Obsidian Tasks plugin's whole purpose. Keep Recipe Box as pack eleven. |
+| Descriptions name third-party products and people ("Thomas Frank's Ultimate Brain", "Wine Tracker in every roundup"). Fine as *inspiration*, risky as marketing copy on a marketplace. | book-notes, para-index, recipe-box, budget | Move attribution to a `credits:` field in the manifest; descriptions describe the pack. |
+| `index.yaml` duplicates every manifest by hand and will drift. | `marketplace/index.yaml` | Generated from manifests by `cortex packs index`; CI fails if stale. |
+| `manifest.yaml` lacks the fields a marketplace needs: license, minimum app version, homepage, preview, credits, a schema version. | all manifests | See the format in section 3. |
+| The README says packs "install straight into a vault". Nothing installs them yet. | `marketplace/README.md` | Becomes the contributor guide in the marketplace repo (section 4). |
 
-## What a pack is
+**The ten**, after the swaps: daily note, weekly review, meeting notes,
+1:1 person note, PARA index (notes); tasks, project tracker, reading list,
+habit tracker, budget tracker (databases). Recipe Box is eleven. Second
+batch: content calendar, job applications, contacts, goals / OKRs,
+Zettelkasten literature note, map of content.
+
+---
+
+## 2. Principles
+
+1. **Packs are data, never code.** Markdown, YAML, and images. No scripts,
+   no plugins, no network at note-creation time. This is what makes a
+   community marketplace safe to run without sandboxing anything.
+2. **Every installed file is visible and ordinary.** It lands in
+   `templates/`, `.cortex/schemas/`, `collections/<name>/`. The user can
+   read it, edit it, commit it, delete it. Uninstall removes only what
+   install wrote and only if it is unchanged.
+3. **Nothing installs, updates, or phones home on its own.** Install is a
+   click or a command. Updates are offered, never applied. The index is
+   fetched when the user opens the marketplace, not on launch.
+4. **Bundled first.** The official packs ship inside the app, so the first
+   release, an offline machine, and a locked-down company laptop all work.
+   The network is an addition, not a dependency.
+5. **Same code everywhere.** Catalog, install, lint live in `cortex-core`;
+   the CLI, the MCP server, the app, and the marketplace repo's CI all call
+   the same functions. A pack that passes `cortex packs lint` locally passes
+   in CI.
+6. **One index format, any host.** The app reads an `index.json` from a URL.
+   Point it at the official one, a fork, or a company's own registry — a
+   team marketplace is a setting, not a product.
+
+---
+
+## 3. The pack format (v1)
 
 ```
-marketplace/packs/<id>/
-├── manifest.yaml     # id, name, description, kind, tags, version, files
-├── templates/*.md    # → <vault>/templates/            (note packs, and the row template of database packs)
-├── schemas/*.yaml    # → <vault>/.cortex/schemas/      (database packs)
-├── index.md          # → <vault>/collections/<name>/_index.md  (views: table / board / calendar)  ← missing today
-└── seed/*.md         # → <vault>/collections/<name>/   (one or two rows so the table is not empty)
+<id>/
+├── manifest.yaml
+├── README.md              # long description, shown on the pack's page (optional)
+├── preview.png            # card image, ≤ 200 KB (optional)
+├── templates/*.md         # → <vault>/templates/
+├── schemas/*.yaml         # → <vault>/.cortex/schemas/          (collection packs)
+├── index.md               # → <vault>/collections/<name>/_index.md   (collection packs)
+└── seed/*.md              # → <vault>/collections/<name>/            (collection packs)
 ```
 
-Two additions to the drafted format:
+```yaml
+# manifest.yaml
+format: 1                       # manifest format version; the app refuses unknown majors
+id: tasks                       # [a-z0-9-], unique across the index, equals the folder name
+name: Tasks
+version: 1.2.0                  # semver; must increase whenever any file changes
+kind: collection                # note | collection | bundle (several packs installed together)
+summary: A to-do database with board and calendar views.   # one line, ≤ 120 chars, no product names
+description: |                  # a paragraph; Markdown allowed
+  …
+tags: [productivity, tasks, database]
+author:
+  name: Cortex team
+  url: https://github.com/frontal-cortex
+license: CC0-1.0                # SPDX id; CC0-1.0 or CC-BY-4.0 for official packs
+credits: "Inspired by the task databases in Notion's gallery and the Obsidian Tasks plugin."
+min_cortex: 0.3.0               # lowest app version whose schema/view features the pack needs
+collection: tasks               # collection packs: the folder under collections/
+files:                          # every file, so lint can catch strays and install knows what it wrote
+  - templates/task.md
+  - schemas/tasks.yaml
+  - index.md
+  - seed/example-task.md
+```
 
-- **`index.md` with views** for database packs. Today the four database
-  packs ship a schema and a seed row but no `_index.md`, so nothing gives the
-  collection its table / board / calendar views. The views are half the value
-  of a Notion database template; each pack should declare them.
-- **A row template** for database packs (`templates/<name>.md` with the
-  schema's properties pre-filled), so "New row" from the pack's table has the
-  right shape and the template also appears under New from template.
+Rules `lint` enforces:
 
-Everything a pack installs is a plain file the user can read, edit, commit,
-and delete. That is the whole pitch: a template is not a black box.
+- Only `.md`, `.yaml`, `.png`, `.jpg`, `.webp`, `.svg` files; only under the
+  five known folders; no path with `..`, no absolute paths, no symlinks; total
+  ≤ 2 MB, images ≤ 200 KB each.
+- Every file listed in `files`, every listed file present, nothing unlisted.
+- Frontmatter parses with placeholders quoted; only known placeholders
+  (`{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}` in templates; `{{today}}`
+  in seeds); schema property types are ones the app knows; every view in
+  `index.md` references properties that exist in the schema; seed rows use
+  only schema properties.
+- No raw HTML in Markdown beyond a small allow-list (`<br>`, `<sub>`,
+  `<sup>`, comments). Published sites render Markdown, so raw HTML is the one
+  place a pack could carry something that runs in a browser.
+- `id` matches the folder; `version` is valid semver and, in CI, greater than
+  the version already in the index when any file changed.
+- `summary` and `name` do not contain third-party product names (a word list,
+  warning not error).
 
-## Installing
+`kind: bundle` lists other pack ids in `includes:` and installs them in order
+(e.g. "Second Brain starter" = PARA index + tasks + project tracker + weekly
+review). Bundles own no files of their own.
 
-`cortex_core::marketplace`:
+---
 
-- `catalog()` — the packs bundled into the binary (the way the starter vault
-  is bundled: compiled in, works offline, versioned with the app). The
-  `marketplace/` directory in the repo is the source of truth; a build step
-  embeds it.
-- `install(root, id, force)` — copies the pack's files into the vault. Never
-  overwrites an existing file unless forced; reports every path written.
-  Records the install in `.cortex/packs.yaml` (`id`, `version`, `files`), so
-  `remove` can delete exactly what was installed and nothing the user added
-  since, and so the app can show "installed".
-- `remove(root, id)` — deletes the recorded files that are unchanged since
-  install; leaves edited ones and says so.
-- `lint(pack_dir)` — validates a pack: manifest complete, every listed file
-  present, frontmatter parses, placeholders are the supported ones, schema
-  types are known, `index.md` views reference existing properties. Runs in
-  CI over `marketplace/` and is the gate for community packs later.
+## 4. The marketplace repository
 
-Nothing is installed automatically. Installing writes files into the vault;
-the user's auto-commit or next sync carries them like any other change.
+`frontal-cortex/marketplace`, public, MIT for the tooling, each pack under
+its own license field.
 
-Surfaces:
+```
+marketplace/
+├── packs/<id>/…               # one folder per pack, any tier
+├── index.json                 # generated; never edited by hand
+├── featured.yaml              # hand-curated ordering for the app's front page
+├── CONTRIBUTING.md            # how to submit; the review checklist
+├── CODEOWNERS                 # who reviews what
+├── LICENSE
+└── .github/workflows/
+    ├── lint.yml               # cortex packs lint on every PR (blocks merge)
+    ├── index.yml              # regenerate index.json on merge to main, commit it
+    └── release.yml            # on tag: publish index.json + packs to GitHub Pages (a static CDN)
+```
 
-- **CLI** — `cortex packs list`, `cortex packs show <id>`,
-  `cortex packs install <id> [--force]`, `cortex packs remove <id>`,
-  `cortex packs lint <dir>`. `--json` everywhere.
-- **MCP** — `list_packs`, `install_pack`. An agent asked to "set up a habit
-  tracker" can do it; the result is ordinary files the user sees at once.
-- **App** — a full-window Marketplace page (same shell as Settings: nav on
-  the left by kind / tag, cards on the right). Each card: name, one-line
-  description, tags, a rendered preview of the template or the table's
-  columns and views, an Install button that becomes Installed. Reached from
-  the command palette (*Browse templates…*), the Templates section header,
-  and the Getting-started card's "Try a template" step.
+**Trust tiers**, recorded per pack in `index.json` and shown as a badge:
 
-## Distribution
+| Tier | Who | How it gets there | Shown |
+|---|---|---|---|
+| `official` | Cortex team | Written or adopted by maintainers; bundled in the app | by default, first |
+| `verified` | Community | Passed lint **and** a maintainer reviewed the content (checklist below) | by default, with badge |
+| `community` | Community | Passed lint; a maintainer merged after a sanity glance, no content review | by default, with badge; a setting hides the tier |
 
-1. **Bundled** (first release). The ten packs ship inside the binary. No
-   network, nothing to trust, updates arrive with the app.
-2. **Remote index** (second). `frontal-cortex/marketplace` on GitHub holds
-   the same `marketplace/` tree; the app fetches `index.yaml` on demand,
-   caches it, and installs a pack by fetching its files. Bundled packs stay
-   as the offline fallback. Community packs arrive as pull requests to that
-   repo; `cortex packs lint` runs in its CI, and a maintainer merges.
-3. **Later, backlog** — ratings and install counts (needs the hosted
-   service), paid packs, packs that carry a theme or keybindings.
+Tier is a field in `index.json` set by maintainers (a `tiers.yaml` map in
+the repo, not the manifest — a contributor cannot promote themselves).
 
-## Sequencing
+**Review checklist** (`CONTRIBUTING.md`, applied for `verified`):
 
-| Phase | Work | Effort |
-|-------|------|--------|
-| 0 | Curate: replace Recipe Box with Tasks in the top ten, add `index.md` views and a row template to each database pack, tighten descriptions, proofread the six note templates against their Notion / Obsidian originals | ½ day |
-| 1 | Core `marketplace` module (catalog, install, remove, lint, `.cortex/packs.yaml`), bundling, `cortex packs`, MCP tools, tests, docs | 1–2 days |
-| 2 | Marketplace page in the app, palette action, Getting-started hook, Installed state | 1–2 days |
-| 3 | `frontal-cortex/marketplace` repo, remote index with cache and fallback, lint in CI, contributor guide | 1 day |
+- Does what the summary says, with a real vault, from a clean install.
+- Templates open cleanly in the app; placeholders resolve; no empty
+  headings that will never be filled.
+- Database packs: views make sense, seed rows are obviously examples, the
+  row template matches the schema.
+- No personal data, no third-party trademarks in names, license set,
+  credits given where a design is borrowed.
+- Uninstall leaves nothing behind.
 
-Phases 0 and 1 are independent of the UI and can go to the overnight
-orchestrator as backlog rows.
+**`index.json`**, what the app consumes:
 
-## Decisions to confirm
+```json
+{
+  "format": 1,
+  "generated": "2026-09-08T10:00:00Z",
+  "base": "https://frontal-cortex.github.io/marketplace/packs/",
+  "packs": [
+    { "id": "tasks", "name": "Tasks", "version": "1.2.0", "kind": "collection",
+      "tier": "official", "summary": "…", "tags": ["…"], "author": {"name": "…"},
+      "license": "CC0-1.0", "min_cortex": "0.3.0", "preview": "tasks/preview.png",
+      "files": ["templates/task.md", "…"],
+      "sha256": { "templates/task.md": "…", "…": "…" },
+      "commit": "a1b2c3…" }
+  ]
+}
+```
 
-- Swap Recipe Box for Tasks in the top ten (Recipe Box stays as pack 11).
-- Name: "packs" in the CLI and file format; "templates" in the UI, since
-  that is the word users search for.
-- Bundled first, remote second — so the first release has no network path.
-- Database packs install their views (`_index.md`) and a row template, not
-  just a schema.
+Per-file hashes let the app verify what it downloaded and let `update`
+tell modified files from untouched ones. `commit` pins the pack to the
+revision the index was generated from, so what a user installs is exactly
+what was reviewed.
+
+**Hosting.** GitHub Pages from the release workflow: `index.json` and the
+raw pack files at stable URLs, no server, cache-friendly. The `base` field
+means the same index format works from any static host or a company's
+internal one.
+
+**Relationship to this repo.** The official packs *live* in the marketplace
+repo. This repo vendors a snapshot for bundling: `tools/sync-packs.sh <tag>`
+copies `packs/` for the official tier into `crates/cortex-core/packs/` and
+records the tag in `crates/cortex-core/packs/VERSION`. The `marketplace/`
+directory drafted here moves to the new repo as its first commit.
+
+---
+
+## 5. Installation, updates, removal (core)
+
+`cortex_core::marketplace`, used identically by the CLI, MCP and the app.
+
+**Sources.** `Source::Bundled` (compiled-in official packs) and
+`Source::Remote { index_url }`. `catalog(sources)` merges them: a remote
+entry with a higher version wins over the bundled one; the bundled one is
+the offline fallback. The remote index is cached in the app's data dir with
+its `generated` timestamp; refreshed when the user opens the marketplace or
+asks, never in the background.
+
+**Install record**, `.cortex/packs.yaml` in the vault (committed, portable):
+
+```yaml
+- id: tasks
+  version: 1.2.0
+  tier: official
+  source: bundled           # or the index URL
+  installed: 2026-09-08
+  files:
+    - path: templates/task.md
+      sha256: …             # of the file as installed, after placeholder substitution
+    - path: .cortex/schemas/tasks.yaml
+      sha256: …
+    - path: collections/tasks/_index.md
+      sha256: …
+    - path: collections/tasks/example-task.md
+      sha256: …
+```
+
+**`install(root, id, opts)`**
+
+1. Resolve the pack (bundled or fetch the files named in the index, verify
+   each `sha256`, refuse on mismatch).
+2. Plan: map each pack file to its vault path; substitute `{{today}}` in
+   seeds. Return the plan before writing if `dry_run` — the app shows "this
+   will write these N files" first.
+3. Conflicts: a destination that exists and is not in this pack's record →
+   skip it and report, unless `force` (then overwrite, but only for
+   `templates/` and `schemas/`; never a collection row). For a collection
+   that already exists: **merge** the schema (add properties the schema
+   lacks, never remove or retype), keep the existing `_index.md`, skip seeds.
+4. Write files, write the record. Nothing is committed; auto-commit or the
+   next sync carries it like any other change.
+
+**`update(root, id)`** — for each recorded file whose on-disk hash still
+equals the recorded hash, replace it with the new version; a file the user
+edited is left alone and reported ("kept your version of
+`templates/task.md`"). New files are added. Seeds are never re-added. The
+record's version and hashes are rewritten.
+
+**`remove(root, id)`** — delete recorded files whose hash is unchanged;
+leave edited ones and say so; never touch collection rows other than the
+recorded seeds; drop the record. A collection's folder is removed only if
+it is then empty.
+
+**`lint(dir)`** — section 3's rules; returns a list of findings with
+severity, used by the CLI, CI, and the `packs new` scaffold.
+
+**`export(root, what)`** — the contributor's on-ramp: turn a template file
+or an existing collection (schema + `_index.md` + optionally its rows as
+seeds, personal data stripped by hand) into a pack directory with a
+generated manifest. Most good community templates start life as someone's
+own working setup.
+
+---
+
+## 6. Surfaces
+
+**CLI**
+
+```
+cortex packs list [--tier official|verified|community] [--installed] [--json]
+cortex packs show <id>              # manifest, files, what would be written
+cortex packs install <id> [--force] [--dry-run]
+cortex packs update [<id>]          # all installed, or one; reports kept edits
+cortex packs remove <id>
+cortex packs lint [<dir>]           # a pack dir, or every pack under packs/
+cortex packs new <id> [--from templates/x.md | --from collections/y]   # export, then lint
+cortex packs index                  # regenerate index.json (used by CI)
+cortex packs refresh                # re-fetch the remote index
+```
+
+**MCP** — `list_packs`, `install_pack`, `update_pack`, `remove_pack`. An
+agent told "set up a habit tracker" can install one; every result is a
+file the user sees immediately, and the record makes it undoable.
+
+**App** — a full-window Marketplace page (the Settings shell: nav left,
+content right):
+
+- Nav: All, Installed, then by kind and tag; a search box; a tier filter.
+- Cards: preview image or a rendered excerpt of the template / the table's
+  columns and views; name, summary, tier badge, author, version; Install →
+  Installed, or Update when the index has a newer version.
+- Pack page: full description, the file list ("what this installs"), the
+  license and credits, a link to the source in the marketplace repo,
+  Install / Update / Remove with the conflict report shown before writing.
+- Entry points: command palette *Browse templates…*, the Templates section
+  header, the Getting-started card's "Try a template" step, and a
+  "Get more" row at the bottom of New from template.
+
+**Settings → Templates** (keys in `settings.yaml`, so a company can set them
+in a shared vault):
+
+| Key | Meaning |
+|---|---|
+| `marketplace_url` | Index URL. Empty = the official one. A company points this at its own registry. |
+| `marketplace_tiers` | Tiers shown: `official, verified, community` (default all three). |
+| `marketplace_extra` | Additional index URLs, merged (a team registry alongside the official one). |
+
+---
+
+## 7. Community flow, end to end
+
+1. **Make it.** Build the template in your own vault until it works.
+2. **Export.** `cortex packs new my-pack --from collections/reading` writes
+   `my-pack/` with a manifest; edit `summary`, `description`, `tags`, strip
+   personal data from seeds, add a `preview.png` (a screenshot of the table
+   or note).
+3. **Lint.** `cortex packs lint my-pack` until clean.
+4. **Submit.** Fork `frontal-cortex/marketplace`, add `packs/my-pack/`, open
+   a PR. CI runs lint and posts the rendered preview as a PR comment.
+5. **Review.** A maintainer merges → `community` tier. If they also run the
+   checklist and it passes → `verified`. Either way the index regenerates
+   on merge and the app sees it on its next refresh.
+6. **Update.** Bump `version`, PR again. CI refuses a changed pack with an
+   unchanged version. Users see Update in the app; nothing changes until
+   they click.
+7. **Takedown.** Maintainers can remove or demote a pack; the app's cached
+   index stops listing it, installed copies stay (they are the user's files).
+
+Governance in `CONTRIBUTING.md`: code of conduct, license requirement (CC0
+or CC-BY for content), no trademarks in names, personal-data rule, a
+response-time expectation for reviews, and how `verified` is granted and
+revoked.
+
+---
+
+## 8. Sequencing
+
+| Phase | Work | Effort | Depends on |
+|---|---|---|---|
+| 0 Content | Apply section 1: views + row templates for database packs, Tasks in, Reading List as a database, habit model, quoted placeholders, `{{today}}`, credits field, manifest v1 fields | ½–1 day | — |
+| 1 Core | `marketplace` module: bundled catalog, install (plan / conflicts / merge), record, update, remove, lint; tests; `cortex packs`; MCP tools; docs | 2 days | 0 |
+| 2 App | Marketplace page, pack page, palette / Templates / Getting-started entry points, Installed / Update states, Settings → Templates | 2 days | 1 |
+| 3 Repo | Create `frontal-cortex/marketplace`, move packs, lint + index + release workflows, Pages hosting, CONTRIBUTING, tiers file, `tools/sync-packs.sh` | 1 day | 1 |
+| 4 Remote | Remote source with cache, hash verification, `refresh`, `marketplace_url` / `_extra` / `_tiers` settings, Update flow end to end | 1 day | 2, 3 |
+| 5 Community | `packs new` / export, PR preview comment in CI, first external submission walked through, second batch of official packs | 1–2 days | 4 |
+
+Phases 0, 1, and 3 need no UI and are good backlog rows for the overnight
+orchestrator. Phase 2 wants the same design pass as the Settings page.
+
+Backlog after this: install counts and ratings (need the hosted service),
+paid packs, packs that also carry a theme or keybindings, localized packs.
+
+---
+
+## 9. Decisions to confirm
+
+- The swaps: Tasks replaces Recipe Box in the top ten; Book Notes becomes a
+  Reading List database; the habit model becomes one row per habit-week.
+- Three tiers as named, all shown by default with badges, a setting to hide
+  `community`.
+- The marketplace is its own repo; this repo vendors a snapshot for
+  bundling. (Alternative: a git submodule — simpler to sync, worse for
+  contributors and CI.)
+- GitHub Pages as the CDN; no server until the hosted service exists.
+- `.cortex/packs.yaml` is committed with the vault, so a teammate cloning
+  it sees the same Installed state and can update.
+- Licenses: CC0-1.0 or CC-BY-4.0 required for content; contributors keep
+  copyright.
