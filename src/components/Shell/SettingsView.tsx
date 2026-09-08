@@ -171,6 +171,30 @@ const SECTIONS: SectionDef[] = [
         ),
       },
       {
+        key: "accent", label: "Accent", keywords: "action colour color button link highlight blue yellow palette",
+        hint: "The colour of buttons, links and selection. Theme uses what the theme or desktop palette publishes; pick another palette colour when that one fights the rest.",
+        render: ({ settings, update }) => {
+          const palette = !!settings.theme_file;
+          const swatch = (c: string) => (
+            <span className={styles.swatch} style={{ background: palette ? `var(--palette-${c}, var(--tag-${c === "magenta" ? "purple" : c === "cyan" ? "blue" : c}-fg))` : `var(--tag-${c === "magenta" ? "purple" : c === "cyan" ? "blue" : c}-fg)` }} />
+          );
+          const names = ["blue", "cyan", "green", "yellow", "orange", "red", "magenta", "brown"];
+          const custom = !!settings.accent && !names.includes(settings.accent);
+          return (
+            <Dropdown
+              fullWidth
+              value={custom ? "custom" : settings.accent || ""}
+              options={[
+                { value: "", label: "Theme", hint: palette ? "the palette's accent" : "default" },
+                ...names.map((c) => ({ value: c, label: c[0].toUpperCase() + c.slice(1), icon: swatch(c) })),
+                ...(custom ? [{ value: "custom", label: settings.accent }] : []),
+              ]}
+              onChange={(v) => { if (v !== "custom") update({ accent: v }); }}
+            />
+          );
+        },
+      },
+      {
         key: "prose_font", label: "Page font", keywords: "typeface family serif sans mono ysabeau quattro recursive",
         hint: "The editor's typeface. Pick a bundled face or name any font installed on this machine.",
         render: ({ settings, update }) => {
@@ -524,7 +548,7 @@ export function SettingsView({ vault, onClose, onLeaveVault }: Props) {
       const next = { ...s, ...patch };
       lastWrite.current = Date.now();
       commands.setSettings(next).catch(() => {});
-      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined) syncTheme(next);
+      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined || patch.accent !== undefined) syncTheme(next);
       return next;
     });
   }, []);

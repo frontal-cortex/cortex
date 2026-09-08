@@ -42,6 +42,12 @@ pub struct Settings {
     /// `theme`, so the setting can be committed with the vault.
     #[serde(default)]
     pub theme_file: String,
+    /// The action colour: empty = the theme's own accent; a palette colour name
+    /// (blue, green, yellow, orange, red, magenta, cyan, brown) picks that colour
+    /// from the followed palette (or the matching tag colour without one); a hex
+    /// value sets it outright. For desktops whose accent fights the rest.
+    #[serde(default)]
+    pub accent: String,
     /// Page (editor/viewer) typeface: a preset key — `ysabeau` (default),
     /// `quattro`, `duo`, `recursive`, `alegreya`, `fraunces`, `crimson`,
     /// `serif`, `system`, `mono` — or any CSS font-family name.
@@ -95,6 +101,7 @@ impl Default for Settings {
             auto_sync_minutes: 0,
             collab_url: String::new(),
             theme_file: String::new(),
+            accent: String::new(),
             prose_font: String::new(),
             prose_slant: String::new(),
             keybindings: BTreeMap::new(),
@@ -121,6 +128,7 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
         ("auto_sync_minutes", "Minutes between automatic git syncs, plus on launch/focus; 0 = off (default 0)."),
         ("collab_url", "Yjs websocket relay for presence and co-editing, e.g. ws://host:1234; empty = off (default empty)."),
         ("theme_file", "Palette file to follow (Omarchy colors.toml shape, `~` expands); empty = use `theme` (default empty)."),
+        ("accent", "Action colour: empty = the theme's accent; a palette colour name (blue green yellow orange red magenta cyan brown) or a #hex (default empty)."),
         ("prose_font", "Page typeface: ysabeau | quattro | duo | recursive | alegreya | fraunces | crimson | serif | system | mono | any font-family; empty = ysabeau (default empty)."),
         ("prose_slant", "Page tilt: empty (upright) | degrees such as 4 or 8 | italic (default empty)."),
         ("keybindings", "Shortcut overrides, id -> keys (e.g. toggle-sidebar: mod+shift+b); set one with keybindings.<id>=<keys>, empty value removes it (default {})."),
@@ -187,6 +195,15 @@ pub fn set_field(settings: &mut Settings, key: &str, raw: &str) -> Result<()> {
         "auto_sync_minutes" => settings.auto_sync_minutes = parse_u32(key, raw)?,
         "collab_url" => settings.collab_url = parse_string(raw),
         "theme_file" => settings.theme_file = parse_string(raw),
+        "accent" => {
+            let v = parse_string(raw).trim().to_lowercase();
+            let named = ["blue", "green", "yellow", "orange", "red", "magenta", "cyan", "brown", "purple", "pink"];
+            let hex = v.starts_with('#') && (v.len() == 7 || v.len() == 4) && v[1..].chars().all(|c| c.is_ascii_hexdigit());
+            if !(v.is_empty() || named.contains(&v.as_str()) || hex) {
+                return Err(AppError::Other(format!("accent must be empty, a palette colour name, or a #hex, got '{v}'")));
+            }
+            settings.accent = v;
+        }
         "prose_font" => settings.prose_font = parse_string(raw),
         "prose_slant" => settings.prose_slant = parse_string(raw),
         "keybindings" => {

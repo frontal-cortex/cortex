@@ -278,7 +278,7 @@
   font-size: var(--text-xs);
   padding: 4px 10px;
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: var(--text-inverse);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -311,6 +311,33 @@
   --mantine-color-body: var(--bg-panel);
   --bn-colors-editor-background: var(--bg-panel);
   --bn-colors-menu-background: var(--bg-panel);
+  /* Mantine ships its own blue for buttons, links, focus and selection; the
+     editor follows the app's accent instead, so a desktop palette (or the
+     Accent setting) reaches the toolbar, menus, links and checkboxes. */
+  --mantine-primary-color-filled: var(--accent);
+  --mantine-primary-color-filled-hover: color-mix(in srgb, var(--accent) 85%, var(--text-primary));
+  --mantine-primary-color-light: var(--accent-light);
+  --mantine-primary-color-light-hover: color-mix(in srgb, var(--accent) 28%, var(--bg-panel));
+  --mantine-primary-color-light-color: var(--accent);
+  --mantine-primary-color-contrast: var(--text-inverse);
+  --mantine-color-anchor: var(--accent);
+  --mantine-color-blue-filled: var(--accent);
+  --mantine-color-blue-light: var(--accent-light);
+  --mantine-color-blue-light-color: var(--accent);
+  --mantine-color-blue-outline: var(--accent);
+  --bn-colors-editor-text: var(--text-primary);
+  --bn-colors-menu-text: var(--text-primary);
+  --bn-colors-hovered-background: var(--bg-hover);
+  --bn-colors-hovered-text: var(--text-primary);
+  --bn-colors-selected-background: var(--accent);
+  --bn-colors-selected-text: var(--text-inverse);
+  --bn-colors-disabled-text: var(--text-tertiary);
+  --bn-colors-border: var(--border);
+  --bn-colors-side-menu: var(--text-tertiary);
+  --bn-colors-tooltip-background: var(--bg-panel);
+  --bn-colors-tooltip-text: var(--text-primary);
+  --bn-colors-highlights-blue-background: var(--accent-light);
+  --bn-colors-highlights-blue-text: var(--accent);
   font-family: var(--font-prose);
   font-size: 16px;
   color: var(--text-primary);
@@ -338,7 +365,7 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  color: #fff;
+  color: var(--text-inverse);
   font-size: var(--text-xs);
   font-weight: 600;
   flex-shrink: 0;

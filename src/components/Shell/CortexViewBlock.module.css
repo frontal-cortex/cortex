@@ -108,7 +108,7 @@
 .saveBtn {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .editor {
@@ -890,7 +890,7 @@
 .addPropConfirm {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: var(--text-sm);
   border-radius: var(--radius-sm);
   padding: 5px 8px;

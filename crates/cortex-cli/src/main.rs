@@ -288,6 +288,16 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
+    // `packs lint` and `packs index` work on a directory — a pack, or a
+    // marketplace checkout — and need no vault: CI and contributors run them
+    // outside one.
+    if let Cmd::Packs { action: PacksCmd::Lint { path } } = &cli.cmd {
+        return packs_lint(&out, path.clone());
+    }
+    if let Cmd::Packs { action: PacksCmd::Index { path, base } } = &cli.cmd {
+        return packs_index(&out, path.clone(), base.clone());
+    }
+
     let v = Vault::open(cli.vault)?;
 
     match cli.cmd {
@@ -583,40 +593,14 @@ fn packs(v: &Vault, out: &Out, action: PacksCmd) -> Result<()> {
             for f in &r.kept { println!("  = {f} (edited since install, kept)"); }
             Ok(())
         }
-        PacksCmd::Lint { path } => {
-            let dirs: Vec<PathBuf> = if path.join("manifest.yaml").exists() { vec![path] }
-                else if path.join("packs").is_dir() { let mut d: Vec<_> = std::fs::read_dir(path.join("packs"))?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect(); d.sort(); d }
-                else { return Err(format!("{}: neither a pack (manifest.yaml) nor a marketplace checkout (packs/)", path.display()).into()) };
-            let mut all = Vec::new();
-            let mut errors = 0;
-            for d in dirs {
-                let id = d.file_name().unwrap().to_string_lossy().into_owned();
-                let findings = match mk::load_dir(&d) { Ok(p) => mk::lint(&p), Err(e) => vec![mk::Finding { severity: mk::Severity::Error, file: None, message: e.to_string() }] };
-                for f in &findings {
-                    if f.severity == mk::Severity::Error { errors += 1; }
-                    if !out.json { println!("{}: {}: {}{}", id, if f.severity == mk::Severity::Error { "error" } else { "warning" }, f.file.as_deref().map(|x| format!("{x}: ")).unwrap_or_default(), f.message); }
-                }
-                all.push(serde_json::json!({ "id": id, "findings": findings }));
-            }
-            if out.json { out.emit(&all)?; }
-            else if errors == 0 { println!("ok"); }
-            if errors > 0 { std::process::exit(1); }
-            Ok(())
-        }
+        PacksCmd::Lint { path } => packs_lint(out, path),
         PacksCmd::New { id, from, out: out_dir } => {
             let dir = mk::export(&v.root, &id, &from, &out_dir)?;
             if out.json { return out.emit(&serde_json::json!({ "path": dir })); }
             println!("wrote {}\nEdit manifest.yaml (summary, description, tags), add seeds if you like, then: cortex packs lint {}", dir.display(), dir.display());
             Ok(())
         }
-        PacksCmd::Index { path, base } => {
-            let index = mk::generate_index(&path, &base)?;
-            let dest = path.join("index.json");
-            std::fs::write(&dest, serde_json::to_string_pretty(&index)?)?;
-            if out.json { return out.emit(&index); }
-            println!("{}: {} packs", dest.display(), index.packs.len());
-            Ok(())
-        }
+        PacksCmd::Index { path, base } => packs_index(out, path, base),
         PacksCmd::Refresh => {
             let cat = v.packs_catalog(true)?;
             if out.json { return out.emit(&serde_json::json!({ "packs": cat.entries.len(), "errors": cat.errors, "generated": cat.fetched_at })); }
@@ -625,6 +609,40 @@ fn packs(v: &Vault, out: &Out, action: PacksCmd) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Lint one pack directory, or every pack under a checkout's `packs/`.
+fn packs_lint(out: &Out, path: PathBuf) -> Result<()> {
+    use cortex_core::marketplace as mk;
+    let dirs: Vec<PathBuf> = if path.join("manifest.yaml").exists() { vec![path] }
+        else if path.join("packs").is_dir() { let mut d: Vec<_> = std::fs::read_dir(path.join("packs"))?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect(); d.sort(); d }
+        else { return Err(format!("{}: neither a pack (manifest.yaml) nor a marketplace checkout (packs/)", path.display()).into()) };
+    let mut all = Vec::new();
+    let mut errors = 0;
+    for d in dirs {
+        let id = d.file_name().unwrap().to_string_lossy().into_owned();
+        let findings = match mk::load_dir(&d) { Ok(p) => mk::lint(&p), Err(e) => vec![mk::Finding { severity: mk::Severity::Error, file: None, message: e.to_string() }] };
+        for f in &findings {
+            if f.severity == mk::Severity::Error { errors += 1; }
+            if !out.json { println!("{}: {}: {}{}", id, if f.severity == mk::Severity::Error { "error" } else { "warning" }, f.file.as_deref().map(|x| format!("{x}: ")).unwrap_or_default(), f.message); }
+        }
+        all.push(serde_json::json!({ "id": id, "findings": findings }));
+    }
+    if out.json { out.emit(&all)?; }
+    else if errors == 0 { println!("ok"); }
+    if errors > 0 { std::process::exit(1); }
+    Ok(())
+}
+
+/// Regenerate a checkout's index.json — what the marketplace repo's CI runs.
+fn packs_index(out: &Out, path: PathBuf, base: String) -> Result<()> {
+    use cortex_core::marketplace as mk;
+    let index = mk::generate_index(&path, &base)?;
+    let dest = path.join("index.json");
+    std::fs::write(&dest, serde_json::to_string_pretty(&index)?)?;
+    if out.json { return out.emit(&index); }
+    println!("{}: {} packs", dest.display(), index.packs.len());
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

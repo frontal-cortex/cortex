@@ -303,7 +303,7 @@ function Card({ entry, onOpen, onChanged }: { entry: PackEntry; onOpen: () => vo
     >
       {entry.preview ? (
         <img className={styles.cardImage} src={entry.preview} alt="" loading="lazy" />
-      ) : entry.excerpt && (entry.excerpt.properties.length > 0 || entry.excerpt.headings.length > 0) ? (
+      ) : entry.excerpt ? (
         <CardExcerpt entry={entry} />
       ) : (
         <div className={`${styles.cardImage} ${styles.cardGlyph}`}><KindIcon kind={entry.kind} size={22} /></div>
@@ -340,26 +340,106 @@ function Card({ entry, onOpen, onChanged }: { entry: PackEntry; onOpen: () => vo
   );
 }
 
-/** The card's picture when a pack ships none: a database's columns and views,
- *  or a template's headings — the pack's own shape, from the bundled copy. */
+/** The card's picture when a pack ships none: a miniature of what installing
+ *  it gives you — drawn from the pack's own schema, views, seeds and template
+ *  in the app's tokens, so it is true to the pack and to the theme. */
 function CardExcerpt({ entry }: { entry: PackEntry }) {
   const ex = entry.excerpt!;
-  if (ex.properties.length > 0) {
-    return (
-      <div className={`${styles.cardImage} ${styles.cardShape}`}>
-        <div className={styles.shapeRow}>
-          <span className={styles.shapeCell}>title</span>
-          {ex.properties.slice(0, 4).map(([name]) => <span key={name} className={styles.shapeCell}>{name}</span>)}
-          {ex.properties.length > 4 && <span className={styles.shapeMore}>+{ex.properties.length - 4}</span>}
+  const primary = ex.views[0]?.[1] ?? (entry.kind === "collection" ? "table" : "note");
+  const tone = (c: string) => ({ background: `var(--tag-${c}-bg)`, color: `var(--tag-${c}-fg)` } as React.CSSProperties);
+  const firstSelect = ex.options[0];
+  const titles = ex.seeds.length ? ex.seeds : ["Untitled", "Untitled", "Untitled"];
+  const cell = (row: number, [name, type]: [string, string]) => {
+    const opts = ex.options.find(([p]) => p === name)?.[1];
+    if (opts && opts.length) { const o = opts[row % opts.length]; return <span key={name} className={styles.heroPill} style={tone(o[1])}>{o[0]}</span>; }
+    if (type === "checkbox") return <span key={name} className={`${styles.heroCheck} ${row % 2 === 0 ? styles.heroCheckOn : ""}`} />;
+    if (type === "date") return <span key={name} className={styles.heroDate}>{["Mon", "Wed", "Fri"][row % 3]}</span>;
+    if (type === "number") return <span key={name} className={styles.heroNum}>{[12, 7, 30][row % 3]}</span>;
+    return <span key={name} className={styles.heroBar} style={{ width: `${40 + ((row * 37 + name.length * 11) % 45)}%` }} />;
+  };
+
+  let body: React.ReactNode;
+  if (entry.kind === "note" || primary === "note") {
+    body = (
+      <div className={styles.heroPage}>
+        <div className={styles.heroPageTitle}>{ex.icon ? `${ex.icon} ` : ""}{entry.name}</div>
+        {ex.headings.slice(0, 3).map((h, i) => (
+          <div key={i} className={styles.heroSection}>
+            <div className={styles.heroHeading}>{h}</div>
+            <span className={styles.heroText} style={{ width: `${70 - i * 15}%` }} />
+          </div>
+        ))}
+        {ex.headings.length === 0 && <><span className={styles.heroText} style={{ width: "80%" }} /><span className={styles.heroText} style={{ width: "60%" }} /></>}
+      </div>
+    );
+  } else if (primary === "board" && firstSelect) {
+    const cols = firstSelect[1].slice(0, 3);
+    body = (
+      <div className={styles.heroBoard}>
+        {cols.map(([name, color], i) => (
+          <div key={name} className={styles.heroCol}>
+            <span className={styles.heroPill} style={tone(color)}>{name}</span>
+            {titles.slice(0, i === 0 ? 2 : 1).map((t, j) => <div key={j} className={styles.heroCard}>{t}</div>)}
+          </div>
+        ))}
+      </div>
+    );
+  } else if (primary === "calendar") {
+    body = (
+      <div className={styles.heroCal}>
+        {Array.from({ length: 28 }, (_, i) => (
+          <span key={i} className={`${styles.heroDay} ${[3, 9, 10, 17, 22].includes(i) ? styles.heroDayOn : ""} ${i === 9 ? styles.heroDayToday : ""}`} />
+        ))}
+      </div>
+    );
+  } else if (primary === "tracker") {
+    body = (
+      <div className={styles.heroTrack}>
+        {titles.slice(0, 3).map((t, r) => (
+          <div key={r} className={styles.heroTrackRow}>
+            <span className={styles.heroTrackName}>{t}</span>
+            {Array.from({ length: 7 }, (_, d) => (
+              <span key={d} className={`${styles.heroMark} ${(d + r) % 3 !== 1 && d < 5 ? styles.heroMarkOn : ""}`} />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  } else if (primary === "chart") {
+    body = (
+      <div className={styles.heroChart}>
+        {[35, 50, 42, 68, 60, 82, 74].map((h, i) => <span key={i} className={styles.heroBarV} style={{ height: `${h}%` }} />)}
+      </div>
+    );
+  } else if (primary === "gallery") {
+    body = (
+      <div className={styles.heroGallery}>
+        {titles.slice(0, 3).map((t, i) => <div key={i} className={styles.heroGalleryCard}><span className={styles.heroCover} /><span className={styles.heroCaption}>{t}</span></div>)}
+      </div>
+    );
+  } else {
+    const props = ex.properties.filter(([n]) => n !== "title").slice(0, 3) as [string, string][];
+    body = (
+      <div className={styles.heroTable}>
+        <div className={`${styles.heroRow} ${styles.heroHead}`}>
+          <span>title</span>{props.map(([n]) => <span key={n}>{n}</span>)}
         </div>
-        <div className={styles.shapeViews}>{ex.views.map(([name, type]) => <span key={name} className={styles.view} title={type}>{name}</span>)}</div>
+        {titles.slice(0, 3).map((t, r) => (
+          <div key={r} className={styles.heroRow}>
+            <span className={styles.heroTitleCell}>{t}</span>
+            {props.map((p) => cell(r, p))}
+          </div>
+        ))}
       </div>
     );
   }
   return (
-    <div className={`${styles.cardImage} ${styles.cardShape}`}>
-      {ex.headings.slice(0, 4).map((h, i) => <div key={i} className={styles.shapeHeading}>{h}</div>)}
-      {ex.headings.length > 4 && <div className={styles.shapeMore}>+{ex.headings.length - 4} more</div>}
+    <div className={`${styles.cardImage} ${styles.hero}`} aria-hidden>
+      {body}
+      {ex.views.length > 1 && (
+        <div className={styles.heroViews}>{ex.views.slice(0, 4).map(([name]) => <span key={name}>{name}</span>)}</div>
+      )}
+      <div className={styles.heroFade} />
     </div>
   );
 }
