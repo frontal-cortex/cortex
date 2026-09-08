@@ -35,7 +35,7 @@ export type PropType =
   | "url"
   | "person"
   | "relation"
-  | "rollup";
+  | "rollup" | "formula";
 
 export interface Member {
   name: string;
@@ -65,6 +65,20 @@ export interface PropertyDef {
   property?: string;
   /** Rollup: count | values | sum | avg | min | max. */
   function?: string;
+  /** Reverse side: the collection whose rows point at this row via `relation`. */
+  from?: string;
+  /** Reverse rollup: only rows matching this filter count; `percent` reports their share. */
+  where?: string;
+  /** Formula expression over the row's own properties (computed on read). */
+  expr?: string;
+  /** Number display: percent | progress | currency | stars | integer | decimal. */
+  format?: string;
+  min?: number;
+  max?: number;
+  /** Currency symbol or unit shown with a number. */
+  unit?: string;
+  /** Date: stamped with today when this condition holds and the date is empty. */
+  auto?: string;
 }
 
 export interface TypeSchema {

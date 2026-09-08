@@ -126,6 +126,72 @@ exits.
 | `marketplace_extra` | additional index URLs, comma-separated, merged with the first (a team registry alongside the official one) |
 | `marketplace_tiers` | trust tiers shown: `official`, `verified`, `community` (comma-separated); empty = all three |
 
+## Views, filters and computed properties
+
+Every collection view — in `_index.md`, in a `cortex-view` fence, in `cortex view`
+and MCP `run_view` — shares one engine. What it understands:
+
+**Filters.** `field OP value` joined by `and` / `or`; ops `== != > >= < <= contains`;
+strings in single quotes. Values may be **relative dates**: `@today`, `@today-7`,
+`@today+30`, `@tomorrow`, `@yesterday`, `@monday` (this week's), `@monday-1`,
+`@sunday`, `@month` (`YYYY-MM`), `@month-1`, `@year`, `@week` (`YYYY-Www`), and
+`@me` (the current member). An empty cell equals `''` and satisfies no ordering
+comparison, so `due <= @today` never sweeps in undated rows.
+
+**Sorting.** `sort: [due, priority desc]`. Empty cells sort last in either
+direction. A select or status property sorts by its option order, not
+alphabetically — `priority: [p1, p2, p3]` puts p1 first whatever the words are.
+Charts over a select follow the same order.
+
+**Computed properties** live in the schema (`.cortex/schemas/<collection>.yaml`)
+and are computed on read, never written to a file:
+
+```yaml
+properties:
+  - name: milestones          # the reverse side of a relation: rows of
+    type: relation            # `milestones` whose `project` names this row
+    from: milestones
+    relation: project
+  - name: progress            # share of those rows matching `where`
+    type: rollup
+    from: milestones
+    relation: project
+    function: percent         # or count | sum | avg | min | max | values (+ property:)
+    where: done == true
+  - name: remaining           # a formula over this row's own properties
+    type: formula
+    expr: budget - spent
+  - name: days_left
+    type: formula
+    expr: days_until(deadline)
+  - name: completed           # a date stamped with today when the condition
+    type: date                # first holds and the date is empty
+    auto: status == done
+  - name: spent
+    type: number
+    format: currency          # percent | progress (a 0–100 bar) | currency | stars | integer | decimal
+    unit: "€"
+```
+
+Formulas know `+ - * / %`, comparisons, `and or not`, and `days_until(d)`,
+`days_since(d)`, `days_between(a, b)`, `today()`, `year(d)`, `month(d)`,
+`round(x, n)`, `abs`, `min`, `max`, `if(c, a, b)`, `coalesce`, `len`, `contains`,
+`concat`, `lower`, `upper`, `empty`. A date minus a date is a number of days.
+
+**Recurrence.** A row with `repeat: weekly` (`daily`, `biweekly`, `monthly`,
+`quarterly`, `yearly`, `every 3 days`, `every 2 weeks`) comes back when it is
+finished — its status set to the last option or a done-word, or a `done` /
+`paid` checkbox ticked: every date property moves forward by the interval and
+the result is written as a **new row** (history stays), or the same row is moved
+forward with `repeat_mode: advance` (a bill's `next_due`). The trigger and any
+auto-stamped dates are reset. This runs when a cell is edited in the app or
+through `set_cell`; `cortex set` writes frontmatter directly and does not
+trigger it.
+
+**Date placeholders** in templates and seeds use the same words: `{{today}}`,
+`{{today+7}}`, `{{monday}}`, `{{month}}`, `{{week}}`; row templates also get
+`{{date}}` (the row's day) with offsets, `{{time}}`, `{{title}}`, `{{uuid}}`.
+
 ## `AGENTS.md`
 
 The app writes an `AGENTS.md` into every vault on first open (next to

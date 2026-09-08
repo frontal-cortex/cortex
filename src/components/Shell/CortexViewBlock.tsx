@@ -529,8 +529,8 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
   };
 
   const renderCell = (c: ViewTable["columns"][number], row: ViewTable["rows"][number]) => {
-    // Rollups are computed, read-only.
-    if (c.schema?.type === "rollup") {
+    // Computed columns — rollups, formulas, the reverse side of a relation — are read-only.
+    if (c.schema?.type === "rollup" || c.schema?.type === "formula" || (c.schema?.type === "relation" && c.schema?.from)) {
       return <span className={styles.cellReadonly}>{formatCell(row.cells[c.key])}</span>;
     }
     if (isSelectColumn(c)) {

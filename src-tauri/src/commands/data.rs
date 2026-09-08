@@ -123,11 +123,11 @@ pub fn set_cell(
     db_state: State<'_, DbState>,
 ) -> Result<()> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
-    let written = cortex_core::data::set_cell(&root, &source, &row_id, &field, &value, &ty)?;
-    // Keep the index in sync when a collection note (a row) changed.
-    if let Some(path) = written {
-        if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-            let _ = cortex_core::index::index_file(&root, &path, db);
+    let written = cortex_core::data::set_cell_effects(&root, &source, &row_id, &field, &value, &ty)?;
+    // Keep the index in sync: the row, and any next occurrence a repeat created.
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        for path in &written {
+            let _ = cortex_core::index::index_file(&root, path, db);
         }
     }
     Ok(())
