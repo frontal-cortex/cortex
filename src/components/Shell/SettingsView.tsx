@@ -18,7 +18,7 @@ import { Dropdown } from "./Dropdown";
 import { AgentIcon } from "./agentIcons";
 import {
   CloseIcon, SearchIcon, FolderIcon, ThemeIcon, TextLinesIcon, FileIcon, SyncIcon, TerminalIcon,
-  PersonIcon, LinkIcon, OpenIcon, GlobeIcon,
+  PersonIcon, LinkIcon, OpenIcon, GlobeIcon, TemplateIcon, SparkleIcon,
 } from "./icons";
 import styles from "./SettingsView.module.css";
 
@@ -241,6 +241,77 @@ const SECTIONS: SectionDef[] = [
         render: ({ settings, update }) => (
           <NumberField value={settings.trash_retention_days} unit="days" min={0}
             onChange={(n) => update({ trash_retention_days: n })} />
+        ),
+      },
+    ],
+  },
+  {
+    id: "templates",
+    title: "Templates",
+    blurb: "The template marketplace: note templates and databases installed as plain files. Nothing is fetched or installed until you ask.",
+    icon: <TemplateIcon size={14} />,
+    rows: [
+      {
+        label: "Browse", keywords: "marketplace packs install template database browse get more",
+        hint: (
+          <>
+            Official packs are bundled with the app; the online index adds community ones. From a terminal:{" "}
+            <code>cortex packs list</code>, <code>cortex packs install tasks</code>.
+          </>
+        ),
+        render: () => (
+          <button className={styles.btn} onClick={() => window.dispatchEvent(new CustomEvent("cortex:open-marketplace"))}>
+            <SparkleIcon size={12} /> Browse templates
+          </button>
+        ),
+      },
+      {
+        key: "marketplace_url", label: "Index URL", keywords: "marketplace registry company index url private",
+        hint: "Where the catalog comes from. Empty = the official index. A company points this at its own registry (any static host serving an index.json).",
+        render: ({ settings, update }) => (
+          <input className={`${styles.input} ${styles.inputMono}`} value={settings.marketplace_url} spellCheck={false}
+            placeholder="https://frontal-cortex.github.io/marketplace/index.json"
+            onChange={(e) => update({ marketplace_url: e.target.value.trim() })} />
+        ),
+      },
+      {
+        key: "marketplace_extra", label: "Extra indexes", keywords: "marketplace team registry additional merge urls",
+        hint: "More index URLs, comma-separated, merged with the first — a team registry alongside the official one.",
+        render: ({ settings, update }) => (
+          <input className={`${styles.input} ${styles.inputMono}`} value={settings.marketplace_extra} spellCheck={false}
+            placeholder="https://notes.example.com/packs/index.json"
+            onChange={(e) => update({ marketplace_extra: e.target.value })} />
+        ),
+      },
+      {
+        key: "marketplace_tiers", label: "Tiers shown", keywords: "official verified community trust tier hide",
+        hint: "Official packs are the team's; verified ones a maintainer reviewed; community ones only passed lint.",
+        render: ({ settings, update }) => {
+          const raw = settings.marketplace_tiers.split(/[,\s]+/).filter(Boolean).sort().join(",");
+          const value = !raw || raw === "community,official,verified" ? "all" : raw === "official" ? "official" : raw === "official,verified" ? "official,verified" : "custom";
+          return (
+            <Dropdown
+              fullWidth
+              value={value}
+              options={[
+                { value: "all", label: "All three" },
+                { value: "official,verified", label: "Official and verified" },
+                { value: "official", label: "Official only" },
+                ...(value === "custom" ? [{ value: "custom", label: settings.marketplace_tiers }] : []),
+              ]}
+              onChange={(v) => update({ marketplace_tiers: v === "all" ? "" : v === "custom" ? settings.marketplace_tiers : v })}
+            />
+          );
+        },
+      },
+      {
+        key: ".cortex/packs.yaml", label: "Installed packs", wide: true,
+        keywords: "installed record packs.yaml hashes update remove",
+        hint: "Which packs are installed, at which version, with a hash per file — so update and remove can tell your edits from the pack's originals. Committed with the vault, so a teammate sees the same Installed state.",
+        render: () => (
+          <div className={styles.stack}>
+            <ConfigFile path=".cortex/packs.yaml" what="the install record (absent until the first install)" />
+          </div>
         ),
       },
     ],

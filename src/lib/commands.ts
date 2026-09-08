@@ -235,6 +235,12 @@ export interface Settings {
   site_title: string;
   /** Published note shown on the site's front page. Empty = list only. */
   site_home: string;
+  /** Marketplace index URL. Empty = the official one. */
+  marketplace_url: string;
+  /** Extra index URLs, comma-separated. */
+  marketplace_extra: string;
+  /** Tiers shown: official, verified, community (comma-separated). Empty = all. */
+  marketplace_tiers: string;
 }
 
 /** A note that `publish` would put on the site (see cortex_core::publish). */
@@ -261,6 +267,108 @@ export interface PagesPush {
   /** Best guess at the public URL for github.com remotes. */
   url: string | null;
   report: PublishReport;
+}
+
+// ── Template marketplace (see cortex_core::marketplace, docs/marketplace.md) ──
+
+export type PackKind = "note" | "collection" | "bundle";
+export type PackTier = "official" | "verified" | "community";
+
+export interface PackManifest {
+  format: number;
+  id: string;
+  name: string;
+  version: string;
+  kind: PackKind;
+  summary: string;
+  description: string;
+  tags: string[];
+  author: { name: string; url?: string };
+  license: string;
+  credits?: string;
+  min_cortex?: string;
+  collection?: string;
+  includes?: string[];
+  files: string[];
+}
+
+/** The shape of a pack at a glance: a template's headings, or a database's columns and views. */
+export interface PackExcerpt {
+  headings: string[];
+  /** [property, type] */
+  properties: [string, string][];
+  /** [view name, view type] */
+  views: [string, string][];
+}
+
+/** One row of the marketplace: the manifest plus where it comes from and its state here. */
+export interface PackEntry extends PackManifest {
+  tier: PackTier;
+  /** `bundled` or the index URL. */
+  source: string;
+  preview: string | null;
+  /** Present for bundled packs; null for packs known only from an index. */
+  excerpt: PackExcerpt | null;
+  installed_version: string | null;
+  update_available: boolean;
+  needs_newer_app: boolean;
+  featured: boolean;
+}
+
+export interface PackCatalog {
+  entries: PackEntry[];
+  /** [index url, error] for sources that could not be fetched; bundled packs still show. */
+  errors: [string, string][];
+  fetched_at: string | null;
+}
+
+export interface Pack {
+  manifest: PackManifest;
+  tier: PackTier;
+  source: string;
+  files: { path: string }[];
+}
+
+export type PackAction =
+  | { action: "write" }
+  | { action: "overwrite" }
+  | { action: "merge" }
+  | { action: "skip"; reason: string };
+
+export interface PackPlan {
+  id: string;
+  version: string;
+  steps: ({ pack_path: string; dest: string } & PackAction)[];
+}
+
+export interface PackInstallReport {
+  id: string;
+  version: string;
+  written: string[];
+  merged: string[];
+  skipped: [string, string][];
+}
+
+export interface PackUpdateReport {
+  id: string;
+  from: string;
+  to: string;
+  replaced: string[];
+  kept: string[];
+  added: string[];
+}
+
+/** A pack file's contents (Markdown / YAML only) and where it lands in the vault. */
+export interface PackText {
+  path: string;
+  dest: string | null;
+  text: string | null;
+}
+
+export interface PackRemoveReport {
+  id: string;
+  removed: string[];
+  kept: string[];
 }
 
 /** An agent CLI the terminal pane can open into (see cortex_core::agents). */
@@ -478,6 +586,22 @@ export const commands = {
   /** Known agent CLIs (claude, hermes, …) and whether each is on $PATH. */
   detectAgents: () =>
     invoke<AgentCli[]>("detect_agents"),
+
+  // ── Template marketplace — fetch/install only when the user asks ──
+  packsCatalog: (refresh: boolean) =>
+    invoke<PackCatalog>("packs_catalog", { refresh }),
+  packsShow: (id: string, force: boolean) =>
+    invoke<[Pack, PackPlan]>("packs_show", { id, force }),
+  packsFiles: (id: string) =>
+    invoke<PackText[]>("packs_files", { id }),
+  packsInstall: (id: string, force: boolean) =>
+    invoke<PackInstallReport[]>("packs_install", { id, force }),
+  packsUpdate: (id: string) =>
+    invoke<PackUpdateReport>("packs_update", { id }),
+  packsRemove: (id: string) =>
+    invoke<PackRemoveReport>("packs_remove", { id }),
+  packsExport: (id: string, from: string, outDir: string) =>
+    invoke<string>("packs_export", { id, from, outDir }),
 
   // ── Publishing — every call is an explicit user action, never automatic ──
   publishPreview: () =>

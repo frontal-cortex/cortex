@@ -14,7 +14,7 @@ import {
 import { TreeRow, useRovingRows, useTypeAhead } from "./treeRows";
 import {
   CloseIcon, MinusIcon, StarFilledIcon, PlusIcon, SearchIcon, GraphIcon, GearIcon, ChevronRightIcon,
-  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon,
+  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon, SparkleIcon,
 } from "./icons";
 import styles from "./LeftPanel.module.css";
 
@@ -37,6 +37,8 @@ interface Props {
   onNewCollection: () => void;
   onOpenCollection: (name: string) => void;
   onOpenSettings: () => void;
+  /** Opens the template marketplace (the Templates section's "Get more" and the Getting-started step). */
+  onOpenMarketplace?: () => void;
   onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
@@ -67,7 +69,7 @@ const SECTION_DEFAULT_OPEN: Record<SectionId, boolean> = {
 export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   notes, dirs, selectedPath, status, agentBranches, commits, favorites,
   onSelect, onNewNote, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite, onOpenGraph,
-  onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings,
+  onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings, onOpenMarketplace,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
   trash, onRestoreTrashed, onDeleteTrashed, onEmptyTrash,
   onEscape, onOpenCommandPalette,
@@ -257,12 +259,15 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     else replayShortcut("command-palette");
   }, [onOpenCommandPalette]);
 
+  // "Try a template": the marketplace when there is one to browse, else the
+  // vault's own templates (or a fresh one).
   const tryTemplate = useCallback(() => {
+    if (onOpenMarketplace) { onOpenMarketplace(); return; }
     const files = templateTree.filter((n) => n.type === "file");
     const pick = files.find((n) => n.path === "templates/note.md") ?? files[0];
     if (pick) onNewFromTemplate(pick.path.slice("templates/".length));
     else onNewNote("templates");
-  }, [templateTree, onNewFromTemplate, onNewNote]);
+  }, [templateTree, onNewFromTemplate, onNewNote, onOpenMarketplace]);
 
   const openAgentsDoc = useCallback(() => {
     if (notes.some((n) => n.path === "AGENTS.md")) onSelect("AGENTS.md");
@@ -361,6 +366,9 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
         } else {
           pushTree(templateTree, pid, "templates/");
         }
+        if (onOpenMarketplace) {
+          out.push({ id: "action:templates-more", kind: "action", label: "Get more templates", depth: 1, parentId: pid, run: onOpenMarketplace, folder: "templates/" });
+        }
       }
     }
 
@@ -375,7 +383,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     }
 
     return out;
-  }, [searchResults, sectionOpen, isDirOpen, favorites, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted,
+  }, [searchResults, sectionOpen, isDirOpen, favorites, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
       notesTree, newFolderIn, collections, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection,
       onRestoreTrashed, onDeleteTrashed, onEmptyTrash]);
 
@@ -652,7 +660,10 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
               {...sectionProps("templates")}
               label="Templates"
               count={templateTree.length}
-              actions={[{ title: "New template", icon: <PlusIcon size={13} />, run: () => onNewNote("templates") }]}
+              actions={[
+                ...(onOpenMarketplace ? [{ title: `Browse templates (${shortcutFor("marketplace")})`, icon: <SparkleIcon size={13} />, run: onOpenMarketplace }] : []),
+                { title: "New template", icon: <PlusIcon size={13} />, run: () => onNewNote("templates") },
+              ]}
             >
               {templateTree.length === 0
                 ? <ActionRow
@@ -675,6 +686,17 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                     onSelect={onSelect}
                     a11y={a11y}
                   />}
+              {onOpenMarketplace && (
+                <ActionRow
+                  id="action:templates-more"
+                  a11y={a11y}
+                  depth={0}
+                  icon={<SparkleIcon size={12} />}
+                  action="Get more templates"
+                  title="Browse the template marketplace — note templates and databases, installed as plain files"
+                  onClick={onOpenMarketplace}
+                />
+              )}
             </Section>
 
             {trash.length > 0 && (
@@ -732,6 +754,16 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
       {/* ── Footer (under the change log) ───────────────────────── */}
       <div className={styles.footer}>
+        {onOpenMarketplace && (
+          <button
+            className={styles.footerBtn}
+            onClick={onOpenMarketplace}
+            title={`Browse templates (${shortcutFor("marketplace")}) — note templates and databases, installed as plain files`}
+          >
+            <SparkleIcon size={15} />
+            <span>Templates</span>
+          </button>
+        )}
         <button className={styles.footerBtn} onClick={onOpenSettings} title={`Settings (${shortcutFor("settings")})`}>
           <GearIcon size={15} />
           <span>Settings</span>

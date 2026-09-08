@@ -22,6 +22,7 @@ import { GraphView } from "./GraphView";
 import { TopBar } from "./TopBar";
 import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
 import { SettingsView } from "./SettingsView";
+import { MarketplaceView } from "./MarketplaceView";
 import { PublishModal } from "./PublishModal";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
@@ -60,6 +61,8 @@ export function Shell({
   }, [monk, rightVisible, toggleRight]);
   const [showGraph, setShowGraph] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // The template marketplace — a full-window page like Settings.
+  const [showMarketplace, setShowMarketplace] = useState(false);
   // The Publish dialog — the only path to a published site, always by hand.
   const [showPublish, setShowPublish] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -299,6 +302,13 @@ export function Shell({
     return () => window.removeEventListener("cortex:open-note", onOpenNote);
   }, [openNote]);
 
+  // Settings → Templates (and anything else outside the shell) opens the marketplace this way.
+  useEffect(() => {
+    const onOpen = () => { setShowSettings(false); setShowMarketplace(true); };
+    window.addEventListener("cortex:open-marketplace", onOpen);
+    return () => window.removeEventListener("cortex:open-marketplace", onOpen);
+  }, []);
+
   // Wiki links inside transclusion embeds dispatch this to navigate by ref.
   useEffect(() => {
     function onNavigate(e: Event) {
@@ -472,6 +482,7 @@ export function Shell({
     "focus-sidebar":   () => { if (!leftVisible) toggleLeft(); requestAnimationFrame(() => leftRef.current?.focus()); },
     "focus-editor":    focusEditor,
     "toggle-properties": () => editorRef.current?.toggleProperties(),
+    "marketplace":     () => setShowMarketplace((v) => !v),
   };
 
   return (
@@ -520,6 +531,7 @@ export function Shell({
           onNewCollection={handleNewCollection}
           onOpenCollection={handleOpenCollection}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenMarketplace={() => setShowMarketplace(true)}
           onCommit={onCommit}
           onApplyBranch={onApplyBranch}
           onDiscardBranch={onDiscardBranch}
@@ -568,6 +580,13 @@ export function Shell({
             onLeaveVault={onLeaveVault}
           />
         )}
+
+        {showMarketplace && (
+          <MarketplaceView
+            onClose={() => { setShowMarketplace(false); focusEditor(); }}
+            onChanged={() => { refresh(); scheduleAutoCommit(); }}
+          />
+        )}
       </div>
 
       {switcher && (
@@ -584,6 +603,7 @@ export function Shell({
           onSync={handleSync}
           onToggleTheme={handleToggleTheme}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenMarketplace={() => setShowMarketplace(true)}
           onQuickCapture={() => setShowCapture(true)}
           onToggleSidebar={toggleLeft}
           onToggleTerminal={handleToggleTerminal}

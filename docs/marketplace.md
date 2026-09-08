@@ -6,11 +6,21 @@ a contributor flow. Everything a pack installs is Markdown and YAML — the
 same materials a vault is already made of — so a template is never a black
 box, never code, and keeps working in any other Markdown tool.
 
-Status 2026-09-08: phase 0 done — eleven packs under `marketplace/` in the
-v1 format (section 3), every finding in section 1 applied, an index
-generated from the manifests, `tiers.yaml` and `featured.yaml`. No installer,
-no UI, no remote repo yet (phases 1–5). Section 1 is kept as the record of
-what the first draft got wrong.
+Status 2026-09-08: every phase built. The packs live in
+[`frontal-cortex/marketplace`](https://github.com/frontal-cortex/marketplace)
+(fifteen official ones — the ten featured, Recipe Box, and a second batch:
+Decision Log, Contacts, Goals, Content Calendar) with lint / index / preview
+tooling and CI; this repo vendors a snapshot of the official tier into
+`crates/cortex-core/` (`tools/sync-packs.sh <tag>`, currently `v0.1.0`). The
+installer is `cortex_core::marketplace`, reached from the Marketplace page
+(`mod+shift+b`), `cortex packs …` and the MCP pack tools. One thing is not
+live: the marketplace repo is private and the organisation is on GitHub's
+free plan, which has no Pages for private repos — so the official index at
+`OFFICIAL_INDEX` 404s and the app shows its bundled packs until the repo is
+made public (`gh repo edit frontal-cortex/marketplace --visibility public
+--accept-visibility-change-consequences`, then Settings → Pages → Source:
+GitHub Actions, then a `PAGES_ENABLED=true` repository variable). Section 1
+is kept as the record of what the first draft got wrong.
 
 ---
 
@@ -205,9 +215,13 @@ internal one.
 
 **Relationship to this repo.** The official packs *live* in the marketplace
 repo. This repo vendors a snapshot for bundling: `tools/sync-packs.sh <tag>`
-copies `packs/` for the official tier into `crates/cortex-core/packs/` and
-records the tag in `crates/cortex-core/packs/VERSION`. The `marketplace/`
-directory drafted here moves to the new repo as its first commit.
+copies `packs/` for the official tier into `crates/cortex-core/packs/`,
+`featured.yaml` and `tiers.yaml` beside it, and records the commit in
+`crates/cortex-core/VERSION`; `MARKETPLACE_REPO=/path` syncs from a local
+clone. The `marketplace/` directory drafted here became the new repo's first
+commit on 2026-09-08. The repo's `tools/` are Python mirrors of the Rust
+lint and index generator (byte-identical output, checked when both change),
+so CI needs nothing but that repository.
 
 ---
 
@@ -354,11 +368,11 @@ revoked.
 | Phase | Work | Effort | Depends on |
 |---|---|---|---|
 | 0 Content | Apply section 1: views + row templates for database packs, Tasks in, Reading List as a database, habit model, quoted placeholders, `{{today}}`, credits field, manifest v1 fields | ½–1 day | — |
-| 1 Core | `marketplace` module: bundled catalog, install (plan / conflicts / merge), record, update, remove, lint; tests; `cortex packs`; MCP tools; docs | 2 days | 0 |
-| 2 App | Marketplace page, pack page, palette / Templates / Getting-started entry points, Installed / Update states, Settings → Templates | 2 days | 1 |
-| 3 Repo | Create `frontal-cortex/marketplace`, move packs, lint + index + release workflows, Pages hosting, CONTRIBUTING, tiers file, `tools/sync-packs.sh` | 1 day | 1 |
-| 4 Remote | Remote source with cache, hash verification, `refresh`, `marketplace_url` / `_extra` / `_tiers` settings, Update flow end to end | 1 day | 2, 3 |
-| 5 Community | `packs new` / export, PR preview comment in CI, first external submission walked through, second batch of official packs | 1–2 days | 4 |
+| 1 Core | `marketplace` module: bundled catalog, install (plan / conflicts / merge), record, update, remove, lint; tests; `cortex packs`; MCP tools; docs — **done** (`crates/cortex-core/src/marketplace.rs`; the remote source, cache and settings of phase 4 came along with it, pending only the Pages index) | 2 days | 0 |
+| 2 App | Marketplace page, pack page, palette / Templates / Getting-started entry points, Installed / Update states, Settings → Templates — **done** (`src/components/Shell/MarketplaceView.tsx`; `mod+shift+b`, *Browse templates…* in the palette, the Templates section's sparkle and "Get more templates" row, the Getting-started "Try a template" step, Settings → Templates) | 2 days | 1 |
+| 3 Repo | Create `frontal-cortex/marketplace`, move packs, lint + index + release workflows, Pages hosting, CONTRIBUTING, tiers file, `tools/sync-packs.sh` — **done** except Pages, which needs the repo public (see the status note at the top) | 1 day | 1 |
+| 4 Remote | Remote source with cache, hash verification, `refresh`, `marketplace_url` / `_extra` / `_tiers` settings, Update flow end to end — **done** (verified against a locally served index; the hosted one follows Pages) | 1 day | 2, 3 |
+| 5 Community | `packs new` / export, PR preview comment in CI, first external submission walked through, second batch of official packs — **done** (`lint.yml` posts the preview and refuses a changed pack without a version bump; CONTRIBUTING walks a submission through; Decision Log, Contacts, Goals, Content Calendar) | 1–2 days | 4 |
 
 Phases 0, 1, and 3 need no UI and are good backlog rows for the overnight
 orchestrator. Phase 2 wants the same design pass as the Settings page.

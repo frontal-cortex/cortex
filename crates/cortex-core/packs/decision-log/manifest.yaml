@@ -1,0 +1,17 @@
+format: 1
+id: decision-log
+name: "Decision Log"
+version: 1.0.0
+kind: note
+summary: "One note per decision: context, options weighed, what was chosen and why, when to revisit."
+description: |
+  The note you wish you had six months later. Context in two sentences, the options that were on the table with their trade-offs, the decision itself, its consequences, and a date to look at it again. Works for a team's architecture decisions and for a person's life ones.
+tags: [work, decisions, thinking]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "Architecture decision records (Michael Nygard) and the decision journals popular in personal knowledge management circles."
+min_cortex: 0.1.0
+files:
+  - templates/decision.md

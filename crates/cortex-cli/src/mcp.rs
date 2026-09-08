@@ -24,6 +24,8 @@ Reading: list_notes, search, read_note, links, backlinks, list_collections, quer
 get_schema. Writing: create_note, write_note, set_properties. Writes are visible in the app \
 immediately. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
 it live); list_agents says which agent CLIs are installed for the terminal_command setting. \
+Templates: list_packs / install_pack / update_pack / remove_pack manage template packs (plain Markdown + YAML) \
+from the marketplace; installing is fine when the user asks for a template or a database of some kind. \
 Publishing: list_published shows which notes the user has marked public (publish: true or the `public` \
 tag); set that flag only when asked, and never build or push a site — that is the user's own act. When a change is meant for the user's review rather than applied directly, call \
 propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
@@ -141,6 +143,20 @@ pub struct ProposalArgs {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct PackArgs {
+    /// Pack id, e.g. `tasks` (see list_packs).
+    pub id: String,
+    /// Overwrite templates that exist and are not from this pack (default false).
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct PackIdArgs {
+    pub id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SettingsArgs {
     /// Settings to change, key → value. Values are typed per key (booleans, numbers,
     /// strings; `keybindings` takes an object of id → keys, or use `keybindings.<id>`
@@ -229,6 +245,27 @@ impl CortexMcp {
     #[tool(description = "Known agent CLIs (claude, hermes, openclaw, codex, …) and whether each is installed on this machine, with its path. Use a found one's `command` as the terminal_command setting.")]
     fn list_agents(&self) -> Result<CallToolResult, McpError> {
         json(&self.vault.agents())
+    }
+
+    #[tool(description = "Template packs available to this vault (bundled official packs plus the configured marketplace indexes): id, name, kind, tier, version, installed version, whether an update is available. Packs are Markdown + YAML — templates, schemas, database views, seed rows.")]
+    fn list_packs(&self) -> Result<CallToolResult, McpError> {
+        json(&self.vault.packs_catalog(false).map_err(err)?.entries)
+    }
+
+    #[tool(description = "Install a template pack into the vault by id. Writes ordinary files (templates/, .cortex/schemas/, collections/<name>/) and records them in .cortex/packs.yaml; never overwrites the user's files unless force, merges into an existing collection's schema. Returns what was written, merged and skipped.")]
+    fn install_pack(&self, Parameters(a): Parameters<PackArgs>) -> Result<CallToolResult, McpError> {
+        let pack = self.vault.packs_resolve(&a.id).map_err(err)?;
+        json(&self.vault.packs_install(&pack, a.force).map_err(err)?)
+    }
+
+    #[tool(description = "Update an installed pack to the newest version the indexes offer. Files the user edited are kept and reported.")]
+    fn update_pack(&self, Parameters(a): Parameters<PackIdArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.packs_update(Some(&a.id)).map_err(err)?)
+    }
+
+    #[tool(description = "Remove an installed pack: deletes only the files it installed that are unchanged; rows the user added to its collection are never touched.")]
+    fn remove_pack(&self, Parameters(a): Parameters<PackIdArgs>) -> Result<CallToolResult, McpError> {
+        json(&cortex_core::marketplace::remove(&self.vault.root, &a.id).map_err(err)?)
     }
 
     #[tool(description = "Notes marked for publishing (publish: true or the `public` tag) and the URL each would get. Read-only: publishing itself is done by the user with `cortex publish` or the app.")]

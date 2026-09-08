@@ -1,0 +1,21 @@
+format: 1
+id: goals
+name: "Goals"
+version: 1.0.0
+kind: collection
+summary: "Goals with a status, a life area, a target date and a progress number — board by status, calendar of target dates."
+description: |
+  Quarterly or yearly goals as rows, each with the area of life it belongs to, a status that says whether it is on track, a target date the calendar shows, and a progress percentage you update when you review. Each goal is a note, so the why, the milestones and the review log live under its properties. Pairs with Weekly Review.
+tags: [productivity, goals, planning, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "OKR trackers and the goal-setting templates every notes app gallery carries, kept to five properties."
+min_cortex: 0.1.0
+collection: goals
+files:
+  - templates/goals.md
+  - schemas/goals.yaml
+  - index.md
+  - seed/example-goal.md

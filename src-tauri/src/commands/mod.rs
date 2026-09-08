@@ -8,3 +8,4 @@ pub mod schema;
 pub mod trash;
 pub mod vault;
 pub mod publish;
+pub mod packs;

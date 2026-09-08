@@ -1,0 +1,21 @@
+format: 1
+id: content-calendar
+name: "Content Calendar"
+version: 1.0.0
+kind: collection
+summary: "Posts, newsletters and videos from idea to published: status board, channel, publish date on a calendar."
+description: |
+  One row per piece of content. The status board carries an idea through drafting, review and scheduling to published; the calendar shows what goes out when; the channel says where. The row is the draft itself, so writing and planning happen in the same place.
+tags: [writing, content, marketing, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "Editorial calendar templates common to every notes and project tool, with the draft kept inside the row."
+min_cortex: 0.1.0
+collection: content
+files:
+  - templates/content.md
+  - schemas/content.yaml
+  - index.md
+  - seed/example-post.md

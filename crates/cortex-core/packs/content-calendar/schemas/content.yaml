@@ -1,0 +1,31 @@
+properties:
+  - name: status
+    type: status
+    options:
+      - name: idea
+        color: gray
+      - name: drafting
+        color: blue
+      - name: review
+        color: yellow
+      - name: scheduled
+        color: purple
+      - name: published
+        color: green
+  - name: channel
+    type: select
+    options:
+      - name: blog
+        color: blue
+      - name: newsletter
+        color: green
+      - name: video
+        color: red
+      - name: social
+        color: pink
+      - name: podcast
+        color: purple
+  - name: publish
+    type: date
+  - name: link
+    type: url
