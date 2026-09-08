@@ -158,6 +158,11 @@ type: note               # note type; also picks the property schema
 ---
 ```
 
+A collection's page (`collections/<name>/_index.md`) may add `parent:` — another
+collection's name, or a `notes/<folder>` path — to nest in the sidebar under
+it. Only the sidebar reads it; nothing moves on disk. Drag a collection onto a
+folder or another collection in the app to set it.
+
 Keys are kept **alphabetically sorted** so every writer produces identical
 output and diffs stay clean. `cortex set` / `cortex fmt` / the MCP tools do
 this for you; if you write files by hand, sort the keys.

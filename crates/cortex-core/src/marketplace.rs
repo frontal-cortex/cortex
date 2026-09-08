@@ -525,9 +525,19 @@ fn today() -> String {
 
 /// A pack file with placeholders that install expands (`{{today}}` in seeds
 /// and index.md); templates are written verbatim.
-fn rendered(pack_path: &str, contents: &[u8]) -> Vec<u8> {
+fn rendered(m: &Manifest, pack_path: &str, contents: &[u8]) -> Vec<u8> {
     if pack_path.starts_with("seed/") || is_index(pack_path) {
-        String::from_utf8_lossy(contents).replace(TODAY, &today()).into_bytes()
+        let mut text = String::from_utf8_lossy(contents).replace(TODAY, &today());
+        // A pack's extra collections (a habit tracker's daily log) nest under the
+        // primary one in the sidebar, as a child database sits inside its page —
+        // unless the pack's own index.md places them elsewhere with `parent:`.
+        if pack_path.starts_with("index/") && text.starts_with("---\n") {
+            let has_parent = text[4..].split("\n---").next().map(|fm| fm.lines().any(|l| l.starts_with("parent:"))).unwrap_or(false);
+            if let (false, Some(primary)) = (has_parent, m.collections().first()) {
+                text = format!("---\nparent: {primary}\n{}", &text[4..]);
+            }
+        }
+        text.into_bytes()
     } else {
         contents.to_vec()
     }
@@ -652,7 +662,7 @@ pub fn install(root: &Path, pack: &Pack, force: bool, resolve: &dyn Fn(&str) -> 
                 report.skipped.push((step.dest.clone(), reason.clone()));
             }
             Action::Write | Action::Overwrite => {
-                let bytes = rendered(&step.pack_path, &file.contents);
+                let bytes = rendered(&pack.manifest, &step.pack_path, &file.contents);
                 if let Some(parent) = dest.parent() { std::fs::create_dir_all(parent)?; }
                 std::fs::write(&dest, &bytes)?;
                 recorded.push(InstalledFile { path: step.dest.clone(), sha256: sha256_hex(&bytes) });
@@ -732,7 +742,7 @@ pub fn update(root: &Path, pack: &Pack) -> Result<UpdateReport> {
                         merge_schema(root, &dest, &f.contents)?;
                     } else {
                         // Keep the original install date in seeds: re-render would stamp today.
-                        std::fs::write(&abs, rendered(&f.path, &f.contents))?;
+                        std::fs::write(&abs, rendered(m, &f.path, &f.contents))?;
                     }
                     recorded.push(InstalledFile { path: dest.clone(), sha256: file_hash(&abs).unwrap_or_default() });
                     report.replaced.push(dest);
@@ -746,7 +756,7 @@ pub fn update(root: &Path, pack: &Pack) -> Result<UpdateReport> {
                     report.kept.push(dest);
                     continue;
                 }
-                let bytes = rendered(&f.path, &f.contents);
+                let bytes = rendered(m, &f.path, &f.contents);
                 if let Some(parent) = abs.parent() { std::fs::create_dir_all(parent)?; }
                 std::fs::write(&abs, &bytes)?;
                 recorded.push(InstalledFile { path: dest.clone(), sha256: sha256_hex(&bytes) });
@@ -1140,7 +1150,9 @@ mod tests {
         let r = install(&root, &pack, false, &|_| None).unwrap();
         assert_eq!(r[0].written.len(), 7, "{r:?}");
         assert!(root.join("collections/habit-log/_index.md").exists());
-        assert!(!std::fs::read_to_string(root.join("collections/habit-log/_index.md")).unwrap().contains("{{today}}"));
+        let log_index = std::fs::read_to_string(root.join("collections/habit-log/_index.md")).unwrap();
+        assert!(!log_index.contains("{{today}}"));
+        assert!(log_index.contains("parent: habits"), "the log nests under the primary collection: {log_index}");
         assert!(root.join("collections/habits/_template-habits.md").exists());
         // A tracker pointing at a log whose `done` is plain text is caught.
         let mut bad = pack.clone();

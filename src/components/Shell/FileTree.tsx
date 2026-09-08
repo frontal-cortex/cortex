@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from "react";
-import { TreeNode, DirNode, FileNode, isUntitled, relativeTime } from "../../lib/fileTree";
+import { TreeNode, DirNode, FileNode, CollectionNode, isUntitled, relativeTime } from "../../lib/fileTree";
 import { exportToFile } from "../../lib/export";
 import { shortcutFor } from "../../lib/keymap";
 import {
-  StarIcon, StarFilledIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, FilePlusIcon, FileIcon, TrashIcon,
+  StarIcon, StarFilledIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, FilePlusIcon, FileIcon, TrashIcon, DatabaseIcon,
 } from "./icons";
 import { RowA11y } from "./treeRows";
 import styles from "./FileTree.module.css";
@@ -23,7 +23,16 @@ export interface TreeActions {
   onTurnIntoDatabase?: (path: string) => void;
   onToggleFavorite?: (path: string) => void;
   isFavorite?: (path: string) => boolean;
+  // Collections — pages among pages; rows never appear in the tree.
+  onOpenCollection?: (name: string) => void;
+  onRenameCollection?: (name: string) => void;
+  onDeleteCollection?: (name: string) => void;
+  /** Nest a collection under another collection, a `notes/<folder>/` path, or null for the top level. */
+  onMoveCollection?: (name: string, parent: string | null) => void;
 }
+
+/** Drag payload for a collection row (notes carry their path as plain text). */
+export const COLLECTION_DRAG = "collection:";
 
 /** Roving-tabindex attributes for a row id; undefined when the id isn't a row. */
 export type A11yFor = (id: string, selected?: boolean) => RowA11y | undefined;
@@ -50,7 +59,20 @@ export function FileTree({
   return (
     <div role={depth === 0 ? undefined : "group"}>
       {nodes.map((node) =>
-        node.type === "dir" ? (
+        node.type === "collection" ? (
+          <CollectionRow
+            key={node.path}
+            node={node}
+            selectedPath={selectedPath}
+            depth={depth}
+            open={isDirOpen(node.path, depth)}
+            isDirOpen={isDirOpen}
+            onToggleDir={onToggleDir}
+            actions={actions}
+            onSelect={onSelect}
+            a11y={a11y}
+          />
+        ) : node.type === "dir" ? (
           <DirRow
             key={node.path}
             node={node}
@@ -125,7 +147,9 @@ function DirRow({
           e.preventDefault(); e.stopPropagation();
           setDragOver(false);
           const path = e.dataTransfer.getData("text/plain");
-          if (path && path !== node.path && !path.startsWith(node.path)) {
+          if (path.startsWith(COLLECTION_DRAG)) {
+            actions.onMoveCollection?.(path.slice(COLLECTION_DRAG.length), node.path);
+          } else if (path && path !== node.path && !path.startsWith(node.path)) {
             actions.onMoveNote(path, node.path);
           }
         }}
@@ -179,6 +203,129 @@ function DirRow({
           a11y={a11y}
         />
       )}
+    </div>
+  );
+}
+
+// ── Collection row ────────────────────────────────────────────────────────────
+// A collection is a page: its title and icon from `_index.md`, a chevron only
+// when other collections nest under it, and a context menu like a note's.
+
+function CollectionRow({
+  node, selectedPath, depth, open, isDirOpen, onToggleDir, actions, onSelect, a11y,
+}: {
+  node: CollectionNode;
+  selectedPath: string | null;
+  depth: number;
+  open: boolean;
+  isDirOpen: Props["isDirOpen"];
+  onToggleDir: Props["onToggleDir"];
+  actions: TreeActions;
+  onSelect: (path: string) => void;
+  a11y: A11yFor;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const hasChildren = node.children.length > 0;
+  const selected = node.path === selectedPath;
+  const openIt = () => (actions.onOpenCollection ? actions.onOpenCollection(node.collection) : onSelect(node.path));
+
+  return (
+    <div>
+      <div
+        {...a11y(node.path, selected)}
+        className={`${styles.row} ${selected ? styles.rowSelected : ""} ${dragOver ? styles.dirRowDropTarget : ""} ${menu ? styles.rowContext : ""}`}
+        style={rowStyle(depth)}
+        title={`${node.name} · collections/${node.collection}`}
+        onClick={openIt}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", `${COLLECTION_DRAG}${node.collection}`);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+        onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
+        onDrop={(e) => {
+          e.preventDefault(); e.stopPropagation();
+          setDragOver(false);
+          const data = e.dataTransfer.getData("text/plain");
+          if (data.startsWith(COLLECTION_DRAG)) {
+            const c = data.slice(COLLECTION_DRAG.length);
+            if (c && c !== node.collection) actions.onMoveCollection?.(c, node.collection);
+          }
+        }}
+      >
+        <span
+          className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
+          style={hasChildren ? undefined : { visibility: "hidden" }}
+          aria-hidden
+          onClick={(e) => { if (hasChildren) { e.stopPropagation(); onToggleDir(node.path); } }}
+        >
+          <ChevronRightIcon size={12} />
+        </span>
+        <span className={styles.rowIcon}>
+          {node.icon ? <span className={styles.emoji}>{node.icon}</span> : <DatabaseIcon size={13} />}
+        </span>
+        <span className={styles.label}>{node.name}</span>
+        {hasChildren && <span className={styles.count}>{node.children.length}</span>}
+        {menu && (
+          <CollectionContextMenu
+            x={menu.x}
+            y={menu.y}
+            node={node}
+            nested={depth > 0}
+            actions={actions}
+            onClose={() => setMenu(null)}
+          />
+        )}
+      </div>
+
+      {open && hasChildren && (
+        <FileTree
+          nodes={node.children}
+          currentPath={node.path}
+          selectedPath={selectedPath}
+          depth={depth + 1}
+          isDirOpen={isDirOpen}
+          onToggleDir={onToggleDir}
+          actions={actions}
+          onSelect={onSelect}
+          a11y={a11y}
+        />
+      )}
+    </div>
+  );
+}
+
+function CollectionContextMenu({
+  x, y, node, nested, actions, onClose,
+}: {
+  x: number; y: number; node: CollectionNode; nested: boolean; actions: TreeActions; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 200);
+  const top = Math.min(y, window.innerHeight - 200);
+  const run = (fn?: () => void) => (e: ReactMouseEvent) => { e.stopPropagation(); onClose(); fn?.(); };
+  const c = node.collection;
+  return (
+    <div ref={ref} className={styles.ctxMenu} style={{ left, top }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <button className={styles.ctxItem} onClick={run(() => actions.onOpenCollection?.(c))}>Open</button>
+      <button className={styles.ctxItem} onClick={run(() => actions.onRenameCollection?.(c))}>Rename</button>
+      {nested && <button className={styles.ctxItem} onClick={run(() => actions.onMoveCollection?.(c, null))}>Move to top level</button>}
+      <button className={styles.ctxItem} onClick={run(() => exportToFile("collection-csv", `collections/${c}`, `${c}.csv`))}>Export to CSV</button>
+      <button className={styles.ctxItem} onClick={run(() => { navigator.clipboard?.writeText(`collections/${c}`); })}>Copy path</button>
+      <div className={styles.ctxSep} />
+      <button className={`${styles.ctxItem} ${styles.ctxItemDanger}`} onClick={run(() => actions.onDeleteCollection?.(c))}>
+        Move to trash <span className={styles.ctxHint}>Del</span>
+      </button>
     </div>
   );
 }
@@ -459,7 +606,7 @@ function countFiles(dir: DirNode): number {
   let n = 0;
   for (const child of dir.children) {
     if (child.type === "file") n++;
-    else n += countFiles(child);
+    else if (child.type === "dir") n += countFiles(child);
   }
   return n;
 }

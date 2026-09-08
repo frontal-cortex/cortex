@@ -306,18 +306,19 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let (title, note_type, icon, tags) = match note::parse_note(&rel, &content) {
+        let (title, note_type, icon, parent, tags) = match note::parse_note(&rel, &content) {
             Ok(parsed) => {
                 let title = note::infer_title(&parsed);
                 let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
                 let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
+                let parent = parsed.frontmatter.get("parent").and_then(|v| v.as_str()).map(str::to_string);
                 let tags = parsed
                     .frontmatter
                     .get("tags")
                     .and_then(|v| v.as_array())
                     .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
                     .unwrap_or_default();
-                (title, note_type, icon, tags)
+                (title, note_type, icon, parent, tags)
             }
             Err(_) => {
                 let title = Path::new(&rel)
@@ -325,11 +326,11 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
                     .and_then(|s| s.to_str())
                     .unwrap_or("Untitled")
                     .to_string();
-                (title, None, None, Vec::new())
+                (title, None, None, None, Vec::new())
             }
         };
 
-        entries.push(NoteEntry { path: rel, title, note_type, icon, tags, modified });
+        entries.push(NoteEntry { path: rel, title, note_type, icon, parent, tags, modified });
     }
 
     entries.sort_by(|a, b| b.modified.cmp(&a.modified));

@@ -22,6 +22,10 @@ pub struct NoteEntry {
     pub tags: Vec<String>,
     pub modified: u64,
     pub icon: Option<String>,
+    /// Frontmatter `parent:` — a collection name or a `notes/<folder>` path.
+    /// A collection's page nests under it in the sidebar, the way a child
+    /// database sits inside a page; rows never move on disk.
+    pub parent: Option<String>,
 }
 
 fn split_frontmatter(content: &str) -> (Option<&str>, &str) {

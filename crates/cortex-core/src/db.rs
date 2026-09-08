@@ -202,6 +202,7 @@ fn collect_entries<P: rusqlite::Params>(
                 tags,
                 modified: row.get(4)?,
                 icon: None,
+                parent: None,
             })
         })?
         .filter_map(|r| r.ok())
