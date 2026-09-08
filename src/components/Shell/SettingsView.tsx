@@ -18,7 +18,7 @@ import { Dropdown } from "./Dropdown";
 import { AgentIcon } from "./agentIcons";
 import {
   CloseIcon, SearchIcon, FolderIcon, ThemeIcon, TextLinesIcon, FileIcon, SyncIcon, TerminalIcon,
-  PersonIcon, LinkIcon, OpenIcon,
+  PersonIcon, LinkIcon, OpenIcon, GlobeIcon,
 } from "./icons";
 import styles from "./SettingsView.module.css";
 
@@ -339,6 +339,45 @@ const SECTIONS: SectionDef[] = [
         key: ".cortex/members.yaml", label: "Team roster", wide: true,
         keywords: "team people person assign roster user identity email colour",
         render: () => <MembersEditor />,
+      },
+    ],
+  },
+  {
+    id: "publishing",
+    title: "Publishing",
+    blurb: "A static site from the notes you mark public. Nothing is published until you run Publish.",
+    icon: <GlobeIcon size={14} />,
+    rows: [
+      {
+        key: "site_title", label: "Site title", keywords: "publish site name website",
+        hint: "Shown in the site's header and browser tab. Empty = the vault folder's name.",
+        render: ({ settings, vault, update }) => (
+          <input className={styles.input} value={settings.site_title} spellCheck={false} placeholder={vault.name}
+            onChange={(e) => update({ site_title: e.target.value })} />
+        ),
+      },
+      {
+        key: "site_home", label: "Front page note", keywords: "publish home index landing about",
+        hint: "A published note shown above the list on the site's front page, e.g. notes/about.md. Empty = the list only.",
+        render: ({ settings, update }) => (
+          <input className={`${styles.input} ${styles.inputMono}`} value={settings.site_home} spellCheck={false} placeholder="notes/about.md"
+            onChange={(e) => update({ site_home: e.target.value })} />
+        ),
+      },
+      {
+        label: "How it works", keywords: "publish gh-pages github pages folder static host cortex publish",
+        hint: (
+          <>
+            Mark a note with <code>publish: true</code> (command palette → Make this note public). Then run{" "}
+            <strong>Publish site…</strong> from the palette to build into a folder or push a gh-pages branch, or{" "}
+            <code>cortex publish --out DIR</code> from a terminal. Links to unpublished notes become plain text.
+          </>
+        ),
+        render: () => (
+          <button className={styles.btn} onClick={() => window.dispatchEvent(new CustomEvent("cortex:open-note", { detail: { path: "VAULT.md" } }))}>
+            <FileIcon size={12} /> Read VAULT.md
+          </button>
+        ),
       },
     ],
   },

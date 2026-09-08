@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -33,6 +33,10 @@ interface Props {
   onToggleMonk: () => void;
   onFocusSidebar: () => void;
   onToggleProperties: () => void;
+  onPublish: () => void;
+  /** Absent when no note is open. */
+  onTogglePublic?: () => void;
+  isPublic: boolean;
   hasRemote: boolean;
 }
 
@@ -42,7 +46,8 @@ export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
-  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, hasRemote,
+  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
+  onPublish, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -129,6 +134,22 @@ export function QuickSwitcher({
         run: () => { onFocusSidebar(); onClose(); },
       },
       {
+        id: "publish",
+        label: "Publish site…",
+        description: "Build a static site from the notes marked public — nothing is published until you confirm",
+        icon: <GlobeIcon size={14} />,
+        run: () => { onPublish(); onClose(); },
+      },
+      ...(onTogglePublic ? [{
+        id: "toggle-public",
+        label: isPublic ? "Make this note private" : "Make this note public",
+        description: isPublic
+          ? "Remove publish: true — the note leaves the site on the next publish"
+          : "Set publish: true — the note joins the site on the next publish; nothing is published now",
+        icon: <GlobeIcon size={14} />,
+        run: () => { onTogglePublic(); onClose(); },
+      }] : []),
+      {
         id: "toggle-properties",
         label: "Toggle properties",
         description: `${shortcutFor("toggle-properties")} · show or hide the note's property panel`,
@@ -172,7 +193,8 @@ export function QuickSwitcher({
     return [...base, ...tplActions];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
-      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onClose]);
+      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
+      onPublish, onTogglePublic, isPublic, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>

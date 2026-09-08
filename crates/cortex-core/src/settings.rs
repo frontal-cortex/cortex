@@ -61,6 +61,13 @@ pub struct Settings {
     /// such as `claude`, `hermes` or `openclaw`. Empty = a plain shell.
     #[serde(default)]
     pub terminal_command: String,
+    /// Title of the published site (see `publish`). Empty = the vault's folder name.
+    #[serde(default)]
+    pub site_title: String,
+    /// Note shown on the published site's front page above the list of
+    /// notes, e.g. `notes/about.md`. It must itself be published. Empty = list only.
+    #[serde(default)]
+    pub site_home: String,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -83,6 +90,8 @@ impl Default for Settings {
             prose_slant: String::new(),
             keybindings: BTreeMap::new(),
             terminal_command: String::new(),
+            site_title: String::new(),
+            site_home: String::new(),
         }
     }
 }
@@ -104,6 +113,8 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
         ("prose_slant", "Page tilt: empty (upright) | degrees such as 4 or 8 | italic (default empty)."),
         ("keybindings", "Shortcut overrides, id -> keys (e.g. toggle-sidebar: mod+shift+b); set one with keybindings.<id>=<keys>, empty value removes it (default {})."),
         ("terminal_command", "Command run when the terminal pane opens — an agent CLI such as claude, hermes, openclaw; empty = plain shell (default empty). See `cortex agents`."),
+        ("site_title", "Title of the published site (`cortex publish`); empty = the vault folder's name (default empty)."),
+        ("site_home", "Published note shown on the site's front page above the list, e.g. notes/about.md; empty = list only (default empty)."),
     ]
 }
 
@@ -173,6 +184,8 @@ pub fn set_field(settings: &mut Settings, key: &str, raw: &str) -> Result<()> {
             };
         }
         "terminal_command" => settings.terminal_command = parse_string(raw),
+        "site_title" => settings.site_title = parse_string(raw),
+        "site_home" => settings.site_home = parse_string(raw),
         _ => return Err(unknown_key(key)),
     }
     Ok(())

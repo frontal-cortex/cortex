@@ -387,6 +387,14 @@ impl Vault {
         agents::detect()
     }
 
+    /// The notes that `cortex publish` would put on a site — a read-only look.
+    /// Building or pushing a site is deliberately not an op here: publishing
+    /// is the person's decision, made in the CLI or the app, never by an
+    /// agent through MCP.
+    pub fn publish_preview(&self) -> Result<Vec<cortex_core::publish::PublishEntry>> {
+        Ok(cortex_core::publish::preview(&self.root)?)
+    }
+
     // ── Git & proposals ─────────────────────────────────────────────────────
 
     pub fn status(&self) -> Result<StatusReport> {

@@ -23,7 +23,9 @@ stay clean — use the tools rather than rewriting files by hand.
 Reading: list_notes, search, read_note, links, backlinks, list_collections, query_collection, \
 get_schema. Writing: create_note, write_note, set_properties. Writes are visible in the app \
 immediately. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
-it live); list_agents says which agent CLIs are installed for the terminal_command setting. When a change is meant for the user's review rather than applied directly, call \
+it live); list_agents says which agent CLIs are installed for the terminal_command setting. \
+Publishing: list_published shows which notes the user has marked public (publish: true or the `public` \
+tag); set that flag only when asked, and never build or push a site — that is the user's own act. When a change is meant for the user's review rather than applied directly, call \
 propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
 (diff, then Apply or Discard) in the app.";
 
@@ -227,6 +229,11 @@ impl CortexMcp {
     #[tool(description = "Known agent CLIs (claude, hermes, openclaw, codex, …) and whether each is installed on this machine, with its path. Use a found one's `command` as the terminal_command setting.")]
     fn list_agents(&self) -> Result<CallToolResult, McpError> {
         json(&self.vault.agents())
+    }
+
+    #[tool(description = "Notes marked for publishing (publish: true or the `public` tag) and the URL each would get. Read-only: publishing itself is done by the user with `cortex publish` or the app.")]
+    fn list_published(&self) -> Result<CallToolResult, McpError> {
+        json(&self.vault.publish_preview().map_err(err)?)
     }
 
     #[tool(description = "Git state: changed files, sync counts, recent commits, pending proposals.")]

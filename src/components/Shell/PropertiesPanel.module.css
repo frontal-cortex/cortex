@@ -59,6 +59,11 @@
   color: var(--text-tertiary);
 }
 .meta:hover .chipKV { background: var(--bg-active); }
+.chipPublic {
+  color: var(--git-clean);
+  background: color-mix(in srgb, var(--git-clean) 12%, transparent);
+  font-weight: 500;
+}
 
 /* Reveal-on-hover: the way in when the line is empty or the panel is closed. */
 .metaHint {

@@ -15,7 +15,7 @@ import { SelectCell } from "./SelectCell";
 import { Dropdown } from "./Dropdown";
 import {
   CalendarIcon, CheckSquareIcon, SelectDotIcon, TagsListIcon, PersonIcon,
-  LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon,
+  LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon, GlobeIcon,
 } from "./icons";
 import styles from "./PropertiesPanel.module.css";
 
@@ -155,8 +155,15 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
 
   // The quiet line: what a reader wants to know about the note at a glance.
   const chips: ReactNode[] = [];
+  if (frontmatter["publish"] === true) {
+    chips.push(
+      <span key="publish" className={`${styles.chip} ${styles.chipPublic}`} title="Marked for publishing (publish: true). Goes on the site the next time you publish.">
+        <GlobeIcon size={10} /> Public
+      </span>,
+    );
+  }
   for (const item of items) {
-    if (item.name === CREATED) continue;
+    if (item.name === CREATED || item.name === "publish") continue;
     const v = frontmatter[item.name];
     if (!hasValue(v)) continue;
     const colorFor = (name: string) => item.options.find((o) => o.name === name)?.color ?? autoColor(name);
