@@ -1,0 +1,8 @@
+properties:
+  - name: date
+    type: date
+  - name: book
+    type: relation
+    collection: reading
+  - name: pages
+    type: number

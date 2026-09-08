@@ -19,13 +19,70 @@ properties:
         color: blue
       - name: newsletter
         color: green
-      - name: video
+      - name: youtube
         color: red
-      - name: social
-        color: pink
       - name: podcast
         color: purple
+      - name: linkedin
+        color: brown
+      - name: instagram
+        color: pink
+      - name: x
+        color: gray
+      - name: tiktok
+        color: orange
+  - name: format
+    type: select
+    options:
+      - name: article
+        color: blue
+      - name: email
+        color: green
+      - name: video
+        color: red
+      - name: short
+        color: orange
+      - name: episode
+        color: purple
+      - name: post
+        color: gray
+      - name: thread
+        color: yellow
+      - name: carousel
+        color: pink
+  - name: pillar
+    type: multi_select
+    options:
+      - name: teach
+        color: blue
+      - name: story
+        color: orange
+      - name: behind the scenes
+        color: yellow
+      - name: opinion
+        color: purple
+      - name: promote
+        color: green
+  - name: priority
+    type: select
+    options:
+      - name: low
+        color: gray
+      - name: medium
+        color: yellow
+      - name: high
+        color: red
+  - name: due
+    type: date
   - name: publish
     type: date
+  - name: owner
+    type: person
+  - name: campaign
+    type: relation
+    collection: campaigns
   - name: link
     type: url
+  - name: repurposed_from
+    type: relation
+    collection: content

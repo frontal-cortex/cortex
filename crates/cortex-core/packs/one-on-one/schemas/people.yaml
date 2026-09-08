@@ -1,0 +1,37 @@
+properties:
+  - name: relationship
+    type: select
+    options:
+      - name: report
+        color: green
+      - name: manager
+        color: blue
+      - name: peer
+        color: yellow
+      - name: skip-level
+        color: purple
+      - name: mentee
+        color: pink
+      - name: mentor
+        color: orange
+  - name: role
+    type: text
+  - name: team
+    type: text
+  - name: cadence
+    type: select
+    options:
+      - name: weekly
+        color: green
+      - name: biweekly
+        color: blue
+      - name: monthly
+        color: yellow
+      - name: ad-hoc
+        color: gray
+  - name: start
+    type: date
+  - name: focus
+    type: text
+  - name: archived
+    type: checkbox

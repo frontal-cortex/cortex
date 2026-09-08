@@ -1,0 +1,37 @@
+properties:
+  - name: kind
+    type: select
+    options:
+      - name: article
+        color: blue
+      - name: book
+        color: brown
+      - name: video
+        color: red
+      - name: course
+        color: purple
+      - name: tool
+        color: orange
+      - name: reference
+        color: green
+      - name: template
+        color: yellow
+      - name: note
+        color: gray
+  - name: status
+    type: status
+    options:
+      - name: inbox
+        color: gray
+      - name: active
+        color: green
+      - name: archived
+        color: brown
+  - name: area
+    type: relation
+    collection: para-areas
+  - name: project
+    type: relation
+    collection: para-projects
+  - name: url
+    type: url

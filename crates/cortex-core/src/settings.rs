@@ -122,7 +122,7 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
     vec![
         ("auto_commit", "Commit after every note save, debounced so a burst of edits is one commit. true | false (default true)."),
         ("default_note_type", "Frontmatter `type` pre-filled on new notes (default note)."),
-        ("journal_template", "Template under templates/ used for Today / daily notes (default daily.md)."),
+        ("journal_template", "What Today opens: a template under templates/ (default daily.md), or collections/<name> to make Today that collection's row for the day."),
         ("theme", "Colour scheme: light | dark | system (default system)."),
         ("trash_retention_days", "Days before trashed notes are pruned; 0 = never (default 30)."),
         ("auto_sync_minutes", "Minutes between automatic git syncs, plus on launch/focus; 0 = off (default 0)."),

@@ -1,0 +1,14 @@
+properties:
+  - name: monthly_limit
+    type: number
+  - name: bucket
+    type: select
+    options:
+      - name: need
+        color: green
+      - name: want
+        color: orange
+      - name: saving
+        color: blue
+  - name: active
+    type: checkbox

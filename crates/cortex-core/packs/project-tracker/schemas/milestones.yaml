@@ -1,0 +1,8 @@
+properties:
+  - name: project
+    type: relation
+    collection: projects
+  - name: due
+    type: date
+  - name: done
+    type: checkbox

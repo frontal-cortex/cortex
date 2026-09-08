@@ -1,0 +1,39 @@
+properties:
+  - name: date
+    type: date
+  - name: person
+    type: relation
+    collection: people
+  - name: kind
+    type: select
+    options:
+      - name: regular
+        color: gray
+      - name: career
+        color: blue
+      - name: feedback
+        color: orange
+      - name: skip-level
+        color: purple
+      - name: first
+        color: pink
+  - name: status
+    type: status
+    options:
+      - name: planned
+        color: gray
+      - name: held
+        color: green
+      - name: skipped
+        color: red
+  - name: mood
+    type: select
+    options:
+      - name: great
+        color: green
+      - name: fine
+        color: yellow
+      - name: low
+        color: red
+  - name: summary
+    type: text

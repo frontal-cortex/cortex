@@ -253,9 +253,10 @@ const SECTIONS: SectionDef[] = [
       },
       {
         key: "journal_template", label: "Journal template", keywords: "daily today template journal",
-        hint: "The file under templates/ that Today uses.",
+        hint: "What Today opens: a file under templates/, or collections/<name> to make Today that collection's row for the day (a journal database).",
         render: ({ settings, update }) => (
           <input className={`${styles.input} ${styles.inputMono}`} value={settings.journal_template} spellCheck={false}
+            placeholder="daily.md · collections/journal"
             onChange={(e) => update({ journal_template: e.target.value })} />
         ),
       },

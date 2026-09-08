@@ -88,9 +88,12 @@ export function Shell({
 
   // Apply the saved theme and cache the sync-loop settings when the vault
   // opens; re-read when the settings modal closes (it may have changed them).
+  // What Today opens: a note template under templates/, or `collections/<name>`.
+  const [journalTemplate, setJournalTemplate] = useState("daily.md");
   const loadSettings = useCallback(() => {
     commands.getSettings().then((s) => {
       syncTheme(s);
+      setJournalTemplate(s.journal_template?.trim() || "daily.md");
       applyKeymapOverrides(s.keybindings);
       setTerminalCommand(s.terminal_command ?? "");
       setAutoSyncMinutes(s.auto_sync_minutes);
@@ -325,9 +328,9 @@ export function Shell({
   }, [createNote, openNote]);
 
   const handleToday = useCallback(async () => {
-    const note = await openOrCreateDaily("daily.md", userSlug);
+    const note = await openOrCreateDaily(journalTemplate, userSlug);
     openNote(note.path);
-  }, [openOrCreateDaily, userSlug, openNote]);
+  }, [openOrCreateDaily, journalTemplate, userSlug, openNote]);
 
   const handleNewFromTemplate = useCallback(async (templateName: string) => {
     const note = await createNoteFromTemplate(templateName, "", "notes");

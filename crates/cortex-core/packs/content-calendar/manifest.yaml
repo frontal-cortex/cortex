@@ -1,21 +1,28 @@
 format: 1
 id: content-calendar
 name: "Content Calendar"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "Posts, newsletters and videos from idea to published: status board, channel, publish date on a calendar."
+summary: "Every piece of content from idea to published: pipeline board, publish calendar, a queue, campaigns, a monthly chart."
 description: |
-  One row per piece of content. The status board carries an idea through drafting, review and scheduling to published; the calendar shows what goes out when; the channel says where. The row is the draft itself, so writing and planning happen in the same place.
-tags: [writing, content, marketing, database]
+  One row per piece of content — the row is the draft. `status` carries it from idea through drafting, review and scheduled to published; `channel` and `format` say where and what; `due` is the draft deadline and `publish` the day it goes out. The Pipeline board is the flow, the Calendar is the month, the Queue is what is next in publish order, Ideas is the inbox, and a bar chart counts what actually shipped per month, one bar per channel. Campaigns are a second collection: a launch or a series with its own page that shows its pieces as a live board. Each piece's page carries a brief, an outline, the draft, a publish checklist and a table of what was repurposed from it.
+tags: [writing, content, marketing, creator, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "Editorial calendar templates common to every notes and project tool, with the draft kept inside the row."
+credits: "Shaped by the content and editorial calendars in Notion's gallery (Notion's own Content Calendar and Social Media Calendar, Easlo's Content Calendar, Thomas Frank's Creator's Companion) and by Bases-driven calendars in the Obsidian community."
 min_cortex: 0.1.0
 collection: content
+collections: [campaigns]
 files:
-  - templates/content.md
   - schemas/content.yaml
+  - schemas/campaigns.yaml
   - index.md
-  - seed/example-post.md
+  - index/campaigns.md
+  - templates/content.md
+  - templates/campaigns.md
+  - seed/content/why-plain-files-last.md
+  - seed/content/launch-week-newsletter.md
+  - seed/content/how-i-plan-a-week.md
+  - seed/campaigns/launch-week.md

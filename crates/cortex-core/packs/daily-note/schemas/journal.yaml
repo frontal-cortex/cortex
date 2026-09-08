@@ -1,0 +1,41 @@
+properties:
+  - name: date
+    type: date
+  - name: mood
+    type: select
+    options:
+      - name: great
+        color: green
+      - name: good
+        color: blue
+      - name: okay
+        color: yellow
+      - name: low
+        color: orange
+      - name: rough
+        color: red
+  - name: energy
+    type: number
+  - name: sleep
+    type: number
+  - name: areas
+    type: multi_select
+    options:
+      - name: work
+        color: blue
+      - name: health
+        color: green
+      - name: family
+        color: pink
+      - name: friends
+        color: orange
+      - name: learning
+        color: purple
+      - name: creative
+        color: yellow
+      - name: money
+        color: brown
+      - name: rest
+        color: gray
+  - name: highlight
+    type: text

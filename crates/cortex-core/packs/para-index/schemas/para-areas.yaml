@@ -1,0 +1,42 @@
+properties:
+  - name: category
+    type: select
+    options:
+      - name: work
+        color: blue
+      - name: personal
+        color: green
+      - name: health
+        color: red
+      - name: finances
+        color: yellow
+      - name: home
+        color: brown
+      - name: learning
+        color: purple
+      - name: relationships
+        color: pink
+      - name: creative
+        color: orange
+  - name: status
+    type: status
+    options:
+      - name: active
+        color: green
+      - name: paused
+        color: yellow
+      - name: archived
+        color: gray
+  - name: standard
+    type: text
+  - name: review
+    type: select
+    options:
+      - name: weekly
+        color: gray
+      - name: monthly
+        color: blue
+      - name: quarterly
+        color: purple
+  - name: next_review
+    type: date

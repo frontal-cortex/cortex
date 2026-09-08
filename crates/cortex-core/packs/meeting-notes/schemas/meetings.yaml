@@ -1,0 +1,41 @@
+properties:
+  - name: date
+    type: date
+  - name: kind
+    type: select
+    options:
+      - name: standup
+        color: gray
+      - name: team
+        color: blue
+      - name: project
+        color: green
+      - name: client
+        color: orange
+      - name: planning
+        color: purple
+      - name: retro
+        color: yellow
+      - name: interview
+        color: pink
+      - name: other
+        color: brown
+  - name: status
+    type: status
+    options:
+      - name: scheduled
+        color: gray
+      - name: held
+        color: blue
+      - name: followed-up
+        color: green
+      - name: cancelled
+        color: red
+  - name: attendees
+    type: person
+  - name: project
+    type: text
+  - name: summary
+    type: text
+  - name: link
+    type: url

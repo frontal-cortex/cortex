@@ -1,21 +1,23 @@
 format: 1
 id: tasks
 name: "Tasks"
-version: 1.0.0
+version: 2.0.0
 kind: collection
-summary: "A to-do database: status, priority, due date, project — with board and calendar views."
+summary: "One row per task with status, priority, due date and a Today flag; Inbox, Today, Upcoming, a board and a done chart."
 description: |
-  The most-used database there is. One row per task with a status board (To do / Doing / Done), a priority, a due date the calendar view shows, and a free-text project field to group by. Start here if you use one database only.
-tags: [productivity, tasks, database]
+  The task list most people end up building, done once. Each task is a row with a status (todo / doing / waiting / someday / done), a priority (p1–p3), a `due` date, a `today` checkbox for the short list you actually work from, an `area` and a free-text `project`. The views are the ones to-do apps ship: Inbox for what you captured and have not planned, Today, Upcoming by due date, a board by status, and a chart of tasks finished per week. Each task's page has a "done when" line, a checklist of steps and room for notes. Name the same project in the Project Tracker pack and its page shows these tasks.
+tags: [productivity, tasks, database, gtd]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The task databases in Notion's gallery and the purpose of the Obsidian Tasks plugin."
+credits: "Properties and views follow the task databases in Notion's gallery (Notion's Projects & Tasks, Thomas Frank's Ultimate Tasks, Easlo's Task Tracker) and the due and done dates of the Obsidian Tasks plugin."
 min_cortex: 0.1.0
 collection: tasks
 files:
-  - templates/tasks.md
   - schemas/tasks.yaml
   - index.md
-  - seed/example-task.md
+  - templates/tasks.md
+  - seed/write-the-project-brief.md
+  - seed/book-a-dentist-appointment.md
+  - seed/set-up-this-task-list.md

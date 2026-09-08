@@ -1,17 +1,28 @@
 format: 1
 id: meeting-notes
 name: "Meeting Notes"
-version: 1.0.0
-kind: note
-summary: "Attendees, agenda, decisions, and action items with owners."
+version: 2.0.0
+kind: collection
+summary: "Meetings as rows with date, kind, status and attendees; action items in their own list, linked to the meeting."
 description: |
-  The shape a meeting note needs so it is useful a month later: who was there, what was decided, and who owns what. Action items are task checkboxes, so they show up in searches for open work.
-tags: [work, meetings]
+  One row per meeting in `collections/meetings/`: when, what kind, who was there, a one-line summary, and a status that moves from scheduled to held to followed-up. Open a meeting and the page has the shape a note needs a month later — agenda, notes, decisions, action items, open questions — with a live table of that meeting's action items at the bottom. Action items are rows of their own in `collections/action-items/` with an owner, a due date and a status, so "what is still open from last week's meetings" is a view, not a search. Views: All (newest first), Upcoming, Calendar, a board by status for follow-up, and a chart of meetings per week by kind.
+tags: [work, meetings, database, tasks]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The most-duplicated work template in Notion's gallery, trimmed to what gets filled in."
+credits: "The properties and views follow the most-used meeting-notes databases in Notion's gallery and Dann Berg's meeting template for Obsidian; the separate action-items list is the advice that comes up in every review of them."
 min_cortex: 0.1.0
+collection: meetings
+collections: [action-items]
 files:
-  - templates/meeting.md
+  - schemas/meetings.yaml
+  - schemas/action-items.yaml
+  - index.md
+  - index/action-items.md
+  - templates/meetings.md
+  - templates/action-items.md
+  - seed/weekly-team-sync.md
+  - seed/client-kickoff.md
+  - seed/action-items/send-the-sync-summary.md
+  - seed/action-items/draft-the-kickoff-agenda.md

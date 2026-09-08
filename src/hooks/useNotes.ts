@@ -99,10 +99,27 @@ export function useNotes(vaultOpen: boolean) {
 
   /** Open or create today's journal note using the journal template (if any).
    *  `userSlug` nests journals per person (`journal/<user>/…`) so a team doesn't
-   *  collide on the same daily file. */
+   *  collide on the same daily file. A template of the form `collections/<name>`
+   *  makes Today the day's row in that collection instead. */
   const openOrCreateDaily = useCallback(
     async (journalTemplate: string, userSlug?: string): Promise<Note> => {
       const date = today();
+
+      // `journal_template: collections/journal` — the journal is a collection
+      // (one row per day, with properties and views). Today is that day's row,
+      // created from the collection's row template on first open.
+      if (journalTemplate.startsWith("collections/")) {
+        const source = journalTemplate.replace(/\/$/, "");
+        const path = `${source}/${date}.md`;
+        try {
+          return await commands.readNote(path);
+        } catch { /* not yet */ }
+        const created = await commands.ensureRow(source, date, { title: date, created: date, date });
+        const note = await commands.readNote(created);
+        await refresh();
+        return note;
+      }
+
       // Canonical, stable path — used for BOTH the existence check and creation,
       // so a second click reliably re-opens today's note instead of duplicating.
       const dir = userSlug ? `notes/journal/${userSlug}` : "notes/journal";

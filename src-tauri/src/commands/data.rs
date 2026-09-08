@@ -174,6 +174,26 @@ pub fn export_to_file(
     Ok(())
 }
 
+/// The path of row `id` in a collection, creating it from the collection's
+/// default row template (or blank) when it does not exist yet — how Today
+/// opens a journal that is a collection, and how a tracker's day comes to be.
+#[tauri::command]
+pub fn ensure_row(
+    source: String,
+    id: String,
+    fields: std::collections::HashMap<String, String>,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<String> {
+    let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
+    let fields: std::collections::BTreeMap<String, String> = fields.into_iter().collect();
+    let path = cortex_core::data::ensure_row(&root, &source, &id, &fields)?;
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = cortex_core::index::index_file(&root, &path, db);
+    }
+    Ok(path.strip_prefix(&root).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_else(|_| path.to_string_lossy().into_owned()))
+}
+
 /// Template names available for a collection.
 #[tauri::command]
 pub fn list_row_templates(source: String, state: State<'_, VaultState>) -> Result<Vec<String>> {

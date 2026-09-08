@@ -1,0 +1,16 @@
+properties:
+  - name: status
+    type: status
+    options:
+      - name: planning
+        color: gray
+      - name: active
+        color: blue
+      - name: done
+        color: green
+  - name: start
+    type: date
+  - name: end
+    type: date
+  - name: goal
+    type: text

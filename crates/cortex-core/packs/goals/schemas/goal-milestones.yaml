@@ -1,0 +1,15 @@
+properties:
+  - name: goal
+    type: relation
+    collection: goals
+  - name: status
+    type: status
+    options:
+      - name: todo
+        color: gray
+      - name: doing
+        color: blue
+      - name: done
+        color: green
+  - name: due
+    type: date
