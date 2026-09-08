@@ -36,7 +36,7 @@ both apps mostly fail to do.
 | Finding | Where | Fix |
 |---|---|---|
 | Database packs have no views. A schema and a seed row make a table with no `_index.md`, so the collection gets no table / board / calendar and does not even appear as a database until something creates that file. The views are half of what a Notion database template *is*. | all four `kind: collection` packs | Each ships `index.md` → `collections/<name>/_index.md` with `views:`. |
-| No row template. New row from the pack's table has no shape; the pack is also invisible under New from template. | collection packs | Each ships `templates/<name>.md` with the schema's properties pre-filled. |
+| No row template. New row from the pack's table has no shape; the pack is also invisible under New from template. | collection packs | Each ships `templates/<name>.md` with the schema's properties pre-filled. It installs as the collection's row template, `collections/<name>/_template-<name>.md`, where the table's New row menu finds it; `{{date}}`, `{{time}}`, `{{title}}` and `{{uuid}}` are expanded when a row is made from it. |
 | Seed rows hardcode `created: 2026-09-08`. | all `seed/*.md` | Use `{{today}}`, substituted at install (the starter vault already does this). |
 | `created: {{date}}` and `title: "1:1 — {{title}}"` — the first is unquoted. `{{…}}` unquoted is a YAML flow mapping; the app tolerates it (it substitutes before parsing, and the sidebar falls back to the filename) but the vault's own docs say to quote placeholders. | daily, meeting, book, one-on-one, para | Quote every placeholder in frontmatter. `lint` enforces it. |
 | Habit tracker models "this week" as seven checkbox columns. It needs a manual reset every week and keeps no history, so the calendar view and any streak are meaningless. | habit-tracker | One row per habit per week: `habit` (select or relation), `week` (date, Monday), the seven checkboxes, `streak` dropped (compute later, or leave to the weekly review). Calendar view on `week`. |
@@ -88,11 +88,19 @@ Zettelkasten literature note, map of content.
 ├── manifest.yaml
 ├── README.md              # long description, shown on the pack's page (optional)
 ├── preview.png            # card image, ≤ 200 KB (optional)
-├── templates/*.md         # → <vault>/templates/
+├── templates/*.md         # → <vault>/templates/ — except templates/<name>.md, the row
+│                          #   template → <vault>/collections/<name>/_template-<name>.md
 ├── schemas/*.yaml         # → <vault>/.cortex/schemas/          (collection packs)
 ├── index.md               # → <vault>/collections/<name>/_index.md   (collection packs)
-└── seed/*.md              # → <vault>/collections/<name>/            (collection packs)
+├── index/<c>.md           # → <vault>/collections/<c>/_index.md      (packs with several collections)
+├── seed/*.md              # → <vault>/collections/<name>/            (collection packs)
+└── seed/<c>/*.md          # → <vault>/collections/<c>/               (rows for an extra collection)
 ```
+
+A pack may own several collections — the Habit Tracker installs `habits`
+and its daily `habit-log` — by naming the extras in `collections:`. The
+primary keeps the single-collection layout; each extra has its own
+`schemas/<c>.yaml`, `index/<c>.md`, `templates/<c>.md` and `seed/<c>/`.
 
 ```yaml
 # manifest.yaml
@@ -112,6 +120,7 @@ license: CC0-1.0                # SPDX id; CC0-1.0 or CC-BY-4.0 for official pac
 credits: "Inspired by the task databases in Notion's gallery and the Obsidian Tasks plugin."
 min_cortex: 0.3.0               # lowest app version whose schema/view features the pack needs
 collection: tasks               # collection packs: the folder under collections/
+collections: []                 # extra collections the pack owns, e.g. [habit-log]; usually omitted
 files:                          # every file, so lint can catch strays and install knows what it wrote
   - templates/task.md
   - schemas/tasks.yaml

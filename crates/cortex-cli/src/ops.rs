@@ -9,6 +9,7 @@ use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::schema::TypeSchema;
 use cortex_core::settings::Settings;
+use cortex_core::tracker::{self, TrackerResult};
 use cortex_core::{index, schema, settings, vault};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -30,6 +31,57 @@ pub struct NewNote {
     /// Seed from `templates/<name>.md` ({{date}}, {{time}}, {{title}}, {{uuid}}).
     pub template: Option<String>,
     pub body: Option<String>,
+}
+
+/// One `key=value` pair's meaning on the command line.
+#[derive(Debug, Clone)]
+pub enum PairOp {
+    /// `key=value`; a null value (from `key=`) removes the key.
+    Set(serde_json::Value),
+    /// `key+=value`: append to a list property, no duplicates.
+    Add(serde_json::Value),
+    /// `key-=value`: remove from a list property.
+    Remove(serde_json::Value),
+}
+
+/// A list property's items, tolerating the comma-joined string a text edit may leave.
+fn list_of(v: Option<&serde_json::Value>) -> Vec<serde_json::Value> {
+    match v {
+        Some(serde_json::Value::Array(a)) => a.clone(),
+        Some(serde_json::Value::String(s)) if !s.trim().is_empty() => s.split(',').map(|x| serde_json::Value::String(x.trim().to_string())).collect(),
+        Some(serde_json::Value::Null) | None => vec![],
+        Some(other) => vec![other.clone()],
+    }
+}
+
+/// A top-level `key: value` line of a small YAML spec.
+fn spec_field(spec: &str, key: &str) -> Option<String> {
+    spec.lines().find_map(|l| l.strip_prefix(&format!("{key}:")).map(|v| v.trim().to_string())).filter(|v| !v.is_empty())
+}
+
+/// A tracker view found in a collection's `_index.md`.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackerView {
+    pub collection: String,
+    pub view: String,
+    /// `collections/<name>` holding one row per day.
+    pub log: String,
+    /// The cortex-view spec, ready for `run_tracker`.
+    pub spec: String,
+}
+
+/// What `track` did, with the streak as it stands afterwards.
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackEvent {
+    pub collection: String,
+    pub item: String,
+    pub date: String,
+    pub done: bool,
+    pub current_streak: u32,
+    pub longest_streak: u32,
+    pub streak_unit: String,
+    pub week_done: u32,
+    pub target: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -227,22 +279,146 @@ impl Vault {
         Ok(note)
     }
 
-    /// Parse CLI-style `key=value` pairs with YAML typing (`3` → number,
-    /// `true` → bool, `[a, b]` → list, bare words → string); `key=` removes.
-    pub fn parse_pairs(pairs: &[String]) -> Result<BTreeMap<String, serde_json::Value>> {
-        let mut out = BTreeMap::new();
+    /// `key=value`, `key+=value` (append to a list) or `key-=value` (remove from
+    /// it), YAML-typed like `parse_pairs`; `key=` removes the key.
+    pub fn parse_pair_ops(pairs: &[String]) -> Result<Vec<(String, PairOp)>> {
+        let typed = |raw: &str| -> serde_json::Value {
+            serde_yaml::from_str(raw).unwrap_or_else(|_| serde_json::Value::String(raw.to_string()))
+        };
+        let mut out = Vec::new();
         for pair in pairs {
-            let (key, raw) = pair
-                .split_once('=')
-                .ok_or_else(|| format!("expected key=value, got '{pair}'"))?;
-            let value = if raw.is_empty() {
-                serde_json::Value::Null
-            } else {
-                serde_yaml::from_str(raw).unwrap_or_else(|_| serde_json::Value::String(raw.to_string()))
+            let eq = pair.find('=').ok_or_else(|| format!("expected key=value, got '{pair}'"))?;
+            let (key, raw) = (&pair[..eq], &pair[eq + 1..]);
+            let op = match key.chars().last() {
+                Some('+') => PairOp::Add(typed(raw)),
+                Some('-') => PairOp::Remove(typed(raw)),
+                _ => PairOp::Set(if raw.is_empty() { serde_json::Value::Null } else { typed(raw) }),
             };
-            out.insert(key.to_string(), value);
+            let key = key.trim_end_matches(['+', '-']).to_string();
+            if key.is_empty() { return Err(format!("missing key in '{pair}'").into()); }
+            if raw.is_empty() && !matches!(op, PairOp::Set(_)) { return Err(format!("'{pair}' needs a value").into()); }
+            out.push((key, op));
         }
         Ok(out)
+    }
+
+    /// Apply `key=value` / `key+=value` / `key-=value` pairs to a note and write
+    /// it. A collection row that does not exist yet is created first (see
+    /// `read_or_create_row`). Returns the note and whether it was created.
+    pub fn apply_pairs(&self, target: &str, pairs: &[String]) -> Result<(Note, bool)> {
+        let ops = Self::parse_pair_ops(pairs)?;
+        let (mut note, created) = self.read_or_create_row(target)?;
+        for (k, op) in ops {
+            match op {
+                PairOp::Set(v) => {
+                    if v.is_null() { note.frontmatter.remove(&k); } else { note.frontmatter.insert(k, v); }
+                }
+                PairOp::Add(v) => {
+                    let mut list = list_of(note.frontmatter.get(&k));
+                    if !list.contains(&v) { list.push(v); }
+                    note.frontmatter.insert(k, serde_json::Value::Array(list));
+                }
+                PairOp::Remove(v) => {
+                    let mut list = list_of(note.frontmatter.get(&k));
+                    list.retain(|x| *x != v);
+                    note.frontmatter.insert(k, serde_json::Value::Array(list));
+                }
+            }
+        }
+        self.write(&note)?;
+        Ok((note, created))
+    }
+
+    /// `read`, except a missing row under `collections/<c>/` is created first —
+    /// from the collection's row template when it has one — so
+    /// `cortex set collections/habit-log/2026-09-08 done+=Read` works on a day
+    /// that has no file yet. An id that is a date also becomes the row's `date`.
+    pub fn read_or_create_row(&self, target: &str) -> Result<(Note, bool)> {
+        let first = match self.read(target) { Ok(n) => return Ok((n, false)), Err(e) => e };
+        let rel = target.trim_start_matches("./");
+        let rel = rel.strip_suffix(".md").unwrap_or(rel);
+        if let Some((coll, id)) = rel.strip_prefix("collections/").and_then(|r| r.split_once('/')) {
+            let ok_id = !id.is_empty() && !id.contains('/') && !id.contains("..") && !id.starts_with('_');
+            if ok_id && self.root.join("collections").join(coll).is_dir() {
+                // `collections/<c>/<id>` without `.md` names the row file directly.
+                let file = format!("collections/{coll}/{id}.md");
+                if self.root.join(&file).is_file() { return Ok((self.read_path(&file)?, false)); }
+                let is_date = chrono::NaiveDate::parse_from_str(id, "%Y-%m-%d").is_ok();
+                let mut fields = BTreeMap::new();
+                fields.insert("title".to_string(), id.to_string());
+                fields.insert("created".to_string(), if is_date { id.to_string() } else { chrono::Local::now().format("%Y-%m-%d").to_string() });
+                if is_date { fields.insert("date".to_string(), id.to_string()); }
+                data::ensure_row(&self.root, &format!("collections/{coll}"), id, &fields)?;
+                return Ok((self.read_path(&format!("collections/{coll}/{id}.md"))?, true));
+            }
+        }
+        Err(first)
+    }
+
+    // ── Trackers ────────────────────────────────────────────────────────────
+
+    /// Every tracker view in the vault (habits and the like).
+    pub fn trackers(&self) -> Vec<TrackerView> {
+        tracker::tracker_specs(&self.root).into_iter().map(|(collection, view, spec)| {
+            let log = spec_field(&spec, "log").unwrap_or_default();
+            TrackerView { collection, view, log, spec }
+        }).collect()
+    }
+
+    fn tracker_view(&self, collection: &str, view: Option<&str>) -> Result<TrackerView> {
+        let all: Vec<TrackerView> = self.trackers().into_iter().filter(|t| t.collection == collection).collect();
+        if all.is_empty() {
+            return Err(format!("collections/{collection} has no tracker view (add one to its _index.md, or install a pack that has one)").into());
+        }
+        match view {
+            None => Ok(all.into_iter().next().unwrap()),
+            Some(name) => all.into_iter().find(|t| t.view.eq_ignore_ascii_case(name))
+                .ok_or_else(|| format!("collections/{collection} has no tracker view named '{name}'").into()),
+        }
+    }
+
+    /// Run a collection's tracker view (its first, or the named one), optionally
+    /// with another `range` and anchored on a date other than today.
+    pub fn tracker(&self, collection: &str, view: Option<&str>, range: Option<&str>, at: Option<&str>) -> Result<TrackerResult> {
+        let t = self.tracker_view(collection, view)?;
+        let mut spec = t.spec.clone();
+        if let Some(r) = range {
+            spec = spec.lines().filter(|l| !l.starts_with("range:")).collect::<Vec<_>>().join("\n");
+            spec.push_str(&format!("\nrange: {r}\n"));
+        }
+        Ok(tracker::run_tracker(&self.root, &spec, at)?)
+    }
+
+    /// Tick (or untick) one item for a day — the way an agent logs "I ran today".
+    /// `item` matches a title exactly, then case-insensitively, then as a unique prefix.
+    pub fn track(&self, collection: &str, item: &str, date: Option<&str>, on: Option<bool>) -> Result<TrackEvent> {
+        let t = self.tracker_view(collection, None)?;
+        let today = tracker::run_tracker(&self.root, &t.spec, date)?;
+        let titles: Vec<&str> = today.items.iter().map(|i| i.title.as_str()).collect();
+        let lower = item.trim().to_lowercase();
+        let title = titles.iter().find(|t| **t == item.trim())
+            .or_else(|| titles.iter().find(|t| t.to_lowercase() == lower))
+            .or_else(|| {
+                let hits: Vec<&&str> = titles.iter().filter(|t| t.to_lowercase().starts_with(&lower)).collect();
+                if hits.len() == 1 { Some(hits[0]) } else { None }
+            })
+            .ok_or_else(|| format!("no item '{item}' in collections/{collection}; items: {}", titles.join(", ")))?
+            .to_string();
+        let day = date.map(String::from).unwrap_or_else(|| today.today.clone());
+        let (_, done) = tracker::toggle(&self.root, &today.log_source, &today.date_field, &today.done_field, &day, &title, on)?;
+        let after = tracker::run_tracker(&self.root, &t.spec, None)?;
+        let it = after.items.iter().find(|i| i.title == title);
+        Ok(TrackEvent {
+            collection: collection.to_string(),
+            item: title,
+            date: day,
+            done,
+            current_streak: it.map(|i| i.current_streak).unwrap_or(0),
+            longest_streak: it.map(|i| i.longest_streak).unwrap_or(0),
+            streak_unit: it.map(|i| i.streak_unit).unwrap_or("days").to_string(),
+            week_done: it.map(|i| i.week_done).unwrap_or(0),
+            target: it.map(|i| i.target).unwrap_or(0),
+        })
     }
 
     /// Replace a note's body, keeping its frontmatter.

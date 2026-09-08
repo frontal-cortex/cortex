@@ -1,0 +1,6 @@
+properties:
+  - name: date
+    type: date
+  - name: done
+    type: relation
+    collection: habits

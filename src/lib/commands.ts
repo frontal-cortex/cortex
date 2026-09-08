@@ -89,9 +89,16 @@ export interface SortClause {
   desc: boolean;
 }
 
-export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart";
+export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart" | "tracker";
 
-/** One named view in a database / embedded data block. */
+/** One named view in a database / embedded data block.
+ *
+ *  Beyond the query keys every view shares (filter, sort, columns, group,
+ *  date, limit), a view is a bag of string options its type reads — charts
+ *  `x` `y` `agg` `chartType` `bucket` `series`, trackers `log` `done` `range`
+ *  and field mappings. The parsers and serializers in `database.ts` treat
+ *  every option generically, so a new view type or option needs no change
+ *  there; the well-known ones are declared here only for editor help. */
 export interface ViewDef {
   name: string;
   type: ViewType;
@@ -99,11 +106,25 @@ export interface ViewDef {
   sort?: string[];
   columns?: string[];
   group?: string;
+  /** Calendar: the date property. Tracker: the log's date property (default `date`). */
   date?: string;
+  limit?: string;
   x?: string;
   y?: string;
   agg?: string;
   chartType?: string;
+  /** Chart: fold a date-valued x by day | week | month | year. */
+  bucket?: string;
+  /** Chart: one series per distinct value of this field. */
+  series?: string;
+  /** Tracker: the collection with one row per day. */
+  log?: string;
+  /** Tracker: the log's list property naming the items done (default `done`). */
+  done?: string;
+  /** Tracker: today | week | month | year. */
+  range?: string;
+  /** Any other option a view type defines. */
+  [option: string]: string | string[] | undefined;
 }
 
 /** An embedded data block's multi-view document (source + named views). */
@@ -125,10 +146,8 @@ export interface StructuredSpec {
   group?: string | null;
   date?: string | null;
   limit?: number | null;
-  x?: string | null;
-  y?: string | null;
-  agg?: string | null;
-  chartType?: string | null;
+  /** View-type options (x, chartType, log, range, …), carried through untouched. */
+  [option: string]: unknown;
 }
 
 export interface ViewRow {
@@ -149,11 +168,71 @@ export interface ChartPoint {
   y: number;
 }
 
+export interface ChartSeries {
+  name: string;
+  points: ChartPoint[];
+}
+
 export interface ChartResult {
   chartType: string;
   xLabel: string;
   yLabel: string;
+  /** The one series, or with `series:` the per-x sum of all of them. */
   points: ChartPoint[];
+  /** Per-value series when the spec sets `series:`; empty otherwise. */
+  series: ChartSeries[];
+}
+
+// ── Tracker view (see cortex_core::tracker) ──
+
+/** One item on one day. `free` is a flexible habit's unchecked past day; `off` a day the habit does not ask for. */
+export type TrackerCell = "done" | "missed" | "pending" | "free" | "off" | "future";
+
+export interface TrackerItem {
+  id: string;
+  title: string;
+  icon: string | null;
+  /** Palette name (gray, blue, …) from the item's category-like select. */
+  color: string | null;
+  frequency: string;
+  /** Days per week asked for: 7 daily, 5 weekdays, the target otherwise. */
+  target: number;
+  /** Aligned with `TrackerResult.days`. */
+  cells: TrackerCell[];
+  currentStreak: number;
+  longestStreak: number;
+  streakUnit: "days" | "weeks";
+  weekDone: number;
+  rangeDone: number;
+  rangeExpected: number;
+}
+
+export interface TrackerDay {
+  date: string;
+  done: number;
+  expected: number;
+  perfect: boolean;
+  logId: string | null;
+}
+
+export interface TrackerResult {
+  range: string;
+  anchor: string;
+  start: string;
+  end: string;
+  today: string;
+  logSource: string;
+  dateField: string;
+  doneField: string;
+  items: TrackerItem[];
+  days: TrackerDay[];
+}
+
+/** A tracker view declared in some collection's `_index.md`. */
+export interface TrackerRef {
+  collection: string;
+  name: string;
+  spec: string;
 }
 
 export interface NoteRef {
@@ -427,6 +506,16 @@ export const commands = {
 
   runChart: (spec: string) =>
     invoke<ChartResult>("run_chart", { spec }),
+
+  // ── Tracker view — reading computes; the only write is a toggle ──
+  runTracker: (spec: string, anchor?: string) =>
+    invoke<TrackerResult>("run_tracker", { spec, anchor: anchor ?? null }),
+
+  trackerToggle: (logSource: string, dateField: string, doneField: string, date: string, item: string, on?: boolean) =>
+    touched(invoke<boolean>("tracker_toggle", { logSource, dateField, doneField, date, item, on: on ?? null })),
+
+  listTrackers: () =>
+    invoke<TrackerRef[]>("list_trackers"),
 
   setCell: (source: string, rowId: string, field: string, value: string, ty: string) =>
     touched(invoke<void>("set_cell", { source, rowId, field, value, ty })),

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -28,6 +28,7 @@ interface Props {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenMarketplace: () => void;
+  onLogToday: () => void;
   onQuickCapture: () => void;
   onToggleSidebar: () => void;
   onToggleTerminal: () => void;
@@ -46,7 +47,7 @@ type Mode = "notes" | "actions";
 export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onQuickCapture,
+  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
   onPublish, onTogglePublic, isPublic, hasRemote,
 }: Props) {
@@ -112,6 +113,13 @@ export function QuickSwitcher({
         description: "Tabbed table / board / calendar over notes",
         icon: <BrainIcon size={14} />,
         run: () => { onNewCollection(); onClose(); },
+      },
+      {
+        id: "log-today",
+        label: "Log today…",
+        description: `${shortcutFor("log-today")} · every tracker's checklist for today; 1–9 ticks, streaks update`,
+        icon: <TrackerIcon size={14} />,
+        run: () => { onLogToday(); onClose(); },
       },
       {
         id: "marketplace",
@@ -207,7 +215,7 @@ export function QuickSwitcher({
     }];
     return [...base, ...tplActions, ...more];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onQuickCapture,
+      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
       onPublish, onTogglePublic, isPublic, onClose]);
 

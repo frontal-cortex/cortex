@@ -73,11 +73,35 @@ enum Cmd {
         #[arg(long)]
         body: Option<String>,
     },
-    /// Set frontmatter properties: key=value (YAML-typed); `key=` removes it
+    /// Set frontmatter properties: key=value (YAML-typed); key+=v / key-=v add to or remove from a list; `key=` removes it.
+    /// A missing collection row is created first (from its row template), so a tracker's day file needs no setup.
     Set {
         target: String,
         #[arg(required = true)]
         pairs: Vec<String>,
+    },
+    /// Trackers: habits and anything else logged per day. No collection: list the tracker views; with one: print its grid
+    Tracker {
+        /// Collection with a tracker view, e.g. habits
+        collection: Option<String>,
+        /// today | week | month | year (default: the view's own)
+        #[arg(long)]
+        range: Option<String>,
+        /// Anchor the grid on this date instead of today (YYYY-MM-DD)
+        #[arg(long, value_name = "DATE")]
+        at: Option<String>,
+        /// Which tracker view of the collection (default: the first)
+        #[arg(long)]
+        view: Option<String>,
+        /// Tick this item (by title; a unique prefix will do) for --date or today, and print its streak
+        #[arg(long, value_name = "ITEM")]
+        log: Option<String>,
+        /// Day to log for (default: today)
+        #[arg(long, value_name = "DATE")]
+        date: Option<String>,
+        /// With --log: untick instead of tick
+        #[arg(long)]
+        off: bool,
     },
     /// Replace a note's body from stdin, keeping its frontmatter
     Write { target: String },
@@ -286,10 +310,12 @@ fn run() -> Result<()> {
             if out.json { out.emit(&note) } else { println!("{}", note.path); Ok(()) }
         }
         Cmd::Set { target, pairs } => {
-            let note = v.set_properties(&target, Vault::parse_pairs(&pairs)?)?;
+            let (note, created) = v.apply_pairs(&target, &pairs)?;
+            if created && !out.json { eprintln!("created {}", note.path); }
             if out.json { out.emit(&note.frontmatter) }
             else { print!("{}", serde_yaml::to_string(&note.frontmatter)?); Ok(()) }
         }
+        Cmd::Tracker { collection, range, at, view, log, date, off } => tracker(&v, &out, collection, range, at, view, log, date, off),
         Cmd::Write { target } => {
             let note = v.write_body(&target, &read_stdin()?)?;
             if out.json { out.emit(&note) } else { println!("{}", note.path); Ok(()) }
@@ -598,6 +624,76 @@ fn packs(v: &Vault, out: &Out, action: PacksCmd) -> Result<()> {
             for (url, err) in &cat.errors { eprintln!("warning: {url}: {err}"); }
             Ok(())
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tracker(v: &Vault, out: &Out, collection: Option<String>, range: Option<String>, at: Option<String>, view: Option<String>, log: Option<String>, date: Option<String>, off: bool) -> Result<()> {
+    let Some(collection) = collection else {
+        let all = v.trackers();
+        if out.json { return out.emit(&all); }
+        table(&["COLLECTION", "VIEW", "LOG"], all.iter().map(|t| vec![t.collection.clone(), t.view.clone(), t.log.clone()]).collect());
+        if all.is_empty() { eprintln!("no tracker views — install the habit-tracker pack, or add `type: tracker` to a database's views"); }
+        return Ok(());
+    };
+    if let Some(item) = log {
+        let e = v.track(&collection, &item, date.as_deref(), Some(!off))?;
+        if out.json { return out.emit(&e); }
+        let streak = match (e.current_streak, e.streak_unit.as_str()) {
+            (0, _) => String::new(),
+            (n, "weeks") => format!(" ({n}-week streak)"),
+            (n, _) => format!(" ({n}-day streak)"),
+        };
+        let week = if e.streak_unit == "weeks" { format!(" · {}/{} this week", e.week_done, e.target) } else { String::new() };
+        println!("{} {} — {}{}{}", if e.done { "✓" } else { "✗" }, e.item, e.date, streak, week);
+        return Ok(());
+    }
+    let r = v.tracker(&collection, view.as_deref(), range.as_deref(), at.as_deref())?;
+    if out.json { return out.emit(&r); }
+    print_tracker(&r);
+    Ok(())
+}
+
+/// The grid as text: one row per item, a glyph per day, streak and week at the
+/// right. Ranges wider than a month keep the numbers and drop the cells.
+fn print_tracker(r: &cortex_core::tracker::TrackerResult) {
+    use cortex_core::tracker::Cell;
+    const DOW: [&str; 7] = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+    let glyph = |c: Cell| match c { Cell::Done => "●", Cell::Missed => "○", Cell::Pending => "◌", Cell::Free => "·", Cell::Off => "-", Cell::Future => " " };
+    let name = |i: &cortex_core::tracker::TrackerItem| match &i.icon { Some(ic) => format!("{ic} {}", i.title), None => i.title.clone() };
+    let width = r.items.iter().map(|i| name(i).chars().count()).max().unwrap_or(4).clamp(4, 28);
+    let pad = |s: &str| { let n = s.chars().count(); if n >= width { s.chars().take(width).collect() } else { format!("{s}{}", " ".repeat(width - n)) } };
+    let streak = |i: &cortex_core::tracker::TrackerItem| format!("{}{}", i.current_streak, if i.streak_unit == "weeks" { "w" } else { "d" });
+    let show_cells = r.days.len() <= 31;
+
+    println!("{} · {} → {}", r.range, r.start, r.end);
+    if show_cells {
+        let head: Vec<String> = r.days.iter().map(|d| {
+            let day = chrono::NaiveDate::parse_from_str(&d.date, "%Y-%m-%d").ok();
+            let label = if r.range == "week" {
+                day.map(|x| { use chrono::Datelike; format!("{}{}", DOW[x.weekday().num_days_from_monday() as usize], if d.date == r.today { "*" } else { "" }) }).unwrap_or_default()
+            } else {
+                format!("{}{}", &d.date[8..], if d.date == r.today { "*" } else { "" })
+            };
+            format!("{label:<3}")
+        }).collect();
+        println!("{}  {}  streak  week", pad(""), head.join(""));
+        for i in &r.items {
+            let cells: String = i.cells.iter().map(|c| format!("{:<3}", glyph(*c))).collect();
+            println!("{}  {}  {:<6}  {}/{}", pad(&name(i)), cells, streak(i), i.week_done, i.target);
+        }
+        let scores: String = r.days.iter().map(|d| format!("{:<3}", if d.expected > 0 { format!("{}", d.done) } else { String::new() })).collect();
+        println!("{}  {}", pad("done"), scores);
+    } else {
+        println!("{}  {:>6}  {:>7}  {:>9}", pad(""), "streak", "longest", "done");
+        for i in &r.items {
+            println!("{}  {:>6}  {:>6}{}  {:>4}/{}", pad(&name(i)), streak(i), i.longest_streak, if i.streak_unit == "weeks" { "w" } else { "d" }, i.range_done, i.range_expected);
+        }
+    }
+    let perfect = r.days.iter().filter(|d| d.perfect).count();
+    match r.days.iter().find(|d| d.date == r.today) {
+        Some(t) => println!("Today: {} of {}{}", t.done, t.expected, if t.perfect { " — perfect day" } else { "" }),
+        None => println!("Perfect days: {perfect} of {}", r.days.iter().filter(|d| d.expected > 0).count()),
     }
 }
 

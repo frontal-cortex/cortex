@@ -26,6 +26,9 @@ immediately. Configuration: get_settings / set_settings edit .cortex/settings.ya
 it live); list_agents says which agent CLIs are installed for the terminal_command setting. \
 Templates: list_packs / install_pack / update_pack / remove_pack manage template packs (plain Markdown + YAML) \
 from the marketplace; installing is fine when the user asks for a template or a database of some kind. \
+Trackers: a collection with a tracker view (habits, plants, medication) logs items per day in a log \
+collection; `tracker` reads the grid with streaks and scores, `track` ticks one item for a day — the \
+way to log \"I ran today\". run_view runs any cortex-view spec (a table over a collection or CSV). \
 Publishing: list_published shows which notes the user has marked public (publish: true or the `public` \
 tag); set that flag only when asked, and never build or push a site — that is the user's own act. When a change is meant for the user's review rather than applied directly, call \
 propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
@@ -157,6 +160,36 @@ pub struct PackIdArgs {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RunViewArgs {
+    /// A cortex-view YAML spec: `source: collections/<name>` plus optional filter, sort, columns, limit
+    pub spec: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct TrackerArgs {
+    /// Collection with a tracker view, e.g. "habits"
+    pub collection: String,
+    /// today | week | month | year (default: the view's own)
+    pub range: Option<String>,
+    /// Anchor date (YYYY-MM-DD; default today)
+    pub at: Option<String>,
+    /// Which tracker view (default: the first)
+    pub view: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct TrackArgs {
+    /// Collection with a tracker view, e.g. "habits"
+    pub collection: String,
+    /// Item title (a unique prefix will do)
+    pub item: String,
+    /// Day to log for (YYYY-MM-DD; default today)
+    pub date: Option<String>,
+    /// true to tick, false to untick (default: flip)
+    pub done: Option<bool>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SettingsArgs {
     /// Settings to change, key → value. Values are typed per key (booleans, numbers,
     /// strings; `keybindings` takes an object of id → keys, or use `keybindings.<id>`
@@ -223,6 +256,21 @@ impl CortexMcp {
     #[tool(description = "Query a collection like the app's table view: filter, sort, columns, limit. Returns columns and rows.")]
     fn query_collection(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.view(&a.collection, a.filter.as_deref(), &a.sort, a.columns.as_deref(), a.limit).map_err(err)?)
+    }
+
+    #[tool(description = "Run a cortex-view YAML spec (source: collections/<name> or data/<file>.csv, plus filter / sort / columns / limit) and return its columns and rows — the same query the app's views run.")]
+    fn run_view(&self, Parameters(a): Parameters<RunViewArgs>) -> Result<CallToolResult, McpError> {
+        json(&cortex_core::data::resolve_view(&self.vault.root, &a.spec).map_err(err)?)
+    }
+
+    #[tool(description = "A collection's tracker view (habits and the like): items × days for the range, each item's current and longest streak, this week's count against its target, and per-day done/expected with perfect days. Computed on read; nothing is stored.")]
+    fn tracker(&self, Parameters(a): Parameters<TrackerArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.tracker(&a.collection, a.view.as_deref(), a.range.as_deref(), a.at.as_deref()).map_err(err)?)
+    }
+
+    #[tool(description = "Tick or untick one tracker item for a day — log \"I ran today\" as track {collection: habits, item: Exercise}. Writes one line in that day's log row (created from its template if the day has no file) and returns the item's streak afterwards.")]
+    fn track(&self, Parameters(a): Parameters<TrackArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.track(&a.collection, &a.item, a.date.as_deref(), a.done).map_err(err)?)
     }
 
     #[tool(description = "The property schema for a collection or note type: typed properties and their options.")]

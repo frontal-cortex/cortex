@@ -388,3 +388,29 @@ export function GlobeIcon({ size = 15 }: IconProps) {
     </svg>
   );
 }
+
+/** A bare check mark — the tick inside tracker cells and checkbox cells. */
+export function CheckIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+/** Tracker view: a row of days with some filled — the habit grid. */
+export function TrackerIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="4" height="4" rx="1" fill="currentColor" />
+      <rect x="10" y="4" width="4" height="4" rx="1" fill="currentColor" />
+      <rect x="17" y="4" width="4" height="4" rx="1" />
+      <rect x="3" y="11" width="4" height="4" rx="1" fill="currentColor" />
+      <rect x="10" y="11" width="4" height="4" rx="1" />
+      <rect x="17" y="11" width="4" height="4" rx="1" />
+      <rect x="3" y="18" width="4" height="4" rx="1" fill="currentColor" />
+      <rect x="10" y="18" width="4" height="4" rx="1" fill="currentColor" />
+      <rect x="17" y="18" width="4" height="4" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
