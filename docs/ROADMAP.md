@@ -173,11 +173,38 @@ Git already stores every version; surface it.
   `@today` → ISO date. · S
 - **Comments**: sidecar `notes/foo.comments.yaml` (committed, text-quote
   anchors) keeps note bodies clean; render as margin notes. · M
-- **Export / Publish**: export to PDF/HTML; "Publish" = push to a static-site
-  remote. · S–M
+- **Export / Publish**: export to PDF/HTML; "Publish" = a static site built
+  from the vault (see Publishing below). · S–M
 - **Theme toggle**: explicit light/dark/system in `.cortex/settings.yaml`. · S
 
 ---
+
+## Publishing (decided 2026-09-08)
+
+Notes can be put on the internet for others to read. Two hosting models,
+one build. Private by default: a note is published only with
+`publish: true` in its frontmatter (or a `public` tag); site-level settings
+are the `site_title` / `site_home` keys in `.cortex/settings.yaml` (one
+config file), so agents can mark notes through files too — but only a person
+builds or pushes the site.
+
+**Now — static site generator in `cortex-core`, `cortex publish --out DIR`.**
+One HTML page per published note, assets, an index, a search JSON. Wiki links
+become slugs; a link to an unpublished note degrades to plain text so nothing
+leaks. Database views render as static tables. Read-only: no comments, no
+presence. Self-host targets, cheapest first: a folder for any static host, a
+`gh-pages` branch pushed with git, a bundled GitHub Action template that runs
+`cortex publish` on push. Netlify / Cloudflare Pages need no extra code.
+Renderers still to add on top of plain Markdown: callouts, embeds, database
+blocks. · M
+
+**Backlog — hosted service (`cortex.site`), a separate repo.** Because the
+vault is git, the interface is a git remote: add it, push, the server runs
+the same `cortex publish` and serves `name.cortex.site`. Payment gates the
+remote (no active subscription → push rejected with a link to pay); Stripe
+Checkout for cards, Lightning if true micropayments are wanted. Server state
+is just repo, build output, paid-until. Depends on the generator; not
+started. · L
 
 ## Suggested sequencing
 
