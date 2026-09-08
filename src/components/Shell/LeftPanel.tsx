@@ -5,8 +5,8 @@ import {
 import { shortcutFor, SHORTCUTS, ShortcutId, isMac } from "../../lib/keymap";
 import { NoteEntry, VaultStatus, AgentBranch, CommitEntry, TrashEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
-import { buildTree, flattenTree, displayTitle, relativeTime } from "../../lib/fileTree";
-import { FileTree, LeafRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT } from "./FileTree";
+import { buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, relativeTime } from "../../lib/fileTree";
+import { FileTree, LeafRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
 import { CommitDiffModal } from "./CommitDiffModal";
 import {
   GettingStarted, GettingStartedStep, loadGettingStartedDismissed, saveGettingStartedDismissed,
@@ -60,10 +60,10 @@ export interface LeftPanelHandle {
   focus(): void;
 }
 
-type SectionId = "favorites" | "notes" | "databases" | "templates" | "trash";
+type SectionId = "favorites" | "notes" | "templates" | "trash";
 
 const SECTION_DEFAULT_OPEN: Record<SectionId, boolean> = {
-  favorites: true, notes: true, databases: true, templates: false, trash: false,
+  favorites: true, notes: true, templates: false, trash: false,
 };
 
 export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
@@ -215,18 +215,42 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     setNewFolderIn(parentPath);
   }, [toggleDir, toggleSection]);
 
-  const notesTree    = useMemo(() => buildTree(notes, "notes/", dirs),     [notes, dirs]);
+  // One tree: folders, then the collections that live at each level (by their
+  // page's `parent:`, top level otherwise), then notes. Rows never appear.
+  const notesTree = useMemo(() => {
+    const { roots, underFolder } = buildCollectionNodes(notes);
+    return attachCollections(buildTree(notes, "notes/", dirs), roots, underFolder);
+  }, [notes, dirs]);
   const templateTree = useMemo(() => buildTree(notes, "templates/"),       [notes]);
+  const collectionCount = useMemo(() => new Set(notes.map((n) => n.path.match(/^collections\/([^/]+)\//)?.[1]).filter(Boolean)).size, [notes]);
 
-  // Collection folders under collections/, derived from note paths.
-  const collections = useMemo(() => {
-    const names = new Set<string>();
-    for (const n of notes) {
-      const m = n.path.match(/^collections\/([^/]+)\//);
-      if (m) names.add(m[1]);
-    }
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [notes]);
+  const handleDeleteCollection = useCallback(async (name: string) => {
+    if (!window.confirm(`Move the collection "${name}" to the trash? Its rows, page and row templates go in one by one and can each be restored.`)) return;
+    try { await commands.trashCollection(name); onRefresh(); } catch (e) { window.alert(String(e)); }
+  }, [onRefresh]);
+  const handleRenameCollection = useCallback(async (name: string) => {
+    const path = `collections/${name}/_index.md`;
+    try {
+      const page = await commands.readNote(path);
+      const current = typeof page.frontmatter["title"] === "string" ? (page.frontmatter["title"] as string) : name;
+      const title = window.prompt("Collection title", current)?.trim();
+      if (!title || title === current) return;
+      await commands.writeNote(path, { ...page, frontmatter: { ...page.frontmatter, title } });
+      onRefresh();
+    } catch (e) { window.alert(String(e)); }
+  }, [onRefresh]);
+  // Nesting is one line of frontmatter on the collection's page; nothing moves on disk.
+  const handleMoveCollection = useCallback(async (name: string, parent: string | null) => {
+    const path = `collections/${name}/_index.md`;
+    try {
+      const page = await commands.readNote(path);
+      const fm = { ...page.frontmatter };
+      const target = parent?.replace(/\/$/, "") ?? null;
+      if (target && target !== "notes") fm["parent"] = target; else delete fm["parent"];
+      await commands.writeNote(path, { ...page, frontmatter: fm });
+      onRefresh();
+    } catch (e) { window.alert(String(e)); }
+  }, [onRefresh]);
 
   const treeActions = useMemo<TreeActions>(() => ({
     newFolderIn,
@@ -243,8 +267,13 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     onTurnIntoDatabase,
     onToggleFavorite,
     isFavorite,
+    onOpenCollection,
+    onRenameCollection: handleRenameCollection,
+    onDeleteCollection: handleDeleteCollection,
+    onMoveCollection: handleMoveCollection,
   }), [newFolderIn, requestNewFolder, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote,
-       handleRenameFile, handleDuplicateFile, handleRevealFile, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite]);
+       handleRenameFile, handleDuplicateFile, handleRevealFile, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite,
+       onOpenCollection, handleRenameCollection, handleDeleteCollection, handleMoveCollection]);
 
   const templateActions = useMemo<TreeActions>(() => ({
     ...treeActions, onNewFolderRequest: () => {}, newFolderIn: null,
@@ -311,6 +340,14 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
         const pid = parentPath ?? parentId;
         if (node.type === "dir") {
           out.push({ id: node.path, kind: "dir", label: node.name, depth: depth + 1, parentId: pid, expanded: isDirOpen(node.path, depth), path: node.path, folder: node.path });
+        } else if (node.type === "collection") {
+          const c = node.collection;
+          out.push({
+            id: node.path, kind: "collection", label: node.name, depth: depth + 1, parentId: pid, path: node.path,
+            expanded: node.children.length > 0 ? isDirOpen(node.path, depth) : undefined,
+            folder: parentPath && !parentPath.startsWith("collections/") ? parentPath : rootFolder,
+            run: () => onOpenCollection(c), remove: () => handleDeleteCollection(c),
+          });
         } else {
           out.push({ id: node.path, kind: "note", label: node.name, depth: depth + 1, parentId: pid, path: node.path, folder: parentPath ?? rootFolder });
         }
@@ -346,19 +383,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     }
 
     {
-      const pid = section("databases", "Collections");
-      if (pid) {
-        if (collections.length === 0) {
-          out.push({ id: "action:databases-empty", kind: "action", label: "Create a collection", depth: 1, parentId: pid, run: onNewCollection });
-        } else {
-          for (const name of collections) {
-            out.push({ id: `collections/${name}/_index.md`, kind: "collection", label: name, depth: 1, parentId: pid, path: `collections/${name}/_index.md`, run: () => onOpenCollection(name) });
-          }
-        }
-      }
-    }
-
-    {
       const pid = section("templates", "Templates", "templates/");
       if (pid) {
         if (templateTree.length === 0) {
@@ -384,7 +408,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
     return out;
   }, [searchResults, sectionOpen, isDirOpen, favorites, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
-      notesTree, newFolderIn, collections, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection,
+      notesTree, newFolderIn, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection, handleDeleteCollection,
       onRestoreTrashed, onDeleteTrashed, onEmptyTrash]);
 
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
@@ -416,7 +440,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
   const setExpanded = useCallback((row: TreeRow, open: boolean) => {
     if (row.kind === "section") toggleSection(row.id.slice("section:".length) as SectionId, open);
-    else if (row.kind === "dir") toggleDir(row.path!, open);
+    else if (row.kind === "dir" || (row.kind === "collection" && row.expanded !== undefined)) toggleDir(row.path!, open);
   }, [toggleSection, toggleDir]);
 
   const handleTreeKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -579,10 +603,11 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
             <Section
               {...sectionProps("notes")}
               label="Notes"
-              count={notesCount}
+              count={notesCount + collectionCount}
               actions={[
                 { title: NEW_NOTE_HINT, icon: <PlusIcon size={13} />, run: () => onNewNote() },
                 { title: "New folder", icon: <FolderPlusIcon size={13} />, run: () => requestNewFolder("notes/") },
+                { title: "New collection", icon: <DatabaseIcon size={13} />, run: onNewCollection },
                 { title: `Graph view (${shortcutFor("graph")})`, icon: <GraphIcon size={12} />, run: onOpenGraph },
               ]}
               dropActive={notesSectionDragOver}
@@ -592,7 +617,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                 e.preventDefault();
                 setNotesSectionDragOver(false);
                 const path = e.dataTransfer.getData("text/plain");
-                if (path) handleMoveNote(path, "notes/");
+                if (path.startsWith(COLLECTION_DRAG)) handleMoveCollection(path.slice(COLLECTION_DRAG.length), null);
+                else if (path) handleMoveNote(path, "notes/");
               }}
             >
               {showGettingStarted && (
@@ -619,41 +645,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                     onSelect={onSelect}
                     a11y={a11y}
                   />}
-            </Section>
-
-            <Section
-              {...sectionProps("databases")}
-              label="Collections"
-              count={collections.length}
-              actions={[{ title: "New collection", icon: <PlusIcon size={13} />, run: onNewCollection }]}
-            >
-              {collections.length === 0
-                ? <ActionRow
-                    id="action:databases-empty"
-                    a11y={a11y}
-                    depth={0}
-                    icon={<DatabaseIcon size={13} />}
-                    text="No collections"
-                    action="Create one"
-                    title="Tabbed table, board and calendar views over your notes"
-                    onClick={onNewCollection}
-                  />
-                : collections.map((name) => {
-                    const indexPath = `collections/${name}/_index.md`;
-                    return (
-                      <LeafRow
-                        key={name}
-                        id={indexPath}
-                        a11y={a11y}
-                        depth={0}
-                        selected={indexPath === selectedPath}
-                        icon={<DatabaseIcon size={13} />}
-                        label={name}
-                        title={indexPath}
-                        onClick={() => onOpenCollection(name)}
-                      />
-                    );
-                  })}
             </Section>
 
             <Section

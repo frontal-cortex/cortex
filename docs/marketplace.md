@@ -101,6 +101,9 @@ A pack may own several collections — the Habit Tracker installs `habits`
 and its daily `habit-log` — by naming the extras in `collections:`. The
 primary keeps the single-collection layout; each extra has its own
 `schemas/<c>.yaml`, `index/<c>.md`, `templates/<c>.md` and `seed/<c>/`.
+On install an extra's page gets `parent: <primary>` unless its `index/<c>.md`
+sets `parent:` itself, so it nests under the primary in the sidebar the way
+a child database sits inside a page; the rows never move on disk.
 
 ```yaml
 # manifest.yaml

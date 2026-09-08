@@ -249,6 +249,8 @@ export interface NoteEntry {
   tags: string[];
   modified: number;
   icon: string | null;
+  /** `parent:` frontmatter — a collection name or a `notes/<folder>` path the page nests under in the sidebar. */
+  parent: string | null;
 }
 
 // Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
@@ -545,6 +547,10 @@ export const commands = {
 
   listCollections: () =>
     invoke<string[]>("list_collections"),
+
+  /** Move a whole collection to the trash, one restorable entry per file. Returns how many moved. */
+  trashCollection: (name: string) =>
+    touched(invoke<number>("trash_collection", { name })),
 
   exportToFile: (kind: "note-html" | "collection-csv" | "collection-html", target: string, dest: string) =>
     invoke<void>("export_to_file", { kind, target, dest }),

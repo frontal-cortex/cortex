@@ -14,7 +14,87 @@ export interface DirNode {
   children: TreeNode[];
 }
 
-export type TreeNode = FileNode | DirNode;
+/** A collection's page in the tree. Rows are data and never appear here;
+ *  only collections nested under it (`parent: <name>` in their _index.md). */
+export interface CollectionNode {
+  type: "collection";
+  /** Display title from the collection's `_index.md`. */
+  name: string;
+  /** The page: `collections/<name>/_index.md`. */
+  path: string;
+  collection: string;
+  icon: string | null;
+  children: CollectionNode[];
+}
+
+export type TreeNode = FileNode | DirNode | CollectionNode;
+
+/**
+ * Collections as tree nodes, nested by their page's `parent:`. A parent that
+ * names another collection nests there; one that names a `notes/<folder>`
+ * path is returned under that folder for `attachCollections`; anything else
+ * (absent, unknown, or a cycle) is a root.
+ */
+export function buildCollectionNodes(notes: NoteEntry[]): { roots: CollectionNode[]; underFolder: Map<string, CollectionNode[]> } {
+  const names = new Set<string>();
+  for (const n of notes) {
+    const m = n.path.match(/^collections\/([^/]+)\//);
+    if (m) names.add(m[1]);
+  }
+  const page = (c: string) => notes.find((n) => n.path === `collections/${c}/_index.md`);
+  const nodes = new Map<string, CollectionNode>();
+  for (const c of names) {
+    const p = page(c);
+    nodes.set(c, {
+      type: "collection",
+      name: p && !isUntitled(p.title) ? p.title : c.replace(/-/g, " "),
+      path: `collections/${c}/_index.md`,
+      collection: c,
+      icon: p?.icon ?? null,
+      children: [],
+    });
+  }
+  const parentOf = (c: string) => (page(c)?.parent ?? "").trim().replace(/\/$/, "");
+  const isCycle = (c: string) => {
+    let cur = parentOf(c);
+    for (let i = 0; i < 32 && nodes.has(cur); i++) { if (cur === c) return true; cur = parentOf(cur); }
+    return false;
+  };
+  const roots: CollectionNode[] = [];
+  const underFolder = new Map<string, CollectionNode[]>();
+  for (const [c, node] of nodes) {
+    const parent = parentOf(c);
+    if (parent && parent !== c && nodes.has(parent) && !isCycle(c)) nodes.get(parent)!.children.push(node);
+    else if (parent.startsWith("notes/") || parent === "notes") {
+      const key = parent === "notes" ? "notes/" : `${parent}/`;
+      if (!underFolder.has(key)) underFolder.set(key, []);
+      underFolder.get(key)!.push(node);
+    } else roots.push(node);
+  }
+  const byName = (a: CollectionNode, b: CollectionNode) => a.name.localeCompare(b.name);
+  for (const n of nodes.values()) n.children.sort(byName);
+  roots.sort(byName);
+  for (const list of underFolder.values()) list.sort(byName);
+  return { roots, underFolder };
+}
+
+/**
+ * Weave collection nodes into a folder tree: at every level, folders first,
+ * then the collections that belong there, then notes — the Notion shape of
+ * one hierarchy where a database is a page among pages.
+ */
+export function attachCollections(
+  tree: TreeNode[],
+  here: CollectionNode[],
+  underFolder: Map<string, CollectionNode[]>,
+): TreeNode[] {
+  const dirs = tree.filter((n): n is DirNode => n.type === "dir").map((d) => ({
+    ...d,
+    children: attachCollections(d.children, underFolder.get(d.path) ?? [], underFolder),
+  }));
+  const rest = tree.filter((n) => n.type !== "dir");
+  return [...dirs, ...here, ...rest];
+}
 
 /**
  * Build a directory tree from a flat note list plus a list of known
@@ -138,7 +218,8 @@ export function flattenTree(
   const out: FlatNode[] = [];
   for (const node of nodes) {
     out.push({ node, depth, parentPath });
-    if (node.type === "dir" && isOpen(node.path, depth)) {
+    const expandable = node.type === "dir" || (node.type === "collection" && node.children.length > 0);
+    if (expandable && isOpen(node.path, depth)) {
       out.push(...flattenTree(node.children, isOpen, depth + 1, node.path));
     }
   }

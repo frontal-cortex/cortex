@@ -201,3 +201,42 @@ pub fn prune_expired(root: &Path, retention_days: u32) -> Result<()> {
     }
     Ok(())
 }
+
+/// Move a collection to the trash: every note in `collections/<name>/` — the
+/// rows, the page (`_index.md`) and its row templates — goes in as its own
+/// entry, so any of them can be restored later; the folder is removed once it
+/// is empty. The schema under `.cortex/schemas/` is left in place: restoring
+/// a row should find its properties still typed. Returns how many files moved.
+#[tauri::command]
+pub fn trash_collection(
+    name: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<usize> {
+    if name.is_empty() || name.contains('/') || name.contains("..") {
+        return Err(AppError::Other("Invalid collection name".into()));
+    }
+    let root = vault_path(&state)?;
+    let dir = root.join("collections").join(&name);
+    if !dir.is_dir() {
+        return Err(AppError::Other(format!("Collection not found: {name}")));
+    }
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("md"))
+        .collect();
+    files.sort();
+    let mut moved = 0;
+    for abs in files {
+        let rel = abs.strip_prefix(&root).map_err(|_| AppError::Other("path outside vault".into()))?.to_string_lossy().replace('\\', "/");
+        move_to_trash(&root, &rel)?;
+        moved += 1;
+    }
+    // Only an empty folder is removed; anything that is not a note stays put.
+    let _ = std::fs::remove_dir(&dir);
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        let _ = db.remove_notes_by_prefix(&format!("collections/{name}/"));
+    }
+    Ok(moved)
+}
