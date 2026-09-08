@@ -83,11 +83,27 @@ pub struct Manifest {
     pub min_cortex: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
+    /// Collection packs that install more than one collection (a habits list
+    /// and its daily log): the extra collections, in order. `schemas/<c>.yaml`,
+    /// `index/<c>.md`, `templates/<c>.md` and `seed/<c>/` address each one;
+    /// the primary `collection` keeps the single-collection layout.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collections: Vec<String>,
     /// Bundles: the packs installed together, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub includes: Vec<String>,
     #[serde(default)]
     pub files: Vec<String>,
+}
+
+impl Manifest {
+    /// Every collection this pack owns, primary first, without duplicates.
+    pub fn collections(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        if let Some(c) = self.collection.as_deref().filter(|c| !c.is_empty()) { out.push(c.to_string()); }
+        for c in &self.collections { if !out.contains(c) { out.push(c.clone()); } }
+        out
+    }
 }
 
 fn one() -> u32 { 1 }
@@ -213,7 +229,7 @@ pub struct Finding {
 }
 
 const ALLOWED_EXT: [&str; 6] = ["md", "yaml", "png", "jpg", "webp", "svg"];
-const ALLOWED_DIRS: [&str; 4] = ["templates", "schemas", "seed", "assets"];
+const ALLOWED_DIRS: [&str; 5] = ["templates", "schemas", "seed", "assets", "index"];
 const TEMPLATE_VARS: [&str; 4] = ["date", "time", "title", "uuid"];
 const RAW_HTML_OK: [&str; 6] = ["<br", "<sub", "</sub", "<sup", "</sup", "<!--"];
 const PRODUCT_WORDS: [&str; 6] = ["notion", "obsidian", "evernote", "roam", "logseq", "craft"];
@@ -270,7 +286,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
         let top = f.path.split('/').next().unwrap_or("");
         let at_root = !f.path.contains('/');
         if !(at_root && ["manifest.yaml", "README.md", "index.md", "preview.png"].contains(&f.path.as_str())) && !ALLOWED_DIRS.contains(&top) {
-            err(&mut out, Some(&f.path), "files live in templates/, schemas/, seed/, assets/ or are index.md / README.md / preview.png".into());
+            err(&mut out, Some(&f.path), "files live in templates/, schemas/, seed/, index/, assets/ or are index.md / README.md / preview.png".into());
         }
         if ["png", "jpg", "webp", "svg"].contains(&ext.as_str()) && f.contents.len() > 200 * 1024 {
             err(&mut out, Some(&f.path), "images must be 200 KB or smaller".into());
@@ -282,53 +298,87 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
     }
     if total > 2 * 1024 * 1024 { err(&mut out, None, "pack is larger than 2 MB".into()); }
 
-    // Collection packs: schema, views, seeds and row template agree.
+    // Collection packs: per collection, the schema, views, seeds and row template agree.
     if m.kind == Kind::Collection {
-        let coll = m.collection.clone().unwrap_or_default();
-        let schema_path = format!("schemas/{coll}.yaml");
-        let props: BTreeMap<String, String> = match pack.text(&schema_path) {
-            None => { err(&mut out, Some(&schema_path), "collection packs ship a schema named after the collection".into()); BTreeMap::new() }
-            Some(text) => match serde_yaml::from_str::<schema::TypeSchema>(&text) {
-                Err(e) => { err(&mut out, Some(&schema_path), format!("schema does not parse: {e}")); BTreeMap::new() }
-                Ok(s) => s.properties.iter().map(|p| (p.name.clone(), format!("{:?}", p.ty).to_lowercase())).collect(),
-            },
-        };
-        match pack.text("index.md") {
-            None => err(&mut out, Some("index.md"), "collection packs ship index.md with the views".into()),
-            Some(text) => {
-                if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
-                    let views = fm.get("views").and_then(|v| v.as_sequence()).cloned().unwrap_or_default();
-                    if views.is_empty() { err(&mut out, Some("index.md"), "no views".into()); }
-                    for v in views {
-                        for key in ["group", "date"] {
-                            if let Some(p) = v.get(key).and_then(|x| x.as_str()) {
-                                if !props.contains_key(p) { err(&mut out, Some("index.md"), format!("view `{key}: {p}` names a property the schema lacks")); }
+        let colls = m.collections();
+        let primary = colls.first().cloned().unwrap_or_default();
+        let mut all_props: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+        for c in &colls {
+            let schema_path = format!("schemas/{c}.yaml");
+            let props = match pack.text(&schema_path) {
+                None => { err(&mut out, Some(&schema_path), format!("collection packs ship a schema named after each collection ({c})")); BTreeMap::new() }
+                Some(text) => match serde_yaml::from_str::<schema::TypeSchema>(&text) {
+                    Err(e) => { err(&mut out, Some(&schema_path), format!("schema does not parse: {e}")); BTreeMap::new() }
+                    Ok(s) => s.properties.iter().map(|p| (p.name.clone(), format!("{:?}", p.ty).to_lowercase())).collect(),
+                },
+            };
+            all_props.insert(c.clone(), props);
+        }
+        for c in &colls {
+            let props = &all_props[c];
+            let index_path = if *c == primary { "index.md".to_string() } else { format!("index/{c}.md") };
+            match pack.text(&index_path) {
+                None => err(&mut out, Some(&index_path), format!("collection packs ship {index_path} with the views for {c}")),
+                Some(text) => {
+                    if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
+                        let views = fm.get("views").and_then(|v| v.as_sequence()).cloned().unwrap_or_default();
+                        if views.is_empty() { err(&mut out, Some(&index_path), "no views".into()); }
+                        for v in views {
+                            let kind = v.get("type").and_then(|x| x.as_str()).unwrap_or("table");
+                            if kind == "tracker" {
+                                // `date`/`done` belong to the log; checked when the log is part of this pack.
+                                let log = v.get("log").and_then(|x| x.as_str()).unwrap_or("");
+                                match log.strip_prefix("collections/") {
+                                    None => err(&mut out, Some(&index_path), "a tracker view needs `log: collections/<name>` — the collection with one row per day".into()),
+                                    Some(l) => if let Some(lp) = all_props.get(l.trim_end_matches('/')) {
+                                        let date = v.get("date").and_then(|x| x.as_str()).unwrap_or("date");
+                                        let done = v.get("done").and_then(|x| x.as_str()).unwrap_or("done");
+                                        if lp.get(date).map(String::as_str) != Some("date") {
+                                            err(&mut out, Some(&index_path), format!("tracker `date: {date}` must be a date property of {l}"));
+                                        }
+                                        if !matches!(lp.get(done).map(String::as_str), Some("relation" | "multiselect")) {
+                                            err(&mut out, Some(&index_path), format!("tracker `done: {done}` must be a relation or multi_select property of {l}"));
+                                        }
+                                    },
+                                }
+                                continue;
+                            }
+                            for key in ["group", "date"] {
+                                if let Some(p) = v.get(key).and_then(|x| x.as_str()) {
+                                    if !props.contains_key(p) { err(&mut out, Some(&index_path), format!("view `{key}: {p}` names a property the schema lacks")); }
+                                }
+                            }
+                            if kind == "calendar" {
+                                match v.get("date").and_then(|x| x.as_str()) {
+                                    Some(p) if props.get(p).map(String::as_str) == Some("date") => {}
+                                    _ => err(&mut out, Some(&index_path), "a calendar view needs `date:` naming a date property".into()),
+                                }
                             }
                         }
-                        if v.get("type").and_then(|x| x.as_str()) == Some("calendar") {
-                            match v.get("date").and_then(|x| x.as_str()) {
-                                Some(p) if props.get(p).map(String::as_str) == Some("date") => {}
-                                _ => err(&mut out, Some("index.md"), "a calendar view needs `date:` naming a date property".into()),
-                            }
-                        }
+                    } else {
+                        err(&mut out, Some(&index_path), "no frontmatter".into());
                     }
-                } else {
-                    err(&mut out, Some("index.md"), "no frontmatter".into());
                 }
             }
+            if pack.text(&format!("templates/{c}.md")).is_none() {
+                warn(&mut out, None, format!("no row template templates/{c}.md — New row in {c} will have no shape"));
+            }
         }
-        if pack.text(&format!("templates/{coll}.md")).is_none() {
-            warn(&mut out, None, format!("no row template templates/{coll}.md — New row will have no shape"));
-        }
+        // Seeds and row templates use only their own collection's properties.
         for f in &pack.files {
-            if f.path.starts_with("seed/") || f.path == format!("templates/{coll}.md") {
-                let text = String::from_utf8_lossy(&f.contents).replace(TODAY, "2000-01-01");
-                let text = strip_template_vars(&text);
-                if let Some(fm) = frontmatter_yaml(&text) {
-                    for key in fm.keys().filter_map(|k| k.as_str()) {
-                        if !["title", "type", "tags", "created", "icon", "cover"].contains(&key) && !props.contains_key(key) {
-                            err(&mut out, Some(&f.path), format!("property `{key}` is not in the schema"));
-                        }
+            let owner: Option<String> = if let Some(rest) = f.path.strip_prefix("seed/") {
+                match rest.split_once('/') { Some((c, _)) if colls.iter().any(|x| x == c) => Some(c.to_string()), _ => Some(primary.clone()) }
+            } else if let Some(t) = f.path.strip_prefix("templates/").and_then(|t| t.strip_suffix(".md")) {
+                colls.iter().find(|c| c.as_str() == t).cloned()
+            } else { None };
+            let Some(owner) = owner else { continue };
+            let Some(props) = all_props.get(&owner) else { continue };
+            let text = String::from_utf8_lossy(&f.contents).replace(TODAY, "2000-01-01");
+            let text = strip_template_vars(&text);
+            if let Some(fm) = frontmatter_yaml(&text) {
+                for key in fm.keys().filter_map(|k| k.as_str()) {
+                    if !["title", "type", "tags", "created", "icon", "cover"].contains(&key) && !props.contains_key(key) {
+                        err(&mut out, Some(&f.path), format!("property `{key}` is not in the {owner} schema"));
                     }
                 }
             }
@@ -359,7 +409,7 @@ fn lint_markdown(path: &str, text: &str, out: &mut Vec<Finding>) {
         let start = i + s + 2;
         let Some(e) = text[start..].find("}}") else { break };
         let name = text[start..start + e].trim();
-        let ok = TEMPLATE_VARS.contains(&name) || (name == "today" && (path.starts_with("seed/") || path == "index.md"));
+        let ok = TEMPLATE_VARS.contains(&name) || (name == "today" && (path.starts_with("seed/") || is_index(path)));
         if !ok {
             err(out, format!("unknown placeholder {{{{{name}}}}} (templates: date, time, title, uuid; seeds and index.md: today)"));
         }
@@ -394,13 +444,35 @@ fn frontmatter_yaml(text: &str) -> Option<serde_yaml::Mapping> {
 
 /// Where a pack file lands in the vault, or None for files that are not installed.
 pub fn destination(m: &Manifest, path: &str) -> Option<String> {
-    let coll = m.collection.as_deref();
-    if let Some(f) = path.strip_prefix("templates/") { return Some(format!("templates/{f}")); }
+    let colls = m.collections();
+    let owns = |c: &str| colls.iter().any(|x| x == c);
+    let primary = colls.first().map(String::as_str);
+    if let Some(f) = path.strip_prefix("templates/") {
+        // A template named after one of the pack's collections is that
+        // collection's row template — what the table's New row menu offers.
+        if let Some(c) = f.strip_suffix(".md").filter(|c| owns(c)) {
+            return Some(format!("collections/{c}/_template-{c}.md"));
+        }
+        return Some(format!("templates/{f}"));
+    }
     if let Some(f) = path.strip_prefix("schemas/") { return Some(format!(".cortex/schemas/{f}")); }
-    if path == "index.md" { return coll.map(|c| format!("collections/{c}/_index.md")); }
-    if let Some(f) = path.strip_prefix("seed/") { return coll.map(|c| format!("collections/{c}/{f}")); }
+    if path == "index.md" { return primary.map(|c| format!("collections/{c}/_index.md")); }
+    if let Some(c) = path.strip_prefix("index/").and_then(|f| f.strip_suffix(".md")) {
+        return owns(c).then(|| format!("collections/{c}/_index.md"));
+    }
+    if let Some(f) = path.strip_prefix("seed/") {
+        if let Some((c, rest)) = f.split_once('/') {
+            if owns(c) { return Some(format!("collections/{c}/{rest}")); }
+        }
+        return primary.map(|c| format!("collections/{c}/{f}"));
+    }
     if let Some(f) = path.strip_prefix("assets/") { return Some(format!("assets/{}/{f}", m.id)); }
     None
+}
+
+/// `index.md` (the primary collection's views) or `index/<c>.md` (another's).
+fn is_index(path: &str) -> bool {
+    path == "index.md" || (path.starts_with("index/") && path.ends_with(".md"))
 }
 
 // ── Install record ──────────────────────────────────────────────────────────
@@ -454,7 +526,7 @@ fn today() -> String {
 /// A pack file with placeholders that install expands (`{{today}}` in seeds
 /// and index.md); templates are written verbatim.
 fn rendered(pack_path: &str, contents: &[u8]) -> Vec<u8> {
-    if pack_path.starts_with("seed/") || pack_path == "index.md" {
+    if pack_path.starts_with("seed/") || is_index(pack_path) {
         String::from_utf8_lossy(contents).replace(TODAY, &today()).into_bytes()
     } else {
         contents.to_vec()
@@ -496,7 +568,10 @@ pub fn plan(root: &Path, pack: &Pack, force: bool) -> Plan {
     let m = &pack.manifest;
     // Our own files from an earlier install, with the hash we wrote them at.
     let mine: BTreeMap<String, String> = installed(root).into_iter().filter(|r| r.id == m.id).flat_map(|r| r.files.into_iter().map(|f| (f.path, f.sha256))).collect();
-    let collection_exists = m.collection.as_deref().map(|c| root.join("collections").join(c).is_dir()).unwrap_or(false);
+    // Which of the pack's collections already exist here — per collection: a
+    // habits list may exist while its log does not.
+    let existed: BTreeSet<String> = m.collections().into_iter().filter(|c| root.join("collections").join(c).is_dir()).collect();
+    let coll_of = |dest: &str| dest.strip_prefix("collections/").and_then(|r| r.split('/').next()).map(String::from);
     let mut steps = Vec::new();
     for f in &pack.files {
         let Some(dest) = destination(m, &f.path) else { continue };
@@ -516,7 +591,7 @@ pub fn plan(root: &Path, pack: &Pack, force: bool) -> Plan {
             }
         } else if f.path.starts_with("schemas/") {
             Action::Merge
-        } else if f.path == "index.md" {
+        } else if is_index(&f.path) {
             Action::Skip { reason: "the collection already has views; keeping yours".into() }
         } else if f.path.starts_with("seed/") {
             Action::Skip { reason: "the collection already exists; seeds are not added".into() }
@@ -526,7 +601,7 @@ pub fn plan(root: &Path, pack: &Pack, force: bool) -> Plan {
             Action::Skip { reason: "exists and is not from this pack (use force to overwrite templates)".into() }
         };
         // Seeds into a collection that existed before this pack: never.
-        let action = if f.path.starts_with("seed/") && collection_exists && !mine.contains_key(&dest) {
+        let action = if f.path.starts_with("seed/") && coll_of(&dest).map_or(false, |c| existed.contains(&c)) && !mine.contains_key(&dest) {
             Action::Skip { reason: "the collection already exists; seeds are not added".into() }
         } else { action };
         steps.push(Planned { pack_path: f.path.clone(), dest, action });
@@ -740,8 +815,10 @@ pub fn export(root: &Path, id: &str, from: &str, out_dir: &Path) -> Result<PathB
         files.push((format!("schemas/{coll}.yaml"), std::fs::read(&sch)?));
         let index = std::fs::read_to_string(&idx)?;
         files.push(("index.md".into(), generalize_dates(&index).into_bytes()));
-        let row = root.join("templates").join(format!("{coll}.md"));
-        if row.exists() { files.push((format!("templates/{coll}.md"), std::fs::read(&row)?)); }
+        // The row template: where packs install it, or the pre-2.0 note-template spot.
+        let row = [root.join("collections").join(&coll).join(format!("_template-{coll}.md")), root.join("templates").join(format!("{coll}.md"))]
+            .into_iter().find(|p| p.exists());
+        if let Some(row) = row { files.push((format!("templates/{coll}.md"), std::fs::read(&row)?)); }
         (Kind::Collection, Some(coll.clone()), title_case(&coll))
     } else if let Some(t) = from.strip_prefix("templates/") {
         let src = root.join("templates").join(t);
@@ -756,7 +833,7 @@ pub fn export(root: &Path, id: &str, from: &str, out_dir: &Path) -> Result<PathB
         summary: "One line about what this pack is for.".into(),
         description: "A paragraph: what it installs, how to use it, what it pairs with.\n".into(),
         tags: vec![], author: Author { name: crate::git::open(root).ok().and_then(|r| r.signature().ok().and_then(|s| s.name().map(String::from))).unwrap_or_default(), url: String::new() },
-        license: "CC0-1.0".into(), credits: String::new(), min_cortex: APP_VERSION.into(), collection, includes: vec![],
+        license: "CC0-1.0".into(), credits: String::new(), min_cortex: APP_VERSION.into(), collection, collections: vec![], includes: vec![],
         files: files.iter().map(|(p, _)| p.clone()).collect(),
     };
     std::fs::create_dir_all(&dir)?;
@@ -1040,6 +1117,39 @@ mod tests {
     }
 
     #[test]
+    fn multi_collection_packs_install_each_collection_and_row_templates() {
+        let root = vault("multi");
+        let mut m = Manifest { format: 1, id: "tracker-demo".into(), name: "Demo".into(), version: "1.0.0".into(), kind: Kind::Collection, summary: "s".into(), description: String::new(), tags: vec![], author: Author::default(), license: "CC0-1.0".into(), credits: String::new(), min_cortex: String::new(), collection: Some("habits".into()), collections: vec!["habit-log".into()], includes: vec![], files: vec![] };
+        let files: Vec<(&str, &str)> = vec![
+            ("schemas/habits.yaml", "properties:\n  - name: frequency\n    type: select\n"),
+            ("schemas/habit-log.yaml", "properties:\n  - name: date\n    type: date\n  - name: done\n    type: relation\n    collection: habits\n"),
+            ("index.md", "---\ntitle: Habits\ntype: database\nviews:\n- name: Week\n  type: tracker\n  log: collections/habit-log\n  range: week\n---\n"),
+            ("index/habit-log.md", "---\ntitle: Log\ntype: database\ncreated: \"{{today}}\"\nviews:\n- name: Calendar\n  type: calendar\n  date: date\n---\n"),
+            ("templates/habits.md", "---\ntitle: \"{{title}}\"\nfrequency: daily\n---\n"),
+            ("templates/habit-log.md", "---\ntitle: \"{{date}}\"\ndate: \"{{date}}\"\ndone: []\n---\n"),
+            ("seed/habits/exercise.md", "---\ntitle: Exercise\nfrequency: daily\n---\n"),
+        ];
+        m.files = files.iter().map(|(p, _)| p.to_string()).collect();
+        let pack = Pack { manifest: m.clone(), tier: Tier::Official, source: "test".into(), files: files.iter().map(|(p, c)| PackFile { path: p.to_string(), contents: c.as_bytes().to_vec() }).collect() };
+        assert_eq!(destination(&m, "templates/habits.md").as_deref(), Some("collections/habits/_template-habits.md"));
+        assert_eq!(destination(&m, "templates/habit-log.md").as_deref(), Some("collections/habit-log/_template-habit-log.md"));
+        assert_eq!(destination(&m, "index/habit-log.md").as_deref(), Some("collections/habit-log/_index.md"));
+        assert_eq!(destination(&m, "seed/habits/exercise.md").as_deref(), Some("collections/habits/exercise.md"));
+        let errors: Vec<_> = lint(&pack).into_iter().filter(|f| f.severity == Severity::Error).collect();
+        assert!(errors.is_empty(), "{errors:?}");
+        let r = install(&root, &pack, false, &|_| None).unwrap();
+        assert_eq!(r[0].written.len(), 7, "{r:?}");
+        assert!(root.join("collections/habit-log/_index.md").exists());
+        assert!(!std::fs::read_to_string(root.join("collections/habit-log/_index.md")).unwrap().contains("{{today}}"));
+        assert!(root.join("collections/habits/_template-habits.md").exists());
+        // A tracker pointing at a log whose `done` is plain text is caught.
+        let mut bad = pack.clone();
+        bad.files.iter_mut().find(|f| f.path == "schemas/habit-log.yaml").unwrap().contents = b"properties:\n  - name: date\n    type: date\n  - name: done\n    type: text\n".to_vec();
+        assert!(lint(&bad).iter().any(|f| f.message.contains("done: done")), "{:?}", lint(&bad));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn excerpts_describe_note_and_collection_packs() {
         let e = excerpt(&pack("daily-note"));
         assert!(e.headings.iter().any(|h| h.contains("Top 3")), "{e:?}");
@@ -1088,7 +1198,7 @@ mod tests {
         assert_eq!(r.written.len(), 4, "{r:?}");
         assert!(root.join("collections/tasks/_index.md").exists());
         assert!(root.join(".cortex/schemas/tasks.yaml").exists());
-        assert!(root.join("templates/tasks.md").exists());
+        assert!(root.join("collections/tasks/_template-tasks.md").exists());
         let seed = std::fs::read_to_string(root.join("collections/tasks/example-task.md")).unwrap();
         assert!(!seed.contains("{{today}}") && seed.contains("created: \""));
         let rec = installed(&root);
@@ -1103,7 +1213,7 @@ mod tests {
         // a reinstall keeps both and still records them as this pack's.
         let seed_path = root.join("collections/tasks/example-task.md");
         std::fs::write(&seed_path, "---\ntitle: Renew passport\n---\n").unwrap();
-        std::fs::write(root.join("templates/tasks.md"), "mine").unwrap();
+        std::fs::write(root.join("collections/tasks/_template-tasks.md"), "mine").unwrap();
         let kept = install(&root, &tasks, false, &|_| None).unwrap();
         assert_eq!(kept[0].skipped.len(), 2, "{kept:?}");
         assert_eq!(kept[0].written.len(), 2);
@@ -1111,7 +1221,7 @@ mod tests {
         assert_eq!(installed(&root)[0].files.len(), 4);
         // force resets the template but never a collection row.
         let forced = install(&root, &tasks, true, &|_| None).unwrap();
-        assert!(forced[0].written.iter().any(|w| w == "templates/tasks.md"), "{forced:?}");
+        assert!(forced[0].written.iter().any(|w| w == "collections/tasks/_template-tasks.md"), "{forced:?}");
         assert!(std::fs::read_to_string(&seed_path).unwrap().contains("Renew passport"));
         assert_eq!(installed(&root)[0].files.len(), 4);
 
@@ -1148,7 +1258,7 @@ mod tests {
     fn update_replaces_untouched_and_keeps_edited_and_deleted() {
         let root = vault("update");
         install(&root, &pack("project-tracker"), false, &|_| None).unwrap();
-        std::fs::write(root.join("templates/projects.md"), "my own row template").unwrap();
+        std::fs::write(root.join("collections/projects/_template-projects.md"), "my own row template").unwrap();
         std::fs::remove_file(root.join("collections/projects/example-project.md")).unwrap();
         let mut newer = pack("project-tracker");
         newer.manifest.version = "1.1.0".into();
@@ -1156,10 +1266,10 @@ mod tests {
         idx.contents.extend_from_slice(b"\nNew in 1.1\n");
         let r = update(&root, &newer).unwrap();
         assert!(r.replaced.contains(&"collections/projects/_index.md".to_string()), "{r:?}");
-        assert!(r.kept.contains(&"templates/projects.md".to_string()), "{r:?}");
+        assert!(r.kept.contains(&"collections/projects/_template-projects.md".to_string()), "{r:?}");
         assert!(r.kept.contains(&"collections/projects/example-project.md".to_string()), "deleted seed stays deleted: {r:?}");
         assert!(!root.join("collections/projects/example-project.md").exists());
-        assert_eq!(std::fs::read_to_string(root.join("templates/projects.md")).unwrap(), "my own row template");
+        assert_eq!(std::fs::read_to_string(root.join("collections/projects/_template-projects.md")).unwrap(), "my own row template");
         assert_eq!(installed(&root)[0].version, "1.1.0");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1169,10 +1279,10 @@ mod tests {
         let root = vault("remove");
         install(&root, &pack("budget-tracker"), false, &|_| None).unwrap();
         std::fs::write(root.join("collections/budget/rent.md"), "---\ntitle: Rent\n---\n").unwrap();
-        std::fs::write(root.join("templates/budget.md"), "edited").unwrap();
+        std::fs::write(root.join("collections/budget/_template-budget.md"), "edited").unwrap();
         let r = remove(&root, "budget-tracker").unwrap();
         assert!(r.removed.contains(&"collections/budget/_index.md".to_string()));
-        assert!(r.kept == vec!["templates/budget.md".to_string()], "{r:?}");
+        assert!(r.kept == vec!["collections/budget/_template-budget.md".to_string()], "{r:?}");
         assert!(root.join("collections/budget/rent.md").exists(), "user rows survive");
         assert!(root.join("collections/budget").exists(), "folder kept because it is not empty");
         assert!(installed(&root).is_empty());
@@ -1184,7 +1294,7 @@ mod tests {
     fn bundles_install_their_parts() {
         let root = vault("bundle");
         let bundle = Pack {
-            manifest: Manifest { format: 1, id: "starter".into(), name: "Starter".into(), version: "1.0.0".into(), kind: Kind::Bundle, summary: "s".into(), description: String::new(), tags: vec![], author: Author::default(), license: "CC0-1.0".into(), credits: String::new(), min_cortex: String::new(), collection: None, includes: vec!["tasks".into(), "daily-note".into()], files: vec![] },
+            manifest: Manifest { format: 1, id: "starter".into(), name: "Starter".into(), version: "1.0.0".into(), kind: Kind::Bundle, summary: "s".into(), description: String::new(), tags: vec![], author: Author::default(), license: "CC0-1.0".into(), credits: String::new(), min_cortex: String::new(), collection: None, collections: vec![], includes: vec!["tasks".into(), "daily-note".into()], files: vec![] },
             tier: Tier::Official, source: "test".into(), files: vec![],
         };
         let r = install(&root, &bundle, false, &|id| bundled().into_iter().find(|p| p.manifest.id == id)).unwrap();

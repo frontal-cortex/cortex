@@ -21,4 +21,5 @@ pub mod publish;
 pub mod schema;
 pub mod settings;
 pub mod template;
+pub mod tracker;
 pub mod vault;

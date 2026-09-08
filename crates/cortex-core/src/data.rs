@@ -34,7 +34,7 @@ pub enum CellValue {
 
 impl CellValue {
     /// Best-effort scalar for comparison/sorting.
-    fn as_num(&self) -> Option<f64> {
+    pub(crate) fn as_num(&self) -> Option<f64> {
         match self {
             CellValue::Num(n) => Some(*n),
             CellValue::Text(t) | CellValue::Date(t) => t.parse::<f64>().ok(),
@@ -43,7 +43,7 @@ impl CellValue {
         }
     }
 
-    fn as_text(&self) -> String {
+    pub(crate) fn as_text(&self) -> String {
         match self {
             CellValue::Null => String::new(),
             CellValue::Text(t) | CellValue::Date(t) => t.clone(),
@@ -539,9 +539,23 @@ pub struct ViewSpec {
     pub agg: Option<String>,
     #[serde(rename = "chartType", default)]
     pub chart_type: Option<String>,
+    /// Charts: bucket a date-valued `x` by `day | week | month | year` before grouping.
+    #[serde(default)]
+    pub bucket: Option<String>,
+    /// Charts: one line/bar series per distinct value of this field.
+    #[serde(default)]
+    pub series: Option<String>,
+    // Tracker-only fields (see `tracker.rs`): the periods live in `log`, positioned
+    // by its `date` property; membership is the `done` list; `range` picks the grid.
+    #[serde(default)]
+    pub log: Option<String>,
+    #[serde(default)]
+    pub done: Option<String>,
+    #[serde(default)]
+    pub range: Option<String>,
 }
 
-fn parse_sort(entry: &str) -> Sort {
+pub(crate) fn parse_sort(entry: &str) -> Sort {
     let mut it = entry.split_whitespace();
     let field = it.next().unwrap_or("").to_string();
     let desc = it.next().map(|d| d.eq_ignore_ascii_case("desc")).unwrap_or(false);
@@ -549,7 +563,7 @@ fn parse_sort(entry: &str) -> Sort {
 }
 
 /// Resolve a spec `source:` string to a concrete in-memory table.
-fn resolve_source(root: &Path, source: &str) -> Result<Table> {
+pub(crate) fn resolve_source(root: &Path, source: &str) -> Result<Table> {
     if let Some(name) = source.strip_prefix("collections/") {
         read_collection(root, name.trim_end_matches('/'))
     } else if let Some(rest) = source.strip_prefix("data/") {
@@ -642,6 +656,16 @@ pub struct StructuredSpec {
     pub agg: Option<String>,
     #[serde(default)]
     pub chart_type: Option<String>,
+    #[serde(default)]
+    pub bucket: Option<String>,
+    #[serde(default)]
+    pub series: Option<String>,
+    #[serde(default)]
+    pub log: Option<String>,
+    #[serde(default)]
+    pub done: Option<String>,
+    #[serde(default)]
+    pub range: Option<String>,
 }
 
 fn normalize_op(tok: &str) -> Option<&'static str> {
@@ -730,6 +754,11 @@ pub fn parse_view_spec(spec_yaml: &str) -> Result<StructuredSpec> {
         y: vs.y,
         agg: vs.agg,
         chart_type: vs.chart_type,
+        bucket: vs.bucket,
+        series: vs.series,
+        log: vs.log,
+        done: vs.done,
+        range: vs.range,
         ..Default::default()
     };
     if let Some(f) = vs.filter.filter(|f| !f.trim().is_empty()) {
@@ -795,6 +824,21 @@ pub fn serialize_view_spec(s: &StructuredSpec) -> String {
     }
     if let Some(ct) = s.chart_type.as_deref().filter(|v| !v.is_empty()) {
         out.push_str(&format!("chartType: {ct}\n"));
+    }
+    if let Some(b) = s.bucket.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("bucket: {b}\n"));
+    }
+    if let Some(v) = s.series.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("series: {v}\n"));
+    }
+    if let Some(v) = s.log.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("log: {v}\n"));
+    }
+    if let Some(v) = s.done.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("done: {v}\n"));
+    }
+    if let Some(v) = s.range.as_deref().filter(|v| !v.is_empty()) {
+        out.push_str(&format!("range: {v}\n"));
     }
     out
 }
@@ -902,6 +946,50 @@ pub fn set_cell(root: &Path, source: &str, row_id: &str, field: &str, value: &st
     }
 }
 
+/// Seeds arrive as strings from the UI. Keep booleans, numbers and lists typed
+/// so a new row's frontmatter matches its schema (`done: false`, `done: []`,
+/// not `done: "false"`); dates, select values and free text stay strings.
+pub(crate) fn typed_seed(v: &str) -> serde_json::Value {
+    let t = v.trim();
+    if t.is_empty() || looks_like_date(t) {
+        return serde_json::Value::String(v.to_string());
+    }
+    match serde_yaml::from_str::<serde_json::Value>(t) {
+        Ok(serde_json::Value::Bool(b)) => serde_json::Value::Bool(b),
+        Ok(serde_json::Value::Number(n)) => serde_json::Value::Number(n),
+        Ok(serde_json::Value::Array(a)) if a.iter().all(|x| x.is_string()) => serde_json::Value::Array(a),
+        _ => serde_json::Value::String(v.to_string()),
+    }
+}
+
+/// Expand `{{date}}`, `{{time}}`, `{{title}}` and `{{uuid}}` — the same
+/// placeholders note templates use — in a row template's text.
+pub fn expand_placeholders(text: &str, vars: &BTreeMap<&str, String>) -> String {
+    let mut out = text.to_string();
+    for (k, v) in vars {
+        out = out.replace(&format!("{{{{{k}}}}}"), v);
+    }
+    out
+}
+
+/// The placeholder values for a new row: `date` is its `created` (the log day
+/// for a tracker, today otherwise), `title` its title.
+pub(crate) fn row_vars(fields: &BTreeMap<String, String>) -> BTreeMap<&'static str, String> {
+    let now = chrono::Local::now();
+    let date = fields.get("created").cloned().filter(|d| !d.is_empty()).unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
+    let title = fields.get("title").cloned().filter(|t| !t.is_empty()).unwrap_or_else(|| date.clone());
+    // No uuid crate in core: a time-and-salt hash in the 8-4-4-4-12 shape is unique enough for a note id.
+    let digest = {
+        use sha2::Digest;
+        let mut h = sha2::Sha256::new();
+        h.update(now.timestamp_nanos_opt().unwrap_or_default().to_le_bytes());
+        h.update(title.as_bytes());
+        hex::encode(h.finalize())
+    };
+    let uuid = format!("{}-{}-{}-{}-{}", &digest[0..8], &digest[8..12], &digest[12..16], &digest[16..20], &digest[20..32]);
+    BTreeMap::from([("date", date), ("time", now.format("%H:%M").to_string()), ("title", title), ("uuid", uuid)])
+}
+
 /// Append a new row to a source. For collections this creates a note from the
 /// given fields (title/type/created + any seed values such as a board group);
 /// for CSV it appends a record (id-sorted on write). Frontend supplies `id` and
@@ -930,7 +1018,7 @@ pub fn add_row(root: &Path, source: &str, id: &str, fields: &BTreeMap<String, St
         }
         for (k, v) in fields {
             if !matches!(k.as_str(), "title" | "type" | "created") {
-                fm.insert(k.clone(), serde_json::Value::String(v.clone()));
+                fm.insert(k.clone(), typed_seed(v));
             }
         }
 
@@ -1040,6 +1128,7 @@ pub fn add_row_from_template(
     let tpl_path = dir.join(format!("_template-{template}.md"));
     let content = std::fs::read_to_string(&tpl_path)
         .map_err(|_| AppError::Other(format!("Template not found: {template}")))?;
+    let content = expand_placeholders(&content, &row_vars(fields));
     let tpl = crate::note::parse_note(&format!("_template-{template}.md"), &content)?;
 
     let path = dir.join(format!("{id}.md"));
@@ -1048,14 +1137,17 @@ pub fn add_row_from_template(
     }
 
     let mut fm = tpl.frontmatter.clone();
+    // A template that names its own title (e.g. `title: "{{date}}"` in a log)
+    // keeps it; otherwise the row is Untitled until the user renames it.
+    let tpl_title = fm.get("title").and_then(|v| v.as_str()).filter(|t| !t.is_empty() && !t.contains("{{")).map(String::from);
     fm.insert("title".into(), serde_json::Value::String(
-        fields.get("title").cloned().unwrap_or_else(|| "Untitled".into())));
+        fields.get("title").cloned().filter(|t| t != "Untitled" || tpl_title.is_none()).or(tpl_title).unwrap_or_else(|| "Untitled".into())));
     if let Some(c) = fields.get("created") {
         fm.insert("created".into(), serde_json::Value::String(c.clone()));
     }
     for (k, v) in fields {
         if !matches!(k.as_str(), "title" | "created") {
-            fm.insert(k.clone(), serde_json::Value::String(v.clone()));
+            fm.insert(k.clone(), typed_seed(v));
         }
     }
 
@@ -1066,6 +1158,32 @@ pub fn add_row_from_template(
     };
     std::fs::write(&path, crate::note::serialize_note(&note)?)?;
     Ok(Some(path))
+}
+
+/// The row template a collection uses by default: `_template-<collection>.md`
+/// (what a pack installs), else the only template there is, else none.
+pub fn default_row_template(root: &Path, source: &str) -> Option<String> {
+    let (name, _) = collection_dir(root, source).ok()?;
+    let all = list_row_templates(root, source).ok()?;
+    if all.iter().any(|t| *t == name) { return Some(name); }
+    if all.len() == 1 { return all.into_iter().next(); }
+    None
+}
+
+/// The path of row `id`, creating it first when it does not exist — from the
+/// collection's default row template if there is one, else a blank row. This is
+/// how a tracker's log day comes into being on the first tick, and how
+/// `cortex set collections/habit-log/2026-09-08 done+=Exercise` works on a day
+/// that has no file yet.
+pub fn ensure_row(root: &Path, source: &str, id: &str, fields: &BTreeMap<String, String>) -> Result<std::path::PathBuf> {
+    let (_, dir) = collection_dir(root, source)?;
+    let path = dir.join(format!("{id}.md"));
+    if path.exists() { return Ok(path); }
+    let written = match default_row_template(root, source) {
+        Some(t) => add_row_from_template(root, source, id, &t, fields)?,
+        None => add_row(root, source, id, fields)?,
+    };
+    Ok(written.unwrap_or(path))
 }
 
 /// Save an existing row as a reusable template (its title/created are dropped —
@@ -1247,12 +1365,22 @@ pub struct ChartPoint {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct ChartSeries {
+    pub name: String,
+    pub points: Vec<ChartPoint>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChartResult {
     pub chart_type: String,
     pub x_label: String,
     pub y_label: String,
     pub points: Vec<ChartPoint>,
+    /// Per-value series when the spec sets `series:`; empty otherwise (then
+    /// `points` is the one series; with series, `points` is their sum per x).
+    #[serde(default)]
+    pub series: Vec<ChartSeries>,
 }
 
 #[derive(Default)]
@@ -1261,12 +1389,28 @@ struct Acc {
     rows: usize,
 }
 
-fn aggregate(table: &Table, x: &str, y: &str, agg: &str) -> Result<Vec<ChartPoint>> {
+/// Fold an ISO date into its `day | week | month | year` bucket: the week is
+/// its Monday, so buckets stay sortable dates. Non-dates pass through.
+pub(crate) fn bucket_key(value: &str, bucket: &str) -> String {
+    let Ok(d) = chrono::NaiveDate::parse_from_str(&value[..value.len().min(10)], "%Y-%m-%d") else { return value.to_string() };
+    match bucket {
+        "week" => {
+            use chrono::Datelike;
+            (d - chrono::Duration::days(d.weekday().num_days_from_monday() as i64)).format("%Y-%m-%d").to_string()
+        }
+        "month" => d.format("%Y-%m").to_string(),
+        "year" => d.format("%Y").to_string(),
+        _ => d.format("%Y-%m-%d").to_string(),
+    }
+}
+
+fn aggregate(table: &Table, x: &str, y: &str, agg: &str, bucket: Option<&str>) -> Result<Vec<ChartPoint>> {
     // BTreeMap keeps groups sorted by x (correct for dates/text; numeric x is
     // lexical — acceptable for Slice 2, revisit with typed x buckets later).
     let mut groups: BTreeMap<String, Acc> = BTreeMap::new();
     for row in &table.rows {
-        let xv = row.cells.get(x).map(|c| c.as_text()).unwrap_or_default();
+        let raw = row.cells.get(x).map(|c| c.as_text()).unwrap_or_default();
+        let xv = match bucket { Some(b) => bucket_key(&raw, b), None => raw };
         let acc = groups.entry(xv).or_default();
         acc.rows += 1;
         if let Some(n) = row.cells.get(y).and_then(|c| c.as_num()) {
@@ -1289,8 +1433,9 @@ fn aggregate(table: &Table, x: &str, y: &str, agg: &str) -> Result<Vec<ChartPoin
     Ok(points)
 }
 
-/// Parse a `cortex-chart` spec, resolve + filter its source, and produce a
-/// single series of `{x, y}` points (aggregated if `agg` is set).
+/// Parse a `cortex-chart` spec, resolve + filter its source, and produce
+/// `{x, y}` points (aggregated if `agg` is set; bucketed by `bucket`; one
+/// series per distinct `series` value when that is set).
 pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
     let table = resolve_source(root, &spec.source)?;
@@ -1298,6 +1443,7 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let x = spec.x.clone().ok_or_else(|| AppError::Other("Chart requires an `x` field".into()))?;
     let y = spec.y.clone().ok_or_else(|| AppError::Other("Chart requires a `y` field".into()))?;
     let chart_type = spec.chart_type.clone().unwrap_or_else(|| "line".into());
+    let bucket = spec.bucket.as_deref().filter(|b| !b.trim().is_empty() && *b != "none");
 
     // Apply filter (and any sort) first.
     let query = Query {
@@ -1311,22 +1457,47 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     };
     let filtered = query.apply(&table);
 
-    let mut points = match &spec.agg {
-        Some(agg) if !agg.trim().is_empty() => aggregate(&filtered, &x, &y, agg)?,
-        _ => filtered.rows.iter().filter_map(|r| {
-            let yv = r.cells.get(&y).and_then(|c| c.as_num())?;
-            let xv = r.cells.get(&x).map(|c| c.as_text()).unwrap_or_default();
-            Some(ChartPoint { x: xv, y: yv })
-        }).collect(),
+    let series_of = |t: &Table| -> Result<Vec<ChartPoint>> {
+        let mut points = match &spec.agg {
+            Some(agg) if !agg.trim().is_empty() => aggregate(t, &x, &y, agg, bucket)?,
+            _ => t.rows.iter().filter_map(|r| {
+                let yv = r.cells.get(&y).and_then(|c| c.as_num())?;
+                let raw = r.cells.get(&x).map(|c| c.as_text()).unwrap_or_default();
+                Some(ChartPoint { x: match bucket { Some(b) => bucket_key(&raw, b), None => raw }, y: yv })
+            }).collect(),
+        };
+        // Order points along x (numeric when possible, else lexical).
+        points.sort_by(|a, b| match (a.x.parse::<f64>(), b.x.parse::<f64>()) {
+            (Ok(p), Ok(q)) => p.partial_cmp(&q).unwrap_or(std::cmp::Ordering::Equal),
+            _ => a.x.cmp(&b.x),
+        });
+        Ok(points)
     };
 
-    // Order points along x (numeric when possible, else lexical).
-    points.sort_by(|a, b| match (a.x.parse::<f64>(), b.x.parse::<f64>()) {
-        (Ok(p), Ok(q)) => p.partial_cmp(&q).unwrap_or(std::cmp::Ordering::Equal),
-        _ => a.x.cmp(&b.x),
-    });
+    let series: Vec<ChartSeries> = match spec.series.as_deref().filter(|s| !s.trim().is_empty()) {
+        None => vec![],
+        Some(field) => {
+            let mut by: BTreeMap<String, Vec<Row>> = BTreeMap::new();
+            for r in &filtered.rows {
+                // A list-valued series field (e.g. a tracker log's `done`) puts the row in every value's series.
+                let keys: Vec<String> = match r.cells.get(field) {
+                    Some(CellValue::List(items)) => items.clone(),
+                    Some(c) => vec![c.as_text()],
+                    None => vec![String::new()],
+                };
+                for k in keys { by.entry(k).or_default().push(r.clone()); }
+            }
+            let mut out = Vec::new();
+            for (name, rows) in by {
+                let t = Table { name: filtered.name.clone(), columns: filtered.columns.clone(), rows };
+                out.push(ChartSeries { name, points: series_of(&t)? });
+            }
+            out
+        }
+    };
+    let points = if series.is_empty() { series_of(&filtered)? } else { series.iter().flat_map(|s| s.points.iter().cloned()).fold(BTreeMap::<String, f64>::new(), |mut m, p| { *m.entry(p.x).or_default() += p.y; m }).into_iter().map(|(x, y)| ChartPoint { x, y }).collect() };
 
-    Ok(ChartResult { chart_type, x_label: x, y_label: y, points })
+    Ok(ChartResult { chart_type, x_label: x, y_label: y, points, series })
 }
 
 // ── Tests: the contract — one Query type, two sources ──────────────────────────
