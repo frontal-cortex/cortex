@@ -12,7 +12,7 @@ A local-first, Notion-style knowledge base where your data is a plain git reposi
 
 ## Status
 
-Usable daily. Notes, wiki links, backlinks, graph, databases with typed properties and views, templates, history and restore, trash, git sync with conflict resolution, team members, live collaboration over an optional relay, a filesystem watcher, desktop-palette theming, a CLI, an MCP server, and publishing chosen notes as a static site (see [docs/publishing.md](docs/publishing.md)).
+Usable daily. Notes, wiki links, backlinks, graph, databases with typed properties and views, templates, history and restore, trash, git sync with conflict resolution, team members, live collaboration over an optional relay, a filesystem watcher, desktop-palette theming, a CLI, an MCP server, publishing chosen notes as a static site (see [docs/publishing.md](docs/publishing.md)), and a template marketplace — note templates and databases installed as plain files, from the app, the CLI or an agent (see [docs/marketplace.md](docs/marketplace.md)).
 
 ## Tech stack
 

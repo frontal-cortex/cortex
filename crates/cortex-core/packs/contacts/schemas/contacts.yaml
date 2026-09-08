@@ -1,0 +1,26 @@
+properties:
+  - name: relationship
+    type: select
+    options:
+      - name: family
+        color: pink
+      - name: friend
+        color: green
+      - name: colleague
+        color: blue
+      - name: client
+        color: purple
+      - name: mentor
+        color: yellow
+      - name: acquaintance
+        color: gray
+  - name: company
+    type: text
+  - name: role
+    type: text
+  - name: email
+    type: text
+  - name: last_contact
+    type: date
+  - name: follow_up
+    type: date

@@ -292,12 +292,23 @@ export interface PackManifest {
   files: string[];
 }
 
+/** The shape of a pack at a glance: a template's headings, or a database's columns and views. */
+export interface PackExcerpt {
+  headings: string[];
+  /** [property, type] */
+  properties: [string, string][];
+  /** [view name, view type] */
+  views: [string, string][];
+}
+
 /** One row of the marketplace: the manifest plus where it comes from and its state here. */
 export interface PackEntry extends PackManifest {
   tier: PackTier;
   /** `bundled` or the index URL. */
   source: string;
   preview: string | null;
+  /** Present for bundled packs; null for packs known only from an index. */
+  excerpt: PackExcerpt | null;
   installed_version: string | null;
   update_available: boolean;
   needs_newer_app: boolean;
@@ -345,6 +356,13 @@ export interface PackUpdateReport {
   replaced: string[];
   kept: string[];
   added: string[];
+}
+
+/** A pack file's contents (Markdown / YAML only) and where it lands in the vault. */
+export interface PackText {
+  path: string;
+  dest: string | null;
+  text: string | null;
 }
 
 export interface PackRemoveReport {
@@ -574,6 +592,8 @@ export const commands = {
     invoke<PackCatalog>("packs_catalog", { refresh }),
   packsShow: (id: string, force: boolean) =>
     invoke<[Pack, PackPlan]>("packs_show", { id, force }),
+  packsFiles: (id: string) =>
+    invoke<PackText[]>("packs_files", { id }),
   packsInstall: (id: string, force: boolean) =>
     invoke<PackInstallReport[]>("packs_install", { id, force }),
   packsUpdate: (id: string) =>

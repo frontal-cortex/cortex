@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -27,6 +27,7 @@ interface Props {
   onSync: () => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
+  onOpenMarketplace: () => void;
   onQuickCapture: () => void;
   onToggleSidebar: () => void;
   onToggleTerminal: () => void;
@@ -45,7 +46,7 @@ type Mode = "notes" | "actions";
 export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-  onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
+  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
   onPublish, onTogglePublic, isPublic, hasRemote,
 }: Props) {
@@ -111,6 +112,13 @@ export function QuickSwitcher({
         description: "Tabbed table / board / calendar over notes",
         icon: <BrainIcon size={14} />,
         run: () => { onNewCollection(); onClose(); },
+      },
+      {
+        id: "marketplace",
+        label: "Browse templates…",
+        description: `${shortcutFor("marketplace")} · note templates and databases from the marketplace, installed as plain files`,
+        icon: <SparkleIcon size={14} />,
+        run: () => { onOpenMarketplace(); onClose(); },
       },
       ...(hasRemote ? [{
         id: "sync",
@@ -190,9 +198,16 @@ export function QuickSwitcher({
       icon: <TemplateIcon size={14} />,
       run: () => { onNewFromTemplate(t); onClose(); },
     }));
-    return [...base, ...tplActions];
+    const more: Action[] = [{
+      id: "tpl:more",
+      label: "Get more templates…",
+      description: "Open the marketplace",
+      icon: <SparkleIcon size={14} />,
+      run: () => { onOpenMarketplace(); onClose(); },
+    }];
+    return [...base, ...tplActions, ...more];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-      onNewCollection, onSync, onToggleTheme, onOpenSettings, onQuickCapture,
+      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
       onPublish, onTogglePublic, isPublic, onClose]);
 

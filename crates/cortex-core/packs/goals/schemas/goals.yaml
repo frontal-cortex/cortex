@@ -1,0 +1,35 @@
+properties:
+  - name: status
+    type: status
+    options:
+      - name: planned
+        color: gray
+      - name: on_track
+        color: green
+      - name: at_risk
+        color: yellow
+      - name: off_track
+        color: red
+      - name: done
+        color: blue
+  - name: area
+    type: select
+    options:
+      - name: health
+        color: green
+      - name: career
+        color: blue
+      - name: money
+        color: yellow
+      - name: learning
+        color: purple
+      - name: relationships
+        color: pink
+      - name: home
+        color: brown
+  - name: target
+    type: date
+  - name: progress
+    type: number
+  - name: measure
+    type: text

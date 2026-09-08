@@ -54,6 +54,29 @@ pub fn packs_remove(id: String, state: State<'_, VaultState>) -> Result<RemoveRe
     mk::remove(&root(&state)?, &id)
 }
 
+/// A pack's text files (Markdown and YAML) with where each lands, for the
+/// Marketplace page's preview. Binary files (images) come back without text.
+#[derive(serde::Serialize)]
+pub struct PackText {
+    pub path: String,
+    pub dest: Option<String>,
+    pub text: Option<String>,
+}
+
+#[tauri::command]
+pub fn packs_files(id: String, app: AppHandle, state: State<'_, VaultState>) -> Result<Vec<PackText>> {
+    let root = root(&state)?;
+    let pack = mk::resolve(&root, cache_dir(&app).as_deref(), &id, true)?;
+    Ok(pack.files.iter().map(|f| {
+        let is_text = f.path.ends_with(".md") || f.path.ends_with(".yaml");
+        PackText {
+            path: f.path.clone(),
+            dest: mk::destination(&pack.manifest, &f.path),
+            text: is_text.then(|| String::from_utf8_lossy(&f.contents).into_owned()),
+        }
+    }).collect())
+}
+
 /// Start a pack directory from a template or collection in this vault.
 #[tauri::command]
 pub fn packs_export(id: String, from: String, out_dir: String, state: State<'_, VaultState>) -> Result<String> {

@@ -1,11 +1,12 @@
 //! Embed the official template packs into the crate (see `marketplace.rs`).
 //!
-//! The packs live in `marketplace/packs/` at the repository root while this
-//! repo is their home; once they move to `frontal-cortex/marketplace`,
-//! `tools/sync-packs.sh` vendors a snapshot into `crates/cortex-core/packs/`,
-//! which takes precedence here. Either way the app ships them compiled in,
-//! so the marketplace works offline and the bundled packs are the fallback
-//! when no index can be fetched.
+//! The packs live in `frontal-cortex/marketplace`; `tools/sync-packs.sh`
+//! vendors a snapshot of the official tier into `crates/cortex-core/packs/`
+//! (with `featured.yaml`, `tiers.yaml` and `VERSION` beside it). A
+//! `marketplace/packs/` directory at the repository root is honoured too, for
+//! working on packs in-tree. Either way the app ships them compiled in, so the
+//! marketplace works offline and the bundled packs are the fallback when no
+//! index can be fetched.
 
 use std::path::{Path, PathBuf};
 
@@ -46,6 +47,17 @@ fn main() {
         ));
     }
     out.push_str("];\n");
+
+    // The curated front-page order, from the same place as the packs.
+    let featured = [manifest_dir.join("featured.yaml"), manifest_dir.join("../../marketplace/featured.yaml")]
+        .iter().find(|p| p.is_file()).cloned();
+    let featured_text = match &featured {
+        Some(p) => { println!("cargo:rerun-if-changed={}", p.display()); std::fs::read_to_string(p).unwrap() }
+        None => String::new(),
+    };
+    out.push_str("/// featured.yaml as shipped beside the bundled packs (empty when none was found).\n");
+    out.push_str(&format!("pub static FEATURED_YAML: &str = {:?};\n", featured_text));
+
     let dest = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("packs_bundle.rs");
     std::fs::write(dest, out).unwrap();
 }

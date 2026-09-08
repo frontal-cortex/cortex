@@ -1,0 +1,21 @@
+format: 1
+id: contacts
+name: "Contacts"
+version: 1.0.0
+kind: collection
+summary: "A people database: relationship, company, last contact, next follow-up — with a follow-up calendar."
+description: |
+  A lightweight personal CRM. One row per person with how you know them, where they work, when you last spoke and when to reach out next. The calendar view turns follow-ups into a to-do you cannot forget; the board groups everyone by relationship. Each row is a note, so the history of a relationship lives under the properties.
+tags: [people, crm, relationships, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The personal CRM templates that circulate for every notes app, reduced to the fields people actually keep up to date."
+min_cortex: 0.1.0
+collection: contacts
+files:
+  - templates/contacts.md
+  - schemas/contacts.yaml
+  - index.md
+  - seed/example-contact.md

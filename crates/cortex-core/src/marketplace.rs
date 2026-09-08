@@ -129,6 +129,46 @@ impl Pack {
     }
 }
 
+/// The shape of a pack at a glance — what a card shows when there is no
+/// preview image: a note template's headings, or a database's columns and views.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Excerpt {
+    /// Headings of the (first) template, in order, at most eight.
+    pub headings: Vec<String>,
+    /// Collection packs: (property, type) from the schema.
+    pub properties: Vec<(String, String)>,
+    /// Collection packs: (view name, view type) from index.md.
+    pub views: Vec<(String, String)>,
+}
+
+pub fn excerpt(pack: &Pack) -> Excerpt {
+    let mut e = Excerpt::default();
+    if let Some(coll) = &pack.manifest.collection {
+        if let Some(text) = pack.text(&format!("schemas/{coll}.yaml")) {
+            if let Ok(s) = serde_yaml::from_str::<schema::TypeSchema>(&text) {
+                e.properties = s.properties.iter().map(|p| (p.name.clone(), format!("{:?}", p.ty).to_lowercase())).collect();
+            }
+        }
+        if let Some(text) = pack.text("index.md") {
+            if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
+                for v in fm.get("views").and_then(|v| v.as_sequence()).cloned().unwrap_or_default() {
+                    let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let ty = v.get("type").and_then(|x| x.as_str()).unwrap_or("table").to_string();
+                    e.views.push((name, ty));
+                }
+            }
+        }
+    }
+    if let Some(f) = pack.files.iter().find(|f| f.path.starts_with("templates/")) {
+        let text = String::from_utf8_lossy(&f.contents);
+        let body = text.strip_prefix("---").and_then(|r| r.find("\n---").map(|i| &r[i + 4..])).unwrap_or(&text);
+        e.headings = body.lines()
+            .filter_map(|l| l.strip_prefix("### ").or_else(|| l.strip_prefix("## ")).or_else(|| l.strip_prefix("# ")))
+            .map(|h| h.trim().to_string()).filter(|h| !h.is_empty()).take(8).collect();
+    }
+    e
+}
+
 /// The packs compiled into this build (the official tier).
 pub fn bundled() -> Vec<Pack> {
     let mut by_id: BTreeMap<&str, Vec<PackFile>> = BTreeMap::new();
@@ -855,6 +895,8 @@ pub struct CatalogEntry {
     pub tier: Tier,
     pub source: String,
     pub preview: Option<String>,
+    /// The bundled copy's shape, for cards without an image (None for packs we only know from an index).
+    pub excerpt: Option<Excerpt>,
     pub installed_version: Option<String>,
     pub update_available: bool,
     pub needs_newer_app: bool,
@@ -897,7 +939,9 @@ fn cache_path(cache_dir: &Path, url: &str) -> PathBuf {
 /// bundled packs are the fallback when nothing can be fetched.
 pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: bool) -> Catalog {
     let mut best: BTreeMap<String, (Manifest, Tier, String, Option<String>)> = BTreeMap::new();
+    let mut excerpts: BTreeMap<String, Excerpt> = BTreeMap::new();
     for p in bundled() {
+        excerpts.insert(p.manifest.id.clone(), excerpt(&p));
         best.insert(p.manifest.id.clone(), (p.manifest, Tier::Official, "bundled".into(), None));
     }
     let mut errors = Vec::new();
@@ -938,7 +982,8 @@ pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: boo
         let update_available = installed_version.as_deref().map(|v| version_gt(&manifest.version, v)).unwrap_or(false);
         let needs_newer_app = !min_version_ok(&manifest);
         let featured = featured.contains(&manifest.id);
-        CatalogEntry { manifest, tier, source, preview, installed_version, update_available, needs_newer_app, featured }
+        let excerpt = excerpts.get(&manifest.id).cloned();
+        CatalogEntry { manifest, tier, source, preview, excerpt, installed_version, update_available, needs_newer_app, featured }
     }).collect();
     // Featured first (in curated order), then by tier, then by name.
     entries.sort_by_key(|e| (featured.iter().position(|f| *f == e.manifest.id).unwrap_or(usize::MAX), e.tier, e.manifest.name.to_lowercase()));
@@ -946,9 +991,9 @@ pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: boo
 }
 
 fn bundled_featured() -> Vec<String> {
-    // The curated order ships beside the packs as `featured.yaml` when vendored; until then, the bundle order.
-    let text = include_str!("../../../marketplace/featured.yaml");
-    serde_yaml::from_str::<serde_yaml::Value>(text).ok()
+    // The curated order, embedded by build.rs from marketplace/featured.yaml
+    // (or the copy tools/sync-packs.sh vendors beside the packs).
+    serde_yaml::from_str::<serde_yaml::Value>(FEATURED_YAML).ok()
         .and_then(|v| v.get("featured").and_then(|f| f.as_sequence()).map(|s| s.iter().filter_map(|x| x.as_str().map(String::from)).collect()))
         .unwrap_or_default()
 }
@@ -992,6 +1037,16 @@ mod tests {
 
     fn pack(id: &str) -> Pack {
         bundled().into_iter().find(|p| p.manifest.id == id).unwrap_or_else(|| panic!("bundled pack {id}"))
+    }
+
+    #[test]
+    fn excerpts_describe_note_and_collection_packs() {
+        let e = excerpt(&pack("daily-note"));
+        assert!(e.headings.iter().any(|h| h.contains("Top 3")), "{e:?}");
+        assert!(e.properties.is_empty() && e.views.is_empty());
+        let e = excerpt(&pack("tasks"));
+        assert!(e.properties.iter().any(|(n, t)| n == "status" && t == "status"), "{e:?}");
+        assert!(e.views.iter().any(|(n, t)| n == "Board" && t == "board"), "{e:?}");
     }
 
     #[test]
@@ -1161,7 +1216,10 @@ mod tests {
     #[test]
     fn index_generation_and_remote_fetch_with_hash_check() {
         // A "remote" made of the repo's own marketplace directory, served via file://.
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../marketplace");
+        // The vendored snapshot (crates/cortex-core/packs/) has the same shape as a
+        // marketplace checkout: packs/ + tiers.yaml; fall back to marketplace/ as build.rs does.
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo = if manifest_dir.join("packs").is_dir() { manifest_dir.to_path_buf() } else { manifest_dir.join("../../marketplace") };
         let index = generate_index(&repo, "packs/").unwrap();
         assert!(index.packs.len() >= 11);
         let tasks = index.packs.iter().find(|e| e.manifest.id == "tasks").unwrap();
