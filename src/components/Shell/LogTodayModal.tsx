@@ -40,7 +40,7 @@ export function LogTodayModal({ onClose, onChanged }: { onClose: () => void; onC
           <div className={styles.stub}>Loading…</div>
         ) : byCollection.size === 0 ? (
           <div className={styles.stub}>
-            No tracker yet. Add a Tracker view to a database (or install the Habit Tracker from the marketplace) and it shows up here.
+            No tracker yet. Add a Tracker view to a collection (or install the Habit Tracker from the marketplace) and it shows up here.
           </div>
         ) : (
           [...byCollection.values()].map((t) => (

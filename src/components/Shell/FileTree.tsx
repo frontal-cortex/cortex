@@ -380,7 +380,7 @@ function FileContextMenu({
     >
       <button className={styles.ctxItem} onClick={run(actions.onRenameFile)}>Rename</button>
       <button className={styles.ctxItem} onClick={run(actions.onDuplicateFile)}>Duplicate</button>
-      <button className={styles.ctxItem} onClick={run(actions.onTurnIntoDatabase)}>Turn whole note into database</button>
+      <button className={styles.ctxItem} onClick={run(actions.onTurnIntoDatabase)}>Turn whole note into collection</button>
       {onToggleFavorite && (
         <button className={styles.ctxItem} onClick={run(onToggleFavorite)}>
           {fav ? "Remove from favorites" : "Add to favorites"}

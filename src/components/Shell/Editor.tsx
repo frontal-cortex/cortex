@@ -12,7 +12,7 @@ import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { useColorScheme } from "../../hooks/useColorScheme";
-import { Note, NoteEntry, CommitEntry, Member, commands } from "../../lib/commands";
+import { Note, NoteEntry, CommitEntry, Member, ViewDef, commands } from "../../lib/commands";
 import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
@@ -21,7 +21,13 @@ import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
 import { NoteHistoryModal } from "./NoteHistoryModal";
 import { PlusIcon, HistoryIcon, TrashIcon, TableIcon } from "./icons";
-import { cortexSchema, inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
+import { cortexSchema } from "./schema";
+import { inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
+import {
+  CollectionPageContext, CollectionPage, inflateCollectionViews, flattenCollectionViews,
+  ensureCollectionViewsBlock, collectionViewsSlashItem,
+} from "./CollectionViewsBlock";
+import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, viewToFrontmatter } from "../../lib/database";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
 import { shortcutFor } from "../../lib/keymap";
@@ -95,6 +101,8 @@ interface Props {
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onApplyNote: (note: Note) => void;
+  /** A collection's page offers "Convert to checklist note" in its views menu. */
+  onConvertToNote?: (collection: string) => void;
 }
 
 /** What the shell can do to the editor's focus. Keyboard-first: a new note
@@ -109,7 +117,7 @@ export interface EditorHandle {
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
-  note, saving, allNotes, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote,
+  note, saving, allNotes, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
 }, ref) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
@@ -151,6 +159,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
         onDelete={onDelete}
         onNavigate={onNavigate}
         onShowHistory={() => setShowHistory(true)}
+        onConvertToNote={onConvertToNote}
       />
       {showHistory && (
         <NoteHistoryModal
@@ -227,7 +236,7 @@ function personItems(members: Member[], query: string): MentionItem[] {
 const PROPS_EXPANDED_KEY = "cortex.propertiesExpanded";
 
 function NoteEditor({
-  note, saving, allNotes, collab, monk, handleRef, onSave, onDelete, onNavigate, onShowHistory,
+  note, saving, allNotes, collab, monk, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
 }: {
   note: Note;
   saving: boolean;
@@ -239,9 +248,24 @@ function NoteEditor({
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onShowHistory: () => void;
+  onConvertToNote?: (collection: string) => void;
 }) {
   const noteRef = useRef(note);
   noteRef.current = note;
+
+  // A collection's own page: `collections/<name>/_index.md`. Its views live in
+  // the frontmatter and render through the bound views block in the body.
+  const collection = isDatabaseNote(note) ? collectionNameFromIndex(note.path) : null;
+  const pageViews = useMemo(() => { const v = parseViews(note.frontmatter); return v.length ? v : defaultViews(); }, [note.frontmatter]);
+  const setPageViews = useCallback((views: ViewDef[]) => {
+    onSave({ ...noteRef.current, frontmatter: { ...noteRef.current.frontmatter, type: "database", views: views.map(viewToFrontmatter) } });
+  }, [onSave]);
+  const page = useMemo<CollectionPage | null>(() => collection ? {
+    collection,
+    views: pageViews,
+    setViews: setPageViews,
+    onConvertToNote: onConvertToNote ? () => onConvertToNote(collection) : undefined,
+  } : null, [collection, pageViews, setPageViews, onConvertToNote]);
 
   const navigateRef = useRef(onNavigate);
   navigateRef.current = onNavigate;
@@ -492,16 +516,20 @@ function NoteEditor({
   onSaveRef.current = onSave;
 
   useEffect(() => {
-    const finish = () => { hydrating.current = false; };
+    const finish = () => {
+      // A collection's page always shows its views, even before the note has a fence.
+      if (collection) { try { ensureCollectionViewsBlock(editor, collection); } catch { /* editor torn down */ } }
+      hydrating.current = false;
+    };
     const seedFromMarkdown = () => {
       if (!note.body.trim()) { finish(); return; }
       assetsToDisplayUrls(note.body)
         .then((displayBody) => {
           try {
             const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-            // Translate `cortex-view` fences, `![[embeds]]`, and `[!callout]`
-            // blockquotes into live blocks on load.
-            editor.replaceBlocks(editor.document, inflateCallouts(inflateEmbeds(inflateViewBlocks(blocks))) as typeof blocks);
+            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`, and
+            // `[!callout]` blockquotes into live blocks on load.
+            editor.replaceBlocks(editor.document, inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks)))) as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
             // would be suppressed forever for this note.
@@ -552,7 +580,7 @@ function NoteEditor({
       // immediately by navigating away — capturing here means the pending
       // write survives the editor being destroyed on unmount.
       void (async () => {
-        const doc = flattenCallouts(flattenEmbeds(flattenViewBlocks(editor.document))) as typeof editor.document;
+        const doc = flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(editor.document)))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
         pendingMd.current = displayUrlsToAssets(md);
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
@@ -612,6 +640,7 @@ function NoteEditor({
   }, [handleFrontmatterChange]);
 
   return (
+    <CollectionPageContext.Provider value={page}>
     <div className={styles.root}>
       <div className={styles.docWrap}>
         <div className={styles.docInner}>
@@ -686,7 +715,7 @@ function NoteEditor({
 
           <div className={styles.editorWrap}>
             <BlockNoteView editor={editor} slashMenu={false} formattingToolbar={false} theme={colorScheme}>
-              {/* Default formatting toolbar + our "Convert to database" action. */}
+              {/* Default formatting toolbar + our "Convert to collection" action. */}
               <FormattingToolbarController
                 formattingToolbar={() => {
                   // Place our button right after the block-type dropdown (item 0),
@@ -705,7 +734,7 @@ function NoteEditor({
                 triggerCharacter="/"
                 getItems={async (query) =>
                   filterSuggestionItems(
-                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor)],
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor)],
                     query,
                   )
                 }
@@ -732,6 +761,7 @@ function NoteEditor({
         />
       )}
     </div>
+    </CollectionPageContext.Provider>
   );
 }
 
@@ -778,8 +808,8 @@ function ConvertToDatabaseButton({ editor, baseName }: { editor: any; baseName: 
   if (!blocks.some((b: any) => LIST_TYPES.includes(b.type))) return null;
   return (
     <Components.FormattingToolbar.Button
-      mainTooltip="Convert these items to a database"
-      label="Convert to database"
+      mainTooltip="Convert these items to a collection"
+      label="Convert to collection"
       icon={<TableIcon size={17} />}
       onClick={() => convertSelectionToDatabase(editor, baseName)}
     />

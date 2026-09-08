@@ -248,7 +248,7 @@ const SECTIONS: SectionDef[] = [
   {
     id: "templates",
     title: "Templates",
-    blurb: "The template marketplace: note templates and databases installed as plain files. Nothing is fetched or installed until you ask.",
+    blurb: "The template marketplace: note templates and collections installed as plain files. Nothing is fetched or installed until you ask.",
     icon: <TemplateIcon size={14} />,
     rows: [
       {

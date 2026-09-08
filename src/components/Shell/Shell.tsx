@@ -9,11 +9,7 @@ import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
-import { DatabaseView } from "./DatabaseView";
-import {
-  isDatabaseNote, collectionNameFromIndex, defaultViews,
-  viewToFrontmatter, migrateLegacyIndex,
-} from "../../lib/database";
+import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/database";
 import { CollabConfig, loadCollabConfig, startVaultRoom, stopVaultRoom } from "../../lib/collab";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { QuickCapture } from "./QuickCapture";
@@ -411,7 +407,7 @@ export function Shell({
   // Create a new database: a `collections/<slug>/` folder, then open its
   // freshly created index (starts empty — rows are added with "+ New").
   const handleNewCollection = useCallback(async () => {
-    const name = window.prompt("New database name")?.trim();
+    const name = window.prompt("New collection name")?.trim();
     if (!name) return;
     const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "database";
     await commands.createFolder(`collections/${slug}`).catch(() => {});
@@ -433,7 +429,7 @@ export function Shell({
   // Turn a database back into a checklist note, then delete the collection.
   const handleConvertToNote = useCallback(async (name: string) => {
     if (!window.confirm(
-      "Convert this database to a checklist note? Each row becomes a checkbox line, and the database (its row files) is deleted.",
+      "Convert this collection to a checklist note? Each row becomes a checkbox line, and the collection (its row files) is deleted.",
     )) return;
     try {
       const notePath = await commands.convertDatabaseToNote(name);
@@ -547,29 +543,21 @@ export function Shell({
         />
         </div>
 
-        {note && isDatabaseNote(note) && collectionNameFromIndex(note.path) ? (
-          <DatabaseView
-            note={note}
-            collectionName={collectionNameFromIndex(note.path)!}
-            onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
-            onConvertToNote={handleConvertToNote}
-          />
-        ) : (
-          <Editor
-            ref={editorRef}
-            note={note}
-            saving={saving}
-            allNotes={notes}
-            vaultPath={vault.path}
-            reloadToken={reloadToken}
-            collab={collab}
-            monk={monk}
-            onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
-            onDelete={handleDelete}
-            onNavigate={handleNavigate}
-            onApplyNote={applyNote}
-          />
-        )}
+        <Editor
+          ref={editorRef}
+          note={note}
+          saving={saving}
+          allNotes={notes}
+          vaultPath={vault.path}
+          reloadToken={reloadToken}
+          collab={collab}
+          monk={monk}
+          onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
+          onDelete={handleDelete}
+          onNavigate={handleNavigate}
+          onApplyNote={applyNote}
+          onConvertToNote={handleConvertToNote}
+        />
 
         {terminalMounted && (
           <aside className={styles.rightPane} style={rightVisible ? undefined : { display: "none" }}>
