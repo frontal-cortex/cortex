@@ -1,0 +1,22 @@
+properties:
+  - name: date
+    type: date
+  - name: amount
+    type: number
+  - name: category
+    type: select
+    options:
+      - name: income
+        color: green
+      - name: housing
+        color: blue
+      - name: food
+        color: yellow
+      - name: transport
+        color: gray
+      - name: subscriptions
+        color: purple
+      - name: other
+        color: gray
+  - name: account
+    type: text

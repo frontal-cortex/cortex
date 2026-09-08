@@ -1,0 +1,12 @@
+# Hand-curated order for the marketplace's front page (the top ten).
+featured:
+  - daily-note
+  - weekly-review
+  - meeting-notes
+  - one-on-one
+  - para-index
+  - tasks
+  - project-tracker
+  - reading-list
+  - habit-tracker
+  - budget-tracker

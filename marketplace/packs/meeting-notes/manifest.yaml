@@ -1,0 +1,17 @@
+format: 1
+id: meeting-notes
+name: "Meeting Notes"
+version: 1.0.0
+kind: note
+summary: "Attendees, agenda, decisions, and action items with owners."
+description: |
+  The shape a meeting note needs so it is useful a month later: who was there, what was decided, and who owns what. Action items are task checkboxes, so they show up in searches for open work.
+tags: [work, meetings]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The most-duplicated work template in Notion's gallery, trimmed to what gets filled in."
+min_cortex: 0.1.0
+files:
+  - templates/meeting.md

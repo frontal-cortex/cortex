@@ -1,0 +1,21 @@
+format: 1
+id: budget-tracker
+name: "Budget Tracker"
+version: 1.0.0
+kind: collection
+summary: "A row per transaction: date, amount, category, account — simple enough to keep filled in."
+description: |
+  Every budget template that survives contact with real life is this one: a transaction a row, negative for spending, positive for income, a category to group by on the board, and a date the calendar view shows. Add a chart block over it for the monthly picture.
+tags: [finance, budget, database]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The free budget trackers near the top of every Notion template list."
+min_cortex: 0.1.0
+collection: budget
+files:
+  - templates/budget.md
+  - schemas/budget.yaml
+  - index.md
+  - seed/example-transaction.md

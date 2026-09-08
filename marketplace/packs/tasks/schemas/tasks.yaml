@@ -1,0 +1,23 @@
+properties:
+  - name: status
+    type: status
+    options:
+      - name: todo
+        color: gray
+      - name: doing
+        color: blue
+      - name: done
+        color: green
+  - name: priority
+    type: select
+    options:
+      - name: low
+        color: gray
+      - name: medium
+        color: yellow
+      - name: high
+        color: red
+  - name: due
+    type: date
+  - name: project
+    type: text

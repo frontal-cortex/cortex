@@ -1,0 +1,42 @@
+properties:
+  - name: author
+    type: text
+  - name: status
+    type: status
+    options:
+      - name: to_read
+        color: gray
+      - name: reading
+        color: blue
+      - name: finished
+        color: green
+      - name: abandoned
+        color: red
+  - name: rating
+    type: select
+    options:
+      - name: "★"
+        color: gray
+      - name: "★★"
+        color: gray
+      - name: "★★★"
+        color: yellow
+      - name: "★★★★"
+        color: yellow
+      - name: "★★★★★"
+        color: yellow
+  - name: format
+    type: select
+    options:
+      - name: book
+        color: blue
+      - name: audiobook
+        color: purple
+      - name: article
+        color: gray
+      - name: paper
+        color: green
+  - name: started
+    type: date
+  - name: finished
+    type: date
