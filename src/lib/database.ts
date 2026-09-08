@@ -71,6 +71,13 @@ function asStringArray(v: unknown): string[] | undefined {
   return out.length ? out : undefined;
 }
 
+/** Keys with a fixed place in a spec; every other option follows alphabetically. */
+const LIST_KEYS = ["sort", "columns"] as const;
+const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "limit", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range"];
+const orderOf = (k: string) => { const i = KEY_ORDER.indexOf(k); return i < 0 ? KEY_ORDER.length : i; };
+const optionKeys = (v: ViewDef) =>
+  Object.keys(v).filter((k) => k !== "name" && k !== "type").sort((p, q) => orderOf(p) - orderOf(q) || p.localeCompare(q));
+
 /** Read + validate the views list from an `_index.md`'s frontmatter. */
 export function parseViews(frontmatter: Record<string, unknown>): ViewDef[] {
   const raw = frontmatter["views"];
@@ -81,24 +88,14 @@ export function parseViews(frontmatter: Record<string, unknown>): ViewDef[] {
     const o = item as Record<string, unknown>;
     const type = o["type"];
     if (typeof type !== "string") continue;
-    views.push({
-      name: typeof o["name"] === "string" ? (o["name"] as string) : type,
-      type: type as ViewType,
-      filter: typeof o["filter"] === "string" ? (o["filter"] as string) : undefined,
-      sort: asStringArray(o["sort"]),
-      columns: asStringArray(o["columns"]),
-      group: typeof o["group"] === "string" ? (o["group"] as string) : undefined,
-      date: typeof o["date"] === "string" ? (o["date"] as string) : undefined,
-      x: typeof o["x"] === "string" ? (o["x"] as string) : undefined,
-      y: typeof o["y"] === "string" ? (o["y"] as string) : undefined,
-      agg: typeof o["agg"] === "string" ? (o["agg"] as string) : undefined,
-      chartType: typeof o["chartType"] === "string" ? (o["chartType"] as string) : undefined,
-      bucket: typeof o["bucket"] === "string" ? (o["bucket"] as string) : undefined,
-      series: typeof o["series"] === "string" ? (o["series"] as string) : undefined,
-      log: typeof o["log"] === "string" ? (o["log"] as string) : undefined,
-      done: typeof o["done"] === "string" ? (o["done"] as string) : undefined,
-      range: typeof o["range"] === "string" ? (o["range"] as string) : undefined,
-    });
+    const v: ViewDef = { name: typeof o["name"] === "string" ? (o["name"] as string) : type, type: type as ViewType };
+    for (const [k, val] of Object.entries(o)) {
+      if (k === "name" || k === "type") continue;
+      if ((LIST_KEYS as readonly string[]).includes(k)) { const arr = asStringArray(val); if (arr) v[k] = arr; }
+      else if (typeof val === "string" && val !== "") v[k] = val;
+      else if (typeof val === "number" || typeof val === "boolean") v[k] = String(val);
+    }
+    views.push(v);
   }
   return views;
 }
@@ -106,20 +103,10 @@ export function parseViews(frontmatter: Record<string, unknown>): ViewDef[] {
 /** Strip undefined/empty fields so frontmatter stays tidy. */
 export function viewToFrontmatter(v: ViewDef): Record<string, unknown> {
   const o: Record<string, unknown> = { name: v.name, type: v.type };
-  if (v.filter) o.filter = v.filter;
-  if (v.sort?.length) o.sort = v.sort;
-  if (v.columns?.length) o.columns = v.columns;
-  if (v.group) o.group = v.group;
-  if (v.date) o.date = v.date;
-  if (v.x) o.x = v.x;
-  if (v.y) o.y = v.y;
-  if (v.agg) o.agg = v.agg;
-  if (v.chartType) o.chartType = v.chartType;
-  if (v.bucket) o.bucket = v.bucket;
-  if (v.series) o.series = v.series;
-  if (v.log) o.log = v.log;
-  if (v.done) o.done = v.done;
-  if (v.range) o.range = v.range;
+  for (const k of optionKeys(v)) {
+    const val = v[k];
+    if (Array.isArray(val) ? val.length : val) o[k] = val;
+  }
   return o;
 }
 
@@ -128,20 +115,11 @@ export function viewToFrontmatter(v: ViewDef): Record<string, unknown> {
  *  be fed straight to runView/runChart and round-tripped through ViewToolbar. */
 export function specFromView(v: ViewDef, source: string): string {
   let s = `source: ${source}\ntype: ${v.type}\n`;
-  if (v.filter) s += `filter: ${v.filter}\n`;
-  if (v.sort?.length) s += `sort: [${v.sort.join(", ")}]\n`;
-  if (v.columns?.length) s += `columns: [${v.columns.join(", ")}]\n`;
-  if (v.group) s += `group: ${v.group}\n`;
-  if (v.date) s += `date: ${v.date}\n`;
-  if (v.x) s += `x: ${v.x}\n`;
-  if (v.y) s += `y: ${v.y}\n`;
-  if (v.agg) s += `agg: ${v.agg}\n`;
-  if (v.chartType) s += `chartType: ${v.chartType}\n`;
-  if (v.bucket) s += `bucket: ${v.bucket}\n`;
-  if (v.series) s += `series: ${v.series}\n`;
-  if (v.log) s += `log: ${v.log}\n`;
-  if (v.done) s += `done: ${v.done}\n`;
-  if (v.range) s += `range: ${v.range}\n`;
+  for (const k of optionKeys(v)) {
+    const val = v[k];
+    if (Array.isArray(val)) { if (val.length) s += `${k}: [${val.join(", ")}]\n`; }
+    else if (val) s += `${k}: ${val}\n`;
+  }
   return s;
 }
 
@@ -149,34 +127,22 @@ function specGet(spec: string, key: string): string | undefined {
   return spec.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim();
 }
 
-function specList(spec: string, key: string): string[] | undefined {
-  const v = specGet(spec, key);
-  if (!v) return undefined;
-  const items = v.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
-  return items.length ? items : undefined;
-}
-
 /** Parse a `cortex-view` spec back into a ViewDef, preserving the view's name.
- *  Used when ViewToolbar emits an edited spec. */
+ *  Every `key: value` line is kept; sort and columns become lists. */
 export function viewFromSpec(spec: string, name: string): ViewDef {
-  return {
-    name,
-    type: (specGet(spec, "type") as ViewType) ?? "table",
-    filter: specGet(spec, "filter"),
-    sort: specList(spec, "sort"),
-    columns: specList(spec, "columns"),
-    group: specGet(spec, "group"),
-    date: specGet(spec, "date"),
-    x: specGet(spec, "x"),
-    y: specGet(spec, "y"),
-    agg: specGet(spec, "agg"),
-    chartType: specGet(spec, "chartType"),
-    bucket: specGet(spec, "bucket"),
-    series: specGet(spec, "series"),
-    log: specGet(spec, "log"),
-    done: specGet(spec, "done"),
-    range: specGet(spec, "range"),
-  };
+  const v: ViewDef = { name, type: (specGet(spec, "type") as ViewType) ?? "table" };
+  for (const line of spec.split("\n")) {
+    const m = line.match(/^([A-Za-z_][\w]*):\s*(.+)$/);
+    if (!m) continue;
+    const [, k, raw] = m;
+    if (k === "source" || k === "type") continue;
+    const val = raw.trim();
+    if ((LIST_KEYS as readonly string[]).includes(k)) {
+      const items = val.replace(/^\[|\]$/g, "").split(",").map((x) => x.trim()).filter(Boolean);
+      if (items.length) v[k] = items;
+    } else if (val) v[k] = val;
+  }
+  return v;
 }
 
 /** Migrate a legacy `_index.md` (views embedded as ```cortex-view fences in the

@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { commands, TrackerResult, TrackerItem, TrackerCell } from "../../lib/commands";
+import { specFromView, viewFromSpec } from "../../lib/database";
 import { ChevronLeftIcon, ChevronRightIcon, CheckIcon, TrackerIcon } from "./icons";
 import styles from "./TrackerView.module.css";
 
@@ -28,10 +29,6 @@ const RANGES: { id: TrackerRange; label: string }[] = [
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function specGet(spec: string, key: string): string | undefined {
-  return spec.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim();
-}
 
 function parseYmd(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
@@ -94,13 +91,14 @@ interface Props {
   onLogChange?: (log: string) => void;
   /** Files were written — parents that keep their own data can refresh. */
   onChanged?: () => void;
-  /** Compact: no header chrome (the palette's Log habit list, a daily note). */
+  /** Compact: no header chrome (the palette's Log today list, a daily note). */
   compact?: boolean;
 }
 
 export function TrackerView({ spec, source, onRangeChange, onLogChange, onChanged, compact }: Props) {
-  const specRange = (specGet(spec, "range") as TrackerRange | undefined) ?? "week";
-  const log = specGet(spec, "log");
+  const view = useMemo(() => viewFromSpec(spec, "tracker"), [spec]);
+  const specRange = (view.range as TrackerRange | undefined) ?? "week";
+  const log = view.log as string | undefined;
   const [range, setRange] = useState<TrackerRange>(specRange);
   useEffect(() => { setRange(specRange); }, [specRange]);
   const [anchor, setAnchor] = useState<string | undefined>(undefined);
@@ -110,11 +108,8 @@ export function TrackerView({ spec, source, onRangeChange, onLogChange, onChange
   const [focus, setFocus] = useState<{ row: number; col: number } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const runSpec = useMemo(() => {
-    // The range the user picked wins over the spec's until it is persisted.
-    const lines = spec.split("\n").filter((l) => !/^range:/.test(l) && l.trim() !== "");
-    return [...lines, `range: ${range}`].join("\n") + "\n";
-  }, [spec, range]);
+  // The range the user picked wins over the spec's until it is persisted.
+  const runSpec = useMemo(() => specFromView({ ...view, range }, source), [view, range, source]);
 
   const reload = useCallback(() => {
     if (!log) { setResult(null); return Promise.resolve(); }

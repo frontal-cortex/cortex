@@ -12,7 +12,7 @@ not just this one.
 Status 2026-09-08: built. Everything in section 4 is on the
 `feat/habit-tracker` branch — checkbox cells, row templates that install and
 expand placeholders, local-time dates, multi-collection packs, the `tracker`
-view with its four ranges and keyboard grid, the palette's "Log habit…"
+view with its four ranges, keyboard grid and configurable item fields, the palette's "Log today…"
 (`mod+shift+h`), `cortex set … done+=X` and `cortex tracker`, MCP `run_view`
 / `tracker` / `track`, chart `bucket:` and `series:`, and the pack at 2.0.0
 (marketplace repo branch `habit-tracker-2`, vendored). Not yet done: a
@@ -207,6 +207,18 @@ views:
   columns: [title, category, frequency, target, archived]
 ```
 
+The item properties the tracker reads are conventions with overrides: the
+spec may name which property plays each role — `frequency: cadence`,
+`target: per_week`, `start: since`, `archived: retired`, `icon: emoji`,
+`color: area` — and defaults to the property of the same name (colour:
+`category`, else the first select). So a plants or medication collection
+with its own vocabulary works without renaming anything.
+
+View specs carry these as plain options: the engine keeps only the shared
+query keys (source, type, filter, sort, columns, group, date, limit) as
+fields and passes every other key through one map on both sides, so adding
+an option to a view type touches the view type alone.
+
 The backend command `run_tracker` reads both collections once and returns,
 per item: its row, and for the range a vector of `{ date, done }`, plus
 **computed** `current_streak`, `longest_streak`, `this_week` (done/target),
@@ -283,7 +295,7 @@ machinery beyond §3.2 and the placeholder fix in §4.
   in the pack page.
 - **Weekly Review**: the review template embeds `range: week`, so the
   reflection happens next to the numbers.
-- **Command palette**: "Log habit…" lists habits with today's state;
+- **Command palette**: "Log today…" lists habits with today's state;
   Enter toggles. Fast enough to do with the eyes closed.
 - **Quick capture**: `mod+shift+k` already appends to today's note; a
   leading `✓ exercise` or `done exercise` toggles the habit instead.
@@ -339,7 +351,7 @@ Each item is generic; the habit tracker is the first user.
 | 3 | **Local-time `today()`** in the frontend, matching the calendar. | `CortexViewBlock.tsx` | XS | correctness |
 | 4 | **Multi-collection packs**: a collection pack may declare `collections: [habits, habit-log]` with `schemas/<c>.yaml`, `index/<c>.md`, `templates/<c>.md`, `seed/<c>/*.md` per collection. Lint and install extend naturally; single-collection packs keep the current layout. | `marketplace.rs`, marketplace repo lint | M | this pack, Contacts + Interactions later |
 | 5 | **`tracker` view**: `run_tracker` in core (items, periods, streaks, scores; frequency rules), Tauri command, `TrackerView` with today/week/month/year renderings, keyboard grid, toggle → `set_cell` on the log file (creating it from the row template when absent). View spec keys `log`, `date`, `done`, `range`; `parseViews`/`viewToFrontmatter` learn them; the toolbar gets a range switcher. Tests on streak semantics. | `data.rs` or new `tracker.rs`, `commands/data.rs`, `CortexViewBlock.tsx`, `database.ts`, `DataViews.tsx` | L | features 1–5, 7, 8 |
-| 6 | **Palette "Log habit…"** and the pack's daily note template. | `QuickSwitcher.tsx`, pack | S | feature 1's "one keystroke" |
+| 6 | **Palette "Log today…"** and the pack's daily note template. | `QuickSwitcher.tsx`, pack | S | feature 1's "one keystroke" |
 | 7 | **CLI list ops** `key+=v` / `key-=v`, create-from-row-template on a missing log file; `cortex tracker <view>` text rendering; MCP `run_view`. | `cortex-cli/ops.rs`, `mcp.rs` | S–M | agents |
 | 8 | **Chart bucketing**: `bucket: day\|week\|month\|year` on the chart spec, applied to date-typed x before grouping; `series:` for a second grouping (one line per habit). | `data.rs` `aggregate`, `MiniChart` | M | feature 6, and every chart over dates |
 | 9 | Habit page block, Weekly Review embed, README, docs, the `habit-tracker` pack at 2.0.0 in the marketplace repo, screenshots for the preview. | pack repo, `docs/` | S | ship |

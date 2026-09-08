@@ -5,7 +5,7 @@ version: 2.0.0
 kind: collection
 summary: "Habits as rows, one file per day; streaks, day scores and a year heatmap computed on read, never stored."
 description: |
-  Each habit is a row with its own page; each day is one small file whose `done:` list names what you did. Tick today in the Today view (Space on a habit, or `mod+shift+h` for "Log habit…" from anywhere), and the week grid, month, and year heatmap fill in on their own — current and longest streaks, perfect days, completion — all computed from the files, so nothing is ever reset and nothing goes stale. A day with no file is a day with nothing done; the first tick creates it. Pair it with `templates/daily-with-habits.md` as your daily note so today's habits sit at the top of your journal.
+  Each habit is a row with its own page; each day is one small file whose `done:` list names what you did. Tick today in the Today view (Space on a habit, or `mod+shift+h` for "Log today…" from anywhere), and the week grid, month, and year heatmap fill in on their own — current and longest streaks, perfect days, completion — all computed from the files, so nothing is ever reset and nothing goes stale. A day with no file is a day with nothing done; the first tick creates it. Pair it with `templates/daily-with-habits.md` as your daily note so today's habits sit at the top of your journal.
 tags: [health, habits, database, tracker]
 author:
   name: "Cortex team"

@@ -20,9 +20,14 @@
 //!   range: week                     # today | week | month | year
 //! ```
 //!
-//! Item rows may carry `frequency` (`daily` | `weekdays` | `weekly` | `custom`),
-//! `target` (days per week, for weekly/custom), `start` (a date) and
-//! `archived`. Everything is optional; a bare row is a daily habit.
+//! Item rows may carry a frequency (`daily` | `weekdays` | `weekly` |
+//! `custom`), a target (days per week, for weekly/custom), a start date, an
+//! archived flag, an icon and a category-like select for colour. The spec
+//! names the properties that play those roles — `frequency: cadence`,
+//! `target: per_week`, `start: since`, `archived: retired`, `icon: emoji`,
+//! `color: area` — and defaults to the property of the same name (colour:
+//! `category`, else the first select). Everything is optional; a bare row is
+//! a daily item.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -167,6 +172,25 @@ pub fn step(range: &str, anchor: NaiveDate, forward: bool) -> NaiveDate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Freq { Daily, Weekdays, Weekly }
 
+/// Which item properties play which role — from the spec, defaulting to the
+/// property of the same name.
+pub struct ItemFields {
+    pub frequency: String,
+    pub target: String,
+    pub start: String,
+    pub archived: String,
+    pub icon: String,
+    /// The select whose option colour tints the item; empty = `category`, else the first select.
+    pub color: String,
+}
+
+impl ItemFields {
+    pub fn from_spec(spec: &ViewSpec) -> Self {
+        let pick = |k: &str| spec.option(k).unwrap_or_else(|| k.to_string());
+        ItemFields { frequency: pick("frequency"), target: pick("target"), start: pick("start"), archived: pick("archived"), icon: pick("icon"), color: spec.option("color").unwrap_or_default() }
+    }
+}
+
 struct Habit {
     id: String,
     title: String,
@@ -177,23 +201,23 @@ struct Habit {
 }
 
 impl Habit {
-    fn from_row(row: &data::Row) -> Option<Self> {
+    fn from_row(row: &data::Row, f: &ItemFields) -> Option<Self> {
         let text = |k: &str| row.cells.get(k).map(CellValue::as_text).unwrap_or_default();
-        if matches!(row.cells.get("archived"), Some(CellValue::Bool(true))) { return None; }
+        if matches!(row.cells.get(f.archived.as_str()), Some(CellValue::Bool(true))) { return None; }
         let title = { let t = text("title"); if t.is_empty() { row.id.clone() } else { t } };
-        let freq_label = { let f = text("frequency").to_lowercase(); if f.is_empty() { "daily".into() } else { f } };
+        let freq_label = { let f = text(&f.frequency).to_lowercase(); if f.is_empty() { "daily".into() } else { f } };
         let freq = match freq_label.as_str() {
             "weekdays" | "workdays" => Freq::Weekdays,
             "daily" | "every day" | "everyday" => Freq::Daily,
             _ => Freq::Weekly, // weekly, custom, "3x a week" — anything with a target per week
         };
-        let target_cell = row.cells.get("target").and_then(CellValue::as_num).map(|n| n.max(1.0) as u32);
+        let target_cell = row.cells.get(f.target.as_str()).and_then(CellValue::as_num).map(|n| n.max(1.0) as u32);
         let target = match freq {
             Freq::Daily => 7,
             Freq::Weekdays => 5,
             Freq::Weekly => target_cell.unwrap_or(1).min(7),
         };
-        let start = row.cells.get("start").and_then(|c| parse_date(&c.as_text()));
+        let start = row.cells.get(f.start.as_str()).and_then(|c| parse_date(&c.as_text()));
         Some(Habit { id: row.id.clone(), title, freq, freq_label, target, start })
     }
 
@@ -270,12 +294,13 @@ fn week_streaks(h: &Habit, done_in_week: &dyn Fn(NaiveDate) -> u32, first: Naive
     (current, best)
 }
 
-/// The palette colour of an item's category-like select value: a property
-/// named `category` if there is one, else the first select/status property.
-fn item_color(schema: Option<&crate::schema::TypeSchema>, row: &data::Row) -> Option<String> {
+/// The palette colour of an item's select value: the property the spec names
+/// (`color:`), else one named `category`, else the first select/status.
+fn item_color(schema: Option<&crate::schema::TypeSchema>, row: &data::Row, field: &str) -> Option<String> {
     let s = schema?;
     let is_select = |p: &crate::schema::PropertyDef| matches!(p.ty, crate::schema::PropType::Select | crate::schema::PropType::Status);
-    let prop = s.properties.iter().find(|p| p.name == "category" && is_select(p))
+    let prop = (!field.is_empty()).then(|| s.properties.iter().find(|p| p.name == field && is_select(p))).flatten()
+        .or_else(|| s.properties.iter().find(|p| p.name == "category" && is_select(p)))
         .or_else(|| s.properties.iter().find(|p| is_select(p)))?;
     let value = row.cells.get(&prop.name)?.as_text();
     prop.options.iter().find(|o| o.name == value).map(|o| o.color.clone())
@@ -287,11 +312,12 @@ fn item_color(schema: Option<&crate::schema::TypeSchema>, row: &data::Row) -> Op
 /// `range` around `anchor` (today when absent), streaks over the whole log.
 pub fn run_tracker(root: &Path, spec_yaml: &str, anchor: Option<&str>) -> Result<TrackerResult> {
     let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
-    let log_source = spec.log.clone().filter(|l| !l.trim().is_empty())
+    let log_source = spec.option("log")
         .ok_or_else(|| AppError::Other("A tracker needs `log: collections/<name>` — the collection with one row per day".into()))?;
     let date_field = spec.date.clone().filter(|d| !d.is_empty()).unwrap_or_else(|| "date".into());
-    let done_field = spec.done.clone().filter(|d| !d.is_empty()).unwrap_or_else(|| "done".into());
-    let range = spec.range.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "week".into());
+    let done_field = spec.option("done").unwrap_or_else(|| "done".into());
+    let range = spec.option("range").unwrap_or_else(|| "week".into());
+    let fields = ItemFields::from_spec(&spec);
 
     let today = today();
     let anchor = anchor.and_then(parse_date).unwrap_or(today);
@@ -326,7 +352,7 @@ pub fn run_tracker(root: &Path, spec_yaml: &str, anchor: Option<&str>) -> Result
     let mut day_expected = vec![0u32; dates.len()];
 
     for row in &items_table.rows {
-        let Some(h) = Habit::from_row(row) else { continue };
+        let Some(h) = Habit::from_row(row, &fields) else { continue };
         let done_on = |d: NaiveDate| -> bool {
             log.get(&d).map(|(_, set)| set.contains(&h.title) || set.contains(&h.id)).unwrap_or(false)
         };
@@ -373,8 +399,8 @@ pub fn run_tracker(root: &Path, spec_yaml: &str, anchor: Option<&str>) -> Result
         items.push(TrackerItem {
             id: h.id.clone(),
             title: h.title.clone(),
-            icon: row.cells.get("icon").map(CellValue::as_text).filter(|s| !s.is_empty()),
-            color: item_color(schema.as_ref(), row),
+            icon: row.cells.get(fields.icon.as_str()).map(CellValue::as_text).filter(|s| !s.is_empty()),
+            color: item_color(schema.as_ref(), row, &fields.color),
             frequency: h.freq_label.clone(),
             target: h.target,
             cells,
@@ -446,7 +472,7 @@ pub fn toggle(root: &Path, log_source: &str, date_field: &str, done_field: &str,
 }
 
 /// Every tracker view declared in the vault: `(collection, view name, spec)`.
-/// The palette's "Log habit…" and `cortex tracker` start from this.
+/// The palette's "Log today…" and `cortex tracker` start from this.
 pub fn tracker_specs(root: &Path) -> Vec<(String, String, String)> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(root.join("collections")) else { return out };
@@ -461,12 +487,20 @@ pub fn tracker_specs(root: &Path) -> Vec<(String, String, String)> {
             if v.get("type").and_then(|t| t.as_str()) != Some("tracker") { continue; }
             let name = v.get("name").and_then(|n| n.as_str()).unwrap_or("Tracker").to_string();
             let mut spec = format!("source: collections/{coll}\ntype: tracker\n");
-            for key in ["log", "date", "done", "range", "filter"] {
-                if let Some(val) = v.get(key).and_then(|x| x.as_str()) { spec.push_str(&format!("{key}: {val}\n")); }
-            }
-            if let Some(sort) = v.get("sort").and_then(|x| x.as_array()) {
-                let parts: Vec<&str> = sort.iter().filter_map(|x| x.as_str()).collect();
-                if !parts.is_empty() { spec.push_str(&format!("sort: [{}]\n", parts.join(", "))); }
+            if let Some(obj) = v.as_object() {
+                for (key, val) in obj {
+                    if key == "name" || key == "type" { continue; }
+                    match val {
+                        serde_json::Value::String(s) => spec.push_str(&format!("{key}: {s}\n")),
+                        serde_json::Value::Number(n) => spec.push_str(&format!("{key}: {n}\n")),
+                        serde_json::Value::Bool(b) => spec.push_str(&format!("{key}: {b}\n")),
+                        serde_json::Value::Array(a) => {
+                            let parts: Vec<&str> = a.iter().filter_map(|x| x.as_str()).collect();
+                            if !parts.is_empty() { spec.push_str(&format!("{key}: [{}]\n", parts.join(", "))); }
+                        }
+                        _ => {}
+                    }
+                }
             }
             out.push((coll.clone(), name, spec));
         }
@@ -554,6 +588,20 @@ mod tests {
         let r = run_tracker(&root, "source: collections/habits\ntype: tracker\nlog: collections/habit-log\nrange: today\n", Some("2026-03-04")).unwrap();
         assert_eq!(r.days.len(), 1);
         assert_eq!(r.days[0].log_id.as_deref(), Some("2026-03-04"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn item_fields_are_configurable() {
+        let root = vault("fields");
+        std::fs::write(root.join("collections/habits/water.md"), "---\ntitle: Water plants\ncadence: weekdays\nretired: false\nemoji: 🪴\n---\n").unwrap();
+        std::fs::write(root.join("collections/habits/gone.md"), "---\ntitle: Gone\nretired: true\n---\n").unwrap();
+        let spec = "source: collections/habits\ntype: tracker\nlog: collections/habit-log\nrange: week\nfrequency: cadence\narchived: retired\nicon: emoji\nfilter: title contains 'plants'\n";
+        let r = run_tracker(&root, spec, None).unwrap();
+        assert_eq!(r.items.len(), 1, "{:?}", r.items.iter().map(|i| &i.title).collect::<Vec<_>>());
+        assert_eq!(r.items[0].frequency, "weekdays");
+        assert_eq!(r.items[0].target, 5);
+        assert_eq!(r.items[0].icon.as_deref(), Some("🪴"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

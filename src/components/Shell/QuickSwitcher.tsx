@@ -28,7 +28,7 @@ interface Props {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenMarketplace: () => void;
-  onLogHabit: () => void;
+  onLogToday: () => void;
   onQuickCapture: () => void;
   onToggleSidebar: () => void;
   onToggleTerminal: () => void;
@@ -47,7 +47,7 @@ type Mode = "notes" | "actions";
 export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogHabit, onQuickCapture,
+  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
   onPublish, onTogglePublic, isPublic, hasRemote,
 }: Props) {
@@ -115,11 +115,11 @@ export function QuickSwitcher({
         run: () => { onNewCollection(); onClose(); },
       },
       {
-        id: "log-habit",
-        label: "Log habit…",
-        description: `${shortcutFor("log-habit")} · today's habits as a checklist; 1–9 ticks, streaks update`,
+        id: "log-today",
+        label: "Log today…",
+        description: `${shortcutFor("log-today")} · every tracker's checklist for today; 1–9 ticks, streaks update`,
         icon: <TrackerIcon size={14} />,
-        run: () => { onLogHabit(); onClose(); },
+        run: () => { onLogToday(); onClose(); },
       },
       {
         id: "marketplace",
@@ -215,7 +215,7 @@ export function QuickSwitcher({
     }];
     return [...base, ...tplActions, ...more];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogHabit, onQuickCapture,
+      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
       onPublish, onTogglePublic, isPublic, onClose]);
 

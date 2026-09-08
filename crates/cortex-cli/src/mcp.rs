@@ -260,7 +260,7 @@ impl CortexMcp {
 
     #[tool(description = "Run a cortex-view YAML spec (source: collections/<name> or data/<file>.csv, plus filter / sort / columns / limit) and return its columns and rows — the same query the app's views run.")]
     fn run_view(&self, Parameters(a): Parameters<RunViewArgs>) -> Result<CallToolResult, McpError> {
-        json(&cortex_core::data::run_view(&self.vault.root, &a.spec).map_err(err)?)
+        json(&cortex_core::data::resolve_view(&self.vault.root, &a.spec).map_err(err)?)
     }
 
     #[tool(description = "A collection's tracker view (habits and the like): items × days for the range, each item's current and longest streak, this week's count against its target, and per-day done/expected with perfect days. Computed on read; nothing is stored.")]

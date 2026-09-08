@@ -1,16 +1,17 @@
-// ── Log habit ─────────────────────────────────────────────────────────────────
-// The fastest way to tick today's habits: `mod+shift+h` or "Log habit…" in the
-// palette opens every tracker in the vault as a Today checklist. Press 1–9 to
-// tick, Escape to leave. Same data as the Marketplace's habit tracker; the
-// modal is only a window onto the tracker view in its compact form.
+// ── Log today ─────────────────────────────────────────────────────────────────
+// The fastest way to tick today's items: `mod+shift+h` or "Log today…" in the
+// palette opens every tracker in the vault — habits, plants, medication,
+// whatever is logged per day — as a Today checklist. Press 1–9 to tick,
+// Escape to leave. The modal is only a window onto the tracker view in its
+// compact form.
 
 import { useEffect, useState } from "react";
 import { commands, TrackerRef } from "../../lib/commands";
 import { TrackerView } from "./TrackerView";
 import { CloseIcon, TrackerIcon } from "./icons";
-import styles from "./LogHabitModal.module.css";
+import styles from "./LogTodayModal.module.css";
 
-export function LogHabitModal({ onClose, onChanged }: { onClose: () => void; onChanged?: () => void }) {
+export function LogTodayModal({ onClose, onChanged }: { onClose: () => void; onChanged?: () => void }) {
   const [trackers, setTrackers] = useState<TrackerRef[] | null>(null);
   useEffect(() => {
     commands.listTrackers().then(setTrackers).catch(() => setTrackers([]));
@@ -28,7 +29,7 @@ export function LogHabitModal({ onClose, onChanged }: { onClose: () => void; onC
 
   return (
     <div className={styles.backdrop} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={styles.modal} role="dialog" aria-label="Log habit">
+      <div className={styles.modal} role="dialog" aria-label="Log today">
         <div className={styles.head}>
           <TrackerIcon size={15} />
           <span className={styles.title}>Today</span>
@@ -39,7 +40,7 @@ export function LogHabitModal({ onClose, onChanged }: { onClose: () => void; onC
           <div className={styles.stub}>Loading…</div>
         ) : byCollection.size === 0 ? (
           <div className={styles.stub}>
-            No tracker yet. Install the Habit Tracker from the marketplace, or add a Tracker view to a database.
+            No tracker yet. Add a Tracker view to a database (or install the Habit Tracker from the marketplace) and it shows up here.
           </div>
         ) : (
           [...byCollection.values()].map((t) => (

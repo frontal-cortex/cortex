@@ -530,29 +530,28 @@ pub struct ViewSpec {
     pub date: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
-    // Chart-only fields.
-    #[serde(default)]
-    pub x: Option<String>,
-    #[serde(default)]
-    pub y: Option<String>,
-    #[serde(default)]
-    pub agg: Option<String>,
-    #[serde(rename = "chartType", default)]
-    pub chart_type: Option<String>,
-    /// Charts: bucket a date-valued `x` by `day | week | month | year` before grouping.
-    #[serde(default)]
-    pub bucket: Option<String>,
-    /// Charts: one line/bar series per distinct value of this field.
-    #[serde(default)]
-    pub series: Option<String>,
-    // Tracker-only fields (see `tracker.rs`): the periods live in `log`, positioned
-    // by its `date` property; membership is the `done` list; `range` picks the grid.
-    #[serde(default)]
-    pub log: Option<String>,
-    #[serde(default)]
-    pub done: Option<String>,
-    #[serde(default)]
-    pub range: Option<String>,
+    /// Every other key: the options a view type reads — charts `x`, `y`,
+    /// `agg`, `chartType`, `bucket`, `series`; trackers `log`, `done`,
+    /// `range` and their field mappings. One map, so a new view type or
+    /// option needs no new field here, in the structured form, or in the
+    /// app's parsers: they all carry unknown keys through.
+    #[serde(flatten, default)]
+    pub options: BTreeMap<String, serde_yaml::Value>,
+}
+
+impl ViewSpec {
+    /// A scalar option as text, `None` when absent or blank.
+    pub fn option(&self, key: &str) -> Option<String> {
+        let v = self.options.get(key)?;
+        let s = match v {
+            serde_yaml::Value::String(s) => s.clone(),
+            serde_yaml::Value::Number(n) => n.to_string(),
+            serde_yaml::Value::Bool(b) => b.to_string(),
+            _ => return None,
+        };
+        let s = s.trim().to_string();
+        if s.is_empty() { None } else { Some(s) }
+    }
 }
 
 pub(crate) fn parse_sort(entry: &str) -> Sort {
@@ -573,6 +572,90 @@ pub(crate) fn resolve_source(root: &Path, source: &str) -> Result<Table> {
             "Unknown source '{source}' (expected collections/<name> or data/<name>.csv)"
         )))
     }
+}
+
+// ── Resolved view: the display-ready table every surface returns ──────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResolvedColumn {
+    pub key: String,
+    pub ty: String,
+    /// Typed-property schema for this column (select options + colours), when
+    /// the source's schema declares one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<crate::schema::PropertyDef>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResolvedRow {
+    pub id: String,
+    pub cells: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedTable {
+    pub name: String,
+    pub columns: Vec<ResolvedColumn>,
+    /// Every field the source offers before column projection — for the
+    /// toolbar's hidden-column, sort and filter pickers.
+    pub all_columns: Vec<String>,
+    pub rows: Vec<ResolvedRow>,
+}
+
+/// Column type label for a schema-only property (one with no row values yet).
+fn prop_ty(ty: crate::schema::PropType) -> &'static str {
+    use crate::schema::PropType;
+    match ty {
+        PropType::Number => "number",
+        PropType::Date => "date",
+        PropType::Checkbox => "bool",
+        PropType::MultiSelect | PropType::Relation => "list",
+        _ => "text",
+    }
+}
+
+/// Run a view and dress it for display: `@me` resolved, the schema attached
+/// per column (person options from the roster, relation options from the
+/// linked collection), rollups computed, schema-only properties surfaced as
+/// empty columns, `$body` hidden. The app's table, the CLI and MCP all go
+/// through here, so they cannot drift.
+pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
+    let spec = crate::members::resolve_me(spec_yaml, root);
+    let mut table = run_view(root, &spec)?;
+    let parsed = parse_view_spec(&spec).ok();
+    let all_columns = parsed.as_ref()
+        .and_then(|s| source_columns(root, &s.source).ok())
+        .unwrap_or_else(|| table.columns.iter().map(|c| c.key.clone()).collect());
+    let members = crate::members::load(root);
+    let schema = parsed
+        .and_then(|s| crate::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
+        .and_then(|key| crate::schema::load(root, &key).ok().flatten())
+        .map(|mut s| {
+            crate::members::fill_person_options(&mut s, &members);
+            fill_relation_options(root, &mut s);
+            s
+        });
+    if let Some(s) = &schema {
+        apply_rollups(root, &mut table, s);
+    }
+    let mut columns: Vec<ResolvedColumn> = table.columns.into_iter()
+        .filter(|c| c.key != "$body")
+        .map(|c| ResolvedColumn { schema: schema.as_ref().and_then(|s| s.property(&c.key)).cloned(), key: c.key, ty: c.ty.as_str().to_string() })
+        .collect();
+    if let Some(s) = &schema {
+        for p in &s.properties {
+            if p.name != "$body" && !columns.iter().any(|c| c.key == p.name) {
+                columns.push(ResolvedColumn { key: p.name.clone(), ty: prop_ty(p.ty).to_string(), schema: Some(p.clone()) });
+            }
+        }
+    }
+    Ok(ResolvedTable {
+        name: table.name,
+        all_columns,
+        columns,
+        rows: table.rows.into_iter().map(|r| ResolvedRow { id: r.id, cells: r.cells.into_iter().map(|(k, v)| (k, v.to_json())).collect() }).collect(),
+    })
 }
 
 /// All field names a source offers (the `$body` pseudo-column excluded), before
@@ -648,24 +731,10 @@ pub struct StructuredSpec {
     pub date: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
-    #[serde(default)]
-    pub x: Option<String>,
-    #[serde(default)]
-    pub y: Option<String>,
-    #[serde(default)]
-    pub agg: Option<String>,
-    #[serde(default)]
-    pub chart_type: Option<String>,
-    #[serde(default)]
-    pub bucket: Option<String>,
-    #[serde(default)]
-    pub series: Option<String>,
-    #[serde(default)]
-    pub log: Option<String>,
-    #[serde(default)]
-    pub done: Option<String>,
-    #[serde(default)]
-    pub range: Option<String>,
+    /// View-type options (`x`, `chartType`, `log`, `range`, …) exactly as
+    /// written; the toolbar edits none of them and carries them all through.
+    #[serde(flatten, default)]
+    pub options: BTreeMap<String, String>,
 }
 
 fn normalize_op(tok: &str) -> Option<&'static str> {
@@ -738,6 +807,7 @@ fn build_filter(clauses: &[FilterClause], join: &str) -> String {
 /// Parse a YAML view spec into its structured (UI-editable) form.
 pub fn parse_view_spec(spec_yaml: &str) -> Result<StructuredSpec> {
     let vs: ViewSpec = serde_yaml::from_str(spec_yaml)?;
+    let options: BTreeMap<String, String> = vs.options.keys().filter_map(|k| vs.option(k).map(|v| (k.clone(), v))).collect();
     let mut out = StructuredSpec {
         source: vs.source,
         kind: vs.kind,
@@ -750,15 +820,7 @@ pub fn parse_view_spec(spec_yaml: &str) -> Result<StructuredSpec> {
         group: vs.group,
         date: vs.date,
         limit: vs.limit,
-        x: vs.x,
-        y: vs.y,
-        agg: vs.agg,
-        chart_type: vs.chart_type,
-        bucket: vs.bucket,
-        series: vs.series,
-        log: vs.log,
-        done: vs.done,
-        range: vs.range,
+        options,
         ..Default::default()
     };
     if let Some(f) = vs.filter.filter(|f| !f.trim().is_empty()) {
@@ -813,32 +875,14 @@ pub fn serialize_view_spec(s: &StructuredSpec) -> String {
     if let Some(l) = s.limit {
         out.push_str(&format!("limit: {l}\n"));
     }
-    if let Some(x) = s.x.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("x: {x}\n"));
-    }
-    if let Some(y) = s.y.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("y: {y}\n"));
-    }
-    if let Some(a) = s.agg.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("agg: {a}\n"));
-    }
-    if let Some(ct) = s.chart_type.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("chartType: {ct}\n"));
-    }
-    if let Some(b) = s.bucket.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("bucket: {b}\n"));
-    }
-    if let Some(v) = s.series.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("series: {v}\n"));
-    }
-    if let Some(v) = s.log.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("log: {v}\n"));
-    }
-    if let Some(v) = s.done.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("done: {v}\n"));
-    }
-    if let Some(v) = s.range.as_deref().filter(|v| !v.is_empty()) {
-        out.push_str(&format!("range: {v}\n"));
+    // Options in a fixed order: the well-known ones first, the rest alphabetically.
+    let known = ["x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range"];
+    let mut keys: Vec<&String> = s.options.keys().collect();
+    keys.sort_by_key(|k| (known.iter().position(|w| w == k).unwrap_or(known.len()), k.as_str()));
+    for k in keys {
+        if let Some(v) = s.options.get(k).map(|v| v.trim()).filter(|v| !v.is_empty()) {
+            out.push_str(&format!("{k}: {v}\n"));
+        }
     }
     out
 }
@@ -1440,10 +1484,13 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
     let table = resolve_source(root, &spec.source)?;
 
-    let x = spec.x.clone().ok_or_else(|| AppError::Other("Chart requires an `x` field".into()))?;
-    let y = spec.y.clone().ok_or_else(|| AppError::Other("Chart requires a `y` field".into()))?;
-    let chart_type = spec.chart_type.clone().unwrap_or_else(|| "line".into());
-    let bucket = spec.bucket.as_deref().filter(|b| !b.trim().is_empty() && *b != "none");
+    let x = spec.option("x").ok_or_else(|| AppError::Other("Chart requires an `x` field".into()))?;
+    let y = spec.option("y").ok_or_else(|| AppError::Other("Chart requires a `y` field".into()))?;
+    let chart_type = spec.option("chartType").unwrap_or_else(|| "line".into());
+    let agg = spec.option("agg");
+    let bucket_opt = spec.option("bucket").filter(|b| b != "none");
+    let bucket = bucket_opt.as_deref();
+    let series_field = spec.option("series");
 
     // Apply filter (and any sort) first.
     let query = Query {
@@ -1458,8 +1505,8 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let filtered = query.apply(&table);
 
     let series_of = |t: &Table| -> Result<Vec<ChartPoint>> {
-        let mut points = match &spec.agg {
-            Some(agg) if !agg.trim().is_empty() => aggregate(t, &x, &y, agg, bucket)?,
+        let mut points = match &agg {
+            Some(agg) => aggregate(t, &x, &y, agg, bucket)?,
             _ => t.rows.iter().filter_map(|r| {
                 let yv = r.cells.get(&y).and_then(|c| c.as_num())?;
                 let raw = r.cells.get(&x).map(|c| c.as_text()).unwrap_or_default();
@@ -1474,7 +1521,7 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
         Ok(points)
     };
 
-    let series: Vec<ChartSeries> = match spec.series.as_deref().filter(|s| !s.trim().is_empty()) {
+    let series: Vec<ChartSeries> = match series_field.as_deref() {
         None => vec![],
         Some(field) => {
             let mut by: BTreeMap<String, Vec<Row>> = BTreeMap::new();

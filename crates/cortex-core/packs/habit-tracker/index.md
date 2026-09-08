@@ -42,6 +42,6 @@ year heatmap are worked out from those files each time — nothing is stored,
 so nothing is ever reset or goes stale.
 
 Tick a habit with Space in the Today or This week view, with `mod+shift+h`
-("Log habit…") from anywhere, or from a terminal: `cortex tracker habits --log Exercise`.
+("Log today…") from anywhere, or from a terminal: `cortex tracker habits --log Exercise`.
 Add a habit with New row; retire one by ticking `archived` instead of deleting
 it, so its history stays.

@@ -91,7 +91,14 @@ export interface SortClause {
 
 export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart" | "tracker";
 
-/** One named view in a database / embedded data block. */
+/** One named view in a database / embedded data block.
+ *
+ *  Beyond the query keys every view shares (filter, sort, columns, group,
+ *  date, limit), a view is a bag of string options its type reads — charts
+ *  `x` `y` `agg` `chartType` `bucket` `series`, trackers `log` `done` `range`
+ *  and field mappings. The parsers and serializers in `database.ts` treat
+ *  every option generically, so a new view type or option needs no change
+ *  there; the well-known ones are declared here only for editor help. */
 export interface ViewDef {
   name: string;
   type: ViewType;
@@ -101,6 +108,7 @@ export interface ViewDef {
   group?: string;
   /** Calendar: the date property. Tracker: the log's date property (default `date`). */
   date?: string;
+  limit?: string;
   x?: string;
   y?: string;
   agg?: string;
@@ -115,6 +123,8 @@ export interface ViewDef {
   done?: string;
   /** Tracker: today | week | month | year. */
   range?: string;
+  /** Any other option a view type defines. */
+  [option: string]: string | string[] | undefined;
 }
 
 /** An embedded data block's multi-view document (source + named views). */
@@ -136,15 +146,8 @@ export interface StructuredSpec {
   group?: string | null;
   date?: string | null;
   limit?: number | null;
-  x?: string | null;
-  y?: string | null;
-  agg?: string | null;
-  chartType?: string | null;
-  bucket?: string | null;
-  series?: string | null;
-  log?: string | null;
-  done?: string | null;
-  range?: string | null;
+  /** View-type options (x, chartType, log, range, …), carried through untouched. */
+  [option: string]: unknown;
 }
 
 export interface ViewRow {

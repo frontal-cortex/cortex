@@ -27,7 +27,7 @@ tick creates today's file.
 3. **Make them yours.** Edit the three seeded habits or add one with New row.
    Set `frequency` and `target`, and the streaks follow the rule you chose.
 
-From anywhere in the app, `mod+shift+h` opens "Log habit…". If you want the
+From anywhere in the app, `mod+shift+h` opens "Log today…". If you want the
 habits in your daily note, point the `journal_template` setting at
 `daily-with-habits.md` (Settings → Notes, or `cortex settings set journal_template=daily-with-habits.md`).
 

@@ -49,7 +49,7 @@ pub struct TrackerRef {
     pub spec: String,
 }
 
-/// Every tracker view in the vault — what the palette's "Log habit…" offers.
+/// Every tracker view in the vault — what the palette's "Log today…" offers.
 #[tauri::command]
 pub fn list_trackers(state: State<'_, VaultState>) -> Result<Vec<TrackerRef>> {
     let root = root(&state)?;

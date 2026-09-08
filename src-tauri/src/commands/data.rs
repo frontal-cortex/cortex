@@ -1,111 +1,16 @@
-use std::collections::BTreeMap;
 use tauri::State;
 
 use crate::commands::vault::{DbState, VaultState};
 use cortex_core::error::{AppError, Result};
-use cortex_core::data::{ChartResult, StructuredSpec, Table};
-use cortex_core::schema::{PropType, PropertyDef, TypeSchema};
-
-/// Column type label for a schema-only property (one with no row values yet).
-fn prop_ty(ty: PropType) -> &'static str {
-    match ty {
-        PropType::Number => "number",
-        PropType::Date => "date",
-        PropType::Checkbox => "bool",
-        PropType::MultiSelect | PropType::Relation => "list",
-        _ => "text",
-    }
-}
-
-#[derive(serde::Serialize)]
-pub struct WireColumn {
-    pub key: String,
-    pub ty: String,
-    /// Typed-property schema for this column (select options + colors), when the
-    /// source's schema declares one. Lets the view render colored pills.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema: Option<PropertyDef>,
-}
-
-#[derive(serde::Serialize)]
-pub struct WireRow {
-    pub id: String,
-    pub cells: BTreeMap<String, serde_json::Value>,
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WireTable {
-    pub name: String,
-    pub columns: Vec<WireColumn>,
-    /// Every field the source offers, before column projection — lets the
-    /// toolbar list hidden columns and sort/filter on them.
-    pub all_columns: Vec<String>,
-    pub rows: Vec<WireRow>,
-}
-
-fn to_wire(table: Table, all_columns: Vec<String>, schema: Option<&TypeSchema>) -> WireTable {
-    // `$body` is a pseudo-column (the note body) used for filters/search — never
-    // shown as a table column.
-    let mut columns: Vec<WireColumn> = table.columns.into_iter()
-        .filter(|c| c.key != "$body")
-        .map(|c| {
-            let schema = schema.and_then(|s| s.property(&c.key)).cloned();
-            WireColumn { key: c.key, ty: c.ty.as_str().to_string(), schema }
-        })
-        .collect();
-
-    // Surface schema properties that no row has a value for yet (e.g. a property
-    // the user just added), so they appear as empty columns.
-    if let Some(s) = schema {
-        for p in &s.properties {
-            if p.name != "$body" && !columns.iter().any(|c| c.key == p.name) {
-                columns.push(WireColumn { key: p.name.clone(), ty: prop_ty(p.ty).to_string(), schema: Some(p.clone()) });
-            }
-        }
-    }
-
-    WireTable {
-        name: table.name,
-        all_columns,
-        columns,
-        rows: table.rows.into_iter()
-            .map(|r| WireRow {
-                id: r.id,
-                cells: r.cells.into_iter().map(|(k, v)| (k, v.to_json())).collect(),
-            })
-            .collect(),
-    }
-}
+use cortex_core::data::{ChartResult, ResolvedTable, StructuredSpec};
 
 /// Resolve and run a `cortex-view` spec against the open vault, returning a
-/// display-ready table (columns + rows with plain-JSON cells).
+/// display-ready table. The work lives in `cortex_core::data::resolve_view`,
+/// shared with the CLI and MCP.
 #[tauri::command]
-pub fn run_view(spec: String, state: State<'_, VaultState>) -> Result<WireTable> {
+pub fn run_view(spec: String, state: State<'_, VaultState>) -> Result<ResolvedTable> {
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
-    // Resolve `@me` (per-viewer) before querying — "assigned to me" works for all.
-    let spec = cortex_core::members::resolve_me(&spec, &root);
-    let mut table = cortex_core::data::run_view(&root, &spec)?;
-    let parsed = cortex_core::data::parse_view_spec(&spec).ok();
-    let all_columns = parsed.as_ref()
-        .and_then(|s| cortex_core::data::source_columns(&root, &s.source).ok())
-        .unwrap_or_else(|| table.columns.iter().map(|c| c.key.clone()).collect());
-    // Collection sources resolve to a schema by name; CSV sources have none.
-    // `person` options come from the roster; `relation` options from the linked
-    // collection; `rollup` cells are computed per row.
-    let members = cortex_core::members::load(&root);
-    let schema = parsed
-        .and_then(|s| cortex_core::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
-        .and_then(|key| cortex_core::schema::load(&root, &key).ok().flatten())
-        .map(|mut s| {
-            cortex_core::members::fill_person_options(&mut s, &members);
-            cortex_core::data::fill_relation_options(&root, &mut s);
-            s
-        });
-    if let Some(s) = &schema {
-        cortex_core::data::apply_rollups(&root, &mut table, s);
-    }
-    Ok(to_wire(table, all_columns, schema.as_ref()))
+    cortex_core::data::resolve_view(&root, &spec)
 }
 
 /// Collection (database) names in the vault — for relation target pickers.
@@ -140,34 +45,10 @@ struct ViewDocView {
     name: Option<String>,
     #[serde(rename = "type", default = "default_table")]
     kind: String,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    filter: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    sort: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    columns: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    group: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    date: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    x: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    y: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    agg: Option<String>,
-    #[serde(rename = "chartType", skip_serializing_if = "Option::is_none", default)]
-    chart_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    bucket: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    series: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    log: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    done: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    range: Option<String>,
+    /// Filter, sort, columns, group, date, chart and tracker options — whatever
+    /// the view type reads. Carried as written; nothing here is interpreted.
+    #[serde(flatten)]
+    rest: serde_yaml::Mapping,
 }
 
 fn default_table() -> String { "table".into() }
@@ -187,34 +68,8 @@ struct RawDoc {
     views: Option<Vec<ViewDocView>>,
     #[serde(rename = "type", default)]
     kind: Option<String>,
-    #[serde(default)]
-    filter: Option<String>,
-    #[serde(default)]
-    sort: Option<Vec<String>>,
-    #[serde(default)]
-    columns: Option<Vec<String>>,
-    #[serde(default)]
-    group: Option<String>,
-    #[serde(default)]
-    date: Option<String>,
-    #[serde(default)]
-    x: Option<String>,
-    #[serde(default)]
-    y: Option<String>,
-    #[serde(default)]
-    agg: Option<String>,
-    #[serde(rename = "chartType", default)]
-    chart_type: Option<String>,
-    #[serde(default)]
-    bucket: Option<String>,
-    #[serde(default)]
-    series: Option<String>,
-    #[serde(default)]
-    log: Option<String>,
-    #[serde(default)]
-    done: Option<String>,
-    #[serde(default)]
-    range: Option<String>,
+    #[serde(flatten)]
+    rest: serde_yaml::Mapping,
 }
 
 /// Parse an embedded block's spec into a multi-view document. A legacy single
@@ -224,24 +79,7 @@ pub fn parse_view_doc(spec: String) -> Result<ViewDoc> {
     let raw: RawDoc = serde_yaml::from_str(&spec)?;
     let mut views = match raw.views {
         Some(v) if !v.is_empty() => v,
-        _ => vec![ViewDocView {
-            name: None,
-            kind: raw.kind.unwrap_or_else(default_table),
-            filter: raw.filter,
-            sort: raw.sort,
-            columns: raw.columns,
-            group: raw.group,
-            date: raw.date,
-            x: raw.x,
-            y: raw.y,
-            agg: raw.agg,
-            chart_type: raw.chart_type,
-            bucket: raw.bucket,
-            series: raw.series,
-            log: raw.log,
-            done: raw.done,
-            range: raw.range,
-        }],
+        _ => vec![ViewDocView { name: None, kind: raw.kind.unwrap_or_else(default_table), rest: raw.rest }],
     };
     for v in &mut views {
         if v.name.is_none() {
