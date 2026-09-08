@@ -302,6 +302,8 @@ export interface Settings {
   collab_url: string;
   /** Palette file to follow (Omarchy `colors.toml` shape). Empty = use `theme`. */
   theme_file: string;
+  /** Action colour: empty = the theme's accent; a palette colour name or a #hex. */
+  accent: string;
   /** Page typeface: a preset key (see lib/fonts.ts) or a CSS font-family. Empty = default. */
   prose_font: string;
   /** Page tilt: "" upright, degrees ("4", "8"), or "italic". */
@@ -378,6 +380,12 @@ export interface PackExcerpt {
   properties: [string, string][];
   /** [view name, view type] */
   views: [string, string][];
+  /** [property, [option, colour][]] for select/status properties */
+  options: [string, [string, string][]][];
+  /** The collection page's icon, or the first seed's. */
+  icon: string | null;
+  /** Seed row titles, in file order. */
+  seeds: string[];
 }
 
 /** One row of the marketplace: the manifest plus where it comes from and its state here. */

@@ -123,7 +123,7 @@
 .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cardDim { opacity: 0.6; }
 .cardImage {
-  width: 100%; height: 88px; object-fit: cover;
+  width: 100%; height: 108px; object-fit: cover;
   background: var(--bg-hover); border-bottom: 1px solid var(--border);
 }
 .cardGlyph { display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
@@ -288,3 +288,67 @@
   .nav { width: 190px; }
   .packHead { flex-wrap: wrap; }
 }
+
+/* ── Card hero: a miniature of the installed pack, in tokens ─────────────── */
+.hero {
+  position: relative; overflow: hidden; padding: 10px 12px 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--bg-panel)), var(--bg-hover));
+  font-size: 10px; line-height: 1.2; color: var(--text-secondary); text-align: left;
+}
+.heroFade { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; background: linear-gradient(180deg, transparent, var(--bg-hover)); pointer-events: none; }
+.heroViews {
+  position: absolute; right: 8px; top: 8px; display: flex; gap: 3px;
+}
+.heroViews > span {
+  font-size: 9px; padding: 1px 6px; border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent); border: 1px solid var(--border); color: var(--text-tertiary);
+}
+.heroViews > span:first-child { background: var(--bg-active); color: var(--text-primary); }
+
+/* table */
+.heroTable { display: flex; flex-direction: column; gap: 5px; margin-top: 14px; }
+.heroRow { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 6px; align-items: center; min-height: 14px; }
+.heroHead { color: var(--text-tertiary); font-family: var(--font-mono); font-size: 9px; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
+.heroHead > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heroTitleCell { color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heroPill { display: inline-block; max-width: 100%; padding: 0 6px; border-radius: 8px; font-size: 9px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.heroBar { display: inline-block; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--text-tertiary) 35%, transparent); }
+.heroDate { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.heroNum { color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
+.heroCheck { display: inline-block; width: 10px; height: 10px; border-radius: 3px; border: 1.5px solid var(--border-focus); }
+.heroCheckOn { background: var(--accent); border-color: var(--accent); }
+
+/* board */
+.heroBoard { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+.heroCol { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.heroCard { padding: 4px 6px; border-radius: 4px; background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-primary); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* calendar */
+.heroCal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 18px; padding: 0 6px; }
+.heroDay { height: 14px; border-radius: 3px; background: var(--bg-panel); border: 1px solid var(--border); }
+.heroDayOn { background: var(--accent-light); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.heroDayToday { box-shadow: 0 0 0 1.5px var(--accent); }
+
+/* tracker */
+.heroTrack { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+.heroTrackRow { display: grid; grid-template-columns: 1.4fr repeat(7, 1fr); gap: 4px; align-items: center; }
+.heroTrackName { color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heroMark { width: 12px; height: 12px; border-radius: 4px; border: 1.5px solid var(--border); justify-self: center; }
+.heroMarkOn { background: var(--accent); border-color: var(--accent); }
+
+/* chart */
+.heroChart { display: flex; align-items: flex-end; gap: 6px; height: 66px; margin-top: 14px; padding: 0 8px; border-bottom: 1px solid var(--border); }
+.heroBarV { flex: 1; background: var(--accent); opacity: 0.8; border-radius: 2px 2px 0 0; }
+
+/* gallery */
+.heroGallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+.heroGalleryCard { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.heroCover { display: block; height: 38px; border-radius: 4px; background: linear-gradient(135deg, var(--accent-light), color-mix(in srgb, var(--accent) 35%, var(--bg-panel))); }
+.heroCaption { font-size: 9px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* note page */
+.heroPage { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 0; margin: 0 6px; background: var(--bg-panel); border: 1px solid var(--border); border-bottom: none; border-radius: 6px 6px 0 0; height: 100%; }
+.heroPageTitle { font-family: var(--font-prose); font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.heroSection { display: flex; flex-direction: column; gap: 3px; }
+.heroHeading { font-family: var(--font-prose); font-size: 10px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.heroText { display: block; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-tertiary) 30%, transparent); }

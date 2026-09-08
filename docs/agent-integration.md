@@ -115,6 +115,7 @@ exits.
 | `auto_sync_minutes` | minutes between automatic git syncs, `0` = off (default `0`) |
 | `collab_url` | Yjs websocket relay for presence and co-editing, empty = off |
 | `theme_file` | palette file to follow (Omarchy `colors.toml` shape, `~` expands), empty = use `theme` |
+| `accent` | action colour: empty = the theme's accent; a palette colour name (`blue`, `yellow`, …) or a `#hex` |
 | `prose_font` | page typeface preset (`ysabeau`, `quattro`, `duo`, `recursive`, `alegreya`, `fraunces`, `crimson`, `serif`, `system`, `mono`) or any font-family |
 | `prose_slant` | page tilt: empty (upright), degrees such as `4` / `8`, or `italic` |
 | `keybindings` | shortcut overrides, id → keys (e.g. `toggle-sidebar: mod+shift+b`); ids live in `src/lib/keymap.ts` |

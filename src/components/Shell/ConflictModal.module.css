@@ -165,7 +165,7 @@
   font-weight: 500;
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
   border-radius: var(--radius-sm);
   padding: 5px 14px;
   cursor: pointer;

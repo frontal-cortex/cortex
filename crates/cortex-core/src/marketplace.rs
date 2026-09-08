@@ -155,6 +155,12 @@ pub struct Excerpt {
     pub properties: Vec<(String, String)>,
     /// Collection packs: (view name, view type) from index.md.
     pub views: Vec<(String, String)>,
+    /// Collection packs: select/status options per property — (property, [(option, colour)]).
+    pub options: Vec<(String, Vec<(String, String)>)>,
+    /// The collection page's icon, or the first seed's.
+    pub icon: Option<String>,
+    /// Titles of the seed rows, in file order.
+    pub seeds: Vec<String>,
 }
 
 pub fn excerpt(pack: &Pack) -> Excerpt {
@@ -163,10 +169,22 @@ pub fn excerpt(pack: &Pack) -> Excerpt {
         if let Some(text) = pack.text(&format!("schemas/{coll}.yaml")) {
             if let Ok(s) = serde_yaml::from_str::<schema::TypeSchema>(&text) {
                 e.properties = s.properties.iter().map(|p| (p.name.clone(), format!("{:?}", p.ty).to_lowercase())).collect();
+                e.options = s.properties.iter().filter(|p| !p.options.is_empty())
+                    .map(|p| (p.name.clone(), p.options.iter().map(|o| (o.name.clone(), o.color.clone())).collect())).collect();
+            }
+        }
+        for f in &pack.files {
+            if f.path.starts_with("seed/") && f.path.ends_with(".md") {
+                let text = String::from_utf8_lossy(&f.contents);
+                if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
+                    if let Some(t) = fm.get("title").and_then(|v| v.as_str()) { e.seeds.push(t.to_string()); }
+                    if e.icon.is_none() { e.icon = fm.get("icon").and_then(|v| v.as_str()).map(String::from); }
+                }
             }
         }
         if let Some(text) = pack.text("index.md") {
             if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
+                if let Some(i) = fm.get("icon").and_then(|v| v.as_str()) { e.icon = Some(i.to_string()); }
                 for v in fm.get("views").and_then(|v| v.as_sequence()).cloned().unwrap_or_default() {
                     let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
                     let ty = v.get("type").and_then(|x| x.as_str()).unwrap_or("table").to_string();

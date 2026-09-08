@@ -14,6 +14,34 @@ import { applyProseFont, applyProseSlant } from "./fonts";
 
 let lastPref: Settings["theme"] = "system";
 let paletteKeys: string[] = [];
+let lastPalette: Palette | null = null;
+let lastAccent = "";
+
+/** The action colour. Empty = whatever the theme gives (`--accent` from
+ *  tokens.css or the palette's own accent). A palette colour name picks that
+ *  colour from the followed palette — or the matching tag colour when no
+ *  palette is followed — and a #hex sets it outright. Lets a desktop whose
+ *  published accent fights the rest of its palette (a cold blue on a warm
+ *  theme) use a colour that belongs. */
+export function applyAccent(choice: string, palette: Palette | null = lastPalette) {
+  lastAccent = (choice ?? "").trim().toLowerCase();
+  const root = document.documentElement;
+  const set = (accent: string, bg: string) => {
+    root.style.setProperty("--accent", accent);
+    root.style.setProperty("--accent-light", `color-mix(in srgb, ${accent} 18%, ${bg})`);
+  };
+  if (!lastAccent) {
+    root.style.removeProperty("--accent");
+    root.style.removeProperty("--accent-light");
+    return;
+  }
+  if (lastAccent.startsWith("#")) { set(lastAccent, "var(--bg-app)"); return; }
+  const fromPalette = palette?.colors[lastAccent] ?? palette?.colors[`bright_${lastAccent}`];
+  if (fromPalette) { set(fromPalette, palette!.colors.background ?? "var(--bg-app)"); return; }
+  // No palette: the tag palette has a readable version of each colour name.
+  const tag = lastAccent === "magenta" ? "purple" : lastAccent === "cyan" ? "blue" : lastAccent;
+  set(`var(--tag-${tag}-fg)`, "var(--bg-app)");
+}
 
 /** Apply the light/dark preference. "system" defers to the OS. */
 export function applyTheme(theme: Settings["theme"]) {
@@ -28,9 +56,11 @@ export function applyPalette(palette: Palette | null) {
   const root = document.documentElement;
   for (const k of paletteKeys) root.style.removeProperty(`--palette-${k}`);
   paletteKeys = [];
+  lastPalette = palette;
   if (!palette) {
     delete root.dataset.palette;
     applyTheme(lastPref);
+    applyAccent(lastAccent, null);
     return;
   }
   for (const [key, hex] of Object.entries(palette.colors)) {
@@ -41,13 +71,15 @@ export function applyPalette(palette: Palette | null) {
   root.dataset.palette = "on";
   // The palette decides light vs dark — tag pills and BlockNote follow it.
   root.dataset.theme = palette.mode === "light" ? "light" : "dark";
+  applyAccent(lastAccent, palette);
 }
 
 /** Apply a settings object: follow the palette file when set and readable,
  *  otherwise the light/dark preference. A missing file is silent — a vault
  *  whose settings name an Omarchy path still looks right on a Mac. */
-export async function syncTheme(settings: Pick<Settings, "theme" | "theme_file" | "prose_font" | "prose_slant">) {
+export async function syncTheme(settings: Pick<Settings, "theme" | "theme_file" | "prose_font" | "prose_slant"> & Partial<Pick<Settings, "accent">>) {
   lastPref = settings.theme;
+  lastAccent = (settings.accent ?? "").trim().toLowerCase();
   applyProseFont(settings.prose_font ?? "");
   applyProseSlant(settings.prose_slant ?? "");
   let palette: Palette | null = null;
