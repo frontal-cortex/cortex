@@ -185,7 +185,7 @@ responsive shell groundwork*, the `RemoteOps` row and the spike's rows
 | Callouts | done | — | |
 | Embeds | partial | S | `![[note]]` becomes a link, never inlined (deliberate: no unpublished body leaks). |
 | Client-side search | partial | S | `search.json` has title and tags only; body text is not searchable. |
-| Database / `cortex-view` blocks | missing | M | Rendered as a raw code fence (`publish.rs:333`). |
+| Database / `cortex-view` blocks | done | — | Rendered as static tables by the same `resolve_view` the app uses — grouped sections, summary row, number formats, row links to published pages; non-table view types degrade to the table with a note (`publish.rs`, Database views). Site search also matches body text. |
 | Graph on the site | missing | M | |
 | GitHub Pages push + Action | done | — | |
 | Comments, presence, auth-gated pages | missing, by design | L | "Read-only: no comments, no presence" (`publish.rs:17`). |
@@ -198,7 +198,7 @@ responsive shell groundwork*, the `RemoteOps` row and the spike's rows
 | Math `$…$` / `$$…$$` (MathJax in Obsidian) | done | — | Same syntax on disk, rendered with KaTeX in the editor (`MathBlock.tsx`). `$$` on an empty line or `/math` opens a block; `$…$` typed inline becomes an equation. |
 | Audio recorder | missing | M | |
 | Slides / presentation mode | missing | M | |
-| PDF viewer | missing | L | Only images render from `assets/`. |
+| PDF viewer | missing | L | Images, video and audio render from `assets/`; a PDF shows as a file block (name and link), not inline. |
 | Web clipper | missing | L | |
 | URI scheme / deep links (`cortex://`) | missing | M | No `tauri-plugin-deep-link`, no scheme registration. |
 | Embedded terminal / agent pane | done, beyond Obsidian | — | Real PTY (`terminal.rs`), opens into a detected agent CLI. |

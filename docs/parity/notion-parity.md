@@ -25,8 +25,8 @@ screen but the Markdown save path throws it away.
 | Image: paste, drop, upload | done | — | Custom paste/drop plugin (`Editor.tsx:389-431`), stored in `assets/` (`commands/notes.rs:772`). |
 | Image: resize | done | — | A resized image is saved as `<img src="assets/…" alt="…" width="480">` (inside `<figure>` when captioned); an unsized one stays `![alt](assets/…)`. GitHub and Obsidian honour the width. |
 | Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
-| File attachment | partial | M | Uploads to `assets/`, degrades to a plain link on save; `read_asset` labels every non-image as `image/png` (`commands/notes.rs:833`) so non-image assets cannot be served. |
-| Video / audio | partial | M | Blocks exist; same asset rehydration gap; no YouTube/Vimeo player or oEmbed. |
+| File attachment | done | — | Uploads to `assets/`, saved as `[name](assets/x.pdf)`; that link is inflated back into a file block on load (`src/lib/assets.ts`), and `read_asset` serves every asset with the MIME type its extension implies (`cortex_core::assets::mime_for_path`). `cortex assets --unused` lists orphaned files (never deletes). No inline PDF preview. |
+| Video / audio | partial | S | Local files in `assets/` render and round-trip: `![name](assets/clip.mp4)`, `<audio src="assets/x.mp3" controls>`, and the captioned `<figure>` forms are all rehydrated on load. No YouTube/Vimeo player or oEmbed. |
 | Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
 | Web embed (iframe) | missing | M | |
 | Math / equation (inline and block) | done | — | `$…$` and `$$…$$` on disk (GitHub/Obsidian syntax), KaTeX bundled locally (`MathBlock.tsx`, `src/lib/math.ts`). `/math` and `$$` on an empty line open a block; typing `$…$` makes an inline equation. The static site shows the LaTeX source in a `.math` span (no KaTeX shipped there). |
@@ -179,11 +179,11 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Publish to web (static site) | done | — | One page per note, index, assets, `search.json`, write manifest for safe rebuilds (`publish.rs:146`). |
+| Publish to web (static site) | done | — | One page per note, index, assets, `search.json` (title, tags and the first ~2 KB of body text; the index page's search matches bodies and shows a snippet), write manifest for safe rebuilds (`publish.rs:146`). |
 | Per-note public flag | done | — | `publish: true` or the `public` tag; palette toggle; never `templates/`, `VAULT.md`, `AGENTS.md`. |
 | Wiki links, aliases, anchors; unpublished targets degrade to text | done | — | |
 | Callouts on the site | done | — | Eight kinds. |
-| Database views on the site | missing | M | A `cortex-view` fence publishes as a raw YAML code block. |
+| Database views on the site | done | — | `cortex-view` / `cortex-views` fences and a collection page's own `views:` render as static tables through `data::resolve_view` (columns, filter, sort, grouped sections, summary row, number formats; rows link to their page when published). Board / calendar / gallery / timeline / tracker degrade to that table with a note; a chart becomes its aggregated points table, not an SVG (`publish.rs` Database views). |
 | Site search | partial | S | Four-line `indexOf` over title and tags; body text never searchable; `search.json` unused. |
 | GitHub Pages push + Action | done | — | `workflow_dispatch` only, by design. |
 | Custom domain (`CNAME`) | missing | S | |
