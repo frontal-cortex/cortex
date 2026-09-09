@@ -189,7 +189,7 @@ follows every change you make on disk.
 - Frontmatter keys are sorted alphabetically; `created` is `YYYY-MM-DD`; `tags` is a list.
 - The app shows `title` as the page heading and `created` under it — don't repeat either as an H1 or a first line in the body.
   Prefer the tools below over editing YAML by hand — they keep files canonical so diffs stay clean.
-- Link notes with `[[Title]]`. Links resolve by title, then by filename.
+- Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by title, then by filename.
 - Never write derived data (rollups, counts) into notes; the app computes it.
 
 ## Tools
@@ -339,11 +339,18 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
 
 /// Resolve a reference the way the app resolves a `[[wiki link]]`: exact
 /// path, then exact title (case-insensitive), then a filename-stem match.
+/// `target` may be any written form — `Note`, `Note|alias`, `Note#Section`,
+/// `[[Note#Section|alias]]` — only the note part is matched.
 pub fn resolve<'a>(notes: &'a [NoteEntry], target: &str) -> Option<&'a NoteEntry> {
+    let target = crate::note::parse_wiki_link(target).target;
+    if target.is_empty() {
+        return None;
+    }
     let lower = target.to_lowercase();
+    let with_ext = format!("{target}.md");
     notes
         .iter()
-        .find(|n| n.path == target)
+        .find(|n| n.path == target || n.path == with_ext)
         .or_else(|| notes.iter().find(|n| n.title.to_lowercase() == lower))
         .or_else(|| {
             notes.iter().find(|n| {
@@ -354,4 +361,29 @@ pub fn resolve<'a>(notes: &'a [NoteEntry], target: &str) -> Option<&'a NoteEntry
                     .unwrap_or(false)
             })
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(path: &str, title: &str) -> NoteEntry {
+        NoteEntry { path: path.into(), title: title.into(), note_type: None, icon: None, parent: None, tags: vec![], modified: 0 }
+    }
+
+    #[test]
+    fn resolve_ignores_alias_and_section() {
+        let notes = vec![entry("notes/plan.md", "The Plan"), entry("notes/rapid-notes.md", "Rapid")];
+        let plan = Some("notes/plan.md");
+        let path = |t: &str| resolve(&notes, t).map(|n| n.path.as_str());
+        assert_eq!(path("The Plan"), plan);
+        assert_eq!(path("the plan|our plan"), plan);
+        assert_eq!(path("The Plan#Goals"), plan);
+        assert_eq!(path("[[The Plan#Goals|see goals]]"), plan);
+        assert_eq!(path("![[plan#Goals]]"), plan);
+        assert_eq!(path("notes/plan"), plan);
+        assert_eq!(path("notes/plan.md"), plan);
+        assert_eq!(path("#Goals"), None);
+        assert_eq!(path("Nope"), None);
+    }
 }

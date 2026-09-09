@@ -73,69 +73,25 @@ fn extract_section(body: &str, section: &str) -> Option<String> {
     Some(lines[start..end].join("\n"))
 }
 
-/// Resolve a wiki-style ref (`Note Title`, `path/to/note`, optionally with
-/// `#Section`) to a note's body, for inline transclusion. Resolution order:
-/// exact path, then case-insensitive title, then filename stem.
+/// Resolve a wiki-style ref in any written form (`Note Title`, `path/to/note`,
+/// `Note#Section`, `Note|alias`, `![[Note#Section]]`) to a note's body, for
+/// inline transclusion. The target is parsed and resolved by cortex-core, so
+/// the app, the CLI and the publisher all agree on which note a link means.
 #[tauri::command]
 pub fn resolve_ref(target: String, state: State<'_, VaultState>) -> Result<NoteRef> {
     let root = vault_path(&state)?;
-    let (base, section) = match target.split_once('#') {
-        Some((b, s)) => (b.trim().to_string(), Some(s.trim().to_string())),
-        None => (target.trim().to_string(), None),
+    let link = note::parse_wiki_link(&target);
+    let notes = cortex_core::vault::list_notes(&root);
+    let Some(entry) = cortex_core::vault::resolve(&notes, &link.target) else {
+        return Ok(NoteRef { path: String::new(), title: link.target, body: String::new(), found: false });
     };
-    let base_lower = base.to_lowercase();
-
-    let mut title_match: Option<(String, String, String)> = None;
-    let mut stem_match: Option<(String, String, String)> = None;
-    let mut exact: Option<(String, String, String)> = None;
-
-    for entry in WalkDir::new(&root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let p = e.path();
-            p.extension().and_then(|s| s.to_str()) == Some("md")
-                && !p.components().any(|c| {
-                    matches!(
-                        c.as_os_str().to_str(),
-                        Some(".brain") | Some(".git") | Some(".trash") | Some(".cortex")
-                    )
-                })
-        })
-    {
-        let abs = entry.path();
-        let rel = abs.strip_prefix(&root).unwrap().to_string_lossy().to_string();
-        let Ok(content) = std::fs::read_to_string(abs) else { continue };
-        let Ok(parsed) = note::parse_note(&rel, &content) else { continue };
-        let title = note::infer_title(&parsed);
-        let stem = std::path::Path::new(&rel)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        if rel == base || rel == format!("{base}.md") {
-            exact = Some((rel.clone(), title.clone(), parsed.body));
-            break;
-        }
-        if title.to_lowercase() == base_lower && title_match.is_none() {
-            title_match = Some((rel.clone(), title.clone(), parsed.body.clone()));
-        }
-        if stem.to_lowercase() == base_lower && stem_match.is_none() {
-            stem_match = Some((rel, title, parsed.body));
-        }
-    }
-
-    match exact.or(title_match).or(stem_match) {
-        Some((path, title, body)) => {
-            let body = match &section {
-                Some(s) => extract_section(&body, s).unwrap_or(body),
-                None => body,
-            };
-            Ok(NoteRef { path, title, body, found: true })
-        }
-        None => Ok(NoteRef { path: String::new(), title: base, body: String::new(), found: false }),
-    }
+    let content = std::fs::read_to_string(root.join(&entry.path))?;
+    let parsed = note::parse_note(&entry.path, &content)?;
+    let body = match &link.section {
+        Some(s) => extract_section(&parsed.body, s).unwrap_or(parsed.body),
+        None => parsed.body,
+    };
+    Ok(NoteRef { path: entry.path.clone(), title: entry.title.clone(), body, found: true })
 }
 
 // ── Write / Create / Delete ──────────────────────────────────────────────────
