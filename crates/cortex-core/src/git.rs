@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
 use crate::error::{AppError, Result};
+use crate::remote::default_remote;
 
 #[derive(Debug, Serialize)]
 pub struct VaultStatus {
@@ -422,8 +423,10 @@ pub fn stage_all_and_commit(repo: &Repository, message: &str) -> Result<()> {
 // resolution UI (and any git CLI user) can work with. A failed rebase would
 // strand the repo mid-replay with no good in-app recovery.
 //
-// Push/pull shell out to system git so SSH agents and credential helpers work;
-// everything else uses git2.
+// The remote + merge operations live behind `remote::RemoteOps`: on desktop
+// they shell out to system git so SSH agents and credential helpers work; on
+// mobile they run in-process via libgit2 (see `remote.rs`). Everything else
+// uses git2 directly.
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -436,137 +439,34 @@ pub enum SyncOutcome {
     Conflicts { files: Vec<String> },
 }
 
-fn run_git(path: &Path, args: &[&str]) -> Result<std::process::Output> {
-    Ok(std::process::Command::new("git")
-        .args(args)
-        .current_dir(path)
-        .output()?)
-}
-
-fn git_stdout(path: &Path, args: &[&str]) -> Result<String> {
-    let out = run_git(path, args)?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-fn current_branch(path: &Path) -> Result<String> {
-    // symbolic-ref (not rev-parse) so an unborn branch — a fresh vault with no
-    // commits yet — still resolves to its name instead of erroring.
-    git_stdout(path, &["symbolic-ref", "--short", "HEAD"])
-        .map_err(|_| AppError::Other("Cannot sync: detached HEAD".into()))
-}
-
-fn head_oid(path: &Path) -> String {
-    git_stdout(path, &["rev-parse", "HEAD"]).unwrap_or_default()
-}
-
 /// Files currently in the unmerged (conflicted) state.
 pub fn list_conflicts(path: &Path) -> Result<Vec<String>> {
-    let out = git_stdout(path, &["diff", "--name-only", "--diff-filter=U"])?;
-    Ok(out.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+    default_remote().list_conflicts(path)
 }
 
 /// Full sync: commit dirty work, merge in the remote, push. Never leaves the
 /// repo in a broken state — a conflicted merge is surfaced (recoverable), and
-/// any other pull failure is rolled back with `merge --abort`.
+/// any other pull failure is rolled back.
 pub fn sync_vault(path: &Path) -> Result<SyncOutcome> {
-    // A merge already in progress (e.g. app restarted mid-resolution) takes
-    // priority — surface it instead of stacking another pull on top.
-    let existing = list_conflicts(path)?;
-    if !existing.is_empty() {
-        return Ok(SyncOutcome::Conflicts { files: existing });
-    }
-
-    // Commit local work first: a merge needs a clean tree, and "share my
-    // current state" is what the user means by sync.
-    {
-        let repo = Repository::open(path)?;
-        let st = get_status(&repo)?;
-        if !(st.staged.is_empty() && st.unstaged.is_empty() && st.untracked.is_empty()) {
-            stage_all_and_commit(&repo, "Auto-commit before sync")?;
-        }
-    }
-
-    let branch = current_branch(path)?;
-    let before = head_oid(path);
-
-    let out = run_git(path, &["pull", "--no-rebase", "--no-edit", "origin", &branch])?;
-    if !out.status.success() {
-        let conflicts = list_conflicts(path)?;
-        if !conflicts.is_empty() {
-            return Ok(SyncOutcome::Conflicts { files: conflicts });
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        // A brand-new branch the remote doesn't know yet isn't an error — there
-        // is just nothing to pull. Anything else: restore a clean state.
-        if !stderr.contains("couldn't find remote ref") {
-            let _ = run_git(path, &["merge", "--abort"]);
-            return Err(AppError::Other(stderr));
-        }
-    }
-    let pulled = head_oid(path) != before;
-
-    // `-u` keeps the upstream set so ahead/behind tracking works from the start.
-    let out = run_git(path, &["push", "-u", "origin", &branch])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-
-    Ok(SyncOutcome::Ok { pulled })
+    default_remote().sync(path)
 }
 
 /// Resolve one conflicted file: take ours / theirs wholesale, or `manual` when
 /// the user has already edited the markers away in the editor. Stages the file.
 pub fn resolve_conflict(path: &Path, file: &str, side: &str) -> Result<()> {
-    match side {
-        "ours" | "theirs" => {
-            let flag = if side == "ours" { "--ours" } else { "--theirs" };
-            let out = run_git(path, &["checkout", flag, "--", file])?;
-            if !out.status.success() {
-                return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-            }
-        }
-        "manual" => {}
-        other => return Err(AppError::Other(format!("Unknown resolution side '{other}'"))),
-    }
-    let out = run_git(path, &["add", "--", file])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(())
+    default_remote().resolve_conflict(path, file, side)
 }
 
 /// Conclude a fully-resolved merge: commit it and push. If conflicts remain,
 /// returns them instead (the UI keeps the resolution flow open).
 pub fn complete_merge(path: &Path) -> Result<SyncOutcome> {
-    let remaining = list_conflicts(path)?;
-    if !remaining.is_empty() {
-        return Ok(SyncOutcome::Conflicts { files: remaining });
-    }
-    if path.join(".git").join("MERGE_HEAD").exists() {
-        let out = run_git(path, &["commit", "--no-edit"])?;
-        if !out.status.success() {
-            return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-        }
-    }
-    let branch = current_branch(path)?;
-    let out = run_git(path, &["push", "-u", "origin", &branch])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(SyncOutcome::Ok { pulled: true })
+    default_remote().complete_merge(path)
 }
 
 /// Abandon the in-progress merge entirely: local commits stay, remote changes
 /// are un-applied, the working tree returns to the pre-pull state.
 pub fn abort_merge(path: &Path) -> Result<()> {
-    let out = run_git(path, &["merge", "--abort"])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(())
+    default_remote().abort_merge(path)
 }
 
 /// Pending proposals: every `agent/*` branch, local or on `origin`. A branch
@@ -612,7 +512,7 @@ fn delete_remote_branch(repo: &Repository, branch_name: &str) {
         return;
     }
     if let Some(dir) = repo.workdir() {
-        let _ = run_git(dir, &["push", "origin", "--delete", branch_name]);
+        let _ = default_remote().delete_remote_branch(dir, branch_name);
     }
 }
 

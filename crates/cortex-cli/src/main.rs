@@ -182,6 +182,12 @@ enum Cmd {
     },
     /// Which agent CLIs (claude, hermes, openclaw, …) are installed, for `terminal_command`
     Agents,
+    /// Files under assets/ with how many notes reference each; --unused lists only the orphans (never deletes)
+    Assets {
+        /// Only assets no note references
+        #[arg(long)]
+        unused: bool,
+    },
     /// Build a static site from the notes marked `publish: true` (or tagged `public`)
     ///
     /// Nothing is ever published on its own: this command is the act. With no
@@ -580,6 +586,15 @@ fn run() -> Result<()> {
                 Ok(())
             }
         },
+        Cmd::Assets { unused } => {
+            let mut assets = v.assets()?;
+            if unused { assets.retain(|a| a.references == 0); }
+            if out.json { return out.emit(&assets); }
+            table(&["PATH", "SIZE", "TYPE", "REFS"], assets.iter().map(|a| vec![
+                a.path.clone(), a.size.to_string(), a.mime.clone(), a.references.to_string(),
+            ]).collect());
+            Ok(())
+        }
         Cmd::Agents => {
             let agents = v.agents();
             if out.json { return out.emit(&agents); }

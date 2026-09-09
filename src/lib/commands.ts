@@ -611,6 +611,15 @@ export interface PackRemoveReport {
 }
 
 /** An agent CLI the terminal pane can open into (see cortex_core::agents). */
+/** What this build knows about where updates come from (`plugins.updater`
+ *  in tauri.conf.json). `configured` is false for a development build, which
+ *  has no endpoint or only the placeholder public key. */
+export interface UpdateConfig {
+  current_version: string;
+  endpoint: string | null;
+  configured: boolean;
+}
+
 export interface AgentCli {
   id: string;
   label: string;
@@ -869,6 +878,10 @@ export const commands = {
   /** Known agent CLIs (claude, hermes, …) and whether each is on $PATH. */
   detectAgents: () =>
     invoke<AgentCli[]>("detect_agents"),
+
+  /** The update channel compiled into this build; see lib/updater.ts. */
+  updateConfig: () =>
+    invoke<UpdateConfig>("update_config"),
 
   // ── Template marketplace — fetch/install only when the user asks ──
   packsCatalog: (refresh: boolean) =>

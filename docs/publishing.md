@@ -38,7 +38,9 @@ lets you pick a folder or GitHub Pages, and reports where the site went.
 
 The output is one page per note at `<path without .md>/`, an `index.html`
 listing every published note (newest first, with a small search box), a
-`style.css`, a `search.json`, and the images the pages reference. It is
+`style.css`, a `search.json` (each page's title, tags and the first ~2 KB of
+its body as plain text — the search box matches on all of it and shows a
+snippet), and the images the pages reference. It is
 self-contained: open `index.html` from disk, or copy the folder to any static
 host.
 
@@ -56,6 +58,14 @@ own manifest, so a typo cannot wipe a directory.
   Math (`$…$`, `$$…$$`) is shown as its LaTeX source in a monospace span —
   the site ships no KaTeX — so nothing is mangled and the equation is still
   readable.
+- **Database views.** A `cortex-view` fence, a `cortex-views` fence, and the
+  views of a collection's own page (`collections/<name>/_index.md`) are
+  rendered as static tables by the same engine the app's table uses:
+  columns, filter, sort, grouped sections, the summary row and number
+  formats (currency, percent, stars, progress). A row's title links to its
+  page when that row is published, otherwise it is plain text. Board,
+  calendar, gallery, timeline and tracker views are shown as that table with
+  a note naming the view type; a chart shows its aggregated points.
 - **Wiki links** to other published notes become links, including
   `[[Note#Section]]` anchors and `[[Note|alias]]` labels. A link to a note
   that is *not* published becomes plain text — the site never reveals what
