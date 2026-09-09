@@ -23,6 +23,8 @@ interface Props {
   onNewNote: () => void;
   onToday: () => void;
   onOpenGraph: () => void;
+  /** Absent when no note is open. */
+  onOpenLocalGraph?: () => void;
   onNewFromTemplate: (tplName: string) => void;
   onNewCollection: () => void;
   onSync: () => void;
@@ -52,7 +54,7 @@ type Mode = "notes" | "actions";
 
 export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
-  onNewNote, onToday, onOpenGraph, onNewFromTemplate,
+  onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
   onPublish, onImport, onCheckForUpdates, onTogglePublic, isPublic, hasRemote,
@@ -129,6 +131,13 @@ export function QuickSwitcher({
         icon: <GraphIcon size={14} />,
         run: () => { onOpenGraph(); onClose(); },
       },
+      ...(onOpenLocalGraph ? [{
+        id: "local-graph",
+        label: "Local graph",
+        description: `${shortcutFor("local-graph")} · this note and its neighbours`,
+        icon: <GraphIcon size={14} />,
+        run: () => { onOpenLocalGraph(); onClose(); },
+      }] : []),
       {
         id: "new-database",
         label: "New collection",
@@ -264,7 +273,7 @@ export function QuickSwitcher({
       run: () => { onOpenMarketplace(); onClose(); },
     }];
     return [...base, ...tplActions, ...more];
-  }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
+  }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
       onPublish, onCheckForUpdates, onTogglePublic, isPublic, onClose]);

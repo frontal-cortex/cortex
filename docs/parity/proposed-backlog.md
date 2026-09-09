@@ -420,7 +420,6 @@ relative to the two above: 36 → 34 → 37 → responsive shell → 38 → 35 �
 - **Comments as a committed sidecar** (`notes/foo.comments.yaml`, text-quote anchors, margin rendering; BlockNote's comments extension needs a thread store). M.
 - ~~**Publish database views**: render `cortex-view` fences as static tables on the site, and index body text into `search.json`. M.~~ Done.
 - ~~**CI and auto-update**: a `.github/` build matrix for the three desktop OSes plus `tauri-plugin-updater`. Not parity, but today nobody can receive a build. M.~~ Done: `.github/workflows/{ci,release}.yml`, updater plugin, Check for updates in palette + Settings; keypair setup in `docs/development.md`.
-- **Local graph** with depth, filters and tag colouring; live physics. M.
 - **Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.
 - **Tabs and split panes.** L, and tabs were removed once after a history bug; needs a design first.
 - ~~**Calendar week view, in-database search box, list view.**~~ Done: month / week / day modes with multi-day spans, a client-side search box in the view toolbar, and `type: list`.

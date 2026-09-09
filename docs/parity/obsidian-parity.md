@@ -30,11 +30,11 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Global graph | done | — | d3-force modal over the `links` table (`GraphView.tsx:34`, `db.rs:157`). |
-| Local graph (neighbours of the open note) | missing | M | No depth or centre filtering. |
-| Filters (search, tag, folder, orphans) | missing | M | Toolbar is title, count, close. |
-| Tag / folder colouring, node sizing | missing | S | Every node is the same circle; only the `icon` emoji varies. |
-| Live physics, node dragging | partial | S | 300 pre-run ticks then `.stop()` (`GraphView.tsx:74`); pan and zoom only. |
+| Global graph | done | — | d3-force modal over the `links` table (`GraphView.tsx`, `db.rs:165`); the model is a pure function in `lib/graph.ts` (tested with `npm run test:lib`). |
+| Local graph (neighbours of the open note) | done | — | Global / Local toggle, depth 1–3 (`mod+shift+g`, or "Local graph" in the palette); the open note is pinned at the centre and farther hops fade. |
+| Filters (search, tag, folder, orphans) | done | — | Filter box with the search grammar: title words, `"phrase"`, `tag:x`, `path:x`, `type:x`, `-` negation; orphans toggle. Nothing shows the note's folder as a tree — use `path:`. |
+| Tag / folder colouring, node sizing | done | — | Colour by first tag or by folder with a legend (palette colours from `tokens.css`); radius grows with the note's link count over the whole vault. |
+| Live physics, node dragging | done | — | The simulation runs live, cools and stops on its own, and reheats on drag, on a changed node set or with the Resume button; pan, zoom-at-cursor and node drag are pointer events (touch and mouse). |
 | Click to open | done | — | |
 
 ## 3. Canvas
@@ -161,7 +161,8 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-<<<<<<< HEAD
+6. ~~**Graph is a static global snapshot.**~~ Done: local graph with depth, filters, tag/folder colouring, link-count sizing, live physics with dragging.
+7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints. The spike (`mobile-spike.md`) says go and sequences the work.
 | Tauri mobile targets configured | missing | L | `tauri.conf.json` has no `android` / `ios` keys; no `src-tauri/gen/`; no mobile deps. The only mobile artefact is the boilerplate `mobile_entry_point` attribute (`src-tauri/src/lib.rs:24`). |
 | Mobile-capable git backend | partial | M | `remote::RemoteOps` with `ShellRemote` (desktop, unchanged) and `Git2Remote` (libgit2: HTTPS + token, fetch/merge/conflicts/ours/theirs/abort/complete, identity), selected by target OS; unit-tested on desktop against a bare repo (`remote.rs`). Still missing: keychain-stored token (`MOBILE.md` Phase 2), clone-into-container vault flow (Phase 3); `terminal.rs` and `reveal_path` still spawn subprocesses. |
 =======
@@ -170,7 +171,7 @@ at the end so they are not mistaken for gaps.
 | Mobile-capable git backend | missing | L | pull, push, merge abort, ours/theirs, complete merge and `git config` all shell out (`git.rs`); `terminal.rs` and `reveal_path` spawn subprocesses. `docs/MOBILE.md` has the plan (a `RemoteOps` trait with a git2 implementation). The spike found libgit2 is built **without** the `https` feature (`Cargo.toml` `vendored-openssl` alone), so in-process HTTPS does not exist yet even on desktop. |
 >>>>>>> origin/main
 | Responsive shell CSS | missing | M | Three `@media` rules in the whole app, all in overlays (Settings, Marketplace, Tracker). `Shell`, `LeftPanel`, `Editor`, `TopBar` have none. Sidebar fixed at 260px, right pane 440px, window `minWidth: 800`. |
-| Touch handling | missing | M | No pointer or touch events; graph is mouse+wheel; tree DnD is HTML5 only. |
+| Touch handling | partial | M | The graph pans, zooms and drags with pointer events (`touch-action: none`); the rest has no pointer or touch events; tree DnD is HTML5 only. |
 
 The feasibility spike is done (`mobile-spike.md`); *Mobile mode —
 responsive shell groundwork*, the `RemoteOps` row and the spike's rows
@@ -213,12 +214,6 @@ responsive shell groundwork*, the `RemoteOps` row and the spike's rows
 3. ~~**Search has no operators and no snippets.**~~ Done: phrases, `-`, `OR`, `tag:` / `type:` / `path:`, snippets, title boost, FTS fallback in the quick switcher. Still missing: regex, vault-wide replace, find-in-note.
 4. ~~**No inline `#tags` and no tag pane.**~~ Done: inline tags are indexed, the sidebar has a tag tree, and every tag opens a page.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
-6. **Graph is a static global snapshot.** No local graph, filters, colouring or live physics.
-<<<<<<< HEAD
-7. **Mobile is a doc, not a target.** Zero mobile config, no breakpoints — though the git transport now has an in-process backend (`remote.rs`).
-=======
-7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints. The spike (`mobile-spike.md`) says go and sequences the work.
->>>>>>> origin/main
 8. **No block references.** The deepest structural gap and the most expensive.
 9. **No canvas.**
 10. **Small conveniences, individually cheap:** recent files, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions (outline, word count and find-in-note are done).
