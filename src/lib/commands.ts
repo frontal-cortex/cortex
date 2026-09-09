@@ -435,6 +435,27 @@ export interface MarkdownImportReport {
   unresolved: string[];
 }
 
+export interface NotionImportCollection {
+  name: string;
+  title: string;
+  rows: number;
+  written: string[];
+  schema_added: string[];
+  index_created: boolean;
+}
+
+export interface NotionImportReport {
+  source: string;
+  dest: string;
+  notes: string[];
+  collections: NotionImportCollection[];
+  assets: string[];
+  skipped: ImportSkipped[];
+  unmapped: { subject: string; detail: string }[];
+  unresolved: string[];
+  report: string | null;
+}
+
 /** A note that `publish` would put on the site (see cortex_core::publish). */
 export interface PublishEntry {
   path: string;
@@ -858,6 +879,8 @@ export const commands = {
     invoke<CsvImportReport>("import_csv", { path, collection, titleColumn, columns }),
   importMarkdown: (path: string, into: string, dryRun: boolean) =>
     invoke<MarkdownImportReport>("import_markdown", { path, into, dryRun }),
+  importNotion: (path: string, into: string, dryRun: boolean) =>
+    invoke<NotionImportReport>("import_notion", { path, into, dryRun }),
 
   listTrash: () =>
     invoke<TrashEntry[]>("list_trash"),

@@ -162,6 +162,7 @@ pub fn run() {
             commands::import::import_csv_plan,
             commands::import::import_csv,
             commands::import::import_markdown,
+            commands::import::import_notion,
             commands::trash::trash_collection,
             commands::data::ensure_row,
             theme::watch_theme_file,

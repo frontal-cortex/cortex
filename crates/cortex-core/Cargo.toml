@@ -24,6 +24,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # File traversal
 walkdir = "2"
 
+# Reading a Notion export zip (pure Rust: deflate via flate2's miniz_oxide backend)
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
 # Markdown → HTML for exports
 pulldown-cmark = "0.12"
 

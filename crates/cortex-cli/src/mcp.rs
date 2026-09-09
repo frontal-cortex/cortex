@@ -35,7 +35,8 @@ Trackers: a collection with a tracker view (habits, plants, medication) logs ite
 collection; `tracker` reads the grid with streaks and scores, `track` ticks one item for a day — the \
 way to log \"I ran today\". run_view runs any cortex-view spec (a table over a collection or CSV). \
 Importing: import_csv turns a CSV file into a collection (dry_run shows the mapping and first rows first); \
-import_markdown copies a folder of Markdown (an Obsidian vault, a Notion export) under notes/ without touching the source. \
+import_markdown copies a folder of Markdown (an Obsidian vault) under notes/ without touching the source; \
+import_notion turns a Notion export zip into pages, collections and assets in one go and writes an import report note. \
 Publishing: list_published shows which notes the user has marked public (publish: true or the `public` \
 tag); set that flag only when asked, and never build or push a site — that is the user's own act. When a change is meant for the user's review rather than applied directly, call \
 propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
@@ -269,6 +270,17 @@ pub struct ImportMarkdownArgs {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ImportNotionArgs {
+    /// Absolute path of the Notion "Markdown & CSV" export: the zip, or the folder it unpacks to
+    pub path: String,
+    /// Folder under notes/ for the pages (default "notion"); databases become collections/<name>/
+    pub into: Option<String>,
+    /// Report what would be written without writing (default false)
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SettingsArgs {
     /// Settings to change, key → value. Values are typed per key (booleans, numbers,
     /// strings; `keybindings` takes an object of id → keys, or use `keybindings.<id>`
@@ -440,6 +452,11 @@ with the match wrapped in <mark>.")]
             None => path.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| err("pass `into`: the folder has no name"))?,
         };
         json(&self.vault.import_markdown(path, &into, a.dry_run).map_err(err)?)
+    }
+
+    #[tool(description = "Import a Notion 'Markdown & CSV' export (the zip or its unpacked folder) in one go: pages become notes under notes/<into>/ with Notion's hash suffixes stripped, every database (CSV + row folder) becomes a collection with a schema inferred from the cells (select, multi_select, date, checkbox, url, number, relation by title), each page's property block becomes frontmatter, links between exported pages become [[Title]], images go to assets/, and an import report note lists what could not be mapped. Existing files are never overwritten. Use dry_run first and show the user the report.")]
+    fn import_notion(&self, Parameters(a): Parameters<ImportNotionArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.import_notion(std::path::Path::new(&a.path), a.into.as_deref().unwrap_or("notion"), a.dry_run).map_err(err)?)
     }
 
     #[tool(description = "Git state: changed files, sync counts, recent commits, pending proposals.")]

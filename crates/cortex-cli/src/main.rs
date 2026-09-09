@@ -211,7 +211,7 @@ enum Cmd {
         #[command(subcommand)]
         action: PacksCmd,
     },
-    /// Import from elsewhere: a CSV into a collection, or a folder of Markdown into notes/
+    /// Import from elsewhere: a CSV into a collection, a folder of Markdown into notes/, or a Notion export zip
     Import {
         #[command(subcommand)]
         action: ImportCmd,
@@ -238,13 +238,24 @@ enum ImportCmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// A folder of Markdown (an Obsidian vault, a Notion export) → notes/<into>/, images into assets/; the source is never modified
+    /// A folder of Markdown (an Obsidian vault) → notes/<into>/, images into assets/; the source is never modified
     Markdown {
         dir: PathBuf,
         /// Folder under notes/ to import into (default: the source folder's name)
         #[arg(long, value_name = "NAME")]
         into: Option<String>,
         /// List what would be copied and skipped; write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// A Notion "Markdown & CSV" export (the zip, or its unpacked folder) → pages under notes/<into>/, each database a collection, images in assets/, plus an import report note
+    Notion {
+        /// The export zip, or the folder it unpacks to
+        path: PathBuf,
+        /// Folder under notes/ for the pages (default: notion); collections go to collections/<name>/
+        #[arg(long, value_name = "NAME", default_value = "notion")]
+        into: String,
+        /// Report what would be written; write nothing
         #[arg(long)]
         dry_run: bool,
     },
@@ -680,6 +691,31 @@ fn import(v: &Vault, out: &Out, action: ImportCmd) -> Result<()> {
             if !r.unresolved.is_empty() {
                 println!("images not found (left as written): {}", r.unresolved.join(", "));
             }
+            if dry_run { println!("Dry run — nothing written."); }
+            Ok(())
+        }
+        ImportCmd::Notion { path, into, dry_run } => {
+            let r = v.import_notion(&path, &into, dry_run)?;
+            if out.json { return out.emit(&r); }
+            let verb = if dry_run { "would be written" } else { "written" };
+            for p in &r.notes { println!("{p}"); }
+            println!("{} page(s) {verb} → {}/", r.notes.len(), r.dest);
+            for c in &r.collections {
+                println!("collections/{}/ ({}): {} of {} row(s) {verb}{}{}", c.name, c.title, c.written.len(), c.rows,
+                    if c.index_created { ", _index.md created" } else { "" },
+                    if c.schema_added.is_empty() { String::new() } else { format!(", schema: +{}", c.schema_added.join(", +")) });
+            }
+            println!("{} image(s) → assets/", r.assets.len());
+            if !r.unmapped.is_empty() {
+                println!("could not be mapped {}:", r.unmapped.len());
+                for u in &r.unmapped { println!("  {}  — {}", u.subject, u.detail); }
+            }
+            if !r.unresolved.is_empty() {
+                println!("links left as written {}:", r.unresolved.len());
+                for u in &r.unresolved { println!("  {u}"); }
+            }
+            skipped(&r.skipped);
+            if let Some(p) = &r.report { println!("report: {p}"); }
             if dry_run { println!("Dry run — nothing written."); }
             Ok(())
         }

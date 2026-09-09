@@ -155,7 +155,7 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Notion export (zip of Markdown + CSV) | partial | M | Unzip it, then `cortex import markdown <dir>` for the pages and `cortex import csv <file> --collection <name>` per database (`import.rs`). No one-shot zip importer yet: Notion's `Name abc123.md` suffixes and page ↔ database links are not rewritten. |
+| Notion export (zip of Markdown + CSV) | done | — | `cortex import notion <zip-or-dir> [--into NAME] [--dry-run]`, MCP `import_notion`, the **Notion export** tab of **Import…** (`import/notion.rs`, pure-Rust `zip`): hashes stripped from every path, each CSV + row folder a collection with the schema inferred from the cells (select, multi-select, date, checkbox, url, number, status, relation by title), the page property block as frontmatter, intra-export links → `[[Title]]`, images → `assets/`, and a `Notion import report` note listing what could not be mapped (times and range ends dropped from dates, relations to databases outside the export, ambiguous titles, dangling links). Idempotent: a re-run writes nothing. Not carried: Notion's page icons / covers, per-block formatting that Markdown lacks, and attachments other than images (skipped and listed). |
 | CSV import into a collection | done | — | `import.rs`: `cortex import csv`, MCP `import_csv`, **Import…** in the palette. One row note per record named from the title column, types inferred (number, date, checkbox, url, select from a small vocabulary; `--map` overrides), schema written or merged, `_index.md` for a new collection, dry-run preview of the first five rows. |
 | Markdown folder / Obsidian vault | done | — | `cortex import markdown <dir> [--into NAME]`, MCP `import_markdown`, **Import…** in the palette: copies `*.md` under `notes/<name>/`, frontmatter and `[[links]]` untouched, referenced images into `assets/` with paths rewritten, dot-folders skipped and every skip reported; the source is never modified. `open_vault` still works for "use this folder as the vault". |
 | Evernote, HTML import | missing | M | |
@@ -253,7 +253,7 @@ by inferring column types (`data.rs:128`).
 
 ## Notable gaps, ranked
 
-1. **No one-shot Notion import.** CSV and Markdown folders import (§8); a Notion export still has to be unzipped and imported per database, and Evernote / HTML have no path.
+1. **Evernote / HTML have no import path.** Notion exports, CSV and Markdown folders all import (§8).
 2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
 3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
