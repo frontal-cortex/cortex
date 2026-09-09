@@ -439,7 +439,7 @@ with the match wrapped in <mark>.")]
         json(&self.vault.track(&a.collection, &a.item, a.date.as_deref(), a.done).map_err(err)?)
     }
 
-    #[tool(description = "The property schema for a collection or note type: typed properties and their options.")]
+    #[tool(description = "The property schema for a collection or note type: typed properties and their options. Types: text, number, date, date_range ({start, end} under one key), checkbox, select, multi_select, status, url, person, files (assets/ paths), relation, rollup, formula, and the git-derived created_time / created_by / edited_time / edited_by (computed on read, never written).")]
     fn get_schema(&self, Parameters(a): Parameters<SchemaArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.schema(&a.key).map_err(err)?)
     }

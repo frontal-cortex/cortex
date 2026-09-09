@@ -46,6 +46,40 @@ pub enum PropType {
     /// A read-only value computed from this row's own properties by `expr`
     /// (see `formula.rs`).
     Formula,
+    /// A start and an end date under one key: `trip: {start: 2026-09-10,
+    /// end: 2026-09-12}` — one nested mapping, so changing either end is a
+    /// one-line diff and the pair can never drift apart across two keys.
+    /// Filters compare `<`/`<=` against the end and `>`/`>=` against the
+    /// start; `==` and `within` mean "overlaps"; sorting is by start.
+    DateRange,
+    /// A list of vault-relative file paths (`assets/…`), attached by the
+    /// app's upload action or written by hand. Rendered as thumbnails/names.
+    Files,
+    /// Computed from git history (never written): when the file was first
+    /// committed, by whom, when it was last changed, and by whom. Without a
+    /// repository or a commit the file's mtime stands in and the author is
+    /// empty. The local time is formatted `YYYY-MM-DDTHH:MM`.
+    CreatedTime,
+    CreatedBy,
+    EditedTime,
+    EditedBy,
+}
+
+impl PropType {
+    /// Computed on read and never stored in a row: rollups, formulas and the
+    /// git-derived properties. (The reverse side of a relation is computed
+    /// too, but that is a `from:` on the definition, not a type.)
+    pub fn is_computed(&self) -> bool {
+        matches!(
+            self,
+            PropType::Rollup | PropType::Formula | PropType::CreatedTime | PropType::CreatedBy | PropType::EditedTime | PropType::EditedBy
+        )
+    }
+
+    /// One of the four git-derived properties.
+    pub fn is_authorship(&self) -> bool {
+        matches!(self, PropType::CreatedTime | PropType::CreatedBy | PropType::EditedTime | PropType::EditedBy)
+    }
 }
 
 /// One named choice for a select/multi-select/status property. `color` is a
@@ -625,6 +659,21 @@ mod tests {
         assert_eq!(p.ty, PropType::Status);
         assert_eq!(p.options.len(), 2);
         assert_eq!(p.options[1].color, "green");
+
+        // The newer types round-trip under their snake_case names.
+        let schema = TypeSchema { properties: vec![
+            PropertyDef { name: "trip".into(), ty: PropType::DateRange, ..Default::default() },
+            PropertyDef { name: "attachments".into(), ty: PropType::Files, ..Default::default() },
+            PropertyDef { name: "added".into(), ty: PropType::CreatedTime, ..Default::default() },
+            PropertyDef { name: "editor".into(), ty: PropType::EditedBy, ..Default::default() },
+        ] };
+        save(&root, "trips", &schema).unwrap();
+        let yaml = std::fs::read_to_string(root.join(".cortex/schemas/trips.yaml")).unwrap();
+        assert!(yaml.contains("type: date_range") && yaml.contains("type: files") && yaml.contains("type: created_time") && yaml.contains("type: edited_by"), "{yaml}");
+        let loaded = load(&root, "trips").unwrap().unwrap();
+        assert_eq!(loaded.property("added").unwrap().ty, PropType::CreatedTime);
+        assert!(PropType::EditedBy.is_computed() && PropType::EditedBy.is_authorship());
+        assert!(!PropType::DateRange.is_computed() && !PropType::Rollup.is_authorship());
 
         // Unsafe keys never touch the filesystem.
         assert!(load(&root, "../escape").unwrap().is_none());

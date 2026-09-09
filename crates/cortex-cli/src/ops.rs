@@ -4,6 +4,7 @@
 
 use cortex_core::agents::{self, AgentCli};
 use cortex_core::comments::{self, Anchor, Thread};
+use cortex_core::assets::AssetEntry;
 use cortex_core::data::{self};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
@@ -227,6 +228,12 @@ impl Vault {
     /// The tag tree with counts, nested by `/` (templates excluded).
     pub fn tags(&self) -> Vec<TagNode> {
         vault::list_tags(&self.root)
+    }
+
+    /// Every file under `assets/` with its size, MIME type and how many
+    /// notes reference it (0 = orphan); see `cortex_core::assets`.
+    pub fn assets(&self) -> Result<Vec<AssetEntry>> {
+        Ok(cortex_core::assets::list_assets(&self.root)?)
     }
 
 
