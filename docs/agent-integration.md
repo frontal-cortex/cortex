@@ -46,7 +46,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex schema [key]` | typed properties for a collection or note type |
 | `cortex schema rename <key> <old> <new>` / `cortex schema rm <key> <name>` | rename or delete a property everywhere at once: the schema, the key in every row, the collection's views, and the rollups / formulas (in any schema) that reference it. `rm` is refused while a rollup or formula still depends on the property, and says which |
 | `cortex status` | changed files, sync counts, recent commits, proposals |
-| `cortex init [DIR]` | create a new vault (bundled starter template, git initialised, docs + settings written) — works offline |
+| `cortex init [DIR] [--template SRC]` | create a new vault: the bundled starter (offline), or a template — a folder, `owner/repo` on GitHub, or a git URL — whose files are copied and history dropped; git initialised, `VAULT.md` / `AGENTS.md` written fresh, settings completed |
 | `cortex publish [--out DIR \| --gh-pages \| --github-action]` | list, build, or push the site of notes marked `publish: true`; never runs on its own (see `docs/publishing.md`) |
 | `cortex packs list [--tier t] [--installed] [--refresh]` / `show <id>` | browse template packs — bundled official ones plus any configured index (see `docs/marketplace.md`) |
 | `cortex packs install <id> [--force] [--dry-run]` / `update [<id>]` / `remove <id>` | install into `templates/`, `.cortex/schemas/`, `collections/<name>/`, recorded in `.cortex/packs.yaml`; never overwrites a file you edited unless `--force`, and never a collection row |

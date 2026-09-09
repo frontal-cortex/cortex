@@ -1,5 +1,5 @@
 ---
-title: {{date}}
+title: "{{date}}"
 type: journal
 tags: [journal]
 ---

@@ -75,11 +75,11 @@ pub fn open_vault(
     // opening for the first time — both are the user's to edit afterwards.
     let vault_doc = vault_path.join("VAULT.md");
     if !vault_doc.exists() {
-        std::fs::write(&vault_doc, cortex_core::vault::VAULT_MD)?;
+        std::fs::write(&vault_doc, cortex_core::vault::vault_md())?;
     }
     let agents_doc = vault_path.join("AGENTS.md");
     if !agents_doc.exists() {
-        std::fs::write(&agents_doc, cortex_core::vault::AGENTS_MD)?;
+        std::fs::write(&agents_doc, cortex_core::vault::agents_md())?;
     }
 
     // Spell out every setting in `.cortex/settings.yaml` (defaults for any

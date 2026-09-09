@@ -113,11 +113,16 @@ a test fails otherwise.
 **New vaults are scaffolded, not cloned**: `crates/cortex-core/vault-template/`
 is compiled into the binary (`template::FILES`) and written by
 `template::scaffold()`, so "New vault" and `cortex init` work offline and
-produce the same vault. `VAULT.md`, `AGENTS.md` and `.cortex/settings.yaml`
-are not in the template: the app writes the current versions on first open,
-so their text lives in code (`vault::VAULT_MD`, `vault::AGENTS_MD`,
-`settings::describe()`) and is versioned with it. To change the starter
-notes, edit the files under `vault-template/`.
+produce the same vault. `cortex init --template SRC` starts from a folder,
+an `owner/repo` on GitHub or a git URL instead (`template::scaffold_from`):
+the files are copied, `.git` and `.brain` are not, `{{today}}` is stamped.
+`VAULT.md`, `AGENTS.md` and `.cortex/settings.yaml` are not in the template:
+the app writes the current versions on first open, and `init` always writes
+them, so their text lives in code (`vault::vault_md()`, `vault::agents_md()`,
+whose settings section is generated from `settings::describe()`) and is
+versioned with it. To change the starter notes, edit the files under
+`vault-template/`; `frontal-cortex/vault-template` on GitHub mirrors them for
+the "Use this template" path.
 
 **Settings is a page, and the file is the truth**: `SettingsView` renders one
 row per key of `.cortex/settings.yaml` from a data table (`SECTIONS`), so

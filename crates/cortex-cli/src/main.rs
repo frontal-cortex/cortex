@@ -32,10 +32,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Create a new vault from the bundled starter template (offline) and print its path
+    /// Create a new vault and print its path — from the bundled starter (offline), or from a template
     Init {
         /// Directory to create; must be empty or absent (default: current directory)
         dir: Option<PathBuf>,
+        /// Start from a template instead of the bundled starter: a folder, `owner/repo` on GitHub
+        /// (e.g. frontal-cortex/vault-template), or any git URL. Its files are copied, its history is not.
+        #[arg(long, value_name = "SRC")]
+        template: Option<String>,
     },
     /// List notes, newest first
     Ls {
@@ -400,9 +404,9 @@ fn run() -> Result<()> {
     let out = Out { json: cli.json };
 
     // `init` is the one command that runs outside a vault: it makes one.
-    if let Cmd::Init { dir } = &cli.cmd {
+    if let Cmd::Init { dir, template } = &cli.cmd {
         let dir = dir.clone().or_else(|| cli.vault.clone()).unwrap_or_else(|| PathBuf::from("."));
-        let root = ops::init(dir)?;
+        let root = ops::init(dir, template.clone())?;
         if out.json { return out.emit(&serde_json::json!({ "path": root })); }
         println!("{}", root.display());
         return Ok(());

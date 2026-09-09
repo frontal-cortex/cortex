@@ -119,11 +119,19 @@ pub struct StatusReport {
 /// commit, plus the `VAULT.md` / `AGENTS.md` / settings the app would add on
 /// first open, so an agent can hand over a vault that is complete at once.
 /// Returns the absolute path.
-pub fn init(dir: PathBuf) -> Result<PathBuf> {
-    cortex_core::template::scaffold(&dir)?;
+pub fn init(dir: PathBuf, template: Option<String>) -> Result<PathBuf> {
+    use cortex_core::template::{self, TemplateSource};
+    let source = match template.as_deref() {
+        Some(spec) => template::parse_source(spec)?,
+        None => TemplateSource::Bundled,
+    };
+    template::scaffold_from(&source, &dir)?;
     let root = dir.canonicalize()?;
-    std::fs::write(root.join("VAULT.md"), vault::VAULT_MD)?;
-    std::fs::write(root.join("AGENTS.md"), vault::AGENTS_MD)?;
+    // The docs are the app's, versioned with it — written fresh even when the
+    // template ships copies. Settings keep whatever the template set and gain
+    // every key it did not.
+    std::fs::write(root.join("VAULT.md"), vault::vault_md())?;
+    std::fs::write(root.join("AGENTS.md"), vault::agents_md())?;
     settings::ensure_complete(&root)?;
     let repo = git::open_or_init(&root)?;
     // Best-effort: without a git identity the repo still exists and works.
