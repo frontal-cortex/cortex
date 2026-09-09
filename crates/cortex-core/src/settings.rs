@@ -157,7 +157,7 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
         ("trash_retention_days", "Days before trashed notes are pruned; 0 = never (default 30)."),
         ("auto_sync_minutes", "Minutes between automatic git syncs, plus on launch/focus; 0 = off (default 0)."),
         ("collab_url", "Yjs websocket relay for presence and co-editing, e.g. ws://host:1234; empty = off (default empty)."),
-        ("theme_file", "Palette file to follow (Omarchy colors.toml shape, `~` expands); empty = use `theme` (default empty)."),
+        ("theme_file", "Palette file to follow (Omarchy colors.toml shape, `~` expands); empty = use `theme`. A new vault starts on the desktop's palette when it publishes one (default: that file, else empty)."),
         ("accent", "Action colour: empty = the theme's accent; a palette colour name (blue green yellow orange red magenta cyan brown) or a `#hex` value (default empty)."),
         ("prose_font", "Page typeface: ysabeau | quattro | duo | recursive | alegreya | fraunces | crimson | serif | system | mono | any font-family; empty = ysabeau (default empty)."),
         ("prose_slant", "Page tilt: empty (upright) | degrees such as 4 or 8 | italic (default empty)."),
@@ -309,10 +309,24 @@ pub fn save(root: &Path, settings: &Settings) -> Result<()> {
 /// older version. A missing file gets the defaults; a parseable file missing
 /// keys is rewritten with them filled in; a malformed file is left alone
 /// (`load` tolerates it, and clobbering it would lose whatever the user meant).
+/// Where Omarchy publishes the active theme's palette, relative to `$HOME`.
+pub const OMARCHY_PALETTE: &str = ".local/state/omarchy/current/theme/colors.toml";
+
+/// The desktop's palette file as a `~`-relative path, if this machine has one
+/// the app recognises. `~` keeps the value portable when the vault is shared.
+pub fn desktop_palette_path() -> Option<String> {
+    let home = std::env::var_os("HOME")?;
+    std::path::PathBuf::from(home).join(OMARCHY_PALETTE).exists().then(|| format!("~/{OMARCHY_PALETTE}"))
+}
+
 pub fn ensure_complete(root: &Path) -> Result<Settings> {
     let path = root.join(".cortex").join("settings.yaml");
     if !path.exists() {
-        let defaults = Settings::default();
+        // First open: a vault made on a desktop that publishes its palette
+        // follows it from the start, so the app looks like the rest of the
+        // desktop without a trip to Settings. Light / Dark there clears it.
+        let mut defaults = Settings::default();
+        defaults.theme_file = desktop_palette_path().unwrap_or_default();
         save(root, &defaults)?;
         return Ok(defaults);
     }

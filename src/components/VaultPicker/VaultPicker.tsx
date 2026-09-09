@@ -339,9 +339,8 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
           </div>
         )}
         <p className={styles.hint}>
-          A new vault comes with a welcome note, example folders and two
-          templates, and is a git repository from the start. Opening any folder
-          works too.
+          A new vault opens on a short tour of the app and is a repository
+          from the start. Opening any folder of Markdown works too.
         </p>
       </div>
     </div>

@@ -24,8 +24,6 @@ use cortex_core::error::{AppError, Result};
 
 pub const CHANGED_EVENT: &str = "theme://changed";
 
-/// Where Omarchy publishes the active theme's palette.
-const OMARCHY_PALETTE: &str = ".local/state/omarchy/current/theme/colors.toml";
 
 #[derive(Default)]
 pub struct ThemeWatcher(pub Mutex<Option<RecommendedWatcher>>);
@@ -73,9 +71,7 @@ fn expand_home(path: &str) -> PathBuf {
 /// The desktop's palette file, if this machine has one we recognise.
 #[tauri::command]
 pub fn detect_desktop_theme() -> Option<String> {
-    let home = std::env::var_os("HOME")?;
-    let candidate = PathBuf::from(home).join(OMARCHY_PALETTE);
-    candidate.exists().then(|| format!("~/{OMARCHY_PALETTE}"))
+    cortex_core::settings::desktop_palette_path()
 }
 
 /// Follow `path` (empty = stop following). Returns the palette if the file is

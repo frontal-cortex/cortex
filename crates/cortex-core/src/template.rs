@@ -45,6 +45,7 @@ pub const FILES: &[(&str, &str)] = &[
 /// `{{today}}`, or with an offset, `{{today-40}}`, so the tour's rows have a
 /// believable past. Deliberately not `{{date}}`, which the note templates use
 /// and must keep verbatim (only names beginning `today` are touched).
+#[cfg(test)]
 const TODAY: &str = "{{today}}";
 
 /// Fill every `{{today…}}` in `text` relative to `base`; leave every other
