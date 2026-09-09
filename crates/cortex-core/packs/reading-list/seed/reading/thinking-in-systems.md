@@ -10,7 +10,7 @@ genre: [nonfiction, science]
 rating:
 pages: 240
 pages_read: 40
-started: "{{today}}"
+started: "{{today-6}}"
 finished:
 source: A colleague, after a conversation about feedback loops
 link:

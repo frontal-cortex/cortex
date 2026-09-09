@@ -7,8 +7,8 @@ category: work
 status: active
 standard: "Doing work I would choose again, learning one new skill a year, network warm."
 review: quarterly
-next_review: "{{today}}"
-created: "{{today}}"
+next_review: "{{today+20}}"
+created: "{{today-70}}"
 ---
 
 ## Standard
@@ -21,9 +21,9 @@ warm enough that a call is never awkward.
 ```cortex-view
 source: collections/para-projects
 type: table
-columns: [title, status, priority, deadline]
+columns: [title, status, priority, deadline, days_left]
 filter: area contains 'Career' and status != 'done' and status != 'dropped'
-sort: [deadline]
+sort: [priority desc, deadline]
 ```
 
 ## Resources
@@ -38,4 +38,5 @@ sort: [created desc]
 
 ## Reviews
 
-- {{today}} — Home office done. Nothing active here until the next quarterly review.
+- {{today-70}} — Standard written; the home office is the one project here.
+- {{today-9}} — Home office done. Nothing active until the next quarterly review.

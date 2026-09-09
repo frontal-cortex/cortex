@@ -48,14 +48,48 @@ properties:
         color: pink
   - name: rating
     type: number
+    format: stars
+    max: 5
   - name: pages
     type: number
+    format: integer
   - name: pages_read
     type: number
+    format: integer
+  - name: logged
+    type: rollup
+    from: reading-log
+    relation: book
+    function: sum
+    property: pages
+    format: integer
+  - name: progress
+    type: formula
+    expr: round(100 * max(pages_read, logged) / pages, 0)
+    format: progress
+  - name: last_read
+    type: rollup
+    from: reading-log
+    relation: book
+    function: max
+    property: date
+  - name: days_idle
+    type: formula
+    expr: days_since(last_read)
+    format: integer
   - name: started
     type: date
+    auto: status == reading
   - name: finished
     type: date
+    auto: status == finished
+  - name: read_until
+    type: formula
+    expr: coalesce(finished, today())
+  - name: days_to_finish
+    type: formula
+    expr: days_between(started, finished)
+    format: integer
   - name: source
     type: text
   - name: link

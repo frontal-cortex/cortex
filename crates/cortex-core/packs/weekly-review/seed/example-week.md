@@ -3,13 +3,14 @@ title: "Example week — delete me"
 type: note
 tags: []
 icon: ✅
-week: "{{today}}"
+week: "{{monday-1}}"
 status: reviewed
 rating: 7
 focus: "Ship the draft and stop tinkering with it."
 areas: [work, health]
 carried_over: 2
-created: "{{today}}"
+reviewed_on: "{{sunday-1}}"
+created: "{{monday-1}}"
 ---
 
 ## Plan

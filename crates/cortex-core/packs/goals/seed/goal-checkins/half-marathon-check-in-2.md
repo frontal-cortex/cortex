@@ -3,11 +3,14 @@ title: Half marathon — check-in 2
 type: note
 tags: []
 goal: ["Run a half marathon"]
-date: "{{today}}"
+date: "{{today-6}}"
 progress: 35
 confidence: high
 created: "{{today}}"
 ---
+
+Six days old, so the half marathon is not yet in Due for review; it will be
+tomorrow.
 
 ## Since last time
 

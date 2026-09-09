@@ -35,3 +35,7 @@ properties:
     collection: para-projects
   - name: url
     type: url
+  - name: age
+    type: formula
+    expr: days_since(created)
+    format: integer

@@ -5,6 +5,7 @@ tags: [meeting]
 date: "{{date}}"
 kind: team
 status: scheduled
+repeat: ""
 attendees: []
 project: ""
 summary: ""
@@ -46,7 +47,7 @@ items (`meeting` set to this meeting) so it shows below and in Open.
 source: collections/action-items
 type: table
 filter: meeting contains '{{title}}'
-columns: [title, owner, due, status]
+columns: [title, owner, due, days_left, status]
 sort: [due asc]
 ```
 

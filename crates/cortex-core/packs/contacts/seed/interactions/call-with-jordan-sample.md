@@ -2,11 +2,11 @@
 title: Call with Jordan Sample
 type: note
 tags: []
-date: "{{today}}"
+date: "{{today-20}}"
 people: [Jordan Sample]
 kind: call
 summary: "Asked about the open role on the platform team; will send a friend's CV."
-created: "{{today}}"
+created: "{{today-20}}"
 ---
 
 An example interaction from the Contacts pack. Edit or delete.

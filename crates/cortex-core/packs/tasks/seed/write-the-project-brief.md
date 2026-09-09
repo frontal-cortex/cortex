@@ -4,12 +4,12 @@ type: note
 tags: []
 status: doing
 priority: p1
-today: true
-due: "{{today}}"
+due: "{{today-1}}"
 completed:
+repeat:
 area: work
 project: Website relaunch
-created: "{{today}}"
+created: "{{today-6}}"
 ---
 
 ## Done when
@@ -25,7 +25,7 @@ people have read and agreed to.
 
 ## Notes
 
-This task is ticked `today`, so it sits in the Today view, and it has a due
-date, so it is in Upcoming as well. Its `project` matches a
-project in the Project Tracker pack; if that pack is installed, the project's
-page shows this task.
+This task was due yesterday and is not done, so it sits at the top of Today
+with `days_left: -1`. A dated task stays in Today until you finish it. Its
+`project` matches a project in the Project Tracker pack; if that pack is
+installed, the project's page shows this task and its Open view counts it.

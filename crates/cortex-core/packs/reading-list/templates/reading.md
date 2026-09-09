@@ -31,8 +31,8 @@ Who recommended it, or what question sent you to it.
 
 ## Verdict
 
-One line, and how you will use what you read. Set `rating` (1–5) and
-`finished` in the properties when you are done.
+One line, and how you will use what you read. Set `status` to `finished` —
+that stamps the `finished` date — and give it a `rating` out of 5.
 
 ## Sittings
 

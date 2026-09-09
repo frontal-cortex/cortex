@@ -1,11 +1,11 @@
 format: 1
 id: contacts
 name: "Contacts"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "People with a keep-in-touch cadence and a log of every conversation: who to reach out to, follow-ups, history."
+summary: "People with a keep-in-touch cadence and a log of every conversation: who is overdue, follow-ups, history."
 description: |
-  A personal CRM in two databases. Contacts is one row per person: how you know them, how often you mean to be in touch (monthly, quarterly, twice a year…), when you last spoke and when to reach out next, plus company, role, birthday, and a page for how you met and what to remember. Interactions is one row per conversation — date, who, what kind, one line of summary — and every person's page embeds their own history from it. The Reach out view sorts people by longest silence first, the Follow-ups calendar turns next-contact dates into a schedule, and the month chart shows whether you are actually keeping in touch.
+  A personal CRM in two databases. Contacts is one row per person: how you know them, how often you mean to be in touch (monthly, quarterly, twice a year…), plus company, role, birthday, and a page for how you met and what to remember. Interactions is one row per conversation — date, who, what kind, one line of summary — and every person's page embeds their own history from it. The person's `last_seen` is read from their newest interaction, `quiet_days` counts from it, and `due_in` measures that against the cadence, so the Reach out view is the people who are actually overdue, most overdue first, with nothing to update by hand. Follow-ups due lists the promises whose date has come, the Follow-ups calendar shows the ones ahead, and the month chart, one bar per kind, shows whether you are keeping in touch.
 tags: [people, crm, relationships, database]
 author:
   name: "Cortex team"

@@ -20,6 +20,16 @@ group: status
 filter: status != 'done' and status != 'dropped'
 ```
 
+*Due inside two weeks, or already late:*
+
+```cortex-view
+source: collections/para-projects
+type: table
+columns: [title, area, priority, deadline, days_left]
+filter: deadline <= @today+14 and status != 'done' and status != 'dropped'
+sort: [deadline]
+```
+
 ## Areas
 
 *Ongoing responsibilities with no end date, each with a standard to keep.*
@@ -27,7 +37,7 @@ filter: status != 'done' and status != 'dropped'
 ```cortex-view
 source: collections/para-areas
 type: table
-columns: [title, category, standard, review, next_review]
+columns: [title, category, standard, open_projects, next_review, review_in]
 filter: status != 'archived'
 sort: [next_review]
 ```
@@ -61,6 +71,7 @@ limit: 10
 
 ---
 
-**Weekly review:** empty the Resources inbox, move finished projects to
-`done` (set `completed`), start the next planned one, and push each area's
-`next_review` forward once you have looked at it.
+**Weekly review:** empty the Resources inbox, set finished projects to `done`
+(the `completed` date fills itself in), start the next planned one, and for
+each area whose `review_in` has reached zero, look at it and set
+`next_review` to the next date.

@@ -1,11 +1,11 @@
 format: 1
 id: para-index
 name: "PARA Index"
-version: 2.0.0
+version: 2.1.0
 kind: collection
 summary: "Projects, Areas and Resources as three linked databases; archive is a status, and an index note shows it all live."
 description: |
-  The PARA method as databases instead of folders. Areas are the ongoing responsibilities (Health, Finances, Career) with a standard to keep and a review date; Projects have an outcome, a deadline and the area they serve; Resources are the articles, books and tools you keep, tied to the area or project they are for. Nothing is ever moved to an Archive folder — a project is `done` or `dropped`, an area or resource is `archived`, and the Archive views filter on that, so relations and history survive. Each area's page lists its own active projects and resources; each project's page lists its resources and next actions. The `Second Brain` note template is the one-page index: active projects, areas, recent resources and the archive, all live.
+  The PARA method as databases instead of folders. Areas are the ongoing responsibilities (Health, Finances, Career) with a standard to keep and a review date — a Due for review list shows which have come round, and each area counts its own open projects and resources. Projects have an outcome, a deadline and the area they serve; `start` and `completed` stamp themselves when a project goes active and done, `days_left` counts down, and a Due soon list and a Timeline show where the deadlines pile up. Resources are the articles, books and tools you keep, tied to the area or project they are for, with an inbox that shows how long each has waited. Nothing is ever moved to an Archive folder — a project is `done` or `dropped`, an area or resource is `archived`, and the Archive views filter on that, so relations and history survive. The `Second Brain` note template is the one-page index: active projects, what is due, areas, recent resources and the archive, all live.
 tags: [second-brain, para, projects, areas, resources, database]
 author:
   name: "Cortex team"

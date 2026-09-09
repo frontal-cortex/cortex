@@ -4,9 +4,10 @@ type: note
 tags: [action-item]
 meeting: [Weekly team sync (example)]
 owner: ""
-due: "{{today}}"
+due: "{{today-6}}"
 status: done
-created: "{{today}}"
+completed: "{{today-6}}"
+created: "{{today-7}}"
 ---
 
 ## Context

@@ -40,9 +40,33 @@ properties:
     type: date
   - name: deadline
     type: date
+  - name: days_left
+    type: formula
+    expr: days_until(deadline)
+    format: integer
   - name: completed
     type: date
+    auto: status == done
   - name: progress
-    type: number
+    type: rollup
+    from: milestones
+    relation: project
+    function: percent
+    where: done == true
+    format: progress
+  - name: next_milestone
+    type: rollup
+    from: milestones
+    relation: project
+    function: min
+    property: due
+    where: done != true
+  - name: open_tasks
+    type: rollup
+    from: tasks
+    relation: project
+    function: count
+    where: status != 'done' and status != 'someday'
+    format: integer
   - name: next_action
     type: text

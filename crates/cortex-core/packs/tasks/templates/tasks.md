@@ -4,9 +4,9 @@ type: note
 tags: []
 status: todo
 priority: p2
-today: false
 due:
 completed:
+repeat:
 area:
 project:
 created: "{{date}}"
@@ -21,4 +21,3 @@ One line: what finished looks like.
 - [ ]
 
 ## Notes
-

@@ -1,6 +1,7 @@
 properties:
   - name: monthly_limit
     type: number
+    format: currency
   - name: bucket
     type: select
     options:
@@ -12,3 +13,29 @@ properties:
         color: blue
   - name: active
     type: checkbox
+  # Computed on read from the ledger: the rows whose `category` is this
+  # row's title. Nothing below is written to a file.
+  - name: spent
+    type: rollup
+    from: budget
+    relation: category
+    function: sum
+    property: amount
+    where: kind == 'expense' and date >= @month and date < @month+1
+    format: currency
+  - name: last_month
+    type: rollup
+    from: budget
+    relation: category
+    function: sum
+    property: amount
+    where: kind == 'expense' and date >= @month-1 and date < @month
+    format: currency
+  - name: remaining
+    type: formula
+    expr: monthly_limit - coalesce(spent, 0)
+    format: currency
+  - name: used
+    type: formula
+    expr: if(monthly_limit > 0, round(100 * coalesce(spent, 0) / monthly_limit, 0), empty)
+    format: progress

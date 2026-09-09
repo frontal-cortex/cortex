@@ -40,3 +40,19 @@ properties:
         color: purple
   - name: next_review
     type: date
+  - name: review_in
+    type: formula
+    expr: days_until(next_review)
+    format: integer
+  - name: open_projects
+    type: rollup
+    from: para-projects
+    relation: area
+    function: count
+    where: status != 'done' and status != 'dropped'
+  - name: resources
+    type: rollup
+    from: para-resources
+    relation: area
+    function: count
+    where: status != 'archived'

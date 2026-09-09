@@ -6,6 +6,7 @@ status: planned
 area: []
 priority: medium
 outcome:
+start:
 deadline:
 completed:
 created: "{{date}}"

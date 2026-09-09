@@ -9,6 +9,8 @@ pillar: [behind the scenes]
 priority: low
 due:
 publish:
+published_on:
+repeat:
 owner:
 campaign: []
 link:
@@ -31,4 +33,4 @@ created: "{{today}}"
 ## Notes
 
 An example idea: no dates yet, so it lives in the Ideas view and stays off
-the Calendar and the Queue until you commit to it.
+the Calendar, the Queue and Overdue until you commit to it.

@@ -12,6 +12,7 @@ properties:
         color: red
   - name: rating
     type: number
+    format: integer
   - name: focus
     type: text
   - name: areas
@@ -35,3 +36,31 @@ properties:
         color: gray
   - name: carried_over
     type: number
+    format: integer
+  # Stamped with the day you set status to reviewed; nothing to type.
+  - name: reviewed_on
+    type: date
+    auto: status == reviewed
+  # Computed from Daily Note's days (collections/journal) whose `week` names
+  # this row. Empty when that pack is not installed.
+  - name: days_written
+    type: rollup
+    from: journal
+    relation: week
+    function: count
+    format: integer
+  - name: energy_avg
+    type: rollup
+    from: journal
+    relation: week
+    function: avg
+    property: energy
+    format: decimal
+  - name: sleep_avg
+    type: rollup
+    from: journal
+    relation: week
+    function: avg
+    property: sleep
+    format: decimal
+    unit: "h"

@@ -12,13 +12,16 @@ phone: "+00 000 000 000"
 location: "Lisbon"
 website: https://example.com
 birthday: 1990-04-12
-last_contact: "{{today}}"
-follow_up: "{{today}}"
+last_contact:
+follow_up: "{{today-2}}"
 archived: false
-created: "{{today}}"
+created: "{{today-60}}"
 ---
 
-An example person so the Contacts views are not empty on first open. Replace
+An example person so the Contacts views are not empty on first open. Alex is
+monthly and the last logged conversation was forty days ago, so `due_in` is
+ten days negative and Alex is at the top of Reach out; the promised
+introduction is two days late, so Alex is in Follow-ups due as well. Replace
 the details with a real friend, or delete the row.
 
 ## About

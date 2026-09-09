@@ -4,9 +4,9 @@ type: note
 tags: []
 status: todo
 priority: p3
-today: false
 due:
 completed:
+repeat:
 area: health
 project:
 created: "{{today}}"
@@ -23,4 +23,5 @@ An appointment is in the calendar.
 
 ## Notes
 
-No date and no `today` tick, so this one lives in Inbox until you plan it.
+No due date, so this one lives in Inbox until you plan it. Give it a date
+and it moves to Today, This week or Upcoming by itself.

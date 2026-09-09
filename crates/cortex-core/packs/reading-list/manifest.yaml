@@ -1,11 +1,11 @@
 format: 1
 id: reading-list
 name: "Reading List"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "Books, articles and papers as rows with a note each; an optional log of sittings adds a heatmap and pages per week."
+summary: "Books, articles and papers as rows with a note each, a progress bar per book, and an optional log of sittings."
 description: |
-  One row per thing you read — book, ebook, audiobook, article or paper — with author, status, format, genre, rating, page count and progress, who recommended it and when you started and finished. The row's page is the reading note: why you picked it up, the ideas, the quotes, the verdict. A second collection, `reading-log`, holds one small row per sitting (date, book, pages); from those the Reading list draws a week grid of what you are reading, a year heatmap on each book's page and a pages-per-week chart, and the Finished view and per-month chart show how the year is going. The log is optional — the list works without it.
+  One row per thing you read — book, ebook, audiobook, article or paper — with author, status, format, genre, a star rating, page count, who recommended it and when you started and finished. `started` and `finished` stamp themselves when `status` moves; a `progress` bar is worked out from the pages you have read over the page count. The row's page is the reading note: why you picked it up, the ideas, the quotes, the verdict. A second collection, `reading-log`, holds one small row per sitting (date, book, pages); from those each book sums its `logged` pages and knows its `last_read` day, the Reading list draws a week grid of what you are reading, each book's page a year heatmap, and the log charts pages per week by book. Views: Reading now (with progress and days idle), Shelf by status, Finished (with days to finish), Per month, a Timeline of every book started and This week. The log is optional — the list works without it.
 tags: [reading, books, notes, second-brain, database]
 author:
   name: "Cortex team"
@@ -25,4 +25,9 @@ files:
   - seed/reading/thinking-in-systems.md
   - seed/reading/the-left-hand-of-darkness.md
   - seed/reading/how-to-do-great-work.md
+  - seed/reading/piranesi.md
   - seed/reading-log/first-sitting.md
+  - seed/reading-log/second-sitting.md
+  - seed/reading-log/third-sitting.md
+  - seed/reading-log/left-hand-first-half.md
+  - seed/reading-log/left-hand-finish.md

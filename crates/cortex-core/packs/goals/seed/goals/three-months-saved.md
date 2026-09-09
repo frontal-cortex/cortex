@@ -7,15 +7,15 @@ status: on_track
 area: money
 timeframe: year
 priority: medium
-start: "{{today}}"
-target: "{{today}}"
-progress: 20
+start: "{{today-90}}"
+target: "{{today+275}}"
 measure: "Savings account holds three months of average spending."
 created: "{{today}}"
 ---
 
-An example money goal. The Budget Tracker pack gives you the monthly spending
-number this is measured against.
+An example money goal with one milestone in progress and a check-in a month
+old, so it shows in Due for review. The Budget Tracker pack gives you the
+monthly spending number this is measured against.
 
 ## Why
 

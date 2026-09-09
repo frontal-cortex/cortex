@@ -1,7 +1,8 @@
 # Budget Tracker
 
 A ledger of transactions, a monthly limit per category, a calendar of bills.
-Every total is summed from the rows when you look, so there is nothing to
+Every total — this month's spend, what is left of a limit, when a bill was
+last paid — is computed from the rows when you look, so there is nothing to
 recalculate and nothing to reset at the start of a month.
 
 ## What it installs
@@ -9,19 +10,21 @@ recalculate and nothing to reset at the start of a month.
 | File | Lands at | What it is |
 |---|---|---|
 | `schemas/budget.yaml` | `.cortex/schemas/budget.yaml` | date, amount, kind, category, account, payee, `bill` — a relation to the bills |
-| `schemas/budget-limits.yaml` | `.cortex/schemas/budget-limits.yaml` | monthly_limit, bucket (need / want / saving), active |
-| `schemas/budget-bills.yaml` | `.cortex/schemas/budget-bills.yaml` | amount, cycle, next_due, category, account, active, url |
-| `index.md` | `collections/budget/_index.md` | views: Ledger, By category, Month by month, Categories over time, Calendar |
-| `index/budget-limits.md` | `collections/budget-limits/_index.md` | views: Limits, Needs, wants, savings (board) |
-| `index/budget-bills.md` | `collections/budget-bills/_index.md` | views: Upcoming, Calendar, By cycle |
+| `schemas/budget-limits.yaml` | `.cortex/schemas/budget-limits.yaml` | monthly_limit, bucket (need / want / saving), active; computed: `spent`, `last_month`, `remaining`, `used` |
+| `schemas/budget-bills.yaml` | `.cortex/schemas/budget-bills.yaml` | amount, repeat, repeat_mode, next_due, paid, category, account, active, url; computed: `last_paid`, `total_paid`, `monthly`, `due_in` |
+| `index.md` | `collections/budget/_index.md` | views: Ledger, This month, This month by category, By category, Month by month, Categories over time, Calendar |
+| `index/budget-limits.md` | `collections/budget-limits/_index.md` | views: This month (the budget check), Needs, wants, savings (board) |
+| `index/budget-bills.md` | `collections/budget-bills/_index.md` | views: Upcoming, Overdue, Per month, Calendar, By cycle |
 | `templates/budget.md` | `collections/budget/_template-budget.md` | New row's shape for a transaction |
 | `templates/budget-limits.md` | `collections/budget-limits/_template-budget-limits.md` | a limit whose page charts the spend against it |
-| `templates/budget-bills.md` | `collections/budget-bills/_template-budget-bills.md` | a bill whose page lists its payments and a cancel-or-keep checklist |
-| `seed/budget/*.md` | `collections/budget/` | three example rows: a weekly shop, a salary, a rent payment linked to its bill |
+| `templates/budget-bills.md` | `collections/budget-bills/_template-budget-bills.md` | a bill that advances when you tick `paid`, with its payment list and a cancel-or-keep checklist |
+| `seed/budget/*.md` | `collections/budget/` | seven example rows spread over the last five weeks: two weekly shops, a coffee, two salaries, two rent payments linked to their bill |
 | `seed/budget-limits/*.md` | `collections/budget-limits/` | groceries, dining, subscriptions |
-| `seed/budget-bills/*.md` | `collections/budget-bills/` | Rent, Music streaming |
+| `seed/budget-bills/*.md` | `collections/budget-bills/` | Rent (due in four weeks), Music streaming (three days overdue) |
 
-The two extra databases nest under Budget in the sidebar.
+The two extra databases nest under Budget in the sidebar. The seeds are dated
+relative to the day you install, so This month, Overdue, Month by month and
+the limits table all show something straight away.
 
 ## How to start
 
@@ -32,8 +35,15 @@ The two extra databases nest under Budget in the sidebar.
    themselves.
 3. **Set two limits and your bills.** In Budget limits, edit the three seeded
    rows or add one per category you actually overspend, with the monthly
-   number. In Bills and subscriptions, add each recurring charge with its
-   cycle and next due date. Delete the example rows when you have your own.
+   number; `spent`, `remaining` and `used` fill in from the ledger. In Bills
+   and subscriptions, add each recurring charge with its `repeat` cycle and
+   `next_due`. Delete the example rows when you have your own.
+4. **Optional: a currency sign.** Amounts use the `currency` format with no
+   sign. Add `unit: "€"` (or `$`, `£`) to `amount` in
+   `.cortex/schemas/budget.yaml`, and to `monthly_limit`, `spent`, `remaining`
+   and `last_month` in the limits schema and `amount`, `total_paid` and
+   `monthly` in the bills schema — or pick Currency in a column's menu in the
+   app and type the unit there.
 
 ## How it works
 
@@ -44,27 +54,40 @@ The two extra databases nest under Budget in the sidebar.
   by month stack income against spending, and it keeps you from typing minus
   signs on a phone. `transfer` is for money between your own accounts — it is
   excluded from the income-versus-spending chart so it does not count twice.
-- **A limit is a page.** Its title is the category name; its body embeds a bar
-  chart of that category's spend per month and the fifteen latest rows.
-  Compare the current month's bar with `monthly_limit`: that is the budget check. `bucket` groups limits into
-  needs, wants and savings if you follow the 50/30/20 split.
-- **A bill is a page too.** Set a transaction's `bill` when you log the
-  payment and it appears in the bill's Payments list, which is where you catch
-  a price rise. `next_due` is the date you move forward when you pay.
+- **This month means this month.** The ledger's This month views filter
+  `date >= @month`; a limit's `spent` is a rollup over the ledger rows whose
+  `category` equals the limit's title with `date >= @month and date <
+  @month+1`, and `last_month` is the same a month back. On the 1st they all
+  move on without you touching anything.
+- **A limit is a row and a page.** In the table, `remaining` is
+  `monthly_limit - spent` and `used` is the share as a bar, sorted worst
+  first: that is the budget check. On the page, the chart is the category's
+  history month by month. `bucket` groups limits into needs, wants and
+  savings if you follow the 50/30/20 split.
+- **A bill advances itself.** Each bill has `repeat` (weekly, monthly,
+  quarterly, yearly), `repeat_mode: advance` and a `paid` checkbox. Tick
+  `paid` in the app or over MCP and `next_due` moves forward one cycle and
+  `paid` clears, in the same row. `due_in` counts the days to it; Overdue is
+  the rows whose date passed unticked. `monthly` normalises the amount to a
+  per-month cost so a yearly insurance and a weekly gym sit in one sorted
+  list.
+- **A bill knows its payments.** Set a transaction's `bill` when you log the
+  payment: the bill's `last_paid` and `total_paid` come from those rows, and
+  its page lists them, which is where you catch a price rise.
 - **Filters are plain text.** Every view is a few lines of YAML in the
   `_index.md`; a limit's chart is `filter: category == 'groceries' and kind ==
   'expense'`. To rename a category, change it in the schema, in the rows that
-  use it, and in the matching limit's title; the views follow.
+  use it, and in the matching limit's title; the views and rollups follow.
 
 ## Ideas
 
 - Add a `merchant` view: table filtered `payee contains 'Supermarket'`.
 - Track a savings target by filing transfers into savings under
-  `category: savings` and giving it a limit — the bar becomes a goal rather
-  than a ceiling.
-- Put a `cortex-view` chart in your monthly review note:
-  `source: collections/budget`, `type: chart`, `x: category`, `y: amount`,
-  `agg: sum`, `chartType: bar`, `filter: kind == 'expense' and date >= '2026-09-01'`.
+  `category: savings` and giving it a limit — `used` becomes a goal bar
+  rather than a ceiling.
+- A "last 90 days" chart in your quarterly note: `source:
+  collections/budget`, `type: chart`, `x: category`, `y: amount`, `agg: sum`,
+  `chartType: bar`, `filter: kind == 'expense' and date >= @today-90`.
 - Pair it with the Goals pack for the money goals the limits serve, and with
   the Weekly Review template for the five-minute reconcile.
 
@@ -72,18 +95,30 @@ The two extra databases nest under Budget in the sidebar.
 
 - `cortex set collections/budget/coffee title=Coffee amount=3.2 kind=expense category=dining payee=Cafe`
   creates a row from the template with today's date and sets the rest.
-- `cortex view budget --filter "category == 'dining' and kind == 'expense'" --sort 'date desc'`
-  prints what a view shows; `--json` for a script.
+- `cortex view budget --filter "category == 'dining' and date >= @month" --sort 'date desc'`
+  prints what a view shows; `--json` for a script. The computed columns
+  (`spent`, `remaining`, `used`, `monthly`, `due_in`) are filled in by the
+  app and by MCP's `run_view`; `cortex view` prints the stored properties.
 - Over MCP, `create_note` with `dir: collections/budget` makes the row,
   `set_properties` fills in amount, kind and category, and `query_collection`
   reads the ledger back, so "I spent 12 on lunch" becomes one row without
-  opening the app.
+  opening the app. Ticking a bill's `paid` through `set_cell` advances it the
+  same way the app does; `cortex set paid=true` writes the file directly and
+  does not.
 
-## Upgrading from 1.x
+## Upgrading
 
-Version 1 was a single `budget` collection with a signed `amount` (negative
-for spending) and a free-text `account`. Version 2 keeps the same folder and
-adds `kind`, `payee` and `bill`, turns `account` into a select, and installs
-the two extra collections. Existing rows keep working, but their amounts stay
-negative until you flip them and set `kind: expense` — the charts sum what
-they find. `cortex packs update` never touches a row you wrote.
+**From 2.0.** Bills renamed `cycle` to `repeat` (same options) so the app's
+recurrence reads it, and added `repeat_mode` and `paid`. On an existing
+vault, rename `cycle:` to `repeat:` in each bill's frontmatter and add
+`repeat_mode: advance` and `paid: false`; until you do, those bills show in
+the views but do not advance. The computed properties need no migration —
+they appear as soon as the new schemas are in place.
+
+**From 1.x.** Version 1 was a single `budget` collection with a signed
+`amount` (negative for spending) and a free-text `account`. Version 2 keeps
+the same folder and adds `kind`, `payee` and `bill`, turns `account` into a
+select, and installs the two extra collections. Existing rows keep working,
+but their amounts stay negative until you flip them and set `kind: expense` —
+the charts sum what they find. `cortex packs update` never touches a row you
+wrote.

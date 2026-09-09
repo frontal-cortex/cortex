@@ -10,6 +10,11 @@ views:
   columns: [title, goal, status, due]
   filter: status != 'done'
   sort: [due]
+- name: Overdue
+  type: table
+  columns: [title, goal, status, due]
+  filter: status != 'done' and due < @today
+  sort: [due]
 - name: Board
   type: board
   group: status
@@ -23,9 +28,11 @@ belongs to. Two or three per goal is plenty: the first thing that would prove
 the goal is moving, the point of no return, and the finish. Add them from the
 goal's page — New row under Milestones links the step to that goal — or here,
 setting `goal` yourself. A milestone is done or not; the nuance goes in the
-check-ins.
+check-ins. Setting `status` to done stamps `completed` with the day, and the
+goal's `milestones_done` share moves up by itself.
 
 Next up is every open milestone in date order across all goals, which is the
-list to pull this week's tasks from. The Board is the same rows as todo,
+list to pull this week's tasks from. Overdue is the open ones whose date has
+passed — move the date or do the thing. The Board is the same rows as todo,
 doing and done, and the Calendar shows where the month gets crowded. Each
 goal's page lists only its own.

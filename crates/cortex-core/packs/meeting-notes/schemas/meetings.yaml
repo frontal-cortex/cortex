@@ -27,10 +27,21 @@ properties:
         color: gray
       - name: held
         color: blue
-      - name: followed-up
-        color: green
       - name: cancelled
         color: red
+      - name: followed-up
+        color: green
+  - name: repeat
+    type: select
+    options:
+      - name: weekly
+        color: blue
+      - name: biweekly
+        color: blue
+      - name: monthly
+        color: blue
+      - name: quarterly
+        color: blue
   - name: attendees
     type: person
   - name: project
@@ -39,3 +50,17 @@ properties:
     type: text
   - name: link
     type: url
+  - name: open_items
+    type: rollup
+    from: action-items
+    relation: meeting
+    function: count
+    where: status != 'done' and status != 'dropped'
+    format: integer
+  - name: progress
+    type: rollup
+    from: action-items
+    relation: meeting
+    function: percent
+    where: status == 'done' or status == 'dropped'
+    format: progress

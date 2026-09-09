@@ -1,17 +1,17 @@
 format: 1
 id: tasks
 name: "Tasks"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "One row per task with status, priority, due date and a Today flag; Inbox, Today, Upcoming, a board and a done chart."
+summary: "One row per task with status, priority, due and repeat; Today, This week, Upcoming, Inbox, a board and a done chart."
 description: |
-  The task list most people end up building, done once. Each task is a row with a status (todo / doing / waiting / someday / done), a priority (p1–p3), a `due` date, a `today` checkbox for the short list you actually work from, an `area` and a free-text `project`. The views are the ones to-do apps ship: Inbox for what you captured and have not planned, Today, Upcoming by due date, a board by status, and a chart of tasks finished per week. Each task's page has a "done when" line, a checklist of steps and room for notes. Name the same project in the Project Tracker pack and its page shows these tasks.
+  The task list most people end up building, done once. Each task is a row with a status (todo / doing / waiting / someday / done), a priority (p1–p3), a `due` date, an optional `repeat`, an `area` and a free-text `project`. The views are the ones to-do apps ship, and they follow the calendar by themselves: Today (due today or earlier), This week, Upcoming, Inbox for what you captured and have not dated, a board by status, and a chart of tasks finished per week. `completed` is stamped when a task is set to done; a task with `repeat: weekly` comes back with its date moved forward. Each task's page has a "done when" line, a checklist of steps and room for notes. Name the same project in the Project Tracker pack and its page shows these tasks and counts the open ones.
 tags: [productivity, tasks, database, gtd]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "Properties and views follow the task databases in Notion's gallery (Notion's Projects & Tasks, Thomas Frank's Ultimate Tasks, Easlo's Task Tracker) and the due and done dates of the Obsidian Tasks plugin."
+credits: "Properties and views follow the task databases in Notion's gallery (Notion's Projects & Tasks, Thomas Frank's Ultimate Tasks, Easlo's Task Tracker) and the due, done and recurrence fields of the Obsidian Tasks plugin."
 min_cortex: 0.1.0
 collection: tasks
 files:
@@ -20,4 +20,7 @@ files:
   - templates/tasks.md
   - seed/write-the-project-brief.md
   - seed/book-a-dentist-appointment.md
+  - seed/do-the-weekly-review.md
+  - seed/renew-the-passport.md
   - seed/set-up-this-task-list.md
+  - seed/move-old-notes-into-the-vault.md

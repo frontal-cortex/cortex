@@ -22,10 +22,10 @@ properties:
     options:
       - name: planned
         color: gray
-      - name: held
-        color: green
       - name: skipped
         color: red
+      - name: held
+        color: green
   - name: mood
     type: select
     options:
@@ -37,3 +37,19 @@ properties:
         color: red
   - name: summary
     type: text
+  - name: repeat
+    type: select
+    options:
+      - name: weekly
+        color: blue
+      - name: biweekly
+        color: blue
+      - name: monthly
+        color: blue
+  - name: open_follow_ups
+    type: rollup
+    from: follow-ups
+    relation: one_on_one
+    function: count
+    where: status == 'open'
+    format: integer

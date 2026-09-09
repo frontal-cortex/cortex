@@ -4,9 +4,12 @@ type: note
 tags: []
 goal: ["Run a half marathon"]
 status: todo
-due: "{{today}}"
+due: "{{today-2}}"
 created: "{{today}}"
 ---
+
+Two days past its date and still todo, so it shows in Overdue and is the
+half marathon's `next_milestone`. Move the date or do the thing.
 
 ## Done means
 

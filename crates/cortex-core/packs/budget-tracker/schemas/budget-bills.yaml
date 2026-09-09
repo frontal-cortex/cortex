@@ -1,7 +1,10 @@
 properties:
   - name: amount
     type: number
-  - name: cycle
+    format: currency
+  # `repeat` is the cycle the app understands: tick `paid` and `next_due`
+  # moves forward by it (`repeat_mode: advance` keeps it the same row).
+  - name: repeat
     type: select
     options:
       - name: weekly
@@ -12,8 +15,15 @@ properties:
         color: green
       - name: yearly
         color: purple
+  - name: repeat_mode
+    type: select
+    options:
+      - name: advance
+        color: gray
   - name: next_due
     type: date
+  - name: paid
+    type: checkbox
   - name: category
     type: select
     options:
@@ -46,3 +56,25 @@ properties:
     type: checkbox
   - name: url
     type: url
+  # Computed on read from the ledger rows whose `bill` points here.
+  - name: last_paid
+    type: rollup
+    from: budget
+    relation: bill
+    function: max
+    property: date
+  - name: total_paid
+    type: rollup
+    from: budget
+    relation: bill
+    function: sum
+    property: amount
+    format: currency
+  - name: monthly
+    type: formula
+    expr: round(if(repeat == 'weekly', amount * 52 / 12, if(repeat == 'monthly', amount, if(repeat == 'quarterly', amount / 3, amount / 12))), 2)
+    format: currency
+  - name: due_in
+    type: formula
+    expr: days_until(next_due)
+    format: integer

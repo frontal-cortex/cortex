@@ -3,11 +3,12 @@ title: Share the roadmap draft with Sam
 type: note
 tags: [follow-up]
 person: [Sam (example)]
-one_on_one: [Sam — onboarding sync (example)]
+one_on_one: [Sam — onboarding kickoff (example)]
 owner: me
 due: "{{today}}"
 status: open
-created: "{{today}}"
+completed: ""
+created: "{{today-12}}"
 ---
 
 ## Context

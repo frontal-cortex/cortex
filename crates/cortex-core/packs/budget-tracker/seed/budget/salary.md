@@ -2,7 +2,7 @@
 title: "Salary (example)"
 type: note
 tags: []
-date: "{{today}}"
+date: "{{today-3}}"
 amount: 3200
 kind: income
 category: income

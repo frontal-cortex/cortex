@@ -7,15 +7,16 @@ status: on_track
 area: health
 timeframe: quarter
 priority: high
-start: "{{today}}"
-target: "{{today}}"
-progress: 35
+start: "{{today-42}}"
+target: "{{today+70}}"
 measure: "Finish an official 21.1 km race, any time."
 created: "{{today}}"
 ---
 
 An example goal with three milestones and two check-ins, so the page shows
-its shape. Replace it with one of your own, or delete all three seeded goals.
+its shape: `progress` reads 35 from the newer check-in, `milestones_done` is
+one of three, and `next_milestone` is the overdue race registration. Replace
+it with one of your own, or delete all the seeded goals.
 
 ## Why
 

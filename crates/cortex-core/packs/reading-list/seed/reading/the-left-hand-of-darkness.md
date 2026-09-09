@@ -10,8 +10,8 @@ genre: [fiction]
 rating: 5
 pages: 304
 pages_read: 304
-started: "{{today}}"
-finished: "{{today}}"
+started: "{{today-20}}"
+finished: "{{today-2}}"
 source: A list of science fiction worth rereading
 link:
 cover:

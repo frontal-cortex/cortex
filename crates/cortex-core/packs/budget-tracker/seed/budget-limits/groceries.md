@@ -12,11 +12,13 @@ created: "{{today}}"
 ## What counts
 
 Supermarket, market, the corner shop. Takeaway and restaurants are `dining`.
+The two seeded weekly shops count here, so `spent` and `used` have a value
+on the day you install.
 
 ## Spent per month
 
-One bar per month. Compare the current month's bar with `monthly_limit`
-above: that is the budget check.
+One bar per month; the current month's bar is the `spent` figure in the
+table, and `monthly_limit` above is the line it should stay under.
 
 ```cortex-view
 source: collections/budget

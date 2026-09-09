@@ -45,6 +45,20 @@ properties:
     type: date
   - name: last_contact
     type: date
+  - name: last_seen
+    type: rollup
+    from: interactions
+    relation: people
+    property: date
+    function: max
+  - name: quiet_days
+    type: formula
+    expr: min(days_since(last_seen), days_since(last_contact))
+    format: integer
+  - name: due_in
+    type: formula
+    expr: if(cadence == 'monthly', 30, if(cadence == 'quarterly', 91, if(cadence == 'twice a year', 182, if(cadence == 'yearly', 365, empty)))) - quiet_days
+    format: integer
   - name: follow_up
     type: date
   - name: archived

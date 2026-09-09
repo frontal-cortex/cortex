@@ -15,11 +15,14 @@ birthday:
 last_contact:
 follow_up:
 archived: false
-created: "{{today}}"
+created: "{{today-60}}"
 ---
 
-An example mentor with no `last_contact` yet — that is why Sam sits at the
-top of the Reach out view. Edit or delete.
+An example mentor with no conversation logged and no `last_contact` typed in
+— that is why Sam is in Reach out with blank `quiet_days`: a person with a
+cadence and nothing on record stays there until you talk. Type a date in
+`last_contact` if you remember one and Sam moves to wherever it puts them.
+Edit or delete.
 
 ## About
 

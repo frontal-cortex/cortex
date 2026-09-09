@@ -2,7 +2,7 @@
 title: "Rent (example)"
 type: note
 tags: []
-date: "{{today}}"
+date: "{{today-2}}"
 amount: 1150
 kind: expense
 category: housing
@@ -13,5 +13,6 @@ created: "{{today}}"
 ---
 
 An expense linked to a bill: `bill: [Rent]` points at the Rent row in
-`budget-bills`, so opening that bill lists this payment under Payments. Delete
-it once you have logged your own rent.
+`budget-bills`, so that bill's `last_paid` is this date, its `total_paid`
+includes this amount, and opening it lists this payment under Payments.
+Delete it once you have logged your own rent.

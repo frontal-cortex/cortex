@@ -11,7 +11,7 @@ difficulty: easy
 prep_minutes: 5
 cook_minutes: 0
 servings: 1
-rating: "★★★"
+rating: 3
 status: keeper
 source:
 freezes: false

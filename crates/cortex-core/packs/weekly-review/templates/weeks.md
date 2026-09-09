@@ -1,8 +1,8 @@
 ---
-title: "Week of {{date}}"
+title: "Week of {{monday}}"
 type: note
 tags: []
-week: "{{date}}"
+week: "{{monday}}"
 status: planned
 rating:
 focus:
@@ -13,8 +13,8 @@ created: "{{date}}"
 
 ## Plan
 
-Monday. Set `focus` above — one sentence: if only one thing happens this
-week, it is this. Pick three, close the page.
+Start of the week. Set `focus` above — one sentence: if only one thing
+happens this week, it is this. Pick three, close the page.
 
 ### Top 3
 
@@ -24,7 +24,8 @@ week, it is this. Pick three, close the page.
 
 ## Review
 
-Friday or Sunday. Read last week's review first, then the week's daily notes.
+Friday or Sunday. Read last week's review first, then the week's daily notes
+(Journal → This week, if you keep one).
 
 ### Get clear
 
@@ -74,4 +75,5 @@ not the week.
 
 **One thing to stop:**
 
-Then set `rating` (1–10) and `status: reviewed` above.
+Then set `rating` (1–10) and `status: reviewed` above; `reviewed_on` stamps
+itself.
