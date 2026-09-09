@@ -44,6 +44,7 @@ the app rebuilds it by scanning the vault on next open.
 | File | Description |
 |------|-------------|
 | `index.db` | SQLite database: full-text search (FTS5), note entries, link graph |
+| `previews/<sha256>.json` | Bookmark cards: a page's title, description, favicon and image, fetched once per URL. Derived, so never in the note; delete and the cards refetch |
 | `settings.yaml` | Per-vault settings (not yet implemented) |
 
 ## `VAULT.md`
@@ -82,5 +83,7 @@ file stays legible without the app:
 | Underline | `<u>text</u>` |
 | Resized image | `<img src="assets/pic.png" alt="pic" width="480">` |
 | Database view | a `cortex-view` fenced block |
+| Bookmark card | `[Label](https://…)` alone in a paragraph — a paragraph that is exactly one web link |
+| Web embed | `<https://…>` alone in a paragraph (a CommonMark autolink; a bare URL stays text) |
 
 Text colour has no file form and is not saved.

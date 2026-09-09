@@ -3,6 +3,7 @@ import { forwardRef, useImperativeHandle, type MutableRefObject } from "react";
 import {
   useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems,
   FormattingToolbar, FormattingToolbarController, getFormattingToolbarItems, useComponentsContext,
+  LinkToolbar, LinkToolbarController, EditLinkButton, OpenLinkButton, DeleteLinkButton, type LinkToolbarProps,
 } from "@blocknote/react";
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
@@ -22,7 +23,7 @@ import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
 import { flattenTags } from "../../lib/tags";
 import { NoteHistoryModal } from "./NoteHistoryModal";
-import { PlusIcon, HistoryIcon, TrashIcon, TableIcon } from "./icons";
+import { PlusIcon, HistoryIcon, TrashIcon, TableIcon, GlobeIcon } from "./icons";
 import { cortexSchema } from "./schema";
 import { inflateViewBlocks, flattenViewBlocks, cortexSlashItems } from "./CortexViewBlock";
 import {
@@ -33,6 +34,9 @@ import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, view
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
 import { mathSlashItem, inlineMathInputRule } from "./MathBlock";
+import { bookmarkSlashItem, turnLinkInto } from "./BookmarkBlock";
+import { webEmbedSlashItem } from "./WebEmbedBlock";
+import { extractEmbedLines, inflateWebBlocks, flattenWebBlocks, isWebUrl } from "../../lib/webBlocks";
 import { extractMath, inflateMath, flattenMath, restoreMath } from "../../lib/math";
 import { inflateRichFormats, flattenRichFormats } from "./richFormats";
 import { collectAssetRefs, assetsToDisplayUrls, displayUrlsToAssets, inflateFileBlocks } from "../../lib/assets";
@@ -715,11 +719,14 @@ function NoteEditor({
             // `$…$` / `$$…$$` are lifted out before parsing so the Markdown
             // parser never sees LaTeX (see src/lib/math.ts).
             const math = extractMath(displayBody);
-            const blocks = editor.tryParseMarkdownToBlocks(math.md);
+            // An autolink alone on a line (`<https://…>`, a web embed) is
+            // handed to the parser as a link so its URL is read verbatim.
+            const blocks = editor.tryParseMarkdownToBlocks(extractEmbedLines(math.md));
             // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`,
-            // `[!callout]` blockquotes, `==highlights==`, math and
-            // `[file](assets/…)` links into live blocks on load.
-            const inflated = inflateMath(inflateRichFormats(inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(inflateFileBlocks(blocks)))))), math.spans);
+            // `[title](url)` bookmarks and `<url>` web embeds, `[!callout]`
+            // blockquotes, `==highlights==`, math and `[file](assets/…)` links
+            // into live blocks on load.
+            const inflated = inflateMath(inflateRichFormats(inflateCallouts(inflateWebBlocks(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(inflateFileBlocks(blocks))))))), math.spans);
             editor.replaceBlocks(editor.document, inflated as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
@@ -775,7 +782,7 @@ function NoteEditor({
         // richFormats runs last so toggles, underline, highlight and image
         // width reach the exporter in a form it writes verbatim; math is
         // flattened first so its nodes are plain text by then.
-        const doc = flattenRichFormats(flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenMath(editor.document)))))) as typeof editor.document;
+        const doc = flattenRichFormats(flattenCallouts(flattenWebBlocks(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenMath(editor.document))))))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
         pendingMd.current = restoreMath(displayUrlsToAssets(md, dataUriToRelPath));
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
@@ -936,7 +943,9 @@ function NoteEditor({
           </div>
 
           <div className={styles.editorWrap}>
-            <BlockNoteView editor={editor} slashMenu={false} formattingToolbar={false} theme={colorScheme}>
+            <BlockNoteView editor={editor} slashMenu={false} formattingToolbar={false} linkToolbar={false} theme={colorScheme}>
+              {/* Default link toolbar plus "Bookmark" / "Embed" for web links. */}
+              <LinkToolbarController linkToolbar={(props) => <CortexLinkToolbar {...props} editor={editor} />} />
               {/* Default formatting toolbar + our "Convert to collection" action. */}
               <FormattingToolbarController
                 formattingToolbar={() => {
@@ -956,7 +965,7 @@ function NoteEditor({
                 triggerCharacter="/"
                 getItems={async (query) =>
                   filterSuggestionItems(
-                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor), mathSlashItem(editor)],
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor), mathSlashItem(editor), bookmarkSlashItem(editor), webEmbedSlashItem(editor)],
                     query,
                   )
                 }
@@ -1056,6 +1065,41 @@ function ConvertToDatabaseButton({ editor, baseName }: { editor: any; baseName: 
       icon={<TableIcon size={17} />}
       onClick={() => convertSelectionToDatabase(editor, baseName)}
     />
+  );
+}
+
+// ── Link toolbar: the defaults plus "Bookmark" / "Embed" ─────────────────────
+
+/** Hovering a link shows BlockNote's edit / open / delete buttons; a web
+ *  link also offers to become a bookmark card or a web embed block. */
+function CortexLinkToolbar({ editor, ...props }: LinkToolbarProps & { editor: any }) {
+  const Components = useComponentsContext()!;
+  const web = isWebUrl(props.url);
+  const turn = (kind: "bookmark" | "webEmbed") => {
+    props.setToolbarOpen?.(false);
+    turnLinkInto(editor, kind, props.url, props.text, props.range);
+  };
+  return (
+    <LinkToolbar {...props}>
+      <EditLinkButton {...props} />
+      <OpenLinkButton url={props.url} />
+      {web && (
+        <Components.LinkToolbar.Button
+          mainTooltip="Turn into a bookmark card"
+          label="Bookmark"
+          icon={<GlobeIcon size={14} />}
+          onClick={() => turn("bookmark")}
+        />
+      )}
+      {web && props.url.startsWith("https://") && (
+        <Components.LinkToolbar.Button
+          mainTooltip="Embed the page in a frame"
+          label="Embed"
+          onClick={() => turn("webEmbed")}
+        />
+      )}
+      <DeleteLinkButton range={props.range} setToolbarOpen={props.setToolbarOpen} />
+    </LinkToolbar>
   );
 }
 

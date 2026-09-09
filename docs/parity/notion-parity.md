@@ -27,8 +27,8 @@ screen but the Markdown save path throws it away.
 | Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
 | File attachment | done | — | Uploads to `assets/`, saved as `[name](assets/x.pdf)`; that link is inflated back into a file block on load (`src/lib/assets.ts`), and `read_asset` serves every asset with the MIME type its extension implies (`cortex_core::assets::mime_for_path`). `cortex assets --unused` lists orphaned files (never deletes). No inline PDF preview. |
 | Video / audio | partial | S | Local files in `assets/` render and round-trip: `![name](assets/clip.mp4)`, `<audio src="assets/x.mp3" controls>`, and the captioned `<figure>` forms are all rehydrated on load. No YouTube/Vimeo player or oEmbed. |
-| Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
-| Web embed (iframe) | missing | M | |
+| Bookmark / link preview | done | — | A paragraph that is exactly one web link, `[Label](https://…)`, is a card on load (`BookmarkBlock.tsx`, `lib/webBlocks.ts`); `/bookmark`, and **Bookmark** on the link toolbar. Title, description, favicon and image come from `fetch_link_preview` (`preview.rs`: `<title>`, Open Graph, Twitter, `<link rel=icon>`; 8 s timeout, 512 KiB cap, no JS) cached in `.brain/previews/<sha256>.json` — never written to the note. Offline or on failure the card is the bare link. |
+| Web embed (iframe) | done | — | An autolink alone in a paragraph, `<https://…>`, is a frame (`WebEmbedBlock.tsx`); `/embed`, and **Embed** on the link toolbar. YouTube, Vimeo, CodePen, Figma and Google Maps load at once via the player URLs `embed.rs` derives; any other https page sits behind a click-to-load shield. Chosen over `<iframe>` because GitHub strips iframes to nothing while an autolink stays a link. CSP `frame-src https:`; the webview's navigation guard admits only those player URLs and shield-loaded hosts. |
 | Math / equation (inline and block) | done | — | `$…$` and `$$…$$` on disk (GitHub/Obsidian syntax), KaTeX bundled locally (`MathBlock.tsx`, `src/lib/math.ts`). `/math` and `$$` on an empty line open a block; typing `$…$` makes an inline equation. The static site shows the LaTeX source in a `.math` span (no KaTeX shipped there). |
 | Columns | missing | L | Needs `@blocknote/xl-multi-column`; the roadmap rates it the weakest Markdown fit. |
 | Synced blocks | missing | L | Closest is the read-only `![[note]]` embed. |
@@ -239,11 +239,7 @@ by inferring column types (`data.rs:128`).
 | Desktop builds | partial | S | The release matrix bundles Linux (deb / rpm / AppImage), macOS (aarch64 + x86_64) and Windows (msi / nsis) on every `v*` tag. No Apple notarization or Windows code-signing certificate yet. Tiling-WM decorations handled. |
 | CI / release workflow | done | — | `.github/workflows/ci.yml` (tests, tsc, vite build, clippy on every PR / push to main) and `release.yml` (tauri-action matrix → draft GitHub release with signed bundles + `latest.json`). |
 | Auto-update | done | — | `tauri-plugin-updater` wired (desktop only); Check for updates in the palette and Settings → Updates, install on confirm then relaunch. The committed `pubkey` is a placeholder: the app says "no update channel" until a maintainer generates the keypair per `docs/development.md`. |
-<<<<<<< HEAD
-| Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`. The git transport is ready (`remote::Git2Remote`, selected on iOS/Android). See `obsidian-parity.md` §14 and the mobile backlog rows. |
-=======
-| Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, git shells out. The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
->>>>>>> origin/main
+| Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, the git transport is ready (`remote::Git2Remote`, selected on iOS/Android). The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
 | Responsive layout | missing | M | Three `@media` rules, all in overlays; sidebar fixed at 260px; window `minWidth: 800`. |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 
@@ -259,7 +255,7 @@ by inferring column types (`data.rs:128`).
 
 1. **Evernote / HTML have no import path.** Notion exports, CSV and Markdown folders all import (§8).
 2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
-3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
+3. **No columns, TOC, synced blocks, buttons.** (Math, bookmark cards and web embeds landed.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation, a date picker and duplicate row landed.)
 6. **No sub-groups in the table view.** (Filter grammar precedence and operators, table group-by, the summary row and the in-database search box have landed.)

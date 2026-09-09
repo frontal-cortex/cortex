@@ -194,6 +194,7 @@ follows every change you make on disk.
   Rename or move with `cortex mv` (or `set title=`), never by hand: every inbound link is rewritten to follow.
 - Never write derived data (rollups, counts, created/edited time and by) into notes; the app computes it.
 - A `date_range` property is one nested mapping, `trip: {start: YYYY-MM-DD, end: YYYY-MM-DD}`; a `files` property is a list of `assets/…` paths.
+- A paragraph that is only `[Label](https://…)` shows as a bookmark card; one that is only `<https://…>` embeds the page. A bare URL stays text.
 
 ## Tools
 

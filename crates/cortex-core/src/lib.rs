@@ -6,6 +6,7 @@
 //! operators (`search`), collections and
 //! views over frontmatter (`data`, `schema`), the team roster (`members`),
 //! settings (`settings`), tags (`tags`), git operations (`git`) and their remote/merge backends (`remote`), importers (`import`), vault discovery (`vault`),
+//! link previews and web embeds for the editor's bookmark and embed blocks (`preview`, `embed`),
 //! and which agent CLIs are installed (`agents`). The Tauri app and the `cortex` CLI are both thin layers over it,
 //! so an agent driving the CLI sees exactly the semantics the user sees.
 
@@ -13,6 +14,7 @@ pub mod agents;
 pub mod assets;
 pub mod data;
 pub mod db;
+pub mod embed;
 pub mod error;
 pub mod formula;
 pub mod git;
@@ -22,6 +24,7 @@ pub mod marketplace;
 pub mod members;
 pub mod note;
 pub mod placeholders;
+pub mod preview;
 pub mod publish;
 pub mod recurrence;
 pub mod remote;

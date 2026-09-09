@@ -9,6 +9,8 @@ import { calloutSpec } from "./CalloutBlock";
 import { collectionViewsSpec } from "./CollectionViewsBlock";
 import { codeBlockSpec } from "./codeBlock";
 import { mathBlockSpec, inlineMathSpec } from "./MathBlock";
+import { bookmarkSpec } from "./BookmarkBlock";
+import { webEmbedSpec } from "./WebEmbedBlock";
 
 export const cortexSchema = BlockNoteSchema.create({
   blockSpecs: {
@@ -19,6 +21,8 @@ export const cortexSchema = BlockNoteSchema.create({
     callout: calloutSpec,
     collectionViews: collectionViewsSpec,
     mathBlock: mathBlockSpec,
+    bookmark: bookmarkSpec,
+    webEmbed: webEmbedSpec,
   },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,

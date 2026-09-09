@@ -678,6 +678,29 @@ function touched<T>(p: Promise<T>): Promise<T> {
   });
 }
 
+/** What a bookmark card shows (`cortex_core::preview::LinkPreview`). */
+export interface LinkPreview {
+  url: string;
+  domain: string;
+  title?: string;
+  description?: string;
+  image?: string;
+  favicon?: string;
+  site_name?: string;
+  fetched_at: number;
+  /** Why the fetch failed; the card then shows the bare link. */
+  error?: string;
+}
+
+/** What a web-embed block loads (`cortex_core::embed::Embed`). */
+export interface Embed {
+  provider: "youtube" | "vimeo" | "codepen" | "figma" | "maps" | "web";
+  src: string;
+  aspect: "video" | "page";
+  /** Load only after a click (generic pages). */
+  shield: boolean;
+}
+
 export const commands = {
   runView: (spec: string) =>
     invoke<ViewTable>("run_view", { spec }),
@@ -863,6 +886,20 @@ export const commands = {
 
   readAsset: (relPath: string) =>
     invoke<string>("read_asset", { relPath }),
+
+  /** A bookmark card's data, from `.brain/previews/` or fetched once. A
+   *  fetch that failed comes back with `error` set, never as a rejection. */
+  fetchLinkPreview: (url: string, refresh = false) =>
+    invoke<LinkPreview>("fetch_link_preview", { url, refresh }),
+
+  /** What a web-embed block renders for a URL; null keeps it a link. */
+  resolveEmbed: (url: string) =>
+    invoke<Embed | null>("resolve_embed", { url }),
+
+  /** The user clicked through a generic embed's shield: its host may load
+   *  in a frame for the rest of the session. */
+  allowEmbedFrame: (url: string) =>
+    invoke<void>("allow_embed_frame", { url }),
 
   /** The system clipboard as the Rust side sees it (wl-paste / xclip): an image
    *  if there is one, else text. The editor asks when Ctrl+V produced no paste

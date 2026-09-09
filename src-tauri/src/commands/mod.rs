@@ -11,5 +11,6 @@ pub mod vault;
 pub mod publish;
 pub mod packs;
 pub mod tracker;
+pub mod preview;
 pub mod clipboard;
 pub mod updates;
