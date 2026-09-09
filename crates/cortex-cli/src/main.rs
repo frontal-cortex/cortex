@@ -11,7 +11,6 @@ mod mcp;
 mod ops;
 
 use clap::{Parser, Subcommand};
-use cortex_core::data::CellValue;
 use cortex_core::note::NoteEntry;
 use ops::{NewNote, Vault};
 use std::io::Read;
@@ -358,7 +357,7 @@ fn run() -> Result<()> {
             let headers: Vec<&str> = std::iter::once("ID").chain(t.columns.iter().map(|c| c.key.as_str())).collect();
             let rows = t.rows.iter().map(|r| {
                 std::iter::once(r.id.clone())
-                    .chain(t.columns.iter().map(|c| r.cells.get(&c.key).map(cell_text).unwrap_or_default()))
+                    .chain(t.columns.iter().map(|c| r.cells.get(&c.key).map(json_text).unwrap_or_default()))
                     .collect()
             }).collect();
             table(&headers, rows);
@@ -759,13 +758,14 @@ fn read_stdin() -> Result<String> {
     Ok(s)
 }
 
-fn cell_text(v: &CellValue) -> String {
+fn json_text(v: &serde_json::Value) -> String {
     match v {
-        CellValue::Null => String::new(),
-        CellValue::Text(t) | CellValue::Date(t) => t.clone(),
-        CellValue::Num(n) => if n.fract() == 0.0 { format!("{}", *n as i64) } else { n.to_string() },
-        CellValue::Bool(b) => b.to_string(),
-        CellValue::List(items) => items.join(", "),
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(t) => t.clone(),
+        serde_json::Value::Number(n) => match n.as_f64() { Some(f) if f.fract() == 0.0 => format!("{}", f as i64), Some(f) => f.to_string(), None => n.to_string() },
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Array(items) => items.iter().map(json_text).collect::<Vec<_>>().join(", "),
+        other => other.to_string(),
     }
 }
 

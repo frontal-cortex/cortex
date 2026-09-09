@@ -1043,7 +1043,7 @@ pub fn set_cell_effects(root: &Path, source: &str, row_id: &str, field: &str, va
         stamp_auto_dates(&mut note, schema.as_ref());
         let finished = is_finishing_edit(&note, field, schema.as_ref());
         if finished {
-            if let Some(extra) = recur(&dir, row_id, &mut note, schema.as_ref())? { written.push(extra); }
+            if let Some(extra) = recur(&dir, row_id, &mut note, schema.as_ref(), field)? { written.push(extra); }
         }
         std::fs::write(&path, crate::note::serialize_note(&note)?)?;
         Ok(written)
@@ -1091,8 +1091,8 @@ pub fn apply_row_effects(root: &Path, rel_path: &str, changed: &[String]) -> Res
     let before = note.frontmatter.clone();
     stamp_auto_dates(&mut note, schema.as_ref());
     let mut written = Vec::new();
-    if changed.iter().any(|f| is_finishing_edit(&note, f, schema.as_ref())) {
-        if let Some(extra) = recur(&dir, row_id, &mut note, schema.as_ref())? { written.push(extra); }
+    if let Some(trigger) = changed.iter().find(|f| is_finishing_edit(&note, f, schema.as_ref())) {
+        if let Some(extra) = recur(&dir, row_id, &mut note, schema.as_ref(), trigger)? { written.push(extra); }
     }
     if note.frontmatter != before {
         std::fs::write(&path, crate::note::serialize_note(&note)?)?;
@@ -1141,7 +1141,7 @@ fn is_finishing_edit(note: &crate::note::Note, field: &str, schema: Option<&crat
 /// either write the next occurrence as a new row (default) or move this row
 /// forward (`repeat_mode: advance`). The trigger and auto-stamped dates are
 /// reset on the occurrence that continues. Returns the new row's path.
-fn recur(dir: &Path, row_id: &str, note: &mut crate::note::Note, schema: Option<&crate::schema::TypeSchema>) -> Result<Option<std::path::PathBuf>> {
+fn recur(dir: &Path, row_id: &str, note: &mut crate::note::Note, schema: Option<&crate::schema::TypeSchema>, trigger: &str) -> Result<Option<std::path::PathBuf>> {
     let Some(rule) = note.frontmatter.get("repeat").and_then(|v| v.as_str()) else { return Ok(None) };
     let Some(interval) = crate::recurrence::parse(rule) else { return Ok(None) };
     let advance_in_place = note.frontmatter.get("repeat_mode").and_then(|v| v.as_str()) == Some("advance");
@@ -1161,17 +1161,17 @@ fn recur(dir: &Path, row_id: &str, note: &mut crate::note::Note, schema: Option<
             }
         }
     }
-    // Reset the trigger: checkboxes that mean done → false; a status → its first option.
-    for (k, v) in note.frontmatter.iter() {
-        match v {
-            serde_json::Value::Bool(true) if crate::recurrence::is_done_word(k) || k == "done" => { next.insert(k.clone(), serde_json::Value::Bool(false)); }
-            serde_json::Value::String(s) => {
-                let first = schema.and_then(|sc| sc.property(k)).filter(|p| matches!(p.ty, crate::schema::PropType::Status | crate::schema::PropType::Select) && !p.options.is_empty())
-                    .and_then(|p| if p.options.last().map(|o| &o.name) == Some(s) || crate::recurrence::is_done_word(s) { p.options.first().map(|o| o.name.clone()) } else { None });
-                if let Some(f) = first { next.insert(k.clone(), serde_json::Value::String(f)); }
-            }
-            _ => {}
+    // Reset the trigger only — the field whose edit finished the row: a
+    // checkbox → false, a status → its first option (or `todo`). Every other
+    // select keeps its value; an `area: admin` must not become `area: work`
+    // because admin happens to be last in its list.
+    match note.frontmatter.get(trigger) {
+        Some(serde_json::Value::Bool(true)) => { next.insert(trigger.to_string(), serde_json::Value::Bool(false)); }
+        Some(serde_json::Value::String(_)) => {
+            let first = schema.and_then(|sc| sc.property(trigger)).and_then(|p| p.options.first().map(|o| o.name.clone())).unwrap_or_else(|| "todo".into());
+            next.insert(trigger.to_string(), serde_json::Value::String(first));
         }
+        _ => {}
     }
     for k in &auto_dates { next.remove(k); }
 
@@ -1912,9 +1912,9 @@ mod tests {
     #[test]
     fn auto_stamped_dates_and_recurrence() {
         let root = gap_root("recur");
-        put(&root, ".cortex/schemas/tasks.yaml", "properties:\n  - name: status\n    type: status\n    options:\n      - name: todo\n      - name: doing\n      - name: done\n  - name: due\n    type: date\n  - name: completed\n    type: date\n    auto: status == done\n");
+        put(&root, ".cortex/schemas/tasks.yaml", "properties:\n  - name: status\n    type: status\n    options:\n      - name: todo\n      - name: doing\n      - name: done\n  - name: area\n    type: select\n    options:\n      - name: work\n      - name: admin\n  - name: due\n    type: date\n  - name: completed\n    type: date\n    auto: status == done\n");
         // A weekly task: finishing it stamps `completed` and creates next week's row.
-        put(&root, "collections/tasks/water-plants-2026-09-07.md", "---\ntitle: Water plants\nstatus: todo\ndue: 2026-09-07\nrepeat: weekly\ncreated: 2026-09-01\n---\nRemember the balcony.\n");
+        put(&root, "collections/tasks/water-plants-2026-09-07.md", "---\ntitle: Water plants\nstatus: todo\narea: admin\ndue: 2026-09-07\nrepeat: weekly\ncreated: 2026-09-01\n---\nRemember the balcony.\n");
         let written = set_cell_effects(&root, "collections/tasks", "water-plants-2026-09-07", "status", "done", "text").unwrap();
         assert_eq!(written.len(), 2, "{written:?}");
         let done = std::fs::read_to_string(root.join("collections/tasks/water-plants-2026-09-07.md")).unwrap();
@@ -1922,6 +1922,7 @@ mod tests {
         assert!(done.contains(&format!("completed: {}", iso(crate::placeholders::today()))) || done.contains(&format!("completed: '{}'", iso(crate::placeholders::today()))), "{done}");
         let next = std::fs::read_to_string(root.join("collections/tasks/water-plants-2026-09-14.md")).unwrap();
         assert!(next.contains("due: 2026-09-14") && next.contains("status: todo") && !next.contains("completed") && next.contains("balcony"), "{next}");
+        assert!(next.contains("area: admin"), "only the trigger is reset, other selects keep their value: {next}");
         // A bill that advances in place: paid → unpaid, next_due one month on, same file.
         put(&root, ".cortex/schemas/bills.yaml", "properties:\n  - name: paid\n    type: checkbox\n  - name: next_due\n    type: date\n");
         put(&root, "collections/bills/rent.md", "---\ntitle: Rent\npaid: false\nnext_due: 2026-09-30\nrepeat: monthly\nrepeat_mode: advance\n---\n");

@@ -3,7 +3,7 @@
 //! and goes through cortex-core, so the semantics are the app's own.
 
 use cortex_core::agents::{self, AgentCli};
-use cortex_core::data::{self, Table};
+use cortex_core::data::{self};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
@@ -498,7 +498,7 @@ impl Vault {
         sort: &[String],
         columns: Option<&[String]>,
         limit: Option<usize>,
-    ) -> Result<Table> {
+    ) -> Result<data::ResolvedTable> {
         let mut spec = serde_json::Map::new();
         spec.insert("source".into(), format!("collections/{}", collection.trim_end_matches('/')).into());
         if let Some(f) = filter { spec.insert("filter".into(), f.into()); }
@@ -506,7 +506,8 @@ impl Vault {
         if let Some(c) = columns { spec.insert("columns".into(), c.into()); }
         if let Some(l) = limit { spec.insert("limit".into(), l.into()); }
         let yaml = serde_yaml::to_string(&serde_json::Value::Object(spec))?;
-        Ok(data::run_view(&self.root, &yaml)?)
+        // The same table the app shows: schema attached, rollups and formulas computed.
+        Ok(data::resolve_view(&self.root, &yaml)?)
     }
 
     pub fn schema(&self, key: &str) -> Result<TypeSchema> {
