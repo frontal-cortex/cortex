@@ -35,6 +35,7 @@ import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlo
 import { mathSlashItem, inlineMathInputRule } from "./MathBlock";
 import { extractMath, inflateMath, flattenMath, restoreMath } from "../../lib/math";
 import { inflateRichFormats, flattenRichFormats } from "./richFormats";
+import { collectAssetRefs, assetsToDisplayUrls, displayUrlsToAssets, inflateFileBlocks } from "../../lib/assets";
 import { shortcutFor } from "../../lib/keymap";
 import { findInNoteExtension, setFindQuery, stepFind, clearFind, FindState } from "../../lib/findInNote";
 import { textStats, formatStats, outlineOf, blockOrder, activeHeading, OutlineEntry, TextStats } from "../../lib/textStats";
@@ -72,38 +73,19 @@ async function displayUrlFor(relPath: string): Promise<string> {
   return dataUri;
 }
 
-/** Replace `assets/X` paths with data URIs so BlockNote can display them —
- *  both `![alt](assets/X)` and the `<img src="assets/X">` a sized or
- *  captioned image is saved as. */
-async function assetsToDisplayUrls(body: string): Promise<string> {
-  let result = body;
-  for (const [full, alt, filename] of [...body.matchAll(/!\[([^\]]*)\]\(assets\/([^)\s]+)\)/g)]) {
+/** Read every displayed asset (image, video, audio — the forms are listed
+ *  in src/lib/assets.ts) as a data URI and swap it into the body so
+ *  BlockNote can render it. A file missing on disk keeps its reference. */
+async function loadAssetsForDisplay(body: string): Promise<string> {
+  const urls = new Map<string, string>();
+  for (const rel of collectAssetRefs(body)) {
     try {
-      result = result.replace(full, `![${alt}](${await displayUrlFor(`assets/${filename}`)})`);
+      urls.set(rel, await displayUrlFor(rel));
     } catch {
       // Asset missing on disk — leave reference as-is
     }
   }
-  for (const [full, before, filename] of [...body.matchAll(/(<img\b[^>]*\bsrc=")assets\/([^"]+)"/g)]) {
-    try {
-      result = result.replace(full, `${before}${await displayUrlFor(`assets/${filename}`)}"`);
-    } catch {
-      // Asset missing on disk — leave reference as-is
-    }
-  }
-  return result;
-}
-
-/** Replace data URI display URLs back to vault-relative `assets/X` paths for storage. */
-function displayUrlsToAssets(body: string): string {
-  // data URIs are very long — replace each known mapping
-  let result = body;
-  for (const [dataUri, relPath] of dataUriToRelPath.entries()) {
-    // Escape for regex
-    const escaped = dataUri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    result = result.replace(new RegExp(escaped, "g"), relPath);
-  }
-  return result;
+  return assetsToDisplayUrls(body, urls);
 }
 
 interface Props {
@@ -668,7 +650,7 @@ function NoteEditor({
     };
     const seedFromMarkdown = () => {
       if (!note.body.trim()) { finish(); return; }
-      assetsToDisplayUrls(note.body)
+      loadAssetsForDisplay(note.body)
         .then((displayBody) => {
           try {
             // `$…$` / `$$…$$` are lifted out before parsing so the Markdown
@@ -676,8 +658,9 @@ function NoteEditor({
             const math = extractMath(displayBody);
             const blocks = editor.tryParseMarkdownToBlocks(math.md);
             // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`,
-            // `[!callout]` blockquotes, `==highlights==` and math into live blocks on load.
-            const inflated = inflateMath(inflateRichFormats(inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks))))), math.spans);
+            // `[!callout]` blockquotes, `==highlights==`, math and
+            // `[file](assets/…)` links into live blocks on load.
+            const inflated = inflateMath(inflateRichFormats(inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(inflateFileBlocks(blocks)))))), math.spans);
             editor.replaceBlocks(editor.document, inflated as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
@@ -735,7 +718,7 @@ function NoteEditor({
         // flattened first so its nodes are plain text by then.
         const doc = flattenRichFormats(flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenMath(editor.document)))))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
-        pendingMd.current = restoreMath(displayUrlsToAssets(md));
+        pendingMd.current = restoreMath(displayUrlsToAssets(md, dataUriToRelPath));
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
         bodyTimer.current = setTimeout(flush, 400);
       })();

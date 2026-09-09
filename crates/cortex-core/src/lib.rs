@@ -10,6 +10,7 @@
 //! so an agent driving the CLI sees exactly the semantics the user sees.
 
 pub mod agents;
+pub mod assets;
 pub mod data;
 pub mod db;
 pub mod error;
