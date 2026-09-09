@@ -187,8 +187,43 @@ enum Cmd {
         #[command(subcommand)]
         action: PacksCmd,
     },
+    /// Import from elsewhere: a CSV into a collection, or a folder of Markdown into notes/
+    Import {
+        #[command(subcommand)]
+        action: ImportCmd,
+    },
     /// Serve the vault to an agent over MCP (stdio)
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum ImportCmd {
+    /// A CSV file → collections/<name>/: one row note per record, typed frontmatter, schema written or merged
+    Csv {
+        file: PathBuf,
+        /// Target collection (new or existing)
+        #[arg(long, value_name = "NAME")]
+        collection: String,
+        /// Column that names each row (default: title / name, else the first column)
+        #[arg(long, value_name = "COLUMN")]
+        title: Option<String>,
+        /// Override a column: 'Header=property', 'Header=property:type' (text number date checkbox select multi_select url), or 'Header=' to skip it
+        #[arg(long = "map", value_name = "HEADER=PROP[:TYPE]")]
+        maps: Vec<String>,
+        /// Show the mapping and the first five rows; write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// A folder of Markdown (an Obsidian vault, a Notion export) → notes/<into>/, images into assets/; the source is never modified
+    Markdown {
+        dir: PathBuf,
+        /// Folder under notes/ to import into (default: the source folder's name)
+        #[arg(long, value_name = "NAME")]
+        into: Option<String>,
+        /// List what would be copied and skipped; write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -514,7 +549,70 @@ fn run() -> Result<()> {
             }
         }
         Cmd::Packs { action } => packs(&v, &out, action),
+        Cmd::Import { action } => import(&v, &out, action),
         Cmd::Mcp => tokio::runtime::Runtime::new()?.block_on(mcp::serve(v)),
+    }
+}
+
+fn import(v: &Vault, out: &Out, action: ImportCmd) -> Result<()> {
+    use cortex_core::import as im;
+    let skipped = |list: &[im::Skipped]| {
+        if !list.is_empty() {
+            println!("skipped {}:", list.len());
+            for s in list { println!("  {}  ({})", s.path, s.reason); }
+        }
+    };
+    match action {
+        ImportCmd::Csv { file, collection, title, maps, dry_run } => {
+            let opts = Vault::csv_options(&collection, title.as_deref(), &maps)?;
+            if dry_run {
+                let plan = v.import_csv_plan(&file, &opts)?;
+                if out.json { return out.emit(&plan); }
+                println!("{} row(s) → collections/{}/ ({}); title from '{}'", plan.rows, plan.collection,
+                    if plan.exists { "existing" } else { "new" }, plan.title_column);
+                table(&["COLUMN", "PROPERTY", "TYPE", "OPTIONS"], plan.columns.iter().map(|c| vec![
+                    c.header.clone(), if c.property.is_empty() { "(skipped)".into() } else { c.property.clone() },
+                    if c.property.is_empty() { String::new() } else { c.ty.clone() }, c.options.join(", "),
+                ]).collect());
+                if !plan.schema_added.is_empty() {
+                    println!("\nschema {}: {}", if plan.schema_exists { "gains" } else { "created with" }, plan.schema_added.join(", "));
+                }
+                let keys: Vec<String> = plan.preview.iter().flat_map(|r| r.frontmatter.keys().cloned()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+                let headers: Vec<&str> = std::iter::once("PATH").chain(keys.iter().map(String::as_str)).collect();
+                println!("\nfirst {} of {} row(s):", plan.preview.len(), plan.rows);
+                table(&headers, plan.preview.iter().map(|r| {
+                    std::iter::once(r.path.clone()).chain(keys.iter().map(|k| r.frontmatter.get(k).map(json_text).unwrap_or_default())).collect()
+                }).collect());
+                skipped(&plan.skipped);
+                println!("\nDry run — nothing written. Run again without --dry-run to import.");
+                return Ok(());
+            }
+            let r = v.import_csv(&file, &opts)?;
+            if out.json { return out.emit(&r); }
+            for p in &r.written { println!("{p}"); }
+            println!("{} row(s) written to collections/{}/{}{}", r.written.len(), r.collection,
+                if r.index_created { ", _index.md created" } else { "" },
+                if r.schema_added.is_empty() { String::new() } else { format!(", schema: +{}", r.schema_added.join(", +")) });
+            skipped(&r.skipped);
+            Ok(())
+        }
+        ImportCmd::Markdown { dir, into, dry_run } => {
+            let into = match into {
+                Some(i) => i,
+                None => dir.canonicalize().ok().and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()))
+                    .ok_or("cannot name the destination from the folder; pass --into NAME")?,
+            };
+            let r = v.import_markdown(&dir, &into, dry_run)?;
+            if out.json { return out.emit(&r); }
+            for p in &r.notes { println!("{p}"); }
+            println!("{} note(s){} → {}/, {} image(s) → assets/", r.notes.len(), if dry_run { " would be copied" } else { " copied" }, r.dest, r.assets.len());
+            skipped(&r.skipped);
+            if !r.unresolved.is_empty() {
+                println!("images not found (left as written): {}", r.unresolved.join(", "));
+            }
+            if dry_run { println!("Dry run — nothing written."); }
+            Ok(())
+        }
     }
 }
 

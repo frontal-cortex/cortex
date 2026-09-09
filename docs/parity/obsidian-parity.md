@@ -195,6 +195,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 | URI scheme / deep links (`cortex://`) | missing | M | No `tauri-plugin-deep-link`, no scheme registration. |
 | Embedded terminal / agent pane | done, beyond Obsidian | — | Real PTY (`terminal.rs`), opens into a detected agent CLI. |
 | Export | partial | S | Note → HTML only. No PDF, no Markdown-with-resolved-links. |
+| Import an Obsidian vault | done | — | `cortex import markdown <vault> [--into NAME]`, MCP `import_markdown`, **Import…** in the palette (`import.rs`): copies every `.md` under `notes/<name>/` keeping frontmatter and `[[links]]` verbatim, copies referenced images (`![[pic.png]]` too) into `assets/` and rewrites the paths, skips `.obsidian/` and reports every skip; the source vault is never modified. Aliases and heading links are carried as text and hit the §1 limits. |
 
 ## Notable gaps, ranked
 

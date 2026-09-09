@@ -344,6 +344,49 @@ export interface Settings {
   marketplace_tiers: string;
 }
 
+// ── Import (see cortex_core::import) ──
+
+/** How one CSV column lands: the frontmatter key and type. `property` "" skips it. */
+export interface ImportColumn {
+  header: string;
+  property: string;
+  type: string;
+  options?: string[];
+}
+
+export interface ImportSkipped {
+  path: string;
+  reason: string;
+}
+
+export interface CsvImportPlan {
+  collection: string;
+  exists: boolean;
+  title_column: string;
+  columns: ImportColumn[];
+  rows: number;
+  preview: { path: string; frontmatter: Record<string, unknown> }[];
+  schema_added: string[];
+  schema_exists: boolean;
+  skipped: ImportSkipped[];
+}
+
+export interface CsvImportReport {
+  collection: string;
+  written: string[];
+  skipped: ImportSkipped[];
+  schema_added: string[];
+  index_created: boolean;
+}
+
+export interface MarkdownImportReport {
+  dest: string;
+  notes: string[];
+  assets: string[];
+  skipped: ImportSkipped[];
+  unresolved: string[];
+}
+
 /** A note that `publish` would put on the site (see cortex_core::publish). */
 export interface PublishEntry {
   path: string;
@@ -737,6 +780,14 @@ export const commands = {
     invoke<PagesPush>("publish_gh_pages", { remote, branch }),
   publishWriteGithubAction: () =>
     invoke<string>("publish_write_github_action"),
+
+  // ── Import — a plan writes nothing; the import is the user's explicit act ──
+  importCsvPlan: (path: string, collection: string, titleColumn: string | null, columns: ImportColumn[] | null) =>
+    invoke<CsvImportPlan>("import_csv_plan", { path, collection, titleColumn, columns }),
+  importCsv: (path: string, collection: string, titleColumn: string | null, columns: ImportColumn[] | null) =>
+    invoke<CsvImportReport>("import_csv", { path, collection, titleColumn, columns }),
+  importMarkdown: (path: string, into: string, dryRun: boolean) =>
+    invoke<MarkdownImportReport>("import_markdown", { path, into, dryRun }),
 
   listTrash: () =>
     invoke<TrashEntry[]>("list_trash"),

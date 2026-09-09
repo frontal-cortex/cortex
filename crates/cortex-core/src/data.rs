@@ -125,7 +125,7 @@ fn col_type(v: &CellValue) -> ColumnType {
 
 /// Infer columns from the union of row keys, first-seen order, type from the
 /// first non-null cell seen for that key.
-fn infer_columns(rows: &[Row]) -> Vec<Column> {
+pub(crate) fn infer_columns(rows: &[Row]) -> Vec<Column> {
     let mut order: Vec<String> = Vec::new();
     let mut types: BTreeMap<String, ColumnType> = BTreeMap::new();
     for row in rows {
@@ -222,7 +222,7 @@ fn split_csv_record(line: &str) -> Vec<String> {
     out
 }
 
-fn infer_cell(raw: &str) -> CellValue {
+pub(crate) fn infer_cell(raw: &str) -> CellValue {
     let t = raw.trim();
     if t.is_empty() {
         return CellValue::Null;

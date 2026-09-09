@@ -29,6 +29,8 @@ from the marketplace; installing is fine when the user asks for a template or a 
 Trackers: a collection with a tracker view (habits, plants, medication) logs items per day in a log \
 collection; `tracker` reads the grid with streaks and scores, `track` ticks one item for a day — the \
 way to log \"I ran today\". run_view runs any cortex-view spec (a table over a collection or CSV). \
+Importing: import_csv turns a CSV file into a collection (dry_run shows the mapping and first rows first); \
+import_markdown copies a folder of Markdown (an Obsidian vault, a Notion export) under notes/ without touching the source. \
 Publishing: list_published shows which notes the user has marked public (publish: true or the `public` \
 tag); set that flag only when asked, and never build or push a site — that is the user's own act. When a change is meant for the user's review rather than applied directly, call \
 propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
@@ -190,6 +192,44 @@ pub struct TrackArgs {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ImportColumn {
+    /// The CSV header, exactly as in the file
+    pub header: String,
+    /// Frontmatter key it becomes; "" skips the column
+    pub property: String,
+    /// text | number | date | checkbox | select | multi_select | url (default: inferred)
+    #[serde(default, rename = "type")]
+    pub ty: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ImportCsvArgs {
+    /// Absolute path of the CSV file
+    pub path: String,
+    /// Target collection name (created if missing)
+    pub collection: String,
+    /// Header of the column that names each row (default: title / name, else the first)
+    pub title_column: Option<String>,
+    /// Column overrides: {header, property, type}; property "" skips the column. Unlisted columns are inferred.
+    #[serde(default)]
+    pub columns: Vec<ImportColumn>,
+    /// Return the plan (mapping, first five rows) without writing (default false)
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ImportMarkdownArgs {
+    /// Absolute path of the folder to import (an Obsidian vault, a Notion export, any folder of .md files)
+    pub path: String,
+    /// Folder under notes/ to copy into (default: the source folder's name)
+    pub into: Option<String>,
+    /// Report what would be copied and skipped without writing (default false)
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SettingsArgs {
     /// Settings to change, key → value. Values are typed per key (booleans, numbers,
     /// strings; `keybindings` takes an object of id → keys, or use `keybindings.<id>`
@@ -319,6 +359,25 @@ impl CortexMcp {
     #[tool(description = "Notes marked for publishing (publish: true or the `public` tag) and the URL each would get. Read-only: publishing itself is done by the user with `cortex publish` or the app.")]
     fn list_published(&self) -> Result<CallToolResult, McpError> {
         json(&self.vault.publish_preview().map_err(err)?)
+    }
+
+    #[tool(description = "Import a CSV file into a collection: one row note per record named from the title column, the other columns as typed frontmatter (types inferred: number, date, checkbox, select, multi_select, url; override with `columns`), the schema written or merged, `_index.md` created for a new collection. Existing row files are skipped, never overwritten. With dry_run, returns the column mapping and the first five rows as they would be written — show that to the user before importing.")]
+    fn import_csv(&self, Parameters(a): Parameters<ImportCsvArgs>) -> Result<CallToolResult, McpError> {
+        let columns = a.columns.into_iter().map(|c| cortex_core::import::ColumnMap { header: c.header, property: c.property, ty: c.ty, options: vec![] }).collect();
+        let opts = cortex_core::import::CsvOptions { collection: a.collection, title_column: a.title_column, columns };
+        let path = std::path::Path::new(&a.path);
+        if a.dry_run { json(&self.vault.import_csv_plan(path, &opts).map_err(err)?) }
+        else { json(&self.vault.import_csv(path, &opts).map_err(err)?) }
+    }
+
+    #[tool(description = "Copy a folder of Markdown files into notes/<into>/: frontmatter and [[wiki links]] kept as they are, images the notes reference copied into assets/ and their paths rewritten, dot-folders (.obsidian, .git) and non-Markdown files skipped and reported, existing notes never overwritten. The source folder is only read. Use dry_run first to see what would land.")]
+    fn import_markdown(&self, Parameters(a): Parameters<ImportMarkdownArgs>) -> Result<CallToolResult, McpError> {
+        let path = std::path::Path::new(&a.path);
+        let into = match a.into {
+            Some(i) => i,
+            None => path.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| err("pass `into`: the folder has no name"))?,
+        };
+        json(&self.vault.import_markdown(path, &into, a.dry_run).map_err(err)?)
     }
 
     #[tool(description = "Git state: changed files, sync counts, recent commits, pending proposals.")]

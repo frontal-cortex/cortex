@@ -202,6 +202,7 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f]
     cortex schema [key]                      typed properties      cortex status
     cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
+    cortex import csv <file> --collection <c> [--dry-run]   a CSV as rows   cortex import markdown <dir> [--into n] [--dry-run]
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)
 
 Add `--json` to any command for machine output. `cortex mcp` serves the same

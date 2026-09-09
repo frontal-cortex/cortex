@@ -45,6 +45,8 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex packs list [--tier t] [--installed] [--refresh]` / `show <id>` | browse template packs — bundled official ones plus any configured index (see `docs/marketplace.md`) |
 | `cortex packs install <id> [--force] [--dry-run]` / `update [<id>]` / `remove <id>` | install into `templates/`, `.cortex/schemas/`, `collections/<name>/`, recorded in `.cortex/packs.yaml`; never overwrites a file you edited unless `--force`, and never a collection row |
 | `cortex packs lint [DIR]` / `new <id> --from templates/x.md\|collections/y` / `index [DIR]` | author a pack from your own setup, check it against the format rules, regenerate a registry's `index.json` |
+| `cortex import csv <file> --collection <name> [--title COL] [--map "Header=prop[:type]"]… [--dry-run]` | a CSV as rows of a collection (see [Importing](#importing)) |
+| `cortex import markdown <dir> [--into NAME] [--dry-run]` | a folder of Markdown copied under `notes/<name>/`, images into `assets/`; the source is never modified |
 | `cortex propose <name> [-m msg] [--all] <paths…>` | package changes for review |
 | `cortex proposals` / `diff` / `apply` / `discard <name>` | manage proposals from the terminal |
 | `cortex settings [get <key> \| set key=value… \| describe]` | read, edit, or explain `.cortex/settings.yaml` |
@@ -63,7 +65,9 @@ same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
 `update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can
 install one; every result is a plain file the user sees at once, and `.cortex/packs.yaml` makes it
 undoable), `run_view` (any cortex-view spec), `tracker` and `track` (a tracker view's grid with
-streaks, and ticking one item for a day — "I ran today" is one `track` call), `list_published` (read-only — an agent can see what is marked public but cannot build or
+streaks, and ticking one item for a day — "I ran today" is one `track` call), `import_csv` and
+`import_markdown` (the importers below; both take `dry_run` so the agent can show the plan before
+writing), `list_published` (read-only — an agent can see what is marked public but cannot build or
 push a site). Its instructions block teaches the agent the vault's
 conventions and the propose-for-review rule.
 
@@ -193,6 +197,58 @@ done creates next week's task.
 **Date placeholders** in templates and seeds use the same words: `{{today}}`,
 `{{today+7}}`, `{{monday}}`, `{{month}}`, `{{week}}`; row templates also get
 `{{date}}` (the row's day) with offsets, `{{time}}`, `{{title}}`, `{{uuid}}`.
+
+## Importing
+
+Two importers, in `cortex-core` like everything else, so the app's Import
+dialog, the CLI and the MCP tools do exactly the same thing. Neither writes
+anything the source did not contain, and neither overwrites a file that is
+already there — a collision is reported as skipped.
+
+**A CSV into a collection.** Every record becomes one row note under
+`collections/<name>/`, named from the title column (`title` or `name` by
+default, else the first column; `--title` picks another). The other columns
+become frontmatter, typed by inference from the cells: numbers, `YYYY-MM-DD`
+dates, `true`/`false` checkboxes, `http(s)://` URLs, and a text column with a
+small repeated vocabulary (ten values or fewer, each used more than once on
+average) becomes a select whose options are the values seen. Headers turn into
+keys (`Due date` → `due_date`); `--map` overrides any column — `--map
+"Tags=tags:multi_select"` splits comma-separated cells into a list, `--map
+"Notes="` drops a column. Empty cells are omitted, not written as empty
+strings. The collection's schema (`.cortex/schemas/<name>.yaml`) is created
+from the mapping, or merged into if it exists: a property that is already
+declared keeps its type and the cells are coerced to it. A new collection also
+gets its `_index.md` with a table view. `--dry-run` prints the mapping and the
+first five rows as they would be written; the app's dialog shows the same
+plan, with the mapping editable, before its Import button.
+
+```bash
+cortex import csv ~/Downloads/books.csv --collection books --dry-run
+cortex import csv ~/Downloads/books.csv --collection books --map "Genres=genres:multi_select" --map "Internal id="
+```
+
+**A folder of Markdown into notes.** Every `*.md` under the folder — an
+Obsidian vault, a Notion export, a directory of files — is copied to
+`notes/<into>/` (default: the folder's name), keeping its relative structure.
+Frontmatter is copied verbatim (run `cortex fmt notes/<into>` afterwards if
+you want the keys sorted) and `[[wiki links]]` are left as they are, so an
+Obsidian vault's links keep resolving by title. Images the notes reference —
+`![alt](path/pic.png)`, `![[pic.png]]`, `![[pic.png|alt]]` — are copied into
+`assets/` (a name already taken by a different file gets a `-2` suffix) and the
+references are rewritten to `assets/pic.png`; a reference that points nowhere
+is left as written and listed. Dot-folders (`.obsidian/`, `.git/`, `.trash/`)
+are skipped without being entered, non-Markdown files are skipped, and every
+skip is reported with its reason. The source folder is only ever read.
+
+```bash
+cortex import markdown ~/Obsidian/Personal --dry-run      # what would land where
+cortex import markdown ~/Obsidian/Personal --into personal
+```
+
+Over MCP the same operations are `import_csv` (`path`, `collection`,
+optional `title_column`, `columns` overrides of `{header, property, type}`,
+`dry_run`) and `import_markdown` (`path`, optional `into`, `dry_run`). In the
+app: **Import…** in the command palette.
 
 ## `AGENTS.md`
 

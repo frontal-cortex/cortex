@@ -4,7 +4,7 @@
 //! a git repository. This crate owns that model: parsing and serialising notes
 //! (`note`), the rebuildable SQLite index (`db`, `index`), collections and
 //! views over frontmatter (`data`, `schema`), the team roster (`members`),
-//! settings (`settings`), git operations (`git`), vault discovery (`vault`),
+//! settings (`settings`), git operations (`git`), importers (`import`), vault discovery (`vault`),
 //! and which agent CLIs are installed (`agents`). The Tauri app and the `cortex` CLI are both thin layers over it,
 //! so an agent driving the CLI sees exactly the semantics the user sees.
 
@@ -14,6 +14,7 @@ pub mod db;
 pub mod error;
 pub mod formula;
 pub mod git;
+pub mod import;
 pub mod index;
 pub mod marketplace;
 pub mod members;

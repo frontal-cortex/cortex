@@ -21,6 +21,7 @@ import { SettingsView } from "./SettingsView";
 import { MarketplaceView } from "./MarketplaceView";
 import { LogTodayModal } from "./LogTodayModal";
 import { PublishModal } from "./PublishModal";
+import { ImportModal } from "./ImportModal";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
@@ -64,6 +65,8 @@ export function Shell({
   const [showLogToday, setShowLogToday] = useState(false);
   // The Publish dialog — the only path to a published site, always by hand.
   const [showPublish, setShowPublish] = useState(false);
+  // The Import dialog — CSV into a collection, or a Markdown folder into notes/.
+  const [showImport, setShowImport] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   // Conflicted files from a sync that hit a merge conflict; non-null shows the
   // resolution modal. Null = no merge in progress (or user dismissed it).
@@ -607,6 +610,7 @@ export function Shell({
           onFocusSidebar={() => actionsRef.current?.["focus-sidebar"]()}
           onToggleProperties={() => editorRef.current?.toggleProperties()}
           onPublish={() => setShowPublish(true)}
+          onImport={() => setShowImport(true)}
           onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
           isPublic={note?.frontmatter["publish"] === true}
           hasRemote={vault.has_remote}
@@ -621,6 +625,14 @@ export function Shell({
         <PublishModal
           vault={vault}
           onClose={() => { setShowPublish(false); focusEditor(); }}
+          onOpenNote={(p) => openNote(p)}
+        />
+      )}
+
+      {showImport && (
+        <ImportModal
+          onClose={() => { setShowImport(false); focusEditor(); }}
+          onChanged={() => { refresh(); scheduleAutoCommit(); }}
           onOpenNote={(p) => openNote(p)}
         />
       )}
