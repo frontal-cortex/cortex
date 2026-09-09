@@ -113,6 +113,12 @@ export interface TypeSchema {
   properties: PropertyDef[];
 }
 
+export interface ClipboardContent {
+  kind: "image" | "text" | "none";
+  mime: string;
+  data_base64: string;
+}
+
 export interface ViewColumn {
   key: string;
   ty: "text" | "number" | "bool" | "date" | "list" | "date_range";
@@ -857,6 +863,12 @@ export const commands = {
 
   readAsset: (relPath: string) =>
     invoke<string>("read_asset", { relPath }),
+
+  /** The system clipboard as the Rust side sees it (wl-paste / xclip): an image
+   *  if there is one, else text. The editor asks when Ctrl+V produced no paste
+   *  event — WebKitGTK on Wayland sometimes skips its own paste. */
+  readClipboard: () =>
+    invoke<ClipboardContent>("read_clipboard"),
 
   getFavorites: () =>
     invoke<string[]>("get_favorites"),

@@ -12,7 +12,7 @@ import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { useColorScheme } from "../../hooks/useColorScheme";
-import { Note, NoteEntry, TagNode, CommitEntry, Member, ViewDef, commands } from "../../lib/commands";
+import { Note, NoteEntry, TagNode, CommitEntry, Member, ViewDef, ClipboardContent, commands } from "../../lib/commands";
 import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
@@ -460,12 +460,71 @@ function NoteEditor({
   const [find, setFind] = useState<FindState>({ query: "", matches: [], active: 0 });
   const findExtension = useMemo(() => findInNoteExtension(setFind), []);
 
+  // WebKitGTK on Wayland sometimes swallows Ctrl+V: the keydown reaches the
+  // page and no `paste` event follows, for text and images alike (seen with
+  // screenshots copied by omacapture). When a Ctrl+V is not followed by a paste
+  // event within a few ms, the Rust side reads the clipboard and the editor
+  // places what it finds — an image as an asset, text as text.
+  const pasteSeenAt = useRef(0);
+  const fallbackAt = useRef(0);
+  const viaFallback = useRef(false);
+  const clipboardToldRef = useRef(false);
+  const insertImageAtCursor = useCallback((url: string) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const pos = ed.getTextCursorPosition();
+    if (pos) ed.insertBlocks([{ type: "image", props: { url } }], pos.block, "after");
+  }, []);
+  const pasteFromSystemClipboard = useCallback(async (pasteText: (text: string) => boolean) => {
+    let c: ClipboardContent;
+    try {
+      c = await commands.readClipboard();
+    } catch (e) {
+      if (!clipboardToldRef.current) {
+        clipboardToldRef.current = true;
+        window.alert(`Paste could not read the clipboard: ${String(e)}`);
+      }
+      return;
+    }
+    if (c.kind === "none") return;
+    const bytes = Uint8Array.from(atob(c.data_base64), (ch) => ch.charCodeAt(0));
+    if (c.kind === "image") {
+      fallbackAt.current = Date.now();
+      const ext = (c.mime.split("/")[1] ?? "png").replace("jpeg", "jpg");
+      const file = new File([bytes], `pasted-${Date.now()}.${ext}`, { type: c.mime });
+      const url = await saveFileAsAsset(file);
+      insertImageAtCursor(url);
+    } else {
+      // pasteText raises a synthetic paste event that must reach ProseMirror's
+      // own handling — the guard below lets it through.
+      viaFallback.current = true;
+      try { pasteText(new TextDecoder().decode(bytes)); } finally { viaFallback.current = false; }
+      fallbackAt.current = Date.now();
+    }
+  }, [insertImageAtCursor]);
+
   const imagePasteDropExtension = useMemo(() => Extension.create({
     name: "imagePasteDrop",
     addProseMirrorPlugins() {
       return [new Plugin({
         props: {
+          handleKeyDown(view, event) {
+            const mod = event.ctrlKey || event.metaKey;
+            if (!mod || event.altKey || event.shiftKey || event.key.toLowerCase() !== "v") return false;
+            const armed = Date.now();
+            // WebKit dispatches `paste` synchronously while handling the key, so
+            // a short wait is enough to know it did not.
+            setTimeout(() => {
+              if (pasteSeenAt.current >= armed) return;
+              void pasteFromSystemClipboard((text) => view.pasteText(text));
+            }, 80);
+            return false;
+          },
           handlePaste(_view, event) {
+            pasteSeenAt.current = Date.now();
+            if (viaFallback.current) return false;
+            // The fallback already placed this paste (a late event would double it).
+            if (Date.now() - fallbackAt.current < 1000) { event.preventDefault(); return true; }
             const items = event.clipboardData?.items;
             if (!items) return false;
             for (const item of Array.from(items)) {
