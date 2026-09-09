@@ -117,7 +117,7 @@ at the end so they are not mistaken for gaps.
 |---|---|---|---|
 | Central shortcut registry, platform labels | done | — | `keymap.ts`, 19 shortcuts, every hint renders from it. |
 | Customisable keybindings + recorder | done | — | `keybindings:` in settings; conflict detection; recorder in Settings; settable from the CLI. |
-| Keyboard-first navigation | done | — | Sidebar roving tabindex, focus-sidebar / focus-editor. |
+| Keyboard-first navigation | done | — | Sidebar roving tabindex, focus-sidebar / focus-editor; the data table is a roving grid with the same vim keys (`TABLE_KEYS` in `keymap.ts`). |
 | Vim keybindings in the editor | missing | L | BlockNote/ProseMirror, not CodeMirror. Non-goal unless a modal-editing plugin appears. |
 | `Ctrl+B` | note | S | Bound to toggle-sidebar (capture phase), not bold. A muscle-memory collision for Notion and Obsidian users alike. |
 

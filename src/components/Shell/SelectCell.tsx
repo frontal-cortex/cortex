@@ -24,6 +24,10 @@ interface Props {
   placeholder?: string;
   onChange: (next: string | string[]) => void;
   onOptionsChange?: (next: SelectOption[]) => void;
+  /** A host (the data table, on Enter) asks for the popover to open. */
+  forceOpen?: boolean;
+  /** The popover closed — the host may take focus back. */
+  onClose?: () => void;
 }
 
 function asArray(value: Props["value"]): string[] {
@@ -40,10 +44,19 @@ export function SelectCell({
   placeholder = "Empty",
   onChange,
   onOptionsChange,
+  forceOpen,
+  onClose,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { if (forceOpen && editable) setOpen(true); }, [forceOpen, editable]);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !open) onClose?.();
+    wasOpen.current = open;
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = asArray(value);
   const colorFor = (name: string) =>
@@ -150,6 +163,7 @@ export function SelectCell({
             onKeyDown={(e) => {
               if (e.key === "Enter") { e.preventDefault(); addFromDraft(); }
               if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
+              if (e.key === "Tab") setOpen(false);
             }}
           />
           <div className={styles.optionList}>

@@ -13,6 +13,7 @@ import { relativeTime } from "../../lib/fileTree";
 import { shortcutFor } from "../../lib/keymap";
 import { SelectCell } from "./SelectCell";
 import { Dropdown } from "./Dropdown";
+import { DatePicker } from "./DatePicker";
 import {
   CalendarIcon, CheckSquareIcon, SelectDotIcon, TagsListIcon, PersonIcon,
   LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon, GlobeIcon, MoreIcon,
@@ -272,6 +273,13 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
                   className={styles.checkbox}
                   checked={frontmatter[item.name] === true}
                   onChange={(e) => set(item.name, e.target.checked)}
+                />
+              ) : item.type === "date" ? (
+                <DatePicker
+                  value={frontmatter[item.name] == null ? "" : String(frontmatter[item.name])}
+                  placeholder="Empty"
+                  inputClassName={styles.valueInput}
+                  onChange={(v) => set(item.name, v || undefined)}
                 />
               ) : (
                 <ValueInput

@@ -8,7 +8,7 @@
 // codeBlock(language: "cortex-view") <-> our custom block at the load/save
 // boundary, so we never depend on BlockNote's lossy custom-block serializer.
 
-import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, ReactNode } from "react";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, PropType, PropertyDef, ChartResult } from "../../lib/commands";
@@ -17,6 +17,8 @@ import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
 import { Dropdown } from "./Dropdown";
+import { DatePicker } from "./DatePicker";
+import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
 import styles from "./CortexViewBlock.module.css";
 
@@ -705,16 +707,24 @@ function toInput(v: unknown): string {
   return String(v);
 }
 
-function EditableCell({ value, editable, saving, onCommit, render }: {
+function EditableCell({ value, editable, saving, onCommit, render, forceOpen, onDone }: {
   value: unknown;
   editable: boolean;
   saving: boolean;
   onCommit: (v: string) => void;
   /** At-rest rendering (a formatted number); the editor still edits the raw value. */
   render?: (v: unknown) => ReactNode;
+  /** The table asks the cell to open (Enter on a focused cell). */
+  forceOpen?: boolean;
+  /** The editor closed, by commit or cancel — the table takes focus back. */
+  onDone?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    if (forceOpen && editable && !editing) { setDraft(toInput(value)); setEditing(true); }
+  }, [forceOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shown = render ? render(value) : formatCell(value);
   if (!editable) {
@@ -737,6 +747,7 @@ function EditableCell({ value, editable, saving, onCommit, render }: {
     setEditing(false);
     const original = toInput(value);
     if (save && draft !== original) onCommit(draft);
+    onDone?.();
   };
 
   return (
@@ -755,6 +766,46 @@ function EditableCell({ value, editable, saving, onCommit, render }: {
   );
 }
 
+/** A date cell: at rest the day as stored; open, the date picker (typed input
+ *  validated, or a click on the calendar). Nothing but a real day is written. */
+function DateCell({ value, editable, saving, onCommit, forceOpen, onDone }: {
+  value: unknown;
+  editable: boolean;
+  saving: boolean;
+  onCommit: (v: string) => void;
+  forceOpen?: boolean;
+  onDone?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (forceOpen && editable) setEditing(true); }, [forceOpen, editable]);
+
+  const text = toInput(value);
+  if (!editable) return <span className={styles.cellReadonly}>{formatCell(value)}</span>;
+  if (!editing) {
+    return (
+      <span
+        className={`${styles.cellEditable} ${text.trim() === "" ? styles.cellEmpty : ""}`}
+        title="Click to edit"
+        onClick={() => setEditing(true)}
+      >
+        {saving ? "…" : formatCell(value)}
+      </span>
+    );
+  }
+  const close = () => { setEditing(false); onDone?.(); };
+  return (
+    <div className={styles.cellDate}>
+      <DatePicker
+        value={text}
+        autoFocus
+        inputClassName={styles.cellInput}
+        onChange={(v) => { onCommit(v); close(); }}
+        onCancel={close}
+      />
+    </div>
+  );
+}
+
 /** The width class for a column: a floor per kind of value so dates and pills
  *  never squeeze, and text never sprawls. */
 function colClass(c: ViewColumn): string {
@@ -766,6 +817,14 @@ function colClass(c: ViewColumn): string {
   if (c.ty === "number" || numberFormat(c)) return styles.colNum;
   return styles.colText;
 }
+
+/** What a blank new row starts with: a title, today, the view's filter seeds
+ *  and, for a row made inside a table group, that group's value. */
+function blankRowSeed(spec: string, extra?: Record<string, string>): Record<string, string> {
+  return { title: "Untitled", created: today(), ...seedFromFilter(spec), ...(extra ?? {}) };
+}
+
+type CellPos = { r: number; c: number };
 
 /** The summary functions a table's footer can pick per column. */
 const SUMMARY_FUNCTIONS: { value: string; label: string }[] = [
@@ -846,6 +905,10 @@ function SummaryCell({ col, func, value, onPick }: {
   );
 }
 
+/** One `group:` section of the table: its rows, and where they start in the
+ *  flat display order the keyboard navigates. */
+type GroupSection = { key: string; rows: ViewTable["rows"]; start: number; folded: boolean };
+
 export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
   table: ViewTable; spec: string; source: string; onChanged: () => void;
   /** Lets the footer write a `summary:` pick back into the view spec. */
@@ -855,6 +918,120 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
   const [err, setErr] = useState<string | null>(null);
   // Folded groups — a glance-state, kept in memory only.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  // Keyboard: one cell carries focus (a roving tabindex, like the sidebar);
+  // `editKey` is the cell whose editor is open; a row we just made takes focus
+  // once the reload brings it in.
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [active, setActive] = useState<CellPos | null>(null);
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  const [pendingRowId, setPendingRowId] = useState<string | null>(null);
+  const [menuRow, setMenuRow] = useState<string | null>(null);
+  const [templatesVersion, setTemplatesVersion] = useState(0);
+  // Whether DOM focus is inside the table: a cell editor that closes because
+  // the user clicked elsewhere must not pull focus back here.
+  const focusWithin = useRef(false);
+  // A row made from the footer button deserves focus even though the click was outside.
+  const claimFocus = useRef(false);
+  // The id of the row under the cursor, so the cursor follows it when rows
+  // reorder (a reload) or the rows above it fold away.
+  const activeRowId = useRef<string | null>(null);
+
+  const cols = table.columns;
+  const schemaKey = collectionKey(source);
+  const canOpen = source.startsWith("collections/");
+
+  // ── Grouping: one section per value of `group:`, in the property's option
+  // order, then other values, then the rows with none. Same buckets as the board.
+  const groupField = peek(spec, "group");
+  const groupCol = groupField ? cols.find((c) => c.key === groupField) : undefined;
+  // `rows` is the table as shown, top to bottom — group by group, a folded
+  // group left out. The keyboard's row index is an index into this list, so
+  // arrows, Tab and the focus effect see one flat grid across every <tbody>.
+  const { groupKeys, sections, rows } = useMemo(() => {
+    const groups = new Map<string, ViewTable["rows"]>();
+    if (groupField) {
+      for (const row of table.rows) {
+        const key = toInput(row.cells[groupField]) || "—";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(row);
+      }
+    }
+    const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
+    const present = [...groups.keys()];
+    const groupKeys = [
+      ...optionOrder.filter((o) => groups.has(o)),
+      ...present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort(),
+      ...(groups.has("—") ? ["—"] : []),
+    ];
+    const sections: GroupSection[] = [];
+    let start = 0;
+    for (const g of groupKeys) {
+      const folded = collapsed.has(g);
+      const rs = groups.get(g) ?? [];
+      sections.push({ key: g, rows: rs, start, folded });
+      if (!folded) start += rs.length;
+    }
+    const rows = groupField ? sections.flatMap((s) => (s.folded ? [] : s.rows)) : table.rows;
+    return { groupKeys, sections, rows };
+  }, [table.rows, groupField, groupCol, collapsed]);
+  const toggleGroup = (g: string) =>
+    setCollapsed((prev) => { const next = new Set(prev); if (next.has(g)) next.delete(g); else next.add(g); return next; });
+  // A computed group value can't be seeded into a new row.
+  const canAddInGroup = !!groupField && !(groupCol && isComputedColumn(groupCol));
+  const colCount = cols.length + (schemaKey ? 1 : 0) + 1;
+  /** The seed that lands a new row in the same group as `row`. */
+  const groupSeedOf = (row: ViewTable["rows"][number] | undefined): Record<string, string> | undefined =>
+    row && groupField && canAddInGroup ? { [groupField]: toInput(row.cells[groupField]) } : undefined;
+
+  const cellKey = (p: CellPos) => `${rows[p.r]?.id}:${cols[p.c]?.key}`;
+
+  const moveTo = (p: CellPos | null) => {
+    activeRowId.current = p ? rows[p.r]?.id ?? null : null;
+    setActive(p);
+  };
+
+  const focusCell = (r: number, c: number) => {
+    if (rows.length === 0 || cols.length === 0) return;
+    moveTo({ r: Math.max(0, Math.min(rows.length - 1, r)), c: Math.max(0, Math.min(cols.length - 1, c)) });
+    setFocusTick((t) => t + 1);
+  };
+
+  // Put DOM focus on the active cell after each move (never while its editor
+  // holds the focus — that would close the editor).
+  useLayoutEffect(() => {
+    if (!active || editKey || focusTick === 0) return;
+    if (!focusWithin.current && !claimFocus.current) return;
+    claimFocus.current = false;
+    tableRef.current?.querySelector<HTMLElement>(`td[data-r="${active.r}"][data-c="${active.c}"]`)?.focus();
+  }, [active, editKey, focusTick]);
+
+  // The display order changed under us — a reload, or a group folded: land
+  // on the row we just added, else follow the row the cursor was on (or the
+  // nearest that still shows). A reload also puts DOM focus back on the cell.
+  const lastRows = useRef(table.rows);
+  useEffect(() => {
+    const reloaded = lastRows.current !== table.rows;
+    lastRows.current = table.rows;
+    if (pendingRowId && reloaded) {
+      const idx = rows.findIndex((r) => r.id === pendingRowId);
+      setPendingRowId(null);
+      if (idx >= 0) { claimFocus.current = true; focusCell(idx, 0); return; }
+    }
+    if (!active) return;
+    let next: CellPos | null = active;
+    const idx = activeRowId.current ? rows.findIndex((r) => r.id === activeRowId.current) : -1;
+    if (idx >= 0) next = idx === active.r ? active : { r: idx, c: active.c };
+    else if (active.r >= rows.length) next = rows.length ? { r: rows.length - 1, c: active.c } : null;
+    // Never yank focus out of an editor the user opened with the mouse.
+    const el = document.activeElement as HTMLElement | null;
+    const typing = !!el && !!tableRef.current?.contains(el) && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+    if (next && reloaded && focusWithin.current && !editKey && !typing) {
+      focusCell(next.r, next.c);
+    } else if (next !== active) {
+      moveTo(next);
+    }
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const commit = (col: ViewTable["columns"][number], rowId: string, value: string, ty?: string) => {
     const key = `${rowId}:${col.key}`;
@@ -871,7 +1048,27 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
     commands.deleteRow(source, rowId).then(onChanged).catch((e) => setErr(String(e)));
   };
 
-  const schemaKey = collectionKey(source);
+  /** A blank row, seeded from the filter and (for a group's button, or `n`
+   *  inside a group) the group's value; it takes focus when it arrives. */
+  const addBlank = (extra?: Record<string, string>) => {
+    const id = newRowId();
+    setPendingRowId(id);
+    commands.addRow(source, id, blankRowSeed(spec, extra)).then(onChanged).catch((e) => { setPendingRowId(null); setErr(String(e)); });
+  };
+
+  const duplicate = (rowId: string) => {
+    const id = newRowId();
+    setPendingRowId(id);
+    commands.duplicateRow(source, rowId, id, today()).then(onChanged).catch((e) => { setPendingRowId(null); setErr(String(e)); });
+  };
+
+  const saveAsTemplate = (rowId: string) => {
+    const name = window.prompt("Template name")?.trim();
+    if (!name) return;
+    commands.saveRowAsTemplate(source, rowId, name)
+      .then(() => setTemplatesVersion((v) => v + 1))
+      .catch((e) => setErr(String(e)));
+  };
 
   const setColumnType = (col: ViewTable["columns"][number], type: PropType) => {
     if (!schemaKey) return;
@@ -908,7 +1105,14 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
     commands.deleteProperty(schemaKey, col.key).then(onChanged).catch((e) => setErr(String(e)));
   };
 
+  const isBool = (c: ViewColumn) => c.ty === "bool" || c.schema?.type === "checkbox";
+  const isDate = (c: ViewColumn) => c.ty === "date" || c.schema?.type === "date";
+  const cellEditable = (c: ViewColumn) => c.key !== "$body" && c.key !== "id" && !isComputedColumn(c);
+
   const renderCell = (c: ViewTable["columns"][number], row: ViewTable["rows"][number]) => {
+    const key = `${row.id}:${c.key}`;
+    const opening = editKey === key;
+    const done = () => { setEditKey(null); setFocusTick((t) => t + 1); };
     // Computed columns — rollups, formulas, the reverse side of a relation — are read-only.
     if (isComputedColumn(c)) {
       return <span className={styles.cellReadonly}>{displayCell(c, row.cells[c.key])}</span>;
@@ -927,6 +1131,8 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
           multi={multi}
           editable={c.key !== "$body" && c.key !== "id"}
           placeholder={t === "person" ? "Unassigned" : t === "relation" ? "Link…" : "Empty"}
+          forceOpen={opening}
+          onClose={done}
           onChange={(next) => {
             const value = Array.isArray(next) ? next.join(", ") : next;
             commit(c, row.id, value, multi ? "list" : "text");
@@ -939,17 +1145,29 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
         </div>
       );
     }
-    if (c.ty === "bool" || c.schema?.type === "checkbox") {
+    if (isBool(c)) {
       return (
         <CheckboxCell
           value={row.cells[c.key]}
           editable={c.key !== "$body" && c.key !== "id"}
-          saving={savingKey === `${row.id}:${c.key}`}
+          saving={savingKey === key}
           onCommit={(v) => commit(c, row.id, v, "bool")}
         />
       );
     }
     const editable = c.key !== "$body" && c.key !== "id";
+    if (isDate(c)) {
+      return (
+        <DateCell
+          value={row.cells[c.key]}
+          editable={editable}
+          saving={savingKey === key}
+          onCommit={(v) => commit(c, row.id, v, "date")}
+          forceOpen={opening}
+          onDone={done}
+        />
+      );
+    }
     const fmt = numberFormat(c);
     // Stars are set by clicking one; every other format keeps the text editor.
     if (fmt === "stars") {
@@ -965,60 +1183,125 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
       <EditableCell
         value={row.cells[c.key]}
         editable={editable}
-        saving={savingKey === `${row.id}:${c.key}`}
+        saving={savingKey === key}
         onCommit={(v) => commit(c, row.id, v)}
         render={fmt ? (v) => <FormattedNumber value={v} schema={c.schema!} /> : undefined}
+        forceOpen={opening}
+        onDone={done}
       />
     );
   };
 
-  const canOpen = source.startsWith("collections/");
+  /** Enter on the focused cell: open its editor, or flip a checkbox. */
+  const editActive = (p: CellPos) => {
+    const c = cols[p.c], row = rows[p.r];
+    if (!c || !row || !cellEditable(c)) return;
+    if (isBool(c)) { const on = row.cells[c.key] === true || row.cells[c.key] === "true"; commit(c, row.id, on ? "false" : "true", "bool"); return; }
+    if (c.schema?.format === "stars") return;
+    setEditKey(cellKey(p));
+  };
 
-  const renderRow = (row: ViewTable["rows"][number]) => (
-    <tr key={row.id}>
-      {table.columns.map((c) => (
-        <td key={c.key}>{renderCell(c, row)}</td>
-      ))}
+  /** Next / previous cell, reading order, wrapping across rows. */
+  const step = (p: CellPos, dir: 1 | -1) => {
+    let { r, c } = p;
+    c += dir;
+    if (c >= cols.length) { c = 0; r += 1; }
+    if (c < 0) { c = cols.length - 1; r -= 1; }
+    if (r < 0 || r >= rows.length) return;
+    focusCell(r, c);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTableElement>) => {
+    const target = e.target as HTMLElement;
+    const mod = isMac ? e.metaKey : e.ctrlKey;
+    const inField = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    const activeRow = active ? rows[active.r] : undefined;
+    // Ctrl+Enter opens the row from anywhere in it, even mid-edit.
+    if (e.key === "Enter" && mod && activeRow && canOpen) {
+      e.preventDefault(); e.stopPropagation();
+      openRow(source, activeRow.id);
+      return;
+    }
+    if (inField) {
+      // Tab commits what is being typed (editors commit on blur) and moves on.
+      if (e.key === "Tab" && active) {
+        e.preventDefault(); e.stopPropagation();
+        setEditKey(null);
+        step(active, e.shiftKey ? -1 : 1);
+      }
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const cur = active ?? { r: 0, c: 0 };
+    let handled = true;
+    switch (e.key) {
+      case "ArrowDown": case "j": focusCell(cur.r + (active ? 1 : 0), cur.c); break;
+      case "ArrowUp": case "k": focusCell(cur.r - 1, cur.c); break;
+      case "ArrowRight": case "l": focusCell(cur.r, cur.c + (active ? 1 : 0)); break;
+      case "ArrowLeft": case "h": focusCell(cur.r, cur.c - 1); break;
+      case "Home": focusCell(cur.r, 0); break;
+      case "End": focusCell(cur.r, cols.length - 1); break;
+      case "Tab": {
+        // At either end the Tab leaves the table, as it would anywhere else.
+        const last = cur.r === rows.length - 1 && cur.c === cols.length - 1;
+        const first = cur.r === 0 && cur.c === 0;
+        if (!active || (e.shiftKey ? first : last)) { handled = false; break; }
+        step(cur, e.shiftKey ? -1 : 1);
+        break;
+      }
+      case "Enter": if (active) editActive(active); break;
+      case "o": if (activeRow && canOpen) openRow(source, activeRow.id); break;
+      case " ": if (active && cols[active.c] && (isBool(cols[active.c]) || isSelectColumn(cols[active.c]))) editActive(active); break;
+      // A new row lands in the cursor's group, so it shows up where the eye is.
+      case "n": addBlank(groupSeedOf(activeRow)); break;
+      case "Delete": case "Backspace": if (activeRow) del(activeRow.id); break;
+      case "Escape": setMenuRow(null); target.blur(); break;
+      default: handled = false;
+    }
+    if (handled) { e.preventDefault(); e.stopPropagation(); }
+  };
+
+  /** One row; `r` is its index in the display order (what the keyboard navigates). */
+  const renderRow = (row: ViewTable["rows"][number], r: number) => (
+    <tr key={row.id} className={active?.r === r ? styles.rowActive : undefined}>
+      {cols.map((c, ci) => {
+        const here = active?.r === r && active?.c === ci;
+        return (
+          <td
+            key={c.key}
+            data-r={r}
+            data-c={ci}
+            tabIndex={here || (!active && r === 0 && ci === 0) ? 0 : -1}
+            className={here ? styles.cellActive : undefined}
+            onFocus={(e) => { if (e.target === e.currentTarget && !here) moveTo({ r, c: ci }); }}
+            onMouseDown={() => { if (!here) moveTo({ r, c: ci }); }}
+          >
+            {renderCell(c, row)}
+          </td>
+        );
+      })}
       {schemaKey && <td className={styles.addPropCol} />}
       <td className={styles.rowActionCol}>
         <div className={styles.rowActions}>
           {canOpen && (
-            <button className={styles.rowOpen} title="Open note" onClick={() => openRow(source, row.id)}>
+            <button className={styles.rowOpen} title="Open note" tabIndex={-1} onClick={() => openRow(source, row.id)}>
               <OpenIcon size={13} />
             </button>
           )}
-          <button className={styles.rowDelete} title="Delete row" onClick={() => del(row.id)}>
-            <CloseIcon size={13} />
-          </button>
+          <RowMenu
+            open={menuRow === row.id}
+            onToggle={() => setMenuRow((m) => (m === row.id ? null : row.id))}
+            items={[
+              ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }] : []),
+              { label: "Duplicate", run: () => duplicate(row.id) },
+              ...(schemaKey ? [{ label: "Save as template…", run: () => saveAsTemplate(row.id) }] : []),
+              { label: "Delete", run: () => del(row.id), danger: true },
+            ]}
+          />
         </div>
       </td>
     </tr>
   );
-
-  // ── Grouping: one section per value of `group:`, in the property's option
-  // order, then other values, then the rows with none. Same buckets as the board.
-  const groupField = peek(spec, "group");
-  const groupCol = groupField ? table.columns.find((c) => c.key === groupField) : undefined;
-  const groups = new Map<string, ViewTable["rows"]>();
-  if (groupField) {
-    for (const row of table.rows) {
-      const key = toInput(row.cells[groupField]) || "—";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(row);
-    }
-  }
-  const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
-  const present = [...groups.keys()];
-  const groupKeys = [
-    ...optionOrder.filter((o) => groups.has(o)),
-    ...present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort(),
-    ...(groups.has("—") ? ["—"] : []),
-  ];
-  const toggleGroup = (g: string) =>
-    setCollapsed((prev) => { const next = new Set(prev); if (next.has(g)) next.delete(g); else next.add(g); return next; });
-  // A computed group value can't be seeded into a new row.
-  const canAddInGroup = !!groupField && !(groupCol && isComputedColumn(groupCol));
-  const colCount = table.columns.length + (schemaKey ? 1 : 0) + 1;
 
   // ── Summary row: functions from the spec, values from the engine.
   const summarySpec = peekMap(spec, "summary");
@@ -1037,10 +1320,17 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
 
   return (
     <div className={styles.tableWrap}>
-      <table className={styles.table}>
+      <table
+        className={styles.table}
+        ref={tableRef}
+        onKeyDown={onKeyDown}
+        onFocus={() => { focusWithin.current = true; }}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) focusWithin.current = false; }}
+        aria-label={`Table — ${tableKeysHint()}`}
+      >
         <thead>
           <tr>
-            {table.columns.map((c) => (
+            {cols.map((c) => (
               <th key={c.key} className={colClass(c)}>
                 <ColumnHeader
                   col={c}
@@ -1055,7 +1345,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
             {schemaKey && (
               <th className={styles.addPropCol}>
                 <AddPropertyHeader
-                  columns={table.columns}
+                  columns={cols}
                   onAdd={(prop) =>
                     commands.upsertProperty(schemaKey, prop)
                       .then(onChanged).catch((e) => setErr(String(e)))}
@@ -1065,37 +1355,38 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
             <th className={styles.rowActionCol} />
           </tr>
         </thead>
-        {!groupField && <tbody>{table.rows.map(renderRow)}</tbody>}
-        {groupField && groupKeys.map((g) => {
-          const rows = groups.get(g) ?? [];
-          const folded = collapsed.has(g);
-          return (
-            <tbody key={g} className={styles.group}>
-              <tr className={styles.groupRow}>
+        {!groupField && <tbody>{rows.map(renderRow)}</tbody>}
+        {groupField && sections.map((s) => (
+          <tbody key={s.key} className={styles.group}>
+            <tr className={styles.groupRow}>
+              <td colSpan={colCount}>
+                <button className={styles.groupToggle} onClick={() => toggleGroup(s.key)} aria-expanded={!s.folded}>
+                  <span className={`${styles.groupChevron} ${s.folded ? styles.groupChevronFolded : ""}`}>▾</span>
+                  <span className={styles.groupTitle}>{s.key === "—" ? `No ${groupField}` : s.key}</span>
+                  <span className={styles.groupCount}>{s.rows.length}</span>
+                </button>
+              </td>
+            </tr>
+            {!s.folded && s.rows.map((row, i) => renderRow(row, s.start + i))}
+            {!s.folded && canAddInGroup && (
+              <tr className={styles.groupAddRow}>
                 <td colSpan={colCount}>
-                  <button className={styles.groupToggle} onClick={() => toggleGroup(g)} aria-expanded={!folded}>
-                    <span className={`${styles.groupChevron} ${folded ? styles.groupChevronFolded : ""}`}>▾</span>
-                    <span className={styles.groupTitle}>{g === "—" ? `No ${groupField}` : g}</span>
-                    <span className={styles.groupCount}>{rows.length}</span>
-                  </button>
+                  <NewRowButton
+                    source={source} spec={spec} onChanged={onChanged} onError={setErr}
+                    extra={{ [groupField]: s.key === "—" ? "" : s.key }}
+                    onAddBlank={() => addBlank({ [groupField]: s.key === "—" ? "" : s.key })}
+                    templatesVersion={templatesVersion}
+                    compact
+                  />
                 </td>
               </tr>
-              {!folded && rows.map(renderRow)}
-              {!folded && canAddInGroup && (
-                <tr className={styles.groupAddRow}>
-                  <td colSpan={colCount}>
-                    <NewRowButton source={source} spec={spec} onChanged={onChanged} onError={setErr}
-                      extra={{ [groupField]: g === "—" ? "" : g }} compact />
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          );
-        })}
+            )}
+          </tbody>
+        ))}
         {(hasSummary || onSpecChange) && (
           <tfoot>
             <tr className={styles.summaryRow}>
-              {table.columns.map((c) => (
+              {cols.map((c) => (
                 <td key={c.key}>
                   <SummaryCell
                     col={c}
@@ -1112,7 +1403,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
         )}
       </table>
       <div className={styles.footer}>
-        <NewRowButton source={source} spec={spec} onChanged={onChanged} onError={setErr} />
+        <NewRowButton source={source} spec={spec} onAddBlank={() => addBlank()} onChanged={onChanged} onError={setErr} templatesVersion={templatesVersion} />
         <span className={styles.count}>
           {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
           {groupField && groupKeys.length > 0 && ` · ${groupKeys.length} group${groupKeys.length === 1 ? "" : "s"}`}
@@ -1123,14 +1414,53 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
   );
 }
 
+/** The "⋯" at the end of a row: open, duplicate, save as template, delete. */
+function RowMenu({ open, onToggle, items }: {
+  open: boolean;
+  onToggle: () => void;
+  items: { label: string; run: () => void; danger?: boolean }[];
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onToggle(); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open, onToggle]);
+  return (
+    <div className={styles.rowMenuWrap} ref={ref}>
+      <button className={styles.rowMore} title="Row actions" tabIndex={-1} onClick={onToggle} aria-haspopup="menu" aria-expanded={open}>⋯</button>
+      {open && (
+        <div className={styles.rowMenu} role="menu">
+          {items.map((it) => (
+            <button
+              key={it.label}
+              role="menuitem"
+              className={`${styles.newRowItem} ${it.danger ? styles.rowMenuDanger : ""}`}
+              onClick={() => { onToggle(); it.run(); }}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** "New row" — a plain button, or a dropdown (Blank / templates / New template)
  *  when the collection has row templates. */
-function NewRowButton({ source, spec, onChanged, onError, extra, compact }: {
+function NewRowButton({ source, spec, onAddBlank, onChanged, onError, extra, compact, templatesVersion = 0 }: {
   source: string; spec: string; onChanged: () => void; onError: (e: string) => void;
+  /** Makes the blank row — the table's own, so the new row takes focus; a
+   *  button without one (a view that is not a table) adds the row itself. */
+  onAddBlank?: () => void;
   /** Fields seeded on top of the filter's — a table group's value, so the row lands in that section. */
   extra?: Record<string, string>;
   /** The quieter in-group button. */
   compact?: boolean;
+  /** Bumped when a template was saved elsewhere, so the list refreshes. */
+  templatesVersion?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -1140,7 +1470,7 @@ function NewRowButton({ source, spec, onChanged, onError, extra, compact }: {
   const loadTemplates = useCallback(() => {
     if (collection) commands.listRowTemplates(source).then(setTemplates).catch(() => {});
   }, [source, collection]);
-  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+  useEffect(() => { loadTemplates(); }, [loadTemplates, templatesVersion]);
 
   useEffect(() => {
     if (!open) return;
@@ -1149,9 +1479,10 @@ function NewRowButton({ source, spec, onChanged, onError, extra, compact }: {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const seed = () => ({ title: "Untitled", created: today(), ...seedFromFilter(spec), ...(extra ?? {}) });
-  const addBlank = () =>
+  const seed = () => blankRowSeed(spec, extra);
+  const addBlank = onAddBlank ?? (() => {
     commands.addRow(source, newRowId(), seed()).then(onChanged).catch((e) => onError(String(e)));
+  });
   const btnClass = compact ? styles.groupAddBtn : styles.newRowBtn;
   const addFromTemplate = (t: string) => {
     setOpen(false);
@@ -1464,8 +1795,9 @@ export function CalendarView({ table, spec, source, onChanged }: {
   while (cells.length % 7 !== 0) cells.push(null);
 
   const todayStr = ymd(new Date());
+  const [picking, setPicking] = useState(false);
   const addOn = (day: string) =>
-    commands.addRow(source, newRowId(), { title: "Untitled", created: today(), ...seedFromFilter(spec), [dateField]: day })
+    commands.addRow(source, newRowId(), { ...blankRowSeed(spec), [dateField]: day })
       .then(onChanged).catch((e) => window.alert(String(e)));
 
   return (
@@ -1505,6 +1837,24 @@ export function CalendarView({ table, spec, source, onChanged }: {
           );
         })}
       </div>
+      {canOpen && (
+        <div className={styles.calFooter}>
+          {picking ? (
+            <div className={styles.calNewRow}>
+              <DatePicker
+                value=""
+                autoFocus
+                placeholder="Day for the new row…"
+                inputClassName={styles.cellInput}
+                onChange={(d) => { setPicking(false); if (d) addOn(d); }}
+                onCancel={() => setPicking(false)}
+              />
+            </div>
+          ) : (
+            <button className={styles.newRowBtn} onClick={() => setPicking(true)}>+ New row</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

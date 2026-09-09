@@ -42,6 +42,8 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── LeftPanel.tsx     # Sidebar: sections, tree, trash — one flat keyboard row list (treeRows.ts)
 │   │   ├── treeRows.ts       # Roving tabindex + type-ahead over the sidebar's row model
 │   │   ├── GettingStarted.tsx # First-run steps, rendered as tree rows so the keyboard reaches them
+│   │   ├── CortexViewBlock.tsx # Data views in a note; the table is a roving keyboard grid (TABLE_KEYS in keymap.ts)
+│   │   ├── DatePicker.tsx    # The one date field: typed input validated to a real day, calendar popover
 │   │   ├── SettingsView.tsx  # Full-window settings page: section nav, search, one row per settings.yaml key
 │   │   ├── PublishModal.tsx  # The only path to a published site: shows what goes, where, and the result
 │   │   └── TerminalPane.tsx  # xterm.js over a real PTY; opens into `terminal_command` (an agent CLI)
@@ -133,6 +135,16 @@ always lands on the next thing the eye sees, across sections. Anything rendered
 as a row must also be pushed into that list under the same id. Vim keys,
 type-ahead, `n` for a new note in the focused folder, `/` for search, and
 Escape back to the editor all live in `handleTreeKeyDown`.
+
+**The data table speaks the same keys**: `DataTable` in `CortexViewBlock.tsx`
+keeps one active cell (a roving tabindex over `<td>`s) and moves it with
+arrows or `j k h l`, Tab / Shift+Tab, Home / End; Enter opens the cell's
+editor (`forceOpen` on `EditableCell`, `DateCell`, `SelectCell`) and Escape
+hands focus back; Ctrl+Enter or `o` opens the row, `n` adds one, Delete
+trashes it. Widget-local keys like these are listed in `keymap.ts`
+(`TABLE_KEYS`) so hints read from one place, but they are not rebindable
+app shortcuts. Dates go through `DatePicker` everywhere — a typed value is
+written only when it names a real calendar day.
 
 **The app can wear the desktop's palette**: `settings.theme_file` names a flat
 TOML of colour names → hex (Omarchy's `colors.toml`; `~` expands per machine).

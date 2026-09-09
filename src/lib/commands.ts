@@ -666,6 +666,10 @@ export const commands = {
   deleteRow: (source: string, rowId: string) =>
     touched(invoke<void>("delete_row", { source, rowId })),
 
+  /** Copy a row (frontmatter + body) under a new id, created on `created`. */
+  duplicateRow: (source: string, rowId: string, newId: string, created: string) =>
+    touched(invoke<void>("duplicate_row", { source, rowId, newId, created })),
+
   listRowTemplates: (source: string) =>
     invoke<string[]>("list_row_templates", { source }),
 

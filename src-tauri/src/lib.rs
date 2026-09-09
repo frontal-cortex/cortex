@@ -126,6 +126,7 @@ pub fn run() {
             commands::data::set_cell,
             commands::data::add_row,
             commands::data::delete_row,
+            commands::data::duplicate_row,
             commands::data::list_row_templates,
             commands::data::add_row_from_template,
             commands::data::save_row_as_template,
