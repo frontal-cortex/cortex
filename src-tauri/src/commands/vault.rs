@@ -123,11 +123,18 @@ pub fn open_vault(
 /// is expected to follow up with `open_vault(path)`, which adds `VAULT.md`,
 /// `AGENTS.md` and `.cortex/settings.yaml`.
 #[tauri::command]
-pub fn create_vault_from_template(path: String) -> Result<()> {
+pub fn create_vault_from_template(path: String, template: Option<String>) -> Result<()> {
+    use cortex_core::template::{self, TemplateSource};
     let target = PathBuf::from(&path);
 
+    // The bundled tour, or a template the user named: a folder, an owner/repo
+    // on GitHub, or a git URL — its files copied, its history left behind.
+    let source = match template.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        Some(spec) => template::parse_source(spec)?,
+        None => TemplateSource::Bundled,
+    };
     // Refuses a non-empty directory — never clobber existing files.
-    cortex_core::template::scaffold(&target)?;
+    template::scaffold_from(&source, &target)?;
 
     let repo = git::open_or_init(&target)?;
     // Best-effort initial commit. If the user has no git identity configured,

@@ -11,3 +11,10 @@
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
 }
+
+/* Elsewhere the window has no controls to make room for; keep a sliver as a
+   drag handle and no rule, so the page starts at the top. */
+:global(html[data-platform="other"]) .titleBar {
+  height: 10px;
+  border-bottom: none;
+}
