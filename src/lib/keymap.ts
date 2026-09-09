@@ -27,7 +27,9 @@ export type ShortcutId =
   | "focus-editor"
   | "toggle-properties"
   | "marketplace"
-  | "log-today";
+  | "log-today"
+  | "find-in-note"
+  | "toggle-outline";
 
 export interface Shortcut {
   /** `mod` = ⌘ on macOS, Ctrl elsewhere. Lower-case, `+`-joined, key last. */
@@ -53,6 +55,8 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "toggle-properties": { keys: "mod+shift+i", label: "Toggle properties" },
   "marketplace":       { keys: "mod+shift+b", label: "Browse templates" },
   "log-today":         { keys: "mod+shift+h", label: "Log today" },
+  "find-in-note":      { keys: "mod+f",       label: "Find in note" },
+  "toggle-outline":    { keys: "mod+shift+o", label: "Toggle outline" },
 };
 
 // ── Overrides from .cortex/settings.yaml (`keybindings: { id: keys }`) ───────

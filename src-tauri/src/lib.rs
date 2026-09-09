@@ -34,13 +34,34 @@ pub fn run() {
         .manage(theme::ThemeWatcher::default())
         .manage(terminal::TerminalState::default())
         .setup(|app| {
+            // The window is built here rather than listed in tauri.conf.json so it
+            // can carry a navigation guard: the webview only ever shows the app. A
+            // link in a note or a pack's README goes through the frontend's opener
+            // (http, https, mailto only), never through the webview itself.
+            let cfg = tauri::utils::config::WindowConfig {
+                label: "main".into(),
+                title: String::new(),
+                width: 1280.0,
+                height: 840.0,
+                min_width: Some(800.0),
+                min_height: Some(600.0),
+                resizable: true,
+                fullscreen: false,
+                title_bar_style: tauri::TitleBarStyle::Overlay,
+                drag_drop_enabled: false,
+                ..Default::default()
+            };
+            let window = tauri::WebviewWindowBuilder::from_config(&*app, &cfg)?
+                .on_navigation(|url| {
+                    let host = url.host_str().unwrap_or("");
+                    url.scheme() == "tauri" || url.scheme() == "about" || host == "localhost" || host == "tauri.localhost"
+                })
+                .build()?;
             #[cfg(target_os = "linux")]
             if is_tiling_desktop() {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.set_decorations(false);
-                }
+                let _ = window.set_decorations(false);
             }
-            let _ = app; // silence the unused warning on other platforms
+            let _ = window;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -50,6 +71,7 @@ pub fn run() {
             commands::vault::get_vault_info,
             commands::recent::get_recent_vaults,
             commands::notes::list_notes,
+            commands::notes::list_tags,
             commands::notes::read_note,
             commands::notes::resolve_ref,
             commands::notes::write_note,
@@ -115,6 +137,8 @@ pub fn run() {
             commands::schema::get_schema_for_note,
             commands::schema::set_schema,
             commands::schema::upsert_property,
+            commands::schema::rename_property,
+            commands::schema::delete_property,
             commands::members::get_members,
             commands::members::set_members,
             commands::members::current_user,

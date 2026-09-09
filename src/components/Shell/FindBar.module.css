@@ -1,0 +1,54 @@
+/* Floats over the top-right of the page column, like a browser's find bar. */
+.root {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-4);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.input {
+  width: 200px;
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  outline: none;
+  padding: 3px 0;
+}
+
+.input::placeholder { color: var(--text-tertiary); }
+
+.count {
+  min-width: 64px;
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  padding: 0 var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.countNone { color: var(--danger); }
+
+.btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+}
+
+.btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.btn:disabled { opacity: 0.4; cursor: default; }
