@@ -24,6 +24,7 @@ import { MarketplaceView } from "./MarketplaceView";
 import { LogTodayModal } from "./LogTodayModal";
 import { PublishModal } from "./PublishModal";
 import { ImportModal } from "./ImportModal";
+import { UpdateModal } from "./UpdateModal";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
@@ -71,6 +72,8 @@ export function Shell({
   const [showPublish, setShowPublish] = useState(false);
   // The Import dialog — CSV into a collection, or a Markdown folder into notes/.
   const [showImport, setShowImport] = useState(false);
+  // Check for updates — asks the release channel, installs only on confirm.
+  const [showUpdate, setShowUpdate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   // Conflicted files from a sync that hit a merge conflict; non-null shows the
   // resolution modal. Null = no merge in progress (or user dismissed it).
@@ -641,6 +644,7 @@ export function Shell({
           onToggleOutline={() => editorRef.current?.toggleOutline()}
           onPublish={() => setShowPublish(true)}
           onImport={() => setShowImport(true)}
+          onCheckForUpdates={() => setShowUpdate(true)}
           onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
           isPublic={note?.frontmatter["publish"] === true}
           hasRemote={vault.has_remote}
@@ -665,6 +669,10 @@ export function Shell({
           onChanged={() => { refresh(); scheduleAutoCommit(); }}
           onOpenNote={(p) => openNote(p)}
         />
+      )}
+
+      {showUpdate && (
+        <UpdateModal onClose={() => { setShowUpdate(false); focusEditor(); }} />
       )}
 
       {showCapture && (
