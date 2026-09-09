@@ -12,6 +12,7 @@ mod ops;
 
 use clap::{Parser, Subcommand};
 use cortex_core::note::NoteEntry;
+use cortex_core::search::SearchHit;
 use ops::{NewNote, Vault};
 use std::io::Read;
 use std::path::PathBuf;
@@ -45,7 +46,9 @@ enum Cmd {
         #[arg(long)]
         tag: Option<String>,
     },
-    /// Full-text search over titles and bodies
+    /// Full-text search over titles and bodies. Words prefix-match; "quoted
+    /// phrases", -excluded, OR, and tag:x type:x path:x filters are understood.
+    /// Quote the query (or use --) when a word starts with a dash
     Search { query: Vec<String> },
     /// Print a note — by path, title, or filename stem
     Show {
@@ -126,9 +129,17 @@ enum Cmd {
         columns: Option<Vec<String>>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Summary row: field=function (repeatable or comma-separated) —
+        /// count, sum, avg, min, max, percent_checked, empty, not_empty
+        #[arg(long = "summary", value_delimiter = ',')]
+        summary: Vec<String>,
     },
     /// Show a property schema (collection name or note type); lists them if none given
-    Schema { key: Option<String> },
+    Schema {
+        key: Option<String>,
+        #[command(subcommand)]
+        action: Option<SchemaCmd>,
+    },
     /// Working tree, sync state, recent commits and pending proposals
     Status,
     /// Package changes as a proposal: an agent/<name> branch the user reviews in the app
@@ -253,6 +264,23 @@ enum PacksCmd {
 }
 
 #[derive(Subcommand)]
+enum SchemaCmd {
+    /// Rename a property everywhere: the schema, every row, the views, and the rollups / formulas that use it
+    Rename {
+        /// Collection name or note type
+        key: String,
+        old: String,
+        new: String,
+    },
+    /// Delete a property from the schema, every row and every view (refused while a rollup or formula uses it)
+    Rm {
+        /// Collection name or note type
+        key: String,
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SettingsCmd {
     /// Print one setting; `keybindings.<id>` reads a single override
     Get { key: String },
@@ -304,7 +332,7 @@ fn run() -> Result<()> {
         Cmd::Ls { dir, note_type, tag } => {
             out.notes(&v.list(dir.as_deref(), note_type.as_deref(), tag.as_deref()))
         }
-        Cmd::Search { query } => out.notes(&v.search(&query.join(" "))?),
+        Cmd::Search { query } => out.hits(&v.search(&query.join(" "))?),
         Cmd::Show { target, body } => {
             if out.json { out.emit(&v.read(&target)?) }
             else if body { print!("{}", v.read(&target)?.body); Ok(()) }
@@ -351,24 +379,43 @@ fn run() -> Result<()> {
             let names = v.collections();
             if out.json { out.emit(&names) } else { for n in names { println!("{n}"); } Ok(()) }
         }
-        Cmd::View { collection, filter, sort, columns, limit } => {
-            let t = v.view(&collection, filter.as_deref(), &sort, columns.as_deref(), limit)?;
+        Cmd::View { collection, filter, sort, columns, limit, summary } => {
+            let summary: Vec<(String, String)> = summary.iter().map(|s| match s.split_once('=') {
+                Some((f, func)) if !f.trim().is_empty() && !func.trim().is_empty() => Ok((f.trim().to_string(), func.trim().to_string())),
+                _ => Err(format!("--summary expects field=function, got '{s}'")),
+            }).collect::<std::result::Result<_, _>>()?;
+            let t = v.view(&collection, filter.as_deref(), &sort, columns.as_deref(), limit, &summary)?;
             if out.json { return out.emit(&t); }
             let headers: Vec<&str> = std::iter::once("ID").chain(t.columns.iter().map(|c| c.key.as_str())).collect();
-            let rows = t.rows.iter().map(|r| {
+            let mut rows: Vec<Vec<String>> = t.rows.iter().map(|r| {
                 std::iter::once(r.id.clone())
                     .chain(t.columns.iter().map(|c| r.cells.get(&c.key).map(json_text).unwrap_or_default()))
                     .collect()
             }).collect();
+            // The summary row sits under the columns it summarises, labelled by function.
+            if !t.summary.is_empty() {
+                let label = |key: &str| summary.iter().find(|(f, _)| f == key)
+                    .and_then(|(_, func)| t.summary.get(key).map(|v| format!("{func}: {}", json_text(v))))
+                    .unwrap_or_default();
+                rows.push(std::iter::once(String::new()).chain(t.columns.iter().map(|c| label(&c.key))).collect());
+            }
             table(&headers, rows);
             Ok(())
         }
-        Cmd::Schema { key } => match key {
-            Some(k) => {
+        Cmd::Schema { key, action } => match (action, key) {
+            (Some(SchemaCmd::Rename { key, old, new }), _) => {
+                let c = v.rename_property(&key, &old, &new)?;
+                if out.json { out.emit(&c) } else { println!("renamed {key}.{old} → {new}: {}", property_change(&c)); Ok(()) }
+            }
+            (Some(SchemaCmd::Rm { key, name }), _) => {
+                let c = v.delete_property(&key, &name)?;
+                if out.json { out.emit(&c) } else { println!("removed {key}.{name}: {}", property_change(&c)); Ok(()) }
+            }
+            (None, Some(k)) => {
                 let s = v.schema(&k)?;
                 if out.json { out.emit(&s) } else { print!("{}", serde_yaml::to_string(&s)?); Ok(()) }
             }
-            None => {
+            (None, None) => {
                 let keys = v.schemas();
                 if out.json { out.emit(&keys) } else { for k in keys { println!("{k}"); } Ok(()) }
             }
@@ -716,6 +763,14 @@ fn print_tracker(r: &cortex_core::tracker::TrackerResult) {
 
 // ── Output ──────────────────────────────────────────────────────────────────
 
+/// "3 rows, 1 view, schemas tasks, projects" — what a property edit touched.
+fn property_change(c: &cortex_core::schema::PropertyChange) -> String {
+    let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+    let mut parts = vec![plural(c.rows, "row"), plural(c.views, "view")];
+    if !c.schemas.is_empty() { parts.push(format!("schemas {}", c.schemas.join(", "))); }
+    parts.join(", ")
+}
+
 struct Out {
     json: bool,
 }
@@ -737,6 +792,19 @@ impl Out {
         }
         table(&["PATH", "TITLE", "TYPE", "TAGS"], notes.iter().map(|n| vec![
             n.path.clone(), n.title.clone(), n.note_type.clone().unwrap_or_default(), n.tags.join(","),
+        ]).collect());
+        Ok(())
+    }
+
+    /// Search results: the note table plus the matched excerpt, `<mark>`
+    /// tags stripped for the terminal (JSON keeps them).
+    fn hits(&self, hits: &[SearchHit]) -> Result<()> {
+        if self.json {
+            return self.emit(&hits);
+        }
+        table(&["PATH", "TITLE", "TYPE", "TAGS", "MATCH"], hits.iter().map(|h| vec![
+            h.entry.path.clone(), h.entry.title.clone(), h.entry.note_type.clone().unwrap_or_default(),
+            h.entry.tags.join(","), h.snippet.replace("<mark>", "").replace("</mark>", ""),
         ]).collect());
         Ok(())
     }
