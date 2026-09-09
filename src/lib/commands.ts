@@ -281,6 +281,18 @@ export interface NoteRef {
   found: boolean;
 }
 
+/** What `rename_note` / `title_changed` did (cortex-core `rename::RenameReport`). */
+export interface RenameReport {
+  old_path: string;
+  new_path: string;
+  old_title: string;
+  new_title: string;
+  /** Notes whose [[links]] were rewritten to follow the rename. */
+  rewritten: string[];
+  /** True when auto-commit is on and the rename became one commit. */
+  committed: boolean;
+}
+
 export interface NoteEntry {
   path: string;
   title: string;
@@ -746,8 +758,18 @@ export const commands = {
   deleteFolder: (path: string) =>
     invoke<void>("delete_folder", { path }),
 
-  renameNote: (oldPath: string, newPath: string) =>
-    invoke<void>("rename_note", { oldPath, newPath }),
+  /** Rename / move a note (and retitle it when `title` is given); every
+   *  inbound link is rewritten to follow, one commit when auto-commit is on. */
+  renameNote: (oldPath: string, newPath: string, title?: string) =>
+    invoke<RenameReport>("rename_note", { oldPath, newPath, title: title ?? null }),
+
+  /** After the editor has saved a new title: point `[[Old Title]]` links at the new one. */
+  titleChanged: (path: string, oldTitle: string, newTitle: string) =>
+    invoke<RenameReport>("title_changed", { path, oldTitle, newTitle }),
+
+  /** The note a `[[wiki link]]` (any written form) points at — resolved by cortex-core. */
+  resolveNote: (target: string) =>
+    invoke<NoteEntry | null>("resolve_note", { target }),
 
   duplicateNote: (path: string) =>
     invoke<string>("duplicate_note", { path }),

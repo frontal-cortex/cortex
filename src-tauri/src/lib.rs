@@ -82,6 +82,8 @@ pub fn run() {
             commands::notes::create_folder,
             commands::notes::delete_folder,
             commands::notes::rename_note,
+            commands::notes::title_changed,
+            commands::notes::resolve_note,
             commands::notes::duplicate_note,
             commands::notes::reveal_path,
             commands::notes::convert_note_to_database,

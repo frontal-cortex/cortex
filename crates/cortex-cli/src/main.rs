@@ -116,6 +116,16 @@ enum Cmd {
     Links { target: String },
     /// Notes that link to this one
     Backlinks { target: String },
+    /// Rename or move a note and rewrite every inbound [[link]] to follow it
+    Mv {
+        /// The note: path, title, or filename stem
+        target: String,
+        /// New path (`notes/x/plan.md`, `.md` optional) or a folder to move into (`notes/x/`)
+        dest: String,
+        /// Also set the note's title
+        #[arg(long)]
+        title: Option<String>,
+    },
     /// List collections (databases)
     Collections,
     /// Query a collection the way the app's table view does
@@ -414,6 +424,15 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::Backlinks { target } => out.notes(&v.backlinks(&target)?),
+        Cmd::Mv { target, dest, title } => {
+            let r = v.mv(&target, &dest, title.as_deref())?;
+            if out.json { return out.emit(&r); }
+            if r.old_path != r.new_path { println!("{} → {}", r.old_path, r.new_path); }
+            if r.old_title != r.new_title { println!("'{}' → '{}'", r.old_title, r.new_title); }
+            for p in &r.rewritten { println!("  relinked {p}"); }
+            if r.committed { eprintln!("committed: {}", r.commit_message()); }
+            Ok(())
+        }
         Cmd::Collections => {
             let names = v.collections();
             if out.json { out.emit(&names) } else { for n in names { println!("{n}"); } Ok(()) }

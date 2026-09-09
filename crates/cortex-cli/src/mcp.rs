@@ -21,7 +21,8 @@ Notes link to each other with [[Title]] wiki links. Frontmatter keys are kept so
 stay clean — use the tools rather than rewriting files by hand.
 
 Reading: list_notes, list_tags, search, read_note, links, backlinks, list_collections, query_collection, \
-get_schema. Writing: create_note, write_note, set_properties. Writes are visible in the app \
+get_schema. Writing: create_note, write_note, set_properties; move_note renames or moves a note and \
+rewrites every inbound link (a title change through set_properties does the same). Writes are visible in the app \
 immediately. Schemas: rename_property / delete_property change a typed property everywhere at once \
 (schema, every row, views, dependent rollups and formulas) — never rename a frontmatter key by hand across rows. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
 it live); list_agents says which agent CLIs are installed for the terminal_command setting. \
@@ -79,6 +80,17 @@ pub struct SearchArgs {
 pub struct TargetArgs {
     /// A note: its vault-relative path, exact title, or filename stem
     pub target: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct MoveArgs {
+    /// The note to rename or move: path, exact title, or filename stem
+    pub target: String,
+    /// New vault-relative path (`notes/x/plan.md`), or a folder to move into (`notes/x/`)
+    pub dest: String,
+    /// New title, if it should change too
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -320,6 +332,11 @@ with the match wrapped in <mark>.")]
     #[tool(description = "Notes that link to this one.")]
     fn backlinks(&self, Parameters(a): Parameters<TargetArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.backlinks(&a.target).map_err(err)?)
+    }
+
+    #[tool(description = "Rename or move a note (new path, or a folder to move into; optionally a new title) and rewrite every inbound [[link]] — aliases, sections and embeds kept — so nothing is orphaned. Returns old/new path and title, the notes relinked, and whether it was committed (auto_commit).")]
+    fn move_note(&self, Parameters(a): Parameters<MoveArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.mv(&a.target, &a.dest, a.title.as_deref()).map_err(err)?)
     }
 
     #[tool(description = "List collections (databases). Each is a folder of row notes under collections/.")]

@@ -23,6 +23,7 @@ pub mod note;
 pub mod placeholders;
 pub mod publish;
 pub mod recurrence;
+pub mod rename;
 pub mod schema;
 pub mod search;
 pub mod settings;
