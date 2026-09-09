@@ -195,6 +195,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 | URI scheme / deep links (`cortex://`) | missing | M | No `tauri-plugin-deep-link`, no scheme registration. |
 | Embedded terminal / agent pane | done, beyond Obsidian | — | Real PTY (`terminal.rs`), opens into a detected agent CLI. |
 | Export | partial | S | Note → HTML only. No PDF, no Markdown-with-resolved-links. |
+| `==highlight==`, `<u>`, `<details>` folds, sized `<img>` | done | — | The same on-disk forms Obsidian reads; the editor writes and re-reads them (`richFormats.ts`), and `cortex publish` renders `==…==` as `<mark>`. Highlight colour is not kept. |
 
 ## Notable gaps, ranked
 

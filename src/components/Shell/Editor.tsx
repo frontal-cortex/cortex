@@ -30,6 +30,7 @@ import {
 import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, viewToFrontmatter } from "../../lib/database";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
+import { inflateRichFormats, flattenRichFormats } from "./richFormats";
 import { shortcutFor } from "../../lib/keymap";
 import styles from "./Editor.module.css";
 
@@ -53,19 +54,31 @@ async function saveFileAsAsset(file: File): Promise<string> {
   return dataUri;
 }
 
-/** Replace `assets/X` paths with data URIs so BlockNote can display them. */
+/** Data URI for a vault asset, cached so the save path can map it back. */
+async function displayUrlFor(relPath: string): Promise<string> {
+  let dataUri = [...dataUriToRelPath.entries()].find(([, p]) => p === relPath)?.[0];
+  if (!dataUri) {
+    dataUri = await commands.readAsset(relPath);
+    dataUriToRelPath.set(dataUri, relPath);
+  }
+  return dataUri;
+}
+
+/** Replace `assets/X` paths with data URIs so BlockNote can display them —
+ *  both `![alt](assets/X)` and the `<img src="assets/X">` a sized or
+ *  captioned image is saved as. */
 async function assetsToDisplayUrls(body: string): Promise<string> {
-  const matches = [...body.matchAll(/!\[([^\]]*)\]\(assets\/([^)\s]+)\)/g)];
   let result = body;
-  for (const [full, alt, filename] of matches) {
-    const relPath = `assets/${filename}`;
+  for (const [full, alt, filename] of [...body.matchAll(/!\[([^\]]*)\]\(assets\/([^)\s]+)\)/g)]) {
     try {
-      let dataUri = [...dataUriToRelPath.entries()].find(([, p]) => p === relPath)?.[0];
-      if (!dataUri) {
-        dataUri = await commands.readAsset(relPath);
-        dataUriToRelPath.set(dataUri, relPath);
-      }
-      result = result.replace(full, `![${alt}](${dataUri})`);
+      result = result.replace(full, `![${alt}](${await displayUrlFor(`assets/${filename}`)})`);
+    } catch {
+      // Asset missing on disk — leave reference as-is
+    }
+  }
+  for (const [full, before, filename] of [...body.matchAll(/(<img\b[^>]*\bsrc=")assets\/([^"]+)"/g)]) {
+    try {
+      result = result.replace(full, `${before}${await displayUrlFor(`assets/${filename}`)}"`);
     } catch {
       // Asset missing on disk — leave reference as-is
     }
@@ -527,9 +540,9 @@ function NoteEditor({
         .then((displayBody) => {
           try {
             const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`, and
-            // `[!callout]` blockquotes into live blocks on load.
-            editor.replaceBlocks(editor.document, inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks)))) as typeof blocks);
+            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`,
+            // `[!callout]` blockquotes and `==highlights==` into live blocks on load.
+            editor.replaceBlocks(editor.document, inflateRichFormats(inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks))))) as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
             // would be suppressed forever for this note.
@@ -580,7 +593,9 @@ function NoteEditor({
       // immediately by navigating away — capturing here means the pending
       // write survives the editor being destroyed on unmount.
       void (async () => {
-        const doc = flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(editor.document)))) as typeof editor.document;
+        // richFormats runs last so toggles, underline, highlight and image
+        // width reach the exporter in a form it writes verbatim.
+        const doc = flattenRichFormats(flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(editor.document))))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
         pendingMd.current = displayUrlsToAssets(md);
         if (bodyTimer.current) clearTimeout(bodyTimer.current);

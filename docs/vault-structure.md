@@ -68,3 +68,19 @@ Body text. [[Link to another note]] works here.
 
 Frontmatter keys are always sorted alphabetically (`created`, `tags`,
 `title`, `type`) to keep git diffs clean.
+
+The body is GitHub-flavoured Markdown. Formatting that GFM has no syntax
+for uses the same conventions Obsidian and GitHub already render, so the
+file stays legible without the app:
+
+| In the editor | In the file |
+|---|---|
+| Callout | `> [!tip] text` |
+| Toggle | `<details><summary>Title</summary>` … `</details>` |
+| Toggle heading | `<details><summary><h2>Title</h2></summary>` … `</details>` |
+| Highlight | `==text==` |
+| Underline | `<u>text</u>` |
+| Resized image | `<img src="assets/pic.png" alt="pic" width="480">` |
+| Database view | a `cortex-view` fenced block |
+
+Text colour has no file form and is not saved.
