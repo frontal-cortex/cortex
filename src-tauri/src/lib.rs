@@ -23,10 +23,19 @@ fn is_tiling_desktop() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_shell::init());
+    // In-app updates are desktop only. The plugin reads its endpoint and
+    // public key from `plugins.updater` in tauri.conf.json; with no endpoint
+    // (or the placeholder key) the UI reports "not configured" and nothing
+    // else changes — see commands/updates.rs and docs/development.md.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+    builder
         .manage(VaultState::default())
         .manage(DbState::default())
         .manage(watcher::WatcherState::default())
@@ -146,6 +155,7 @@ pub fn run() {
             commands::members::set_members,
             commands::members::current_user,
             agents::detect_agents,
+            commands::updates::update_config,
             commands::publish::publish_preview,
             commands::publish::publish_to_dir,
             commands::publish::publish_gh_pages,
