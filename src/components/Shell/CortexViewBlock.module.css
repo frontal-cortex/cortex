@@ -1190,3 +1190,20 @@
 
 /* Second line of a stub (the missing-collection notice) */
 .stubSub { font-size: var(--text-xs); margin-top: 2px; }
+
+/* A remote cover waits for a click; nothing leaves the machine on open. */
+.remoteImg {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remoteImg:hover { color: var(--text-primary); border-color: var(--border-focus); }
