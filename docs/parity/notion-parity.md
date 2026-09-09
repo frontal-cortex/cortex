@@ -239,7 +239,7 @@ by inferring column types (`data.rs:128`).
 | Desktop builds | partial | S | `targets: "all"` with no per-OS bundle or signing config (`tauri.conf.json:29`). Tiling-WM decorations handled. |
 | CI / release workflow | missing | M | No `.github/` in the repo. |
 | Auto-update | missing | M | No `tauri-plugin-updater`. |
-| Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`, git shells out. See `obsidian-parity.md` §14 and the two mobile backlog rows. |
+| Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, git shells out. The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
 | Responsive layout | missing | M | Three `@media` rules, all in overlays; sidebar fixed at 260px; window `minWidth: 800`. |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 
@@ -264,7 +264,7 @@ by inferring column types (`data.rs:128`).
 9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
-12. **Mobile is a doc, not a target.**
+12. **Mobile is a doc, not a target.** The Android spike (`mobile-spike.md`) says go; the work is sequenced, not started.
 
 ## Deliberate non-goals
 
