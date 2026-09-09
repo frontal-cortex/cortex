@@ -33,11 +33,17 @@ pub fn run() {
         .manage(watcher::SelfWrites::default())
         .manage(theme::ThemeWatcher::default())
         .manage(terminal::TerminalState::default())
+        .manage(commands::preview::EmbedFrames::default())
         .setup(|app| {
             // The window is built here rather than listed in tauri.conf.json so it
             // can carry a navigation guard: the webview only ever shows the app. A
             // link in a note or a pack's README goes through the frontend's opener
-            // (http, https, mailto only), never through the webview itself.
+            // (http, https, mailto only), never through the webview itself. The
+            // one exception is a web-embed block's <iframe>: on WebKitGTK subframe
+            // loads pass through this same guard, so the player URLs the embed
+            // table hands out, and hosts the user loaded through a shield, are
+            // let through (see commands/preview.rs).
+            let frames = app.state::<commands::preview::EmbedFrames>().inner().clone();
             let cfg = tauri::utils::config::WindowConfig {
                 label: "main".into(),
                 title: String::new(),
@@ -52,9 +58,13 @@ pub fn run() {
                 ..Default::default()
             };
             let window = tauri::WebviewWindowBuilder::from_config(&*app, &cfg)?
-                .on_navigation(|url| {
+                .on_navigation(move |url| {
                     let host = url.host_str().unwrap_or("");
-                    url.scheme() == "tauri" || url.scheme() == "about" || host == "localhost" || host == "tauri.localhost"
+                    url.scheme() == "tauri"
+                        || url.scheme() == "about"
+                        || host == "localhost"
+                        || host == "tauri.localhost"
+                        || frames.allows(url.as_str())
                 })
                 .build()?;
             #[cfg(target_os = "linux")]
@@ -160,6 +170,9 @@ pub fn run() {
             commands::tracker::run_tracker,
             commands::tracker::tracker_toggle,
             commands::tracker::list_trackers,
+            commands::preview::fetch_link_preview,
+            commands::preview::resolve_embed,
+            commands::preview::allow_embed_frame,
             commands::import::import_csv_plan,
             commands::import::import_csv,
             commands::import::import_markdown,

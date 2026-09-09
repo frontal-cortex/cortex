@@ -418,7 +418,7 @@ No Tauri mobile build in this task.
 - **CI and auto-update**: a `.github/` build matrix for the three desktop OSes plus `tauri-plugin-updater`. Not parity, but today nobody can receive a build. M.
 - **Assets that are not images**: `read_asset` returns `image/png` for everything and the rehydration regex only matches `![](assets/…)`, so captioned images, video, audio and file blocks render broken after reload. S.
 - **Local graph** with depth, filters and tag colouring; live physics. M.
-- **Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.
+- ~~**Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.~~ Done: `[Label](url)` alone is a card, `<url>` alone is a frame; previews in `.brain/previews/`.
 - **Tabs and split panes.** L, and tabs were removed once after a history bug; needs a design first.
 - **Property types**: date range, files, created/edited time and by as queryable columns. M.
 - **Calendar week view, in-database search box, list view.** S each.

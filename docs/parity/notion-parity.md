@@ -27,8 +27,8 @@ screen but the Markdown save path throws it away.
 | Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
 | File attachment | partial | M | Uploads to `assets/`, degrades to a plain link on save; `read_asset` labels every non-image as `image/png` (`commands/notes.rs:833`) so non-image assets cannot be served. |
 | Video / audio | partial | M | Blocks exist; same asset rehydration gap; no YouTube/Vimeo player or oEmbed. |
-| Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
-| Web embed (iframe) | missing | M | |
+| Bookmark / link preview | done | — | A paragraph that is exactly one web link, `[Label](https://…)`, is a card on load (`BookmarkBlock.tsx`, `lib/webBlocks.ts`); `/bookmark`, and **Bookmark** on the link toolbar. Title, description, favicon and image come from `fetch_link_preview` (`preview.rs`: `<title>`, Open Graph, Twitter, `<link rel=icon>`; 8 s timeout, 512 KiB cap, no JS) cached in `.brain/previews/<sha256>.json` — never written to the note. Offline or on failure the card is the bare link. |
+| Web embed (iframe) | done | — | An autolink alone in a paragraph, `<https://…>`, is a frame (`WebEmbedBlock.tsx`); `/embed`, and **Embed** on the link toolbar. YouTube, Vimeo, CodePen, Figma and Google Maps load at once via the player URLs `embed.rs` derives; any other https page sits behind a click-to-load shield. Chosen over `<iframe>` because GitHub strips iframes to nothing while an autolink stays a link. CSP `frame-src https:`; the webview's navigation guard admits only those player URLs and shield-loaded hosts. |
 | Math / equation (inline and block) | done | — | `$…$` and `$$…$$` on disk (GitHub/Obsidian syntax), KaTeX bundled locally (`MathBlock.tsx`, `src/lib/math.ts`). `/math` and `$$` on an empty line open a block; typing `$…$` makes an inline equation. The static site shows the LaTeX source in a `.math` span (no KaTeX shipped there). |
 | Columns | missing | L | Needs `@blocknote/xl-multi-column`; the roadmap rates it the weakest Markdown fit. |
 | Synced blocks | missing | L | Closest is the read-only `![[note]]` embed. |
@@ -255,7 +255,7 @@ by inferring column types (`data.rs:128`).
 
 1. **Evernote / HTML have no import path.** Notion exports, CSV and Markdown folders all import (§8).
 2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
-3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
+3. **No columns, TOC, synced blocks, buttons.** (Math, bookmark cards and web embeds landed.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation, a date picker and duplicate row landed.)
 6. **No sub-groups in the table view**, and no in-database search. (Filter grammar precedence and operators, table group-by and the summary row have landed.)

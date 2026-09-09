@@ -193,6 +193,7 @@ follows every change you make on disk.
 - Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by path, then title, then filename stem.
   Rename or move with `cortex mv` (or `set title=`), never by hand: every inbound link is rewritten to follow.
 - Never write derived data (rollups, counts) into notes; the app computes it.
+- A paragraph that is only `[Label](https://…)` shows as a bookmark card; one that is only `<https://…>` embeds the page. A bare URL stays text.
 
 ## Tools
 
