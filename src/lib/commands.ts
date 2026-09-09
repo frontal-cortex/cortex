@@ -686,6 +686,8 @@ export interface AgentCli {
 export interface Palette {
   mode: "light" | "dark" | string;
   colors: Record<string, string>;
+  /** The desktop theme's name when known (Omarchy's `theme.name`). */
+  name?: string | null;
 }
 
 /** Result of a sync: clean (did we pull anything?) or a conflicted merge. */

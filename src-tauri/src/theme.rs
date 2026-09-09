@@ -32,6 +32,10 @@ pub struct ThemeWatcher(pub Mutex<Option<RecommendedWatcher>>);
 pub struct Palette {
     /// "light" | "dark"
     pub mode: String,
+    /// The desktop theme's name when the palette file sits where Omarchy keeps
+    /// it (`current/theme/colors.toml` beside `current/theme.name`) — lets the
+    /// app know a palette by name, not only by its colours.
+    pub name: Option<String>,
     /// Colour name → hex, e.g. `background` → `#282828`. Only string values
     /// are kept; anything else in the file is ignored.
     pub colors: BTreeMap<String, String>,
@@ -55,7 +59,32 @@ pub fn read_palette(path: &Path) -> Result<Palette> {
     if colors.is_empty() {
         return Err(AppError::Other("Palette file contains no colours".into()));
     }
-    Ok(Palette { mode, colors })
+    Ok(Palette { mode, colors, name: theme_name(path) })
+}
+
+/// Omarchy writes the active theme's name to `current/theme.name`, next to the
+/// `current/theme/` folder the palette lives in.
+fn theme_name(palette: &Path) -> Option<String> {
+    let name_file = palette.parent()?.parent()?.join("theme.name");
+    let name = std::fs::read_to_string(name_file).ok()?.trim().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    #[test]
+    fn a_palette_beside_theme_name_knows_its_theme() {
+        let dir = std::env::temp_dir().join(format!("cortex-theme-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("current/theme")).unwrap();
+        std::fs::write(dir.join("current/theme/colors.toml"), "mode = \"dark\"\naccent = \"#7daea3\"\nbackground = \"#282828\"\n").unwrap();
+        assert_eq!(read_palette(&dir.join("current/theme/colors.toml")).unwrap().name, None);
+        std::fs::write(dir.join("current/theme.name"), "gruvbox\n").unwrap();
+        assert_eq!(read_palette(&dir.join("current/theme/colors.toml")).unwrap().name.as_deref(), Some("gruvbox"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 /// Expand a leading `~` so a vault-committed setting works on every machine.
