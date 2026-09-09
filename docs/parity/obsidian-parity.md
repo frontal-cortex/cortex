@@ -198,7 +198,7 @@ responsive shell groundwork*, the `RemoteOps` row and the spike's rows
 | Math `$…$` / `$$…$$` (MathJax in Obsidian) | done | — | Same syntax on disk, rendered with KaTeX in the editor (`MathBlock.tsx`). `$$` on an empty line or `/math` opens a block; `$…$` typed inline becomes an equation. |
 | Audio recorder | missing | M | |
 | Slides / presentation mode | missing | M | |
-| PDF viewer | missing | L | Only images render from `assets/`. |
+| PDF viewer | missing | L | Images, video and audio render from `assets/`; a PDF shows as a file block (name and link), not inline. |
 | Web clipper | missing | L | |
 | URI scheme / deep links (`cortex://`) | missing | M | No `tauri-plugin-deep-link`, no scheme registration. |
 | Embedded terminal / agent pane | done, beyond Obsidian | — | Real PTY (`terminal.rs`), opens into a detected agent CLI. |
