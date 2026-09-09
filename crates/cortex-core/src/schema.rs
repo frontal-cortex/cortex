@@ -212,29 +212,68 @@ fn check_name(name: &str) -> Result<()> {
 /// Only field positions change: values, quoted or bare, and `@` placeholders
 /// are left alone, and the text is otherwise preserved byte for byte.
 fn rewrite_filter_fields(src: &str, old: &str, new: &str) -> String {
+    // Tokenise, then rename a bare word only when the next token is an
+    // operator: that is the field position in every form the grammar allows
+    // (`(a == 1 or b is_empty) and not c in [x, y]`). Values, connectors and
+    // list items are never followed by an operator, so they are left alone.
+    const OPS: &[&str] = &[
+        "==", "=", "!=", "<", "<=", ">", ">=", "contains", "does_not_contain",
+        "starts_with", "ends_with", "is_empty", "is_not_empty", "in", "within",
+    ];
     let chars: Vec<char> = src.chars().collect();
-    let mut out = String::new();
+    let mut toks: Vec<String> = Vec::new();
     let mut i = 0;
-    let mut slot = 0; // 0 field, 1 op, 2 value, 3 connector
     while i < chars.len() {
         let c = chars[i];
-        if c.is_whitespace() { out.push(c); i += 1; continue; }
         let start = i;
-        if c == '\'' || c == '"' {
+        if c.is_whitespace() {
+            while i < chars.len() && chars[i].is_whitespace() { i += 1; }
+        } else if c == '\'' || c == '"' {
             i += 1;
             while i < chars.len() && chars[i] != c { i += 1; }
             if i < chars.len() { i += 1; }
+        } else if matches!(c, '(' | ')' | '[' | ']' | ',') {
+            i += 1;
         } else if matches!(c, '=' | '!' | '<' | '>') {
             i += 1;
             if i < chars.len() && chars[i] == '=' { i += 1; }
         } else {
-            while i < chars.len() && !chars[i].is_whitespace() && !matches!(chars[i], '=' | '!' | '<' | '>' | '\'' | '"') { i += 1; }
+            while i < chars.len()
+                && !chars[i].is_whitespace()
+                && !matches!(chars[i], '=' | '!' | '<' | '>' | '\'' | '"' | '(' | ')' | '[' | ']' | ',')
+            { i += 1; }
         }
-        let tok: String = chars[start..i].iter().collect();
-        if slot == 0 && tok == old { out.push_str(new); } else { out.push_str(&tok); }
-        slot = (slot + 1) % 4;
+        toks.push(chars[start..i].iter().collect());
+    }
+    let is_op = |t: &str| OPS.contains(&t.to_ascii_lowercase().as_str());
+    let mut out = String::new();
+    for (n, tok) in toks.iter().enumerate() {
+        let next = toks[n + 1..].iter().find(|t| !t.trim().is_empty());
+        if tok == old && next.map(|t| is_op(t)).unwrap_or(false) {
+            out.push_str(new);
+        } else {
+            out.push_str(tok);
+        }
     }
     out
+}
+
+/// Drop every clause on `field`, descending into parenthesised groups; a
+/// group left empty disappears with them.
+fn drop_field(clauses: Vec<crate::data::FilterClause>, field: &str) -> Vec<crate::data::FilterClause> {
+    clauses
+        .into_iter()
+        .filter_map(|mut c| {
+            if !c.clauses.is_empty() {
+                c.clauses = drop_field(c.clauses, field);
+                if c.clauses.is_empty() { None } else { Some(c) }
+            } else if c.field == field {
+                None
+            } else {
+                Some(c)
+            }
+        })
+        .collect()
 }
 
 /// Does a filter name this field?
@@ -369,8 +408,7 @@ fn rewrite_view(view: &mut serde_json::Value, old: &str, new: Option<&str>) -> b
             Some(new) => Some(rewrite_filter_fields(&f, old, new)),
             None => match crate::data::flatten_filter(&f) {
                 Some((clauses, join)) => {
-                    let kept: Vec<_> = clauses.into_iter().filter(|c| c.field != old).collect();
-                    Some(crate::data::build_filter(&kept, &join))
+                    Some(crate::data::build_filter(&drop_field(clauses, old), &join))
                 }
                 None => None, // mixed and/or: left for the user to edit
             },
@@ -710,6 +748,22 @@ mod tests {
     fn expression_rewrites_respect_positions_and_quotes() {
         assert_eq!(rewrite_filter_fields("status == done and done == true", "done", "finished"), "status == done and finished == true");
         assert_eq!(rewrite_filter_fields("name contains 'due' or due<@today", "due", "deadline"), "name contains 'due' or deadline<@today");
+        // The grammar since #34: parentheses, `not`, emptiness tests, `in` lists.
+        assert_eq!(
+            rewrite_filter_fields("(status == todo or owner is_empty) and not owner in [ana, owner]", "owner", "assignee"),
+            "(status == todo or assignee is_empty) and not assignee in [ana, owner]"
+        );
+        assert_eq!(rewrite_filter_fields("due within 7d and status != done", "status", "state"), "due within 7d and state != done");
+    }
+
+    #[test]
+    fn delete_drops_clauses_inside_groups() {
+        let (clauses, join) = crate::data::flatten_filter("(status == todo or owner is_empty) and priority >= 2").unwrap();
+        let kept = drop_field(clauses, "owner");
+        assert_eq!(crate::data::build_filter(&kept, &join), "(status == 'todo') and priority >= 2");
+        let (clauses, join) = crate::data::flatten_filter("(owner is_empty or owner == ana) and priority >= 2").unwrap();
+        let kept = drop_field(clauses, "owner");
+        assert_eq!(crate::data::build_filter(&kept, &join), "priority >= 2");
         assert_eq!(rewrite_expr_idents("round(hours / est * 100, 'hours')", "hours", "effort"), "round(effort / est * 100, 'hours')");
         assert_eq!(rewrite_expr_idents("round(x) + round_up", "round", "r"), "round(x) + round_up");
         assert!(expr_mentions("days_until(due)", "due") && !expr_mentions("days_until(due_date)", "due"));
