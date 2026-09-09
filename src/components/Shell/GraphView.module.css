@@ -147,13 +147,20 @@
   display: flex;
 }
 
+/* ── Phone ──────────────────────────────────────────────────────────────── */
+:root[data-viewport="phone"] .overlay { padding: 0; }
+:root[data-viewport="phone"] .modal { height: 100%; max-width: none; border-radius: 0; border: none; }
+:root[data-viewport="phone"] .closeBtn { min-width: var(--tap-target); min-height: var(--tap-target); }
+
 .svg {
   flex: 1;
   cursor: grab;
   width: 100%;
   height: 100%;
+  /* Fingers pan and pinch the graph, never the page. */
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
 }
 
 .svg:active { cursor: grabbing; }

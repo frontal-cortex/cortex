@@ -20,6 +20,8 @@ import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
 import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
+import { useViewport } from "../../hooks/useViewport";
+import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
 import { DateRangeInput, FilesInput, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
 import styles from "./CortexViewBlock.module.css";
 
@@ -1017,6 +1019,9 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   const [pendingRowId, setPendingRowId] = useState<string | null>(null);
   const [menuRow, setMenuRow] = useState<string | null>(null);
   const [templatesVersion, setTemplatesVersion] = useState(0);
+  // Below the phone breakpoint the grid becomes a card list (one card per
+  // row; a tap opens it) — a nine-column table is nothing to a thumb.
+  const { isPhone } = useViewport();
   // Whether DOM focus is inside the table: a cell editor that closes because
   // the user clicked elsewhere must not pull focus back here.
   const focusWithin = useRef(false);
@@ -1430,6 +1435,81 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
       .catch((e) => setErr(String(e)));
   };
 
+  const footer = (
+    <div className={styles.footer}>
+      <NewRowButton source={source} spec={spec} onAddBlank={() => addBlank()} onChanged={onChanged} onError={setErr} templatesVersion={templatesVersion} />
+      <span className={styles.count}>
+        {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
+        {groupField && groupKeys.length > 0 && ` · ${groupKeys.length} group${groupKeys.length === 1 ? "" : "s"}`}
+        {err && <span className={styles.error}> · {err}</span>}
+      </span>
+    </div>
+  );
+
+  if (isPhone) {
+    // The title, then the first three other columns that carry a value.
+    const titleCol = cols.find((c) => c.key === "title") ?? cols.find((c) => c.key !== "$body" && c.key !== "id");
+    const cardCols = cols.filter((c) => c !== titleCol && c.key !== "$body" && c.key !== "id").slice(0, 3);
+    const renderCard = (row: ViewTable["rows"][number]) => (
+      <div key={row.id} className={styles.rowCard} role="listitem">
+        <div
+          className={`${styles.rowCardMain} ${canOpen ? styles.rowCardOpen : ""}`}
+          role={canOpen ? "button" : undefined}
+          tabIndex={canOpen ? 0 : undefined}
+          onClick={canOpen ? () => openRow(source, row.id) : undefined}
+          onKeyDown={canOpen ? (e) => { if (e.key === "Enter") openRow(source, row.id); } : undefined}
+        >
+          <div className={styles.rowCardTitle}>{(titleCol && formatCell(row.cells[titleCol.key])) || "Untitled"}</div>
+          {cardCols.filter((c) => hasValue(row.cells[c.key])).map((c) => (
+            <div key={c.key} className={styles.rowCardField}>
+              <span className={styles.rowCardKey}>{c.key}</span>
+              {isSelectColumn(c)
+                ? <SelectCell value={row.cells[c.key]} options={c.schema!.options ?? []} multi={c.schema!.type === "multi_select"} editable={false} onChange={() => {}} />
+                : <span className={styles.rowCardValue}>{displayCell(c, row.cells[c.key])}</span>}
+            </div>
+          ))}
+        </div>
+        <RowMenu
+          open={menuRow === row.id}
+          onToggle={() => setMenuRow((m) => (m === row.id ? null : row.id))}
+          items={[
+            ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }] : []),
+            { label: "Duplicate", run: () => duplicate(row.id) },
+            ...(schemaKey ? [{ label: "Save as template…", run: () => saveAsTemplate(row.id) }] : []),
+            { label: "Delete", run: () => del(row.id), danger: true },
+          ]}
+        />
+      </div>
+    );
+    return (
+      <div className={styles.tableWrap}>
+        <div className={styles.cardList} role="list" aria-label="Rows">
+          {!groupField && rows.map(renderCard)}
+          {groupField && sections.map((s) => (
+            <div key={s.key} className={styles.cardGroup}>
+              <button className={styles.groupToggle} onClick={() => toggleGroup(s.key)} aria-expanded={!s.folded}>
+                <span className={`${styles.groupChevron} ${s.folded ? styles.groupChevronFolded : ""}`}>▾</span>
+                <span className={styles.groupTitle}>{s.key === "—" ? `No ${groupField}` : s.key}</span>
+                <span className={styles.groupCount}>{s.rows.length}</span>
+              </button>
+              {!s.folded && s.rows.map(renderCard)}
+              {!s.folded && canAddInGroup && (
+                <NewRowButton
+                  source={source} spec={spec} onChanged={onChanged} onError={setErr}
+                  extra={{ [groupField]: s.key === "—" ? "" : s.key }}
+                  onAddBlank={() => addBlank({ [groupField]: s.key === "—" ? "" : s.key })}
+                  templatesVersion={templatesVersion}
+                  compact
+                />
+              )}
+            </div>
+          ))}
+        </div>
+        {footer}
+      </div>
+    );
+  }
+
   return (
     <div className={styles.tableWrap}>
       <table
@@ -1515,14 +1595,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
           </tfoot>
         )}
       </table>
-      <div className={styles.footer}>
-        <NewRowButton source={source} spec={spec} onAddBlank={() => addBlank()} onChanged={onChanged} onError={setErr} templatesVersion={templatesVersion} />
-        <span className={styles.count}>
-          {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
-          {groupField && groupKeys.length > 0 && ` · ${groupKeys.length} group${groupKeys.length === 1 ? "" : "s"}`}
-          {err && <span className={styles.error}> · {err}</span>}
-        </span>
-      </div>
+      {footer}
     </div>
   );
 }
@@ -1664,7 +1737,6 @@ export function BoardView({ table, spec, source, onChanged }: {
   // before the write + reload round-trips.
   const [rows, setRows] = useState(table.rows);
   useEffect(() => { setRows(table.rows); }, [table.rows]);
-  const [dragOver, setDragOver] = useState<string | null>(null);
 
   const groupField = peek(spec, "group");
   if (!groupField) {
@@ -1738,13 +1810,7 @@ export function BoardView({ table, spec, source, onChanged }: {
   return (
     <div className={styles.board}>
       {shown.map((g) => (
-        <div
-          key={g}
-          className={`${styles.boardCol} ${dragOver === g ? styles.boardColDragOver : ""}`}
-          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== g) setDragOver(g); }}
-          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver((d) => (d === g ? null : d)); }}
-          onDrop={(e) => { e.preventDefault(); setDragOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) moveCard(id, g); }}
-        >
+        <BoardColumn key={g} group={g} onDrop={(id) => moveCard(id, g)}>
           <div className={styles.boardColHeader}>
             <span className={styles.boardColTitle}>{g}</span>
             <span className={styles.boardColCount}>{(groups.get(g) ?? []).length}</span>
@@ -1754,8 +1820,7 @@ export function BoardView({ table, spec, source, onChanged }: {
               <div
                 key={row.id}
                 className={styles.boardCard}
-                draggable
-                onDragStart={(e) => { e.dataTransfer.setData("text/plain", row.id); e.dataTransfer.effectAllowed = "move"; }}
+                {...dragSource({ payload: row.id, label: formatCell(row.cells[titleField]) })}
               >
                 <div className={styles.cardActions}>
                   {canOpen && (
@@ -1794,7 +1859,7 @@ export function BoardView({ table, spec, source, onChanged }: {
             ))}
           </div>
           <button className={styles.boardAdd} onClick={() => addToGroup(g)}>+ Add</button>
-        </div>
+        </BoardColumn>
       ))}
       {folded.length > 0 && (
         <div className={styles.boardFolded}>
@@ -1803,22 +1868,28 @@ export function BoardView({ table, spec, source, onChanged }: {
             <span className={styles.boardColCount}>{folded.length}</span>
           </div>
           {folded.map((g) => (
-            <button
-              key={g}
-              type="button"
-              className={`${styles.boardFoldedChip} ${dragOver === g ? styles.boardColDragOver : ""}`}
-              title={`Add a row to ${g}`}
-              onClick={() => addToGroup(g)}
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== g) setDragOver(g); }}
-              onDragLeave={() => setDragOver((d) => (d === g ? null : d))}
-              onDrop={(e) => { e.preventDefault(); setDragOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) moveCard(id, g); }}
-            >
-              <span>{g}</span><span className={styles.boardFoldedPlus}>+</span>
-            </button>
+            <BoardFoldedChip key={g} group={g} onAdd={() => addToGroup(g)} onDrop={(id) => moveCard(id, g)} />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/** One board column: a drop target for cards (pointer drag-and-drop, so a
+ *  held finger moves a card too — see lib/pointerDrag.ts). */
+function BoardColumn({ group, onDrop, children }: { group: string; onDrop: (rowId: string) => void; children: ReactNode }) {
+  const dropRef = useDropTarget<HTMLDivElement>(onDrop);
+  return <div ref={dropRef} className={styles.boardCol} data-group={group}>{children}</div>;
+}
+
+/** An empty group, folded to a chip: still a drop target, and a tap adds a row. */
+function BoardFoldedChip({ group, onAdd, onDrop }: { group: string; onAdd: () => void; onDrop: (rowId: string) => void }) {
+  const dropRef = useDropTarget<HTMLButtonElement>(onDrop);
+  return (
+    <button ref={dropRef} type="button" className={styles.boardFoldedChip} title={`Add a row to ${group}`} onClick={onAdd}>
+      <span>{group}</span><span className={styles.boardFoldedPlus}>+</span>
+    </button>
   );
 }
 
@@ -1961,6 +2032,9 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
   const dateField = dateFieldFor(table, spec);
   const endField = endFieldFor(table, spec, dateField);
   const canOpen = source.startsWith("collections/");
+  // A month grid needs the width; a phone gets one week as a strip of days
+  // and the picked day's rows under it.
+  const { isPhone } = useViewport();
   // Event colour: the first select/status property's option colour, as on the timeline.
   const colorCol = table.columns.find((c) => c.schema?.type === "select" || c.schema?.type === "status");
 
@@ -1987,6 +2061,10 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
   const specMode = calendarMode(spec);
   const [mode, setMode] = useState<CalendarMode>(specMode);
   useEffect(() => { setMode(specMode); }, [specMode]);
+  // A phone has no room for a month grid or the mode control: it always
+  // shows one week as a strip of days with the picked day's events under it.
+  // The spec's mode is kept, so a wider window gets it back.
+  const effMode: CalendarMode = isPhone ? "week" : mode;
   // The month grid opens on the month with the most rows, else today; the
   // week and day views open on today.
   const [anchor, setAnchor] = useState<Date>(() => {
@@ -2009,7 +2087,7 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
   };
 
   const step = (dir: 1 | -1) => setAnchor((a) =>
-    mode === "month" ? new Date(a.getFullYear(), a.getMonth() + dir, 1) : addDays(a, dir * (mode === "week" ? 7 : 1)));
+    effMode === "month" ? new Date(a.getFullYear(), a.getMonth() + dir, 1) : addDays(a, dir * (effMode === "week" ? 7 : 1)));
   const goToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); setAnchor(t); };
 
   const todayStr = ymd(new Date());
@@ -2022,16 +2100,16 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
   const month = anchor.getMonth();
   // The weeks on show: every week touching the month, one week, or none (day).
   const weekStarts: Date[] = [];
-  if (mode === "month") {
+  if (effMode === "month") {
     const last = new Date(year, month + 1, 0);
     for (let w = mondayOf(new Date(year, month, 1)); w <= last; w = addDays(w, 7)) weekStarts.push(w);
-  } else if (mode === "week") {
+  } else if (effMode === "week") {
     weekStarts.push(mondayOf(anchor));
   }
 
-  const title = mode === "month"
+  const title = effMode === "month"
     ? `${MONTHS[month]} ${year}`
-    : mode === "week"
+    : effMode === "week"
       ? weekLabel(weekStarts[0])
       : `${WEEKDAYS_LONG[(anchor.getDay() + 6) % 7]}, ${anchor.getDate()} ${MONTHS[month]} ${year}`;
 
@@ -2043,12 +2121,12 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
     const { placed, lanes } = placeWeek(events, weekStart);
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     // Rows: the day numbers, one per lane, then a stretch of empty cell.
-    const rows = `auto repeat(${lanes}, auto) minmax(${mode === "week" ? 120 : 24}px, 1fr)`;
+    const rows = `auto repeat(${lanes}, auto) minmax(${effMode === "week" ? 120 : 24}px, 1fr)`;
     return (
       <div key={ymd(weekStart)} className={styles.calWeek} style={{ gridTemplateRows: rows }}>
         {days.map((d, i) => {
           const key = ymd(d);
-          const outside = mode === "month" && d.getMonth() !== month;
+          const outside = effMode === "month" && d.getMonth() !== month;
           return (
             <div
               key={`bg-${key}`}
@@ -2059,11 +2137,11 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
         })}
         {days.map((d, i) => {
           const key = ymd(d);
-          const outside = mode === "month" && d.getMonth() !== month;
+          const outside = effMode === "month" && d.getMonth() !== month;
           return (
             <div key={`day-${key}`} className={styles.calDayRow} style={{ gridColumn: i + 1, gridRow: 1 }}>
               <span className={`${styles.calDay} ${outside ? styles.calDayOutside : ""}`}>
-                {mode === "week" || d.getDate() === 1 ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : d.getDate()}
+                {effMode === "week" || d.getDate() === 1 ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : d.getDate()}
               </span>
               {canOpen && !outside && (
                 <button className={styles.calAdd} title="Add here" onClick={() => addOn(key)}>+</button>
@@ -2087,8 +2165,29 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
     );
   };
 
+  // The picked day's events: the day view, and the list under the phone strip.
   const dayKey = ymd(anchor);
-  const dayEvents = mode === "day" ? events.filter((e) => e.start <= dayKey && e.end >= dayKey) : [];
+  const showDay = effMode === "day" || isPhone;
+  const dayEvents = showDay ? events.filter((e) => e.start <= dayKey && e.end >= dayKey) : [];
+  const dayList = showDay && (
+    <div className={`${styles.calDayList} ${dayKey === todayStr ? styles.calCellToday : ""}`}>
+      {dayEvents.length === 0 && <div className={styles.stub}>Nothing on this day.</div>}
+      {dayEvents.map((e) => (
+        <button
+          key={e.id}
+          type="button"
+          className={`${canOpen ? styles.calEventOpen : styles.calEvent} ${styles.calDayEvent}`}
+          style={eventStyle(e)}
+          title={eventTitle(e)}
+          onClick={canOpen ? () => openRow(source, e.id) : undefined}
+        >
+          <span className={styles.calDayEventTitle}>{e.title}</span>
+          {e.start !== e.end && <span className={styles.calDayEventSpan}>{e.start} → {e.end}</span>}
+        </button>
+      ))}
+      {canOpen && <button className={styles.calAddDay} onClick={() => addOn(dayKey)}>+ Add here</button>}
+    </div>
+  );
 
   return (
     <div className={styles.calendar}>
@@ -2097,42 +2196,49 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
         <span className={styles.calTitle}>{title}</span>
         <button className={styles.calNav} onClick={() => step(1)}>›</button>
         <button className={styles.calToday} onClick={goToday}>Today</button>
-        <div className={styles.calModes} role="tablist">
-          {CAL_MODES.map((m) => (
-            <button key={m.id} role="tab" aria-selected={mode === m.id}
-              className={`${styles.calModeBtn} ${mode === m.id ? styles.calModeOn : ""}`} onClick={() => pickMode(m.id)}>
-              {m.label}
-            </button>
-          ))}
-        </div>
+        {!isPhone && (
+          <div className={styles.calModes} role="tablist">
+            {CAL_MODES.map((m) => (
+              <button key={m.id} role="tab" aria-selected={mode === m.id}
+                className={`${styles.calModeBtn} ${mode === m.id ? styles.calModeOn : ""}`} onClick={() => pickMode(m.id)}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
         <span className={styles.calField}>by {dateField}{endField ? ` → ${endField}` : ""}</span>
       </div>
-      {mode !== "day" ? (
+      {isPhone ? (
+        <>
+          <div className={styles.weekStrip} role="tablist" aria-label="Days of the week">
+            {Array.from({ length: 7 }, (_, i) => addDays(weekStarts[0], i)).map((d, i) => {
+              const key = ymd(d);
+              const n = events.filter((e) => e.start <= key && e.end >= key).length;
+              return (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={key === dayKey}
+                  className={`${styles.weekDay} ${key === dayKey ? styles.weekDaySelected : ""} ${key === todayStr ? styles.weekDayToday : ""}`}
+                  onClick={() => setAnchor(d)}
+                >
+                  <span className={styles.weekDayName}>{WEEKDAYS[i]}</span>
+                  <span className={styles.weekDayNum}>{d.getDate()}</span>
+                  <span className={styles.weekDayCount}>{n > 0 ? n : ""}</span>
+                </button>
+              );
+            })}
+          </div>
+          {dayList}
+        </>
+      ) : effMode !== "day" ? (
         <div className={styles.calGrid}>
           <div className={styles.calWeekdays}>
             {WEEKDAYS.map((w) => <div key={w} className={styles.calWeekday}>{w}</div>)}
           </div>
           {weekStarts.map(renderWeek)}
         </div>
-      ) : (
-        <div className={`${styles.calDayList} ${dayKey === todayStr ? styles.calCellToday : ""}`}>
-          {dayEvents.length === 0 && <div className={styles.stub}>Nothing on this day.</div>}
-          {dayEvents.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              className={`${canOpen ? styles.calEventOpen : styles.calEvent} ${styles.calDayEvent}`}
-              style={eventStyle(e)}
-              title={eventTitle(e)}
-              onClick={canOpen ? () => openRow(source, e.id) : undefined}
-            >
-              <span className={styles.calDayEventTitle}>{e.title}</span>
-              {e.start !== e.end && <span className={styles.calDayEventSpan}>{e.start} → {e.end}</span>}
-            </button>
-          ))}
-          {canOpen && <button className={styles.calAddDay} onClick={() => addOn(dayKey)}>+ Add here</button>}
-        </div>
-      )}
+      ) : dayList}
       {canOpen && (
         <div className={styles.calFooter}>
           {picking ? (

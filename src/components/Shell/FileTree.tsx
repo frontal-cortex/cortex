@@ -6,6 +6,8 @@ import {
   StarIcon, StarFilledIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, FilePlusIcon, FileIcon, TrashIcon, DatabaseIcon,
 } from "./icons";
 import { RowA11y } from "./treeRows";
+import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
+import { DragSourceOptions } from "../../lib/pointerDrag";
 import styles from "./FileTree.module.css";
 
 export interface TreeActions {
@@ -130,29 +132,27 @@ function DirRow({
   onSelect: (path: string) => void;
   a11y: A11yFor;
 }) {
-  const [dragOver, setDragOver] = useState(false);
   const count = countFiles(node);
+  // A note or a collection dropped on the folder moves into it (pointer
+  // drag-and-drop, so a finger works too; the target lights up via
+  // `data-drop-over`).
+  const dropRef = useDropTarget<HTMLDivElement>((path) => {
+    if (path.startsWith(COLLECTION_DRAG)) {
+      actions.onMoveCollection?.(path.slice(COLLECTION_DRAG.length), node.path);
+    } else if (path && path !== node.path && !path.startsWith(node.path)) {
+      actions.onMoveNote(path, node.path);
+    }
+  });
 
   return (
     <div>
       <div
         {...a11y(node.path)}
-        className={`${styles.row} ${styles.dirRow} ${dragOver ? styles.dirRowDropTarget : ""}`}
+        ref={dropRef}
+        className={`${styles.row} ${styles.dirRow}`}
         style={rowStyle(depth)}
         title={`${node.name} · ${count} note${count === 1 ? "" : "s"}`}
         onClick={() => onToggleDir(node.path)}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-        onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
-        onDrop={(e) => {
-          e.preventDefault(); e.stopPropagation();
-          setDragOver(false);
-          const path = e.dataTransfer.getData("text/plain");
-          if (path.startsWith(COLLECTION_DRAG)) {
-            actions.onMoveCollection?.(path.slice(COLLECTION_DRAG.length), node.path);
-          } else if (path && path !== node.path && !path.startsWith(node.path)) {
-            actions.onMoveNote(path, node.path);
-          }
-        }}
       >
         <span className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`} aria-hidden>
           <ChevronRightIcon size={12} />
@@ -225,36 +225,27 @@ function CollectionRow({
   a11y: A11yFor;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [dragOver, setDragOver] = useState(false);
   const hasChildren = node.children.length > 0;
   const selected = node.path === selectedPath;
   const openIt = () => (actions.onOpenCollection ? actions.onOpenCollection(node.collection) : onSelect(node.path));
+  // Another collection dropped here nests under this one.
+  const dropRef = useDropTarget<HTMLDivElement>((data) => {
+    if (!data.startsWith(COLLECTION_DRAG)) return;
+    const c = data.slice(COLLECTION_DRAG.length);
+    if (c && c !== node.collection) actions.onMoveCollection?.(c, node.collection);
+  });
 
   return (
     <div>
       <div
         {...a11y(node.path, selected)}
-        className={`${styles.row} ${selected ? styles.rowSelected : ""} ${dragOver ? styles.dirRowDropTarget : ""} ${menu ? styles.rowContext : ""}`}
+        ref={dropRef}
+        className={`${styles.row} ${selected ? styles.rowSelected : ""} ${menu ? styles.rowContext : ""}`}
         style={rowStyle(depth)}
         title={`${node.name} · collections/${node.collection}`}
         onClick={openIt}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData("text/plain", `${COLLECTION_DRAG}${node.collection}`);
-          e.dataTransfer.effectAllowed = "move";
-        }}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-        onDragLeave={(e) => { e.stopPropagation(); setDragOver(false); }}
-        onDrop={(e) => {
-          e.preventDefault(); e.stopPropagation();
-          setDragOver(false);
-          const data = e.dataTransfer.getData("text/plain");
-          if (data.startsWith(COLLECTION_DRAG)) {
-            const c = data.slice(COLLECTION_DRAG.length);
-            if (c && c !== node.collection) actions.onMoveCollection?.(c, node.collection);
-          }
-        }}
+        {...dragSource({ payload: `${COLLECTION_DRAG}${node.collection}`, label: node.name, contextMenuOnHold: true })}
       >
         <span
           className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
@@ -369,11 +360,7 @@ function FileRow({
       title={meta}
       onClick={() => onSelect(node.path)}
       onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", node.path);
-        e.dataTransfer.effectAllowed = "move";
-      }}
+      drag={{ payload: node.path, label: node.name, contextMenuOnHold: true }}
       trailing={onToggleFavorite && (
         <button
           className={`${styles.starBtn} ${fav ? styles.starBtnActive : ""}`}
@@ -406,7 +393,7 @@ function FileRow({
 
 export function LeafRow({
   id, a11y, depth, selected, icon, iconTone, label, hint, title, className, trailing, children,
-  onClick, onContextMenu, draggable, onDragStart,
+  onClick, onContextMenu, drag,
 }: {
   id: string;
   a11y: A11yFor;
@@ -423,8 +410,8 @@ export function LeafRow({
   children?: ReactNode;
   onClick?: () => void;
   onContextMenu?: (e: ReactMouseEvent<HTMLDivElement>) => void;
-  draggable?: boolean;
-  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
+  /** Makes the row a drag source (pointer drag-and-drop: mouse, pen or a held finger). */
+  drag?: DragSourceOptions;
 }) {
   return (
     <div
@@ -434,8 +421,7 @@ export function LeafRow({
       title={title}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      draggable={draggable}
-      onDragStart={onDragStart}
+      {...(drag ? dragSource(drag) : {})}
     >
       <span className={`${styles.rowIcon} ${iconTone === "accent" ? styles.toneAccent : iconTone === "agent" ? styles.toneAgent : ""}`}>
         {icon}

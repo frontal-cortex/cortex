@@ -12,7 +12,17 @@
 }
 .root:focus-visible { box-shadow: 0 0 0 2px var(--accent-light); }
 
-.scroll { overflow-x: auto; overflow-y: hidden; }
+.scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* A finger scrolls the page up and down; sideways drags and pinches reach
+     the pointer handlers (pan and zoom the axis). */
+  touch-action: pan-y;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.scroll:active { cursor: grabbing; }
 .body { position: relative; min-width: 100%; }
 
 /* ── Header: one label per Monday ─────────────────────────────────────────── */
@@ -77,9 +87,9 @@
   position: relative;
   flex: 0 0 auto;
   height: 100%;
-  /* Faint week grid behind the bars: one line per 7 × DAY_PX (18px). */
+  /* Faint week grid behind the bars: one line per week (--week-px follows the zoom). */
   background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
-  background-size: 126px 100%;
+  background-size: var(--week-px, 126px) 100%;
 }
 
 .bar {
@@ -146,3 +156,9 @@
   border: 1px solid var(--border); border-radius: 12px; background: var(--bg-app); color: var(--text-primary);
 }
 .setupChip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Phone ────────────────────────────────────────────────────────────────── */
+/* Rows and bars grow to a thumb; the sticky label gives up width to the axis. */
+:root[data-viewport="phone"] .root { --label-w: 120px; --row-h: var(--tap-target); }
+:root[data-viewport="phone"] .bar { top: 6px; height: calc(var(--row-h) - 12px); }
+:root[data-viewport="phone"] .setupChip { min-height: var(--tap-target); padding: 4px 14px; }

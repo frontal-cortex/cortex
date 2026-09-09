@@ -7,16 +7,21 @@
 // `date_range` property carries both ends itself: `start: trip` (or the first
 // range column, when nothing is declared) draws each row from its start to its
 // end. Items with no start sit under "Unscheduled". Read-only in this pass: click a bar to open
-// the row, j/k to move, Enter to open, t to scroll to today.
+// the row, j/k to move, Enter to open, t to scroll to today. Drag the axis to
+// pan (mouse, pen or finger — one pointer path), pinch or Ctrl+wheel to zoom;
+// `-` / `=` zoom from the keyboard.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ViewTable, ViewColumn } from "../../lib/commands";
+import { DRAG_THRESHOLD_PX, Point, clamp, distance, pinchFactor, wheelZoomFactor, zoomAnchored } from "../../lib/gestures";
 import { rangeOf, rangeEnd } from "./PropertyInputs";
 import { TimelineIcon } from "./icons";
 import styles from "./TimelineView.module.css";
 
+/** Pixels per day at the default zoom, and the zoom's bounds. */
 const DAY_PX = 18;
-const WEEK_PX = DAY_PX * 7;
+const MIN_DAY_PX = 4;
+const MAX_DAY_PX = 60;
 const MIN_WEEKS = 8;
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -95,6 +100,8 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
   const canOpen = source.startsWith("collections/");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [focus, setFocus] = useState<number | null>(null);
+  const [dayPx, setDayPx] = useState(DAY_PX);
+  const WEEK_PX = dayPx * 7;
 
   // Bar colour: the first select/status property's option colour for the row.
   const colorCol: ViewColumn | undefined = table.columns.find((c) => c.schema?.type === "select" || c.schema?.type === "status");
@@ -126,16 +133,123 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
   }, [table.rows, startField, endField, colorCol]);
 
   const width = weeks * WEEK_PX;
-  const xOf = (day: string) => daysBetween(axisStart, parseYmd(day)) * DAY_PX;
+  const xOf = (day: string) => daysBetween(axisStart, parseYmd(day)) * dayPx;
 
   const scrollToToday = () => {
     const el = scrollRef.current;
-    if (el) el.scrollLeft = Math.max(0, todayIdx * DAY_PX - el.clientWidth / 3);
+    if (el) el.scrollLeft = Math.max(0, todayIdx * dayPx - el.clientWidth / 3);
   };
   // Open on today, and again only when the axis itself moves — a reload with
   // the same span keeps the user's scroll position.
   const axisKey = axisStart.getTime();
   useEffect(() => { scrollToToday(); }, [axisKey]); // scrollToToday reads refs and todayIdx, which move with axisKey
+
+  // ── Zoom + pan ──────────────────────────────────────────────────────────────
+  // The day under the pointer (or between the fingers) stays put while the
+  // scale changes: the scroll position is corrected in the same frame.
+  const labelW = () => {
+    const el = scrollRef.current;
+    return el ? parseFloat(getComputedStyle(el).getPropertyValue("--label-w")) || 0 : 0;
+  };
+  // The corrected scroll position lands after the render that resizes the
+  // axis — set before it, a zoom-in would be clamped to the old width.
+  const pendingScroll = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (pendingScroll.current == null || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = pendingScroll.current;
+    pendingScroll.current = null;
+  }, [dayPx]);
+  const zoomAt = (factor: number, clientX: number) => {
+    const el = scrollRef.current;
+    const next = clamp(dayPx * factor, MIN_DAY_PX, MAX_DAY_PX);
+    if (next === dayPx) return;
+    if (el) {
+      const offset = clientX - el.getBoundingClientRect().left - labelW();
+      pendingScroll.current = zoomAnchored(el.scrollLeft, offset, next / dayPx);
+    }
+    setDayPx(next);
+  };
+  const zoomCentred = (factor: number) => {
+    const el = scrollRef.current;
+    zoomAt(factor, el ? el.getBoundingClientRect().left + labelW() + (el.clientWidth - labelW()) / 2 : 0);
+  };
+  // Ctrl / Cmd + wheel zooms; a plain wheel keeps scrolling. Attached by hand
+  // because React registers `wheel` as passive, so `onWheel` could not
+  // stop the browser zooming the page too.
+  const zoomAtRef = useRef(zoomAt);
+  zoomAtRef.current = zoomAt;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      zoomAtRef.current(wheelZoomFactor(e.deltaY), e.clientX);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [startField]);
+
+  // Pointer drag pans the axis (one pointer) or pinches the zoom (two).
+  // `touch-action: pan-y` on the scroller leaves vertical page scrolling to
+  // the browser and hands sideways moves and pinches to us. A press that
+  // moved is a pan, so the click that follows must not open a row.
+  const pointers = useRef(new Map<number, Point>());
+  const pan = useRef<{ x: number; scrollLeft: number; dist: number; dayPx: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const el = e.currentTarget;
+    suppressClick.current = false;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    el.setPointerCapture(e.pointerId);
+    const pts = [...pointers.current.values()];
+    pan.current = {
+      x: pts.length >= 2 ? (pts[0].x + pts[1].x) / 2 : e.clientX,
+      scrollLeft: el.scrollLeft,
+      dist: pts.length >= 2 ? distance(pts[0], pts[1]) : 0,
+      dayPx,
+      moved: pan.current?.moved ?? false,
+    };
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = pan.current;
+    if (!p || !pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const el = e.currentTarget;
+    const pts = [...pointers.current.values()];
+    if (pts.length >= 2) {
+      const factor = pinchFactor(p.dist, distance(pts[0], pts[1]));
+      const next = clamp(p.dayPx * factor, MIN_DAY_PX, MAX_DAY_PX);
+      const mid = (pts[0].x + pts[1].x) / 2;
+      const offset = p.x - el.getBoundingClientRect().left - labelW();
+      const target = zoomAnchored(p.scrollLeft, offset, next / p.dayPx) - (mid - p.x);
+      if (next !== dayPx) { pendingScroll.current = target; setDayPx(next); } else el.scrollLeft = target;
+      p.moved = true;
+      return;
+    }
+    const dx = e.clientX - p.x;
+    if (Math.abs(dx) >= DRAG_THRESHOLD_PX) p.moved = true;
+    if (p.moved) el.scrollLeft = p.scrollLeft - dx;
+  };
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size > 0) {
+      // Down to one finger: pan on from where it stands.
+      const [pt] = pointers.current.values();
+      pan.current = { x: pt.x, scrollLeft: e.currentTarget.scrollLeft, dist: 0, dayPx, moved: true };
+      return;
+    }
+    if (pan.current?.moved) suppressClick.current = true;
+    pan.current = null;
+  };
+  /** The click that ends a pan is not a click on the bar it ended over. */
+  const onClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressClick.current) return;
+    suppressClick.current = false;
+    e.stopPropagation();
+    e.preventDefault();
+  };
 
   const all = [...scheduled, ...unscheduled];
   const onKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -146,6 +260,8 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
       case "k": case "ArrowUp": e.preventDefault(); setFocus(Math.max(0, cur - 1)); return;
       case "Enter": if (cur >= 0 && canOpen) { e.preventDefault(); openRow(source, all[cur].id); } return;
       case "t": e.preventDefault(); scrollToToday(); return;
+      case "-": e.preventDefault(); zoomCentred(1 / 1.25); return;
+      case "=": case "+": e.preventDefault(); zoomCentred(1.25); return;
       case "Escape": setFocus(null); e.currentTarget.blur(); return;
     }
   };
@@ -175,7 +291,7 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
           <button
             type="button"
             className={`${styles.bar} ${it.start === it.end ? styles.barDay : ""}`}
-            style={{ ...barStyle(it), left: xOf(it.start), width: Math.max(DAY_PX, (daysBetween(parseYmd(it.start), parseYmd(it.end!)) + 1) * DAY_PX) }}
+            style={{ ...barStyle(it), left: xOf(it.start), width: Math.max(dayPx, (daysBetween(parseYmd(it.start), parseYmd(it.end!)) + 1) * dayPx) }}
             title={it.start === it.end ? `${it.title} · ${it.start}` : `${it.title} · ${it.start} → ${it.end}`}
             onClick={canOpen ? () => openRow(source, it.id) : undefined}
             tabIndex={-1}
@@ -193,9 +309,18 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
       tabIndex={0}
       onKeyDown={onKey}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocus(null); }}
-      aria-label="Timeline — j k to move, Enter to open, t for today"
+      aria-label="Timeline — j k to move, Enter to open, t for today, - = to zoom"
     >
-      <div className={styles.scroll} ref={scrollRef}>
+      <div
+        className={styles.scroll}
+        ref={scrollRef}
+        style={{ "--week-px": `${WEEK_PX}px` } as React.CSSProperties}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onClickCapture={onClickCapture}
+      >
         <div className={styles.body} style={{ width: `calc(var(--label-w) + ${width}px)` }}>
           <div className={styles.header}>
             <div className={`${styles.label} ${styles.headerLabel}`}>
@@ -220,7 +345,7 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
           )}
           {unscheduled.map((it, i) => row(it, scheduled.length + i))}
           {todayIdx >= 0 && todayIdx < weeks * 7 && (
-            <div className={styles.today} style={{ left: `calc(var(--label-w) + ${todayIdx * DAY_PX + DAY_PX / 2}px)` }} title={ymd(new Date())} />
+            <div className={styles.today} style={{ left: `calc(var(--label-w) + ${todayIdx * dayPx + dayPx / 2}px)` }} title={ymd(new Date())} />
           )}
         </div>
       </div>

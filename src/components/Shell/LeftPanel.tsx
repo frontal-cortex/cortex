@@ -9,6 +9,7 @@ import {
   buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, relativeTime,
   ExplorerSort, SORT_FIELDS,
 } from "../../lib/fileTree";
+import { useDropTarget } from "../../hooks/usePointerDrag";
 import { FileTree, LeafRow, BranchRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
 import { flattenTags } from "../../lib/tags";
 import { CommitDiffModal } from "./CommitDiffModal";
@@ -100,8 +101,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   const [diffHash, setDiffHash] = useState<string | null>(null);
   // Proposal under review — its diff is shown before Apply/Discard are offered.
   const [review, setReview] = useState<AgentBranch | null>(null);
-  // Notes section root drop zone
-  const [notesSectionDragOver, setNotesSectionDragOver] = useState(false);
   // The explorer sort menu, anchored where the header's sort button was clicked.
   const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -282,6 +281,13 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       onRefresh();
     } catch (e) { window.alert(String(e)); }
   }, [onRefresh]);
+
+  // Notes section root drop zone: a note or collection dropped on the section
+  // itself (not on a folder in it) goes back to the top level.
+  const notesDropRef = useDropTarget<HTMLDivElement>((path) => {
+    if (path.startsWith(COLLECTION_DRAG)) handleMoveCollection(path.slice(COLLECTION_DRAG.length), null);
+    else if (path) handleMoveNote(path, "notes/");
+  });
 
   const treeActions = useMemo<TreeActions>(() => ({
     newFolderIn,
@@ -698,16 +704,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                 },
                 { title: `Graph view (${shortcutFor("graph")})`, icon: <GraphIcon size={12} />, run: onOpenGraph },
               ]}
-              dropActive={notesSectionDragOver}
-              onDragOver={(e) => { e.preventDefault(); setNotesSectionDragOver(true); }}
-              onDragLeave={() => setNotesSectionDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setNotesSectionDragOver(false);
-                const path = e.dataTransfer.getData("text/plain");
-                if (path.startsWith(COLLECTION_DRAG)) handleMoveCollection(path.slice(COLLECTION_DRAG.length), null);
-                else if (path) handleMoveNote(path, "notes/");
-              }}
+              dropRef={notesDropRef}
             >
               {showGettingStarted && (
                 <GettingStarted steps={gettingStartedSteps} a11y={a11y} onDismiss={dismissGettingStarted} />
@@ -892,7 +889,7 @@ interface SectionAction {
 
 function Section({
   a11y, label, count, open, onToggle, actions = [],
-  dropActive, onDragOver, onDragLeave, onDrop, children,
+  dropRef, children,
 }: {
   a11y: ReturnType<A11yFor>;
   label: string;
@@ -900,19 +897,12 @@ function Section({
   open: boolean;
   onToggle: () => void;
   actions?: SectionAction[];
-  dropActive?: boolean;
-  onDragOver?: React.DragEventHandler;
-  onDragLeave?: React.DragEventHandler;
-  onDrop?: React.DragEventHandler;
+  /** Makes the whole section a drop target (see `useDropTarget`). */
+  dropRef?: (el: HTMLDivElement | null) => void;
   children: ReactNode;
 }) {
   return (
-    <div
-      className={`${styles.section} ${dropActive ? styles.sectionDropTarget : ""}`}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
+    <div className={styles.section} ref={dropRef}>
       <div
         {...a11y}
         className={styles.sectionHeader}
