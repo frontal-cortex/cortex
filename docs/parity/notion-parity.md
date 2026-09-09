@@ -120,10 +120,10 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Filter operators | partial | M | `== != > >= < <= contains` (`data.rs:282`). Missing: `starts_with`, `ends_with`, `is_empty` (only via `== ''`), `does_not_contain`, date `is_within` / relative ranges. |
-| Compound and / or | partial | S | Left-to-right, no precedence, no parentheses (`data.rs:441`): `a or b and c` silently misgroups. |
-| Nested filter groups | missing | M | |
-| Filter UI | done | — | Clause rows with field / op / value; mixed and/or falls back to read-only raw edit (`ViewToolbar.tsx:120`). |
+| Filter operators | done | — | `== != > >= < <= contains does_not_contain starts_with ends_with is_empty is_not_empty in [a, b] within 7d` (`data.rs` `Op`). `within` takes `d w m y` and a sign for the past. |
+| Compound and / or | done | — | Precedence climber: `and` binds tighter than `or`, parentheses group, `not` prefix (`parse_filter`). |
+| Nested filter groups | done | — | Arbitrary depth in the grammar; the toolbar edits one level of parentheses and defers deeper nesting or `not` to raw edit. |
+| Filter UI | done | — | Clause rows with field / op / value, one parenthesised group per clause slot; nested groups, `not` and unparenthesised mixed and/or fall back to raw edit (`ViewToolbar.tsx`). |
 | Relative dates (`@today+30`, `@monday`, `@month`) and `@me` | done, beyond Notion | — | `data.rs:528`, `:686`. |
 | Multi-key sort with UI | done | — | Empty cells last; selects sort by option order. |
 | Group by in table view; sub-groups | partial | L | `group:` folds a table into one collapsible section per value in option order, empty last, with a count and an in-group add row that seeds the value (`CortexViewBlock.tsx` `DataTable`). Sub-groups missing. |
@@ -203,11 +203,11 @@ by inferring column types (`data.rs:128`).
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Full-text index | done | — | FTS5 over title and body (`db.rs:42`); tags, type, parent, icon are in `notes` but not in FTS. `icon` / `parent` are computed by the indexer but never persisted (`db.rs:63`). |
-| Query syntax | partial | S | Non-alphanumerics stripped, `*` appended per word (`db.rs:209`): no phrases, `OR`, `NOT`, or field scoping. |
-| Snippets / highlights | missing | S | |
-| Ranking | partial | S | Raw BM25; no title boost or recency. |
-| Search filters (tag, type, date, folder) | missing | M | |
-| Quick switcher | partial | S | Client-side substring over the loaded note list; does not use FTS, so cannot match body text. |
+| Query syntax | done | — | `search.rs`: `"phrases"`, `-word`, `OR`, `tag:` / `type:` / `path:` filters (negatable); every term quoted so punctuation never breaks the FTS5 query. |
+| Snippets / highlights | done | — | `snippet()` on the body with `<mark>` around the match; under each sidebar result, in the quick switcher, in `cortex search` and the MCP `search` tool. |
+| Ranking | partial | S | BM25 with the title weighted 5× over the body; no recency. |
+| Search filters (tag, type, date, folder) | partial | S | `tag:`, `type:`, `path:` (folder as a path substring). No date filter. |
+| Quick switcher | partial | S | Substring over the loaded note list first; falls back to FTS when that finds nothing, so body text reaches the note. |
 | CLI `cortex search` | done | — | Note: every CLI invocation re-indexes the whole vault (`ops.rs:148`). |
 
 ## 13. API and automation
@@ -257,10 +257,10 @@ by inferring column types (`data.rs:128`).
 3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
 4. **Property rename and delete do not exist.** A mistyped property name is permanent from the app.
 5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
-6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; no in-database search; table groups have no sub-groups.
+6. **No sub-groups in the table view**, and no in-database search. (Filter grammar precedence and operators, table group-by and the summary row have landed.)
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
-9. **Search discards FTS5's power**: no phrases, operators, snippets or filters; the quick switcher ignores FTS.
+9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
 12. **Mobile is a doc, not a target.**

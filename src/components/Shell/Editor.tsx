@@ -16,6 +16,7 @@ import { Note, NoteEntry, CommitEntry, Member, ViewDef, commands } from "../../l
 import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
+import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
@@ -114,6 +115,8 @@ export interface EditorHandle {
   toggleProperties(): void;
   /** Flip `publish: true` on the note — marks it for the site, publishes nothing. */
   togglePublic(): void;
+  /** Scroll the body to the heading whose text matches (case-insensitive). */
+  scrollToHeading(section: string): void;
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
@@ -129,6 +132,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
     focusBody: () => inner.current?.focusBody(),
     toggleProperties: () => inner.current?.toggleProperties(),
     togglePublic: () => inner.current?.togglePublic(),
+    scrollToHeading: (section) => inner.current?.scrollToHeading(section),
   }), []);
 
   if (!note) {
@@ -324,7 +328,8 @@ function NoteEditor({
   // and notes for `@`.
   const filteredItems = useMemo<MentionItem[]>(() => {
     if (!suggestion) return [];
-    const q = suggestion.query.toLowerCase();
+    // `[[Note#Sec|alias` filters on `Note` alone; the rest is kept on insert.
+    const q = (suggestion.trigger === "wiki" ? parseWikiLink(suggestion.query).target : suggestion.query).toLowerCase();
     const matchNote = (n: NoteEntry) =>
       !q ||
       n.title.toLowerCase().includes(q) ||
@@ -380,6 +385,13 @@ function NoteEditor({
       },
       toggleProperties,
       togglePublic: () => togglePublicRef.current(),
+      scrollToHeading(section) {
+        const want = section.trim().toLowerCase();
+        const root = editorRef.current?._tiptapEditor.view.dom as HTMLElement | undefined;
+        const headings: HTMLElement[] = root ? Array.from(root.querySelectorAll("h1, h2, h3, h4, h5, h6")) : [];
+        const el = headings.find((h) => (h.textContent ?? "").trim().toLowerCase() === want);
+        el?.scrollIntoView({ block: "start", behavior: "smooth" });
+      },
     };
     return () => { handleRef.current = null; };
   }, [handleRef, toggleProperties]);
@@ -468,13 +480,15 @@ function NoteEditor({
 
   // ── Suggestion insertion ───────────────────────────────────────────────────
   // A note becomes a `[[wiki link]]` (for both `[[` and `@`); a date becomes
-  // plain ISO text. The trigger text (`[[query` or `@query`) is replaced wholesale.
+  // plain ISO text. The trigger text (`[[query` or `@query`) is replaced wholesale;
+  // a `#section` or `|alias` already typed after `[[` is carried over.
   const insertItem = useCallback((item: MentionItem) => {
     if (!suggestion) return;
     const { from } = suggestion;
     const to = editor._tiptapEditor.state.selection.from;
+    const typed: WikiLink = suggestion.trigger === "wiki" ? parseWikiLink(suggestion.query) : { target: "" };
     const text = item.kind === "note"
-      ? `[[${item.note.title || pathToTitle(item.note.path)}]]`
+      ? `[[${item.note.title || pathToTitle(item.note.path)}${typed.section ? `#${typed.section}` : ""}${typed.alias ? `|${typed.alias}` : ""}]]`
       : item.kind === "person"
         ? `@${item.name}`
         : item.value;

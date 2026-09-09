@@ -28,7 +28,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | Command | Does |
 |---|---|
 | `cortex ls [dir] [--type t] [--tag t]` | list notes, newest first |
-| `cortex search <words>` | full-text search (prefix match per word) |
+| `cortex search <query>` | full-text search: words prefix-match; `"exact phrase"`, `-excluded`, `a OR b`, `tag:x`, `type:x`, `path:x` (any filter negatable, `-tag:x`; quote the whole query when a word starts with `-`); each hit carries a body snippet with the match in `<mark>` |
 | `cortex show <note> [--body]` | print a note — by path, title, or filename stem |
 | `cortex new <title> [--dir d] [--type t] [--tag t]… [--template x] [--body -]` | create; prints the path |
 | `cortex set <note> key=value… [key+=v] [key-=v] [key=]` | merge typed properties (`3`, `true`, `[a, b]`); `key+=v` / `key-=v` add to or remove from a list; `key=` removes. A missing `collections/<c>/<id>` row is created first from the collection's row template, so a tracker's day file needs no setup |
@@ -131,8 +131,14 @@ exits.
 Every collection view — in `_index.md`, in a `cortex-view` fence, in `cortex view`
 and MCP `run_view` — shares one engine. What it understands:
 
-**Filters.** `field OP value` joined by `and` / `or`; ops `== != > >= < <= contains`;
-strings in single quotes. Values may be **relative dates**: `@today`, `@today-7`,
+**Filters.** `field OP value` joined by `and` / `or`; `and` binds tighter
+than `or`, parentheses group, `not` negates what follows:
+`(status == 'todo' or status == 'doing') and not owner is_empty`. Ops:
+`== != > >= < <= contains does_not_contain starts_with ends_with`,
+`is_empty` / `is_not_empty` (no value), `in [a, b]` (equal to any), and
+`within 7d` for dates (today through today+7; `-7d` the past week; units
+`d w m y`). Strings in single quotes; on a list property `contains` and `==`
+mean "has that item". Values may be **relative dates**: `@today`, `@today-7`,
 `@today+30`, `@tomorrow`, `@yesterday`, `@monday` (this week's), `@monday-1`,
 `@sunday`, `@month` (`YYYY-MM`), `@month-1`, `@year`, `@week` (`YYYY-Www`), and
 `@me` (the current member). An empty cell equals `''` and satisfies no ordering

@@ -12,6 +12,7 @@ mod ops;
 
 use clap::{Parser, Subcommand};
 use cortex_core::note::NoteEntry;
+use cortex_core::search::SearchHit;
 use ops::{NewNote, Vault};
 use std::io::Read;
 use std::path::PathBuf;
@@ -45,7 +46,9 @@ enum Cmd {
         #[arg(long)]
         tag: Option<String>,
     },
-    /// Full-text search over titles and bodies
+    /// Full-text search over titles and bodies. Words prefix-match; "quoted
+    /// phrases", -excluded, OR, and tag:x type:x path:x filters are understood.
+    /// Quote the query (or use --) when a word starts with a dash
     Search { query: Vec<String> },
     /// Print a note — by path, title, or filename stem
     Show {
@@ -308,7 +311,7 @@ fn run() -> Result<()> {
         Cmd::Ls { dir, note_type, tag } => {
             out.notes(&v.list(dir.as_deref(), note_type.as_deref(), tag.as_deref()))
         }
-        Cmd::Search { query } => out.notes(&v.search(&query.join(" "))?),
+        Cmd::Search { query } => out.hits(&v.search(&query.join(" "))?),
         Cmd::Show { target, body } => {
             if out.json { out.emit(&v.read(&target)?) }
             else if body { print!("{}", v.read(&target)?.body); Ok(()) }
@@ -752,6 +755,19 @@ impl Out {
         }
         table(&["PATH", "TITLE", "TYPE", "TAGS"], notes.iter().map(|n| vec![
             n.path.clone(), n.title.clone(), n.note_type.clone().unwrap_or_default(), n.tags.join(","),
+        ]).collect());
+        Ok(())
+    }
+
+    /// Search results: the note table plus the matched excerpt, `<mark>`
+    /// tags stripped for the terminal (JSON keeps them).
+    fn hits(&self, hits: &[SearchHit]) -> Result<()> {
+        if self.json {
+            return self.emit(&hits);
+        }
+        table(&["PATH", "TITLE", "TYPE", "TAGS", "MATCH"], hits.iter().map(|h| vec![
+            h.entry.path.clone(), h.entry.title.clone(), h.entry.note_type.clone().unwrap_or_default(),
+            h.entry.tags.join(","), h.snippet.replace("<mark>", "").replace("</mark>", ""),
         ]).collect());
         Ok(())
     }

@@ -1329,19 +1329,35 @@ export function BoardView({ table, spec, source, onChanged }: {
   );
 }
 
-/** Resolve a cover value (vault path / data URI / URL) to a displayable src. */
+/** Resolve a cover value (vault path / data URI / URL) to a displayable src.
+ *  A remote URL is fetched only when asked: an image in a row someone else
+ *  wrote (a pack's seed) must not call home just because a view was opened. */
 function AssetImg({ value, className }: { value: unknown; className?: string }) {
   const [src, setSrc] = useState<string | null>(null);
+  const [wanted, setWanted] = useState(false);
   const raw = typeof value === "string" ? value : "";
+  const remote = /^https?:\/\//i.test(raw);
   useEffect(() => {
     let alive = true;
-    if (!raw) { setSrc(null); return; }
-    if (raw.startsWith("data:") || raw.startsWith("http")) { setSrc(raw); return; }
+    setWanted(false);
+    if (!raw || remote) { setSrc(null); return; }
+    if (raw.startsWith("data:")) { setSrc(raw); return; }
     commands.readAsset(raw).then((d) => { if (alive) setSrc(d); }).catch(() => { if (alive) setSrc(null); });
     return () => { alive = false; };
-  }, [raw]);
-  if (!src) return null;
-  return <img src={src} className={className} alt="" />;
+  }, [raw, remote]);
+  if (remote && !wanted) {
+    let host = "";
+    try { host = new URL(raw).host; } catch { /* shown as-is */ }
+    return (
+      <button type="button" className={styles.remoteImg} title={raw}
+        onClick={(e) => { e.stopPropagation(); setWanted(true); }}>
+        Load image from {host || "the web"}
+      </button>
+    );
+  }
+  const shown = remote ? raw : src;
+  if (!shown) return null;
+  return <img src={shown} className={className} alt="" />;
 }
 
 /** Pick the date field for a calendar: explicit `date:`, else a date column,
