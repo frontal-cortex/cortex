@@ -4,6 +4,7 @@ import {
   SimulationNodeDatum, SimulationLinkDatum,
 } from "d3-force";
 import { NoteEntry, commands } from "../../lib/commands";
+import { clamp, distance, midpoint, pinchFactor, wheelZoomFactor, Point } from "../../lib/gestures";
 import { CloseIcon } from "./icons";
 import styles from "./GraphView.module.css";
 
@@ -36,9 +37,15 @@ export function GraphView({ notes, onNavigate, onClose }: Props) {
   const [links, setLinks] = useState<ResolvedLink[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Pan/zoom state
+  // Pan/zoom state. Pointer events carry mouse, pen and touch down one path:
+  // one pointer pans, two pinch (scale about the fingers' midpoint); the
+  // wheel zooms. `touch-action: none` on the svg keeps the browser from
+  // scrolling or zooming the page with the same fingers.
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const latest = useRef(transform);
+  latest.current = transform;
+  const pointers = useRef(new Map<number, Point>());
+  const gesture = useRef<{ x: number; y: number; tx: number; ty: number; dist: number; scale: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -92,27 +99,52 @@ export function GraphView({ notes, onNavigate, onClose }: Props) {
     }).catch(() => setLoading(false));
   }, [notes]);
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.1 : 0.9;
-    setTransform((t) => ({ ...t, scale: Math.max(0.2, Math.min(4, t.scale * factor)) }));
-  }, []);
+  // The wheel listener is attached by hand: React registers `wheel` as
+  // passive, so an `onWheel` prop could not stop the page from scrolling.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = wheelZoomFactor(e.deltaY);
+      setTransform((t) => ({ ...t, scale: clamp(t.scale * factor, 0.2, 4) }));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [loading]);
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
+  /** Where the current pointers stand: one pans from it, two pinch from it. */
+  const anchor = (t: { x: number; y: number; scale: number }) => {
+    const pts = [...pointers.current.values()];
+    const c = pts.length >= 2 ? midpoint(pts[0], pts[1]) : pts[0];
+    gesture.current = { x: c.x, y: c.y, tx: t.x, ty: t.y, dist: pts.length >= 2 ? distance(pts[0], pts[1]) : 0, scale: t.scale };
+  };
+
+  const onPointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if ((e.target as Element).closest("[data-node]")) return;
-    panStart.current = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y };
-  }, [transform]);
-
-  const onMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!panStart.current) return;
-    setTransform((t) => ({
-      ...t,
-      x: panStart.current!.tx + (e.clientX - panStart.current!.x),
-      y: panStart.current!.ty + (e.clientY - panStart.current!.y),
-    }));
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    anchor(latest.current);
   }, []);
 
-  const onMouseUp = useCallback(() => { panStart.current = null; }, []);
+  const onPointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gesture.current;
+    if (!g) return;
+    const pts = [...pointers.current.values()];
+    const c = pts.length >= 2 ? midpoint(pts[0], pts[1]) : pts[0];
+    const scale = pts.length >= 2 ? clamp(g.scale * pinchFactor(g.dist, distance(pts[0], pts[1])), 0.2, 4) : g.scale;
+    setTransform({ x: g.tx + (c.x - g.x), y: g.ty + (c.y - g.y), scale });
+  }, []);
+
+  const onPointerUp = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (!pointers.current.delete(e.pointerId)) return;
+    if (pointers.current.size === 0) { gesture.current = null; return; }
+    // A finger lifted mid-pinch: carry on panning from where the rest stand.
+    anchor(latest.current);
+  }, []);
 
   return (
     <div className={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -129,11 +161,10 @@ export function GraphView({ notes, onNavigate, onClose }: Props) {
           <svg
             ref={svgRef}
             className={styles.svg}
-            onWheel={onWheel}
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
           >
             <g transform={`translate(${transform.x + (svgRef.current?.clientWidth ?? 800) / 2},${transform.y + (svgRef.current?.clientHeight ?? 600) / 2}) scale(${transform.scale})`}>
               {links.map((l, i) => (

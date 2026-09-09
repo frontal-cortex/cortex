@@ -389,7 +389,7 @@ that is the feasibility spike's and the responsive-shell row's job.
 created: 2026-09-09
 effort: M
 priority: 35
-status: planned
+status: done
 tags: [parity, mobile]
 title: Mobile — touch input and phone-width database views
 type: note

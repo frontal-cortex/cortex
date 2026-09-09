@@ -148,10 +148,15 @@
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
-.dirRowDropTarget {
+/* Pointer drag-and-drop (lib/pointerDrag.ts): the row under the dragged
+   thing carries `data-drop-over`; the row being dragged, `data-dragging`. */
+.row[data-drop-over] {
   box-shadow: inset 0 0 0 2px var(--accent);
   background: var(--accent-light);
 }
+.row[data-dragging] { opacity: 0.45; }
+/* A held finger lifts a row; the browser's callout must not take the text. */
+.row { -webkit-touch-callout: none; }
 
 /* ── Action row ─────────────────────────────────────────────────────────── */
 /* Empty states and first-run steps: one quiet line, verb in accent. */

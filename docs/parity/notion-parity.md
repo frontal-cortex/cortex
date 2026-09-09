@@ -240,7 +240,7 @@ by inferring column types (`data.rs:128`).
 | CI / release workflow | missing | M | No `.github/` in the repo. |
 | Auto-update | missing | M | No `tauri-plugin-updater`. |
 | Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`, git shells out. See `obsidian-parity.md` §14 and the two mobile backlog rows. |
-| Responsive layout | partial | M | Shell done: one breakpoint system (`lib/breakpoints.ts` → `data-viewport` on `<html>`, `useViewport`), drawer sidebar + bottom-sheet terminal + compact top bar below 600px, tokenised page inset, thumb-sized rows and toolbar buttons, window `minWidth: 360`. Database views are still mouse-first and wide (next mobile row). |
+| Responsive layout | done | — | One breakpoint system (`lib/breakpoints.ts` → `data-viewport` on `<html>`, `useViewport`), drawer sidebar + bottom-sheet terminal + compact top bar below 600px, tokenised page inset, thumb-sized rows and toolbar buttons, window `minWidth: 360`. Database views follow at phone width: the table is a card list (title + first three columns, tap opens the row; the summary row is desktop-only), the board snaps one column per swipe, the calendar is a week strip, the timeline pans by drag and zooms by pinch / Ctrl+wheel / `-` `=`. Touch input shares the mouse path everywhere (`lib/pointerDrag.ts`, pointer events in the graph and timeline). Not verified on a device — no mobile build yet. |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 
 ## Where Cortex is ahead of Notion

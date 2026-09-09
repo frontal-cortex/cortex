@@ -47,10 +47,11 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── SettingsView.tsx  # Full-window settings page: section nav, search, one row per settings.yaml key
 │   │   ├── PublishModal.tsx  # The only path to a published site: shows what goes, where, and the result
 │   │   └── TerminalPane.tsx  # xterm.js over a real PTY; opens into `terminal_command` (an agent CLI)
-│   ├── hooks/                # React hooks (useVault, useNotes, useViewport)
+│   ├── hooks/                # React hooks (useVault, useNotes, useViewport, usePointerDrag)
 │   ├── lib/                  # Shared utilities (commands.ts, fileTree.ts)
 │   │   ├── keymap.ts         # Keyboard shortcuts — the single source of truth for bindings + hints
 │   │   ├── breakpoints.ts    # Viewport breakpoints (phone / compact / wide) — the single source for responsive CSS
+│   │   ├── gestures.ts       # Drag / pinch / zoom arithmetic (pure, tested); pointerDrag.ts binds it to pointer events
 │   │   └── theme.ts          # Light/dark preference + desktop palette → CSS custom properties
 │   └── styles/tokens.css     # Design tokens (CSS variables)
 ├── src-tauri/                # Rust backend
@@ -158,7 +159,26 @@ place. Below the phone breakpoint the sidebar is an overlay drawer
 backdrop tap and once you pick something), the terminal a bottom sheet, the
 top bar compact, and the page full-bleed via the `--page-inset` token that
 title, properties, backlinks and the BlockNote body all align on;
-`--tap-target` sizes rows and toolbar buttons for a thumb.
+`--tap-target` sizes rows and toolbar buttons for a thumb. Database views
+read the same hook (`useViewport().isPhone`) to swap their shape: the
+table becomes a card list, the calendar a week strip; the board and the
+timeline stay themselves with scroll-snap and thumb-high rows from CSS.
+
+**Touch and mouse take one path**: nothing listens for `onMouse*` or HTML5
+drag-and-drop (which never fires on a touch screen). `lib/pointerDrag.ts`
+is the drag-and-drop: a source spreads `dragSource({ payload })` from
+`hooks/usePointerDrag.ts` onto its element, a target takes a
+`useDropTarget(onDrop)` ref, and the session decides from pointer events
+whether the press is a drag at all — a mouse after 6px, a finger after a
+300ms hold (a finger that moves first is scrolling, and the browser keeps
+it), so lists need no `touch-action: none`. It draws a ghost, marks the
+target under the pointer with `data-drop-over` (the CSS hook), creeps the
+nearest scroll container near its edges, cancels on Escape, and stamps
+`data-dragging` on `<html>` while it runs. The tree, the Notes section
+and the board use it. Pan / pinch / zoom arithmetic lives in
+`lib/gestures.ts` (tested with `npm run test:lib`); the graph and the
+timeline apply it in their own `onPointer*` handlers, with `touch-action`
+saying which gestures the browser keeps.
 
 **The app can wear the desktop's palette**: `settings.theme_file` names a flat
 TOML of colour names → hex (Omarchy's `colors.toml`; `~` expands per machine).
