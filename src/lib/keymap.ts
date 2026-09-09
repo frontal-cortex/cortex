@@ -55,6 +55,32 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "log-today":         { keys: "mod+shift+h", label: "Log today" },
 };
 
+// ── Local keys ────────────────────────────────────────────────────────────────
+// Keys that only mean something while a particular widget has focus are not
+// app shortcuts (they never collide with typing elsewhere) and are not
+// rebindable, but they are declared here so every hint reads from one place
+// and the vocabulary stays the same across widgets: the sidebar, the timeline
+// and the data table all move with arrows or j/k, open with Enter, make with
+// n, remove with Delete and leave with Escape.
+
+/** The data table's keys, in the order a hint lists them. */
+export const TABLE_KEYS: { keys: string; label: string }[] = [
+  { keys: "↑ ↓ ← → / j k h l", label: "move between cells" },
+  { keys: "Tab / Shift+Tab", label: "next / previous cell" },
+  { keys: "Home / End", label: "first / last cell in the row" },
+  { keys: "Enter", label: "edit the cell" },
+  { keys: "Escape", label: "cancel the edit, then leave the table" },
+  { keys: "mod+Enter / o", label: "open the row as a note" },
+  { keys: "n", label: "new row" },
+  { keys: "Delete", label: "delete the row" },
+];
+
+/** One line for a tooltip or aria-label: "↑ ↓ ← → / j k h l move between cells · …". */
+export function tableKeysHint(): string {
+  const show = (keys: string) => keys.split(" / ").map((k) => (k.startsWith("mod+") ? formatKeys(k) : k)).join(" / ");
+  return TABLE_KEYS.map((k) => `${show(k.keys)} ${k.label}`).join(" · ");
+}
+
 // ── Overrides from .cortex/settings.yaml (`keybindings: { id: keys }`) ───────
 // Applied by Shell when settings load; the table above stays the default so a
 // bad override can be shrugged off, never crash the keymap.

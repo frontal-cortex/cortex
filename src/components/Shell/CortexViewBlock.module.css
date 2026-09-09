@@ -341,7 +341,7 @@
 }
 
 .rowOpen,
-.rowDelete {
+.rowMore {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -356,8 +356,73 @@
 }
 
 .table tr:hover .rowOpen,
-.table tr:hover .rowDelete {
+.table tr:hover .rowMore,
+.table tr.rowActive .rowOpen,
+.table tr.rowActive .rowMore,
+.rowMore[aria-expanded="true"] {
   opacity: 1;
+}
+
+.rowMore {
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+}
+
+.rowMore:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.rowMenuWrap {
+  position: relative;
+}
+
+/* The row's action menu (Open / Duplicate / Save as template / Delete). */
+.rowMenu {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 60;
+  min-width: 160px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.rowMenuDanger {
+  color: var(--danger);
+}
+
+.rowMenuDanger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+/* Keyboard focus lives on one cell at a time (a roving tabindex, like the
+   sidebar); the ring shows while that cell holds the focus. */
+.table td:focus {
+  outline: none;
+}
+
+.table td.cellActive:focus {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+/* An open date cell: the picker's field, with room for its popover. */
+.cellDate {
+  position: relative;
+  min-width: 132px;
+}
+
+.cellDate .cellInput {
+  margin: 0;
 }
 
 .rowOpen:hover {
@@ -365,10 +430,6 @@
   background: var(--bg-active);
 }
 
-.rowDelete:hover {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-}
 
 .footer {
   display: flex;
@@ -738,6 +799,18 @@
 .calDay {
   font-size: var(--text-xs);
   color: var(--text-secondary);
+}
+
+/* Calendar footer: a new row on a day you pick, for days off the visible month. */
+.calFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.calNewRow {
+  width: 180px;
 }
 
 .calAdd {

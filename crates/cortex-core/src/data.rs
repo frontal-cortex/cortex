@@ -1321,6 +1321,53 @@ pub fn delete_csv_row(root: &Path, source: &str, row_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Duplicate a row: the same frontmatter and body under a new id, `created`
+/// set to the given day (today, from the caller) and the title marked "copy"
+/// so the two stay distinguishable — relations resolve by title. CSV rows are
+/// copied as a record with the new id. Returns the new note path for
+/// collections (to re-index) or `None` for CSV.
+pub fn duplicate_row(root: &Path, source: &str, row_id: &str, new_id: &str, created: &str) -> Result<Option<std::path::PathBuf>> {
+    for id in [row_id, new_id] {
+        if id.is_empty() || id.contains('/') || id.contains("..") {
+            return Err(AppError::Other("Invalid row id".into()));
+        }
+    }
+    if let Some(name) = source.strip_prefix("collections/") {
+        let name = name.trim_end_matches('/');
+        let dir = root.join("collections").join(name);
+        let content = std::fs::read_to_string(dir.join(format!("{row_id}.md")))
+            .map_err(|_| AppError::Other(format!("Row not found: {row_id}")))?;
+        let path = dir.join(format!("{new_id}.md"));
+        if path.exists() {
+            return Err(AppError::Other(format!("Row already exists: {new_id}")));
+        }
+        let mut note = crate::note::parse_note(&format!("collections/{name}/{new_id}.md"), &content)?;
+        if let Some(t) = note.frontmatter.get("title").and_then(|v| v.as_str()).map(String::from) {
+            note.frontmatter.insert("title".into(), serde_json::Value::String(format!("{t} copy")));
+        }
+        note.frontmatter.insert("created".into(), serde_json::Value::String(created.to_string()));
+        std::fs::write(&path, crate::note::serialize_note(&note)?)?;
+        Ok(Some(path))
+    } else if let Some(rest) = source.strip_prefix("data/") {
+        let path = root.join("data").join(format!("{}.csv", rest.trim_end_matches(".csv")));
+        let (header, mut records) = read_csv_raw(&path)?;
+        let id_idx = header.iter().position(|h| h == "id")
+            .ok_or_else(|| AppError::Other("CSV has no id column to duplicate by".into()))?;
+        if records.iter().any(|r| r.get(id_idx).map(String::as_str) == Some(new_id)) {
+            return Err(AppError::Other(format!("Row already exists: {new_id}")));
+        }
+        let mut rec = records.iter().find(|r| r.get(id_idx).map(String::as_str) == Some(row_id))
+            .cloned()
+            .ok_or_else(|| AppError::Other(format!("Row not found: {row_id}")))?;
+        rec[id_idx] = new_id.to_string();
+        records.push(rec);
+        write_csv_raw(&path, &header, records, Some(id_idx))?;
+        Ok(None)
+    } else {
+        Err(AppError::Other(format!("Unknown source '{source}'")))
+    }
+}
+
 // ── Row templates ───────────────────────────────────────────────────────────────
 //
 // A template is a `collections/<name>/_template-<slug>.md` file — already skipped
@@ -2180,6 +2227,39 @@ mod tests {
         add_row(&root, "data/weight.csv", "b", &cf).unwrap();
         let csv = std::fs::read_to_string(root.join("data/weight.csv")).unwrap();
         assert_eq!(csv.lines().nth(2).unwrap(), "b,2024-01-02,81");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn duplicate_row_copies_fields_and_body_under_a_new_id() {
+        let root = scratch("duprow");
+        write(&root.join("collections/books/dune.md"),
+            "---\ntitle: Dune\ncreated: 2020-01-01\nrating: 5\ntags: [sf, classic]\n---\nA body.\n");
+        let path = duplicate_row(&root, "collections/books", "dune", "dune-2", "2026-09-09").unwrap().unwrap();
+        assert!(path.ends_with("collections/books/dune-2.md"));
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("title: Dune copy"), "{raw}");
+        assert!(raw.contains("created: 2026-09-09"), "{raw}");
+        assert!(raw.contains("rating: 5"), "{raw}");
+        assert!(raw.contains("A body."), "{raw}");
+        // Keys stay sorted on write.
+        let created = raw.find("created:").unwrap();
+        let rating = raw.find("rating:").unwrap();
+        let tags = raw.find("tags:").unwrap();
+        assert!(created < rating && rating < tags, "{raw}");
+        // The original is untouched; ids are unique; missing rows are errors.
+        assert!(std::fs::read_to_string(root.join("collections/books/dune.md")).unwrap().contains("title: Dune\n"));
+        assert!(duplicate_row(&root, "collections/books", "dune", "dune-2", "2026-09-09").is_err());
+        assert!(duplicate_row(&root, "collections/books", "nope", "x", "2026-09-09").is_err());
+        assert!(duplicate_row(&root, "collections/books", "dune", "../x", "2026-09-09").is_err());
+
+        // CSV: the record is copied under the new id, id-sorted.
+        write(&root.join("data/weight.csv"), "id,date,weight\na,2024-01-01,82\n");
+        assert!(duplicate_row(&root, "data/weight.csv", "a", "b", "2026-09-09").unwrap().is_none());
+        let csv = std::fs::read_to_string(root.join("data/weight.csv")).unwrap();
+        assert_eq!(csv.lines().nth(2).unwrap(), "b,2024-01-01,82");
+        assert!(duplicate_row(&root, "data/weight.csv", "zzz", "c", "2026-09-09").is_err());
 
         std::fs::remove_dir_all(&root).ok();
     }

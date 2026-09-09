@@ -136,12 +136,12 @@ by inferring column types (`data.rs:128`).
 |---|---|---|---|
 | Add row inline (table, board column, calendar day, gallery) | done | — | New rows are seeded from the view's filter so they stay visible (`CortexViewBlock.tsx:448`). |
 | Row templates, default per collection, variables | done | — | `_template-<slug>.md`; `{{date}} {{time}} {{title}} {{uuid}}` (`data.rs:1350`). |
-| Save row as template | partial | S | Backend, Tauri command and TS binding exist; nothing in the UI calls it (`commands.ts:567`). |
-| Duplicate row | missing | S | `duplicate_note` exists for the file tree only. |
+| Save row as template | done | — | Row menu (⋯) → "Save as template…"; the New row dropdown picks it up at once. |
+| Duplicate row | done | — | `data::duplicate_row` (frontmatter + body, new id, `created` today, title marked "copy"); Tauri `duplicate_row`; row menu (⋯) → Duplicate, focus lands on the copy. |
 | Open row as page, delete row (to trash) | done | — | |
 | Inline cell editing: text, number, checkbox, select / multi / status / person / relation, stars | done | — | |
-| Date picker | missing | S | Date cells and the properties panel are bare text inputs; `2026-13-45` is accepted. |
-| Keyboard navigation in the table | missing | M | Only Enter / Escape inside an open cell. The timeline has `j/k/Enter`; the table does not. |
+| Date picker | done | — | `DatePicker.tsx`: typed input validated to a real calendar day (`2026-13-45` refused), calendar popover with keyboard grid; used by date cells, the properties panel and the calendar view's New row. |
+| Keyboard navigation in the table | done | — | Roving cell focus: arrows / `j k h l`, Tab / Shift+Tab, Home / End, Enter edits, Escape cancels, Ctrl+Enter or `o` opens the row, `n` new row, Delete trashes (`TABLE_KEYS` in `keymap.ts`). |
 | Multi-row select, bulk edit | missing | M | Delete is one row at a time with `window.confirm`. |
 | Column resize, drag reorder | missing | M | |
 | Add property from the header (incl. relation / rollup / formula config) | done | — | `AddPropertyHeader` (`CortexViewBlock.tsx:171`). |
@@ -256,7 +256,7 @@ by inferring column types (`data.rs:128`).
 2. **Silent formatting loss on save**: underline, colour, highlight, toggles, image width. They look like they work until the note is reopened.
 3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
 4. **Property rename and delete do not exist.** A mistyped property name is permanent from the app.
-5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
+5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation and a date picker landed.)
 6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; table view cannot group; no in-database search or summary row.
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
