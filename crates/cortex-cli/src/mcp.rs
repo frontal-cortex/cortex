@@ -22,7 +22,8 @@ stay clean — use the tools rather than rewriting files by hand.
 
 Reading: list_notes, search, read_note, links, backlinks, list_collections, query_collection, \
 get_schema. Writing: create_note, write_note, set_properties. Writes are visible in the app \
-immediately. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
+immediately. Schemas: rename_property / delete_property change a typed property everywhere at once \
+(schema, every row, views, dependent rollups and formulas) — never rename a frontmatter key by hand across rows. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
 it live); list_agents says which agent CLIs are installed for the terminal_command setting. \
 Templates: list_packs / install_pack / update_pack / remove_pack manage template packs (plain Markdown + YAML) \
 from the marketplace; installing is fine when the user asks for a template or a database of some kind. \
@@ -131,6 +132,24 @@ pub struct QueryArgs {
 pub struct SchemaArgs {
     /// Collection name or note type
     pub key: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RenamePropertyArgs {
+    /// Collection name or note type
+    pub key: String,
+    /// Current property name
+    pub old: String,
+    /// New property name
+    pub new: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DeletePropertyArgs {
+    /// Collection name or note type
+    pub key: String,
+    /// Property to remove
+    pub name: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -287,6 +306,16 @@ with the match wrapped in <mark>.")]
     #[tool(description = "The property schema for a collection or note type: typed properties and their options.")]
     fn get_schema(&self, Parameters(a): Parameters<SchemaArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.schema(&a.key).map_err(err)?)
+    }
+
+    #[tool(description = "Rename a property of a collection or note type everywhere at once: the schema, the frontmatter key in every row, the collection's views (columns, sort, filter, group), and the rollups and formulas — in any schema — that reference it. Refuses a name already in use. Returns what was touched.")]
+    fn rename_property(&self, Parameters(a): Parameters<RenamePropertyArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.rename_property(&a.key, &a.old, &a.new).map_err(err)?)
+    }
+
+    #[tool(description = "Delete a property from a collection or note type: the schema, the key in every row, and every view that used it. Refused while a rollup, formula or auto-date in any schema still depends on it — the error names them; remove those first.")]
+    fn delete_property(&self, Parameters(a): Parameters<DeletePropertyArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.delete_property(&a.key, &a.name).map_err(err)?)
     }
 
     #[tool(description = "The vault's settings (.cortex/settings.yaml) with every key present, plus a description of each key.")]

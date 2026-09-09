@@ -135,7 +135,11 @@ enum Cmd {
         summary: Vec<String>,
     },
     /// Show a property schema (collection name or note type); lists them if none given
-    Schema { key: Option<String> },
+    Schema {
+        key: Option<String>,
+        #[command(subcommand)]
+        action: Option<SchemaCmd>,
+    },
     /// Working tree, sync state, recent commits and pending proposals
     Status,
     /// Package changes as a proposal: an agent/<name> branch the user reviews in the app
@@ -260,6 +264,23 @@ enum PacksCmd {
 }
 
 #[derive(Subcommand)]
+enum SchemaCmd {
+    /// Rename a property everywhere: the schema, every row, the views, and the rollups / formulas that use it
+    Rename {
+        /// Collection name or note type
+        key: String,
+        old: String,
+        new: String,
+    },
+    /// Delete a property from the schema, every row and every view (refused while a rollup or formula uses it)
+    Rm {
+        /// Collection name or note type
+        key: String,
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SettingsCmd {
     /// Print one setting; `keybindings.<id>` reads a single override
     Get { key: String },
@@ -381,12 +402,20 @@ fn run() -> Result<()> {
             table(&headers, rows);
             Ok(())
         }
-        Cmd::Schema { key } => match key {
-            Some(k) => {
+        Cmd::Schema { key, action } => match (action, key) {
+            (Some(SchemaCmd::Rename { key, old, new }), _) => {
+                let c = v.rename_property(&key, &old, &new)?;
+                if out.json { out.emit(&c) } else { println!("renamed {key}.{old} → {new}: {}", property_change(&c)); Ok(()) }
+            }
+            (Some(SchemaCmd::Rm { key, name }), _) => {
+                let c = v.delete_property(&key, &name)?;
+                if out.json { out.emit(&c) } else { println!("removed {key}.{name}: {}", property_change(&c)); Ok(()) }
+            }
+            (None, Some(k)) => {
                 let s = v.schema(&k)?;
                 if out.json { out.emit(&s) } else { print!("{}", serde_yaml::to_string(&s)?); Ok(()) }
             }
-            None => {
+            (None, None) => {
                 let keys = v.schemas();
                 if out.json { out.emit(&keys) } else { for k in keys { println!("{k}"); } Ok(()) }
             }
@@ -733,6 +762,14 @@ fn print_tracker(r: &cortex_core::tracker::TrackerResult) {
 }
 
 // ── Output ──────────────────────────────────────────────────────────────────
+
+/// "3 rows, 1 view, schemas tasks, projects" — what a property edit touched.
+fn property_change(c: &cortex_core::schema::PropertyChange) -> String {
+    let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+    let mut parts = vec![plural(c.rows, "row"), plural(c.views, "view")];
+    if !c.schemas.is_empty() { parts.push(format!("schemas {}", c.schemas.join(", "))); }
+    parts.join(", ")
+}
 
 struct Out {
     json: bool,

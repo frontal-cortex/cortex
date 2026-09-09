@@ -39,6 +39,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
 | `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty) |
 | `cortex schema [key]` | typed properties for a collection or note type |
+| `cortex schema rename <key> <old> <new>` / `cortex schema rm <key> <name>` | rename or delete a property everywhere at once: the schema, the key in every row, the collection's views, and the rollups / formulas (in any schema) that reference it. `rm` is refused while a rollup or formula still depends on the property, and says which |
 | `cortex status` | changed files, sync counts, recent commits, proposals |
 | `cortex init [DIR]` | create a new vault (bundled starter template, git initialised, docs + settings written) — works offline |
 | `cortex publish [--out DIR \| --gh-pages \| --github-action]` | list, build, or push the site of notes marked `publish: true`; never runs on its own (see `docs/publishing.md`) |
@@ -58,7 +59,7 @@ Every command takes `--json`. Errors go to stderr with exit code 1.
 `cortex mcp` speaks the Model Context Protocol over stdio and exposes the
 same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
 `write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
-`query_collection`, `get_schema`, `status`, `propose`, `list_proposals`,
+`query_collection`, `get_schema`, `rename_property`, `delete_property`, `status`, `propose`, `list_proposals`,
 `proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_packs`, `install_pack`,
 `update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can
 install one; every result is a plain file the user sees at once, and `.cortex/packs.yaml` makes it

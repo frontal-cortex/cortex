@@ -1302,6 +1302,7 @@
 
 /* Column menu: the Format section under the type list */
 .colMenuSep { height: 1px; background: var(--border); margin: 4px 0; }
+.colMenuDanger { color: var(--danger); }
 .colMenuHint { color: var(--text-tertiary); font-size: var(--text-xs); margin-left: 4px; }
 .colSub {
   display: flex;

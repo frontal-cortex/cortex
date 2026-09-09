@@ -81,6 +81,14 @@ export interface PropertyDef {
   auto?: string;
 }
 
+/** What a property rename / delete touched. */
+export interface PropertyChange {
+  rows: number;
+  views: number;
+  schemas: string[];
+  files: string[];
+}
+
 export interface TypeSchema {
   properties: PropertyDef[];
 }
@@ -619,6 +627,14 @@ export const commands = {
 
   upsertProperty: (key: string, property: PropertyDef) =>
     invoke<void>("upsert_property", { key, property }),
+
+  /** Rename a property in the schema, every row, the views and dependent rollups / formulas. */
+  renameProperty: (key: string, old: string, next: string) =>
+    invoke<PropertyChange>("rename_property", { key, old, new: next }),
+
+  /** Delete a property from the schema, every row and every view; fails while a rollup / formula uses it. */
+  deleteProperty: (key: string, name: string) =>
+    invoke<PropertyChange>("delete_property", { key, name }),
 
   getMembers: () =>
     invoke<Member[]>("get_members"),

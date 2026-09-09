@@ -7,7 +7,7 @@ use cortex_core::data::{self};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
-use cortex_core::schema::TypeSchema;
+use cortex_core::schema::{PropertyChange, TypeSchema};
 use cortex_core::search::SearchHit;
 use cortex_core::settings::Settings;
 use cortex_core::tracker::{self, TrackerResult};
@@ -530,6 +530,18 @@ impl Vault {
 
     pub fn schema(&self, key: &str) -> Result<TypeSchema> {
         Ok(schema::load(&self.root, key)?.ok_or_else(|| format!("no schema for '{key}'"))?)
+    }
+
+    /// Rename a property in the schema, every row, the collection's views and
+    /// the rollups / formulas that reference it (see `cortex_core::schema`).
+    pub fn rename_property(&self, key: &str, old: &str, new: &str) -> Result<PropertyChange> {
+        Ok(schema::rename_property(&self.root, key, old, new)?)
+    }
+
+    /// Delete a property from the schema, every row and every view; refused
+    /// while a rollup or formula depends on it.
+    pub fn delete_property(&self, key: &str, name: &str) -> Result<PropertyChange> {
+        Ok(schema::delete_property(&self.root, key, name)?)
     }
 
     pub fn schemas(&self) -> Vec<String> {
