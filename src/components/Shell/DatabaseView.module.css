@@ -51,6 +51,7 @@
 
 /* Tab bar */
 .tabBar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -59,11 +60,25 @@
   margin-bottom: var(--space-2);
 }
 
+/* Tabs stay on one line and scroll sideways; a fade says there is more. */
 .tabs {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tabsFade {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
 }
 
 .tab {
@@ -74,6 +89,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -137,6 +153,7 @@
 
 .addView {
   position: relative;
+  flex: none;
 }
 
 .addBtn {
@@ -198,6 +215,7 @@
 }
 
 .newBtn {
+  flex: none;
   border: 1px solid var(--accent);
   background: var(--accent);
   color: var(--text-inverse);

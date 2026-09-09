@@ -709,10 +709,12 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
         .filter(|c| c.key != "$body")
         .map(|c| ResolvedColumn { schema: schema.as_ref().and_then(|s| s.property(&c.key)).cloned(), key: c.key, ty: c.ty.as_str().to_string() })
         .collect();
-    if let Some(s) = &schema {
-        for p in &s.properties {
-            if p.name != "$body" && !columns.iter().any(|c| c.key == p.name) {
-                columns.push(ResolvedColumn { key: p.name.clone(), ty: prop_ty(p.ty).to_string(), schema: Some(p.clone()) });
+    if spec.columns.as_ref().map_or(true, |c| c.is_empty()) {
+        if let Some(s) = &schema {
+            for p in &s.properties {
+                if p.name != "$body" && !columns.iter().any(|c| c.key == p.name) {
+                    columns.push(ResolvedColumn { key: p.name.clone(), ty: prop_ty(p.ty).to_string(), schema: Some(p.clone()) });
+                }
             }
         }
     }

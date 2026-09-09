@@ -676,7 +676,7 @@ function EditableCell({ value, editable, saving, onCommit, render }: {
   if (!editing) {
     return (
       <span
-        className={styles.cellEditable}
+        className={`${styles.cellEditable} ${toInput(value).trim() === "" ? styles.cellEmpty : ""}`}
         title="Click to edit"
         onClick={() => { setDraft(toInput(value)); setEditing(true); }}
       >
@@ -705,6 +705,18 @@ function EditableCell({ value, editable, saving, onCommit, render }: {
       onBlur={() => finish(true)}
     />
   );
+}
+
+/** The width class for a column: a floor per kind of value so dates and pills
+ *  never squeeze, and text never sprawls. */
+function colClass(c: ViewColumn): string {
+  const t = c.schema?.type;
+  if (t === "relation" || t === "person") return styles.colRel;
+  if (isSelectColumn(c)) return styles.colSel;
+  if (c.ty === "date" || t === "date") return styles.colDate;
+  if (c.ty === "bool" || t === "checkbox") return styles.colBool;
+  if (c.ty === "number" || numberFormat(c)) return styles.colNum;
+  return styles.colText;
 }
 
 export function DataTable({ table, spec, source, onChanged }: { table: ViewTable; spec: string; source: string; onChanged: () => void }) {
@@ -760,9 +772,10 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
       // so they aren't editable inline like a regular select's options.
       const managed = t === "person" || t === "relation";
       return (
+        <div className={styles.cellPills}>
         <SelectCell
           value={row.cells[c.key]}
-          options={c.schema!.options}
+          options={c.schema!.options ?? []}
           multi={multi}
           editable={c.key !== "$body" && c.key !== "id"}
           placeholder={t === "person" ? "Unassigned" : t === "relation" ? "Link…" : "Empty"}
@@ -775,6 +788,7 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
               .then(onChanged).catch((e) => setErr(String(e)));
           } : undefined}
         />
+        </div>
       );
     }
     if (c.ty === "bool" || c.schema?.type === "checkbox") {
@@ -818,7 +832,7 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
         <thead>
           <tr>
             {table.columns.map((c) => (
-              <th key={c.key}>
+              <th key={c.key} className={colClass(c)}>
                 <ColumnHeader
                   col={c}
                   canType={!!schemaKey && c.key !== "id" && c.key !== "$body"}
@@ -939,6 +953,23 @@ function NewRowButton({ source, spec, onChanged, onError }: {
   );
 }
 
+/** Keys every note carries that say nothing about the row on a card. */
+const CARD_HIDDEN = new Set(["created", "updated", "modified", "tags", "type", "icon", "cover", "parent", "id", "$body"]);
+
+/** The properties a card shows under its title. A view that names `columns:`
+ *  chose them; otherwise the first few real properties, never the bookkeeping
+ *  ones, so a card stays a card and not a copy of the whole row. */
+function cardFields(table: ViewTable, spec: string, exclude: string[], max: number): ViewColumn[] {
+  const chosen = !!peek(spec, "columns");
+  const cols = table.columns.filter((c) => !exclude.includes(c.key) && !["$body", "id", "cover"].includes(c.key));
+  return chosen ? cols : cols.filter((c) => !CARD_HIDDEN.has(c.key)).slice(0, max);
+}
+
+/** Cards leave out what a row has no value for. */
+function hasValue(v: unknown): boolean {
+  return toInput(v).trim() !== "";
+}
+
 export function BoardView({ table, spec, source, onChanged }: {
   table: ViewTable;
   spec: string;
@@ -972,19 +1003,24 @@ export function BoardView({ table, spec, source, onChanged }: {
   // reads in the workflow order you chose, not alphabetically — then any other
   // present values, then the "no value" column. Defined options always appear as
   // a column (even when empty) so they're valid drop targets.
-  const optionOrder = groupCol?.schema?.options.map((o) => o.name) ?? [];
+  const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
   const present = [...groups.keys()];
   const extras = present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort();
   const none = groups.has("—") ? ["—"] : [];
   const groupKeys = [...new Set([...optionOrder, ...extras, ...none])];
 
+  // Groups with no rows fold into one strip at the end (still drop targets), so
+  // a board of eight aisles with two items doesn't scroll past six empty
+  // columns. With no rows at all the columns stay: they are how you start.
+  const anyRows = rows.length > 0;
+  const shown = anyRows ? groupKeys.filter((g) => (groups.get(g) ?? []).length > 0) : groupKeys;
+  const folded = anyRows ? groupKeys.filter((g) => (groups.get(g) ?? []).length === 0) : [];
+
   const titleField =
     table.columns.find((c) => c.key === "title")?.key ??
     table.columns.find((c) => c.key !== groupField && c.key !== "$body")?.key ??
     "id";
-  const fieldCols = table.columns.filter(
-    (c) => c.key !== groupField && c.key !== "$body" && c.key !== titleField && c.key !== "id",
-  );
+  const fieldCols = cardFields(table, spec, [groupField, titleField], 4);
 
   const addToGroup = (value: string) => {
     const fields: Record<string, string> = {
@@ -1017,7 +1053,7 @@ export function BoardView({ table, spec, source, onChanged }: {
 
   return (
     <div className={styles.board}>
-      {groupKeys.map((g) => (
+      {shown.map((g) => (
         <div
           key={g}
           className={`${styles.boardCol} ${dragOver === g ? styles.boardColDragOver : ""}`}
@@ -1054,13 +1090,13 @@ export function BoardView({ table, spec, source, onChanged }: {
                 >
                   {formatCell(row.cells[titleField])}
                 </div>
-                {fieldCols.map((c) => (
+                {fieldCols.filter((c) => hasValue(row.cells[c.key])).map((c) => (
                   <div key={c.key} className={styles.boardCardField}>
                     <span className={styles.boardCardKey}>{c.key}</span>
                     {isSelectColumn(c) ? (
                       <SelectCell
                         value={row.cells[c.key]}
-                        options={c.schema!.options}
+                        options={c.schema!.options ?? []}
                         multi={c.schema!.type === "multi_select"}
                         editable={false}
                         onChange={() => {}}
@@ -1076,6 +1112,28 @@ export function BoardView({ table, spec, source, onChanged }: {
           <button className={styles.boardAdd} onClick={() => addToGroup(g)}>+ Add</button>
         </div>
       ))}
+      {folded.length > 0 && (
+        <div className={styles.boardFolded}>
+          <div className={styles.boardColHeader}>
+            <span className={styles.boardColTitle}>Empty</span>
+            <span className={styles.boardColCount}>{folded.length}</span>
+          </div>
+          {folded.map((g) => (
+            <button
+              key={g}
+              type="button"
+              className={`${styles.boardFoldedChip} ${dragOver === g ? styles.boardColDragOver : ""}`}
+              title={`Add a row to ${g}`}
+              onClick={() => addToGroup(g)}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== g) setDragOver(g); }}
+              onDragLeave={() => setDragOver((d) => (d === g ? null : d))}
+              onDrop={(e) => { e.preventDefault(); setDragOver(null); const id = e.dataTransfer.getData("text/plain"); if (id) moveCard(id, g); }}
+            >
+              <span>{g}</span><span className={styles.boardFoldedPlus}>+</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1201,9 +1259,7 @@ export function GalleryView({ table, spec, source, onChanged }: {
   const canOpen = source.startsWith("collections/");
   const titleField = table.columns.find((c) => c.key === "title") ? "title" : "id";
   // Up to three non-title, non-cover fields shown under the card.
-  const fieldCols = table.columns
-    .filter((c) => !["$body", "id", "cover", titleField].includes(c.key))
-    .slice(0, 3);
+  const fieldCols = cardFields(table, spec, [titleField], 3);
 
   const del = (rowId: string) => {
     if (!window.confirm("Delete this row?")) return;
@@ -1240,12 +1296,12 @@ export function GalleryView({ table, spec, source, onChanged }: {
               >
                 {formatCell(row.cells[titleField])}
               </div>
-              {fieldCols.map((c) => (
+              {fieldCols.filter((c) => hasValue(row.cells[c.key])).map((c) => (
                 <div key={c.key} className={styles.galleryField}>
                   {isSelectColumn(c)
-                    ? <SelectCell value={row.cells[c.key]} options={c.schema!.options}
+                    ? <SelectCell value={row.cells[c.key]} options={c.schema!.options ?? []}
                         multi={c.schema!.type === "multi_select"} editable={false} onChange={() => {}} />
-                    : <span>{displayCell(c, row.cells[c.key])}</span>}
+                    : <span><span className={styles.galleryKey}>{c.key}</span>{displayCell(c, row.cells[c.key])}</span>}
                 </div>
               ))}
             </div>

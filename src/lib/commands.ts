@@ -56,7 +56,7 @@ export interface SelectOption {
 export interface PropertyDef {
   name: string;
   type: PropType;
-  options: SelectOption[];
+  options?: SelectOption[];
   /** Relation: target collection. */
   collection?: string;
   /** Rollup: the relation property to follow. */

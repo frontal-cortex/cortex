@@ -7,19 +7,33 @@
   position: relative;
   margin: var(--space-2) 0 var(--space-3);
   user-select: none;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  flex: none;
+  word-break: normal;
+  overflow-wrap: normal;
 }
-.bound { margin-top: var(--space-1); }
+
+/* On its own page the collection spreads past the prose column — a table with
+   eight columns needs the room — up to the page's width less a margin, like
+   Notion's full-width databases. The prose stays at reading width. `cqw` is
+   the document pane, a size container. */
+.bound {
+  margin-top: var(--space-1);
+  --bleed: min(calc(100cqw - 56px), 1280px);
+  width: max(100%, var(--bleed));
+  max-width: none;
+  margin-left: calc((100% - max(100%, var(--bleed))) / 2);
+}
 
 .bar {
-  position: absolute;
-  top: 2px;
-  right: 0;
-  z-index: 2;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
+  margin-bottom: 4px;
 }
-.block:not(.bound) .bar { position: static; margin-bottom: 4px; justify-content: space-between; }
 
 .name {
   display: inline-flex; align-items: center; gap: 5px;
