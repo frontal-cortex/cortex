@@ -3,9 +3,9 @@
 
 use tauri::State;
 
-use crate::commands::vault::VaultState;
+use crate::commands::vault::{DbState, VaultState};
 use cortex_core::error::{AppError, Result};
-use cortex_core::schema::{PropertyDef, TypeSchema};
+use cortex_core::schema::{PropertyChange, PropertyDef, TypeSchema};
 
 fn root(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
     state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
@@ -66,4 +66,44 @@ pub fn upsert_property(
         None => schema.properties.push(property),
     }
     cortex_core::schema::save(&root, &key, &schema)
+}
+
+/// Re-index the notes a schema edit rewrote (rows, the collection's `_index.md`).
+fn reindex(root: &std::path::Path, change: &PropertyChange, db_state: &State<'_, DbState>) {
+    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        for rel in &change.files {
+            let _ = cortex_core::index::index_file(root, &root.join(rel), db);
+        }
+    }
+}
+
+/// Rename a property everywhere: the schema, every row's frontmatter key, the
+/// collection's views, and the rollups / formulas that reference it.
+#[tauri::command]
+pub fn rename_property(
+    key: String,
+    old: String,
+    new: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<PropertyChange> {
+    let root = root(&state)?;
+    let change = cortex_core::schema::rename_property(&root, &key, &old, &new)?;
+    reindex(&root, &change, &db_state);
+    Ok(change)
+}
+
+/// Delete a property from the schema, every row and every view. Refused while
+/// a rollup or formula still depends on it (the error names them).
+#[tauri::command]
+pub fn delete_property(
+    key: String,
+    name: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<PropertyChange> {
+    let root = root(&state)?;
+    let change = cortex_core::schema::delete_property(&root, &key, &name)?;
+    reindex(&root, &change, &db_state);
+    Ok(change)
 }

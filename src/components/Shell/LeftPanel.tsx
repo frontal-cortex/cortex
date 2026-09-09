@@ -1,14 +1,15 @@
 import {
   useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle,
-  KeyboardEvent as ReactKeyboardEvent, ReactNode,
+  KeyboardEvent as ReactKeyboardEvent, ReactNode, Fragment,
 } from "react";
 import { shortcutFor, SHORTCUTS, ShortcutId, isMac } from "../../lib/keymap";
-import { NoteEntry, VaultStatus, AgentBranch, CommitEntry, TrashEntry, TagNode } from "../../lib/commands";
+import { NoteEntry, SearchHit, VaultStatus, AgentBranch, CommitEntry, TrashEntry, TagNode } from "../../lib/commands";
 import { commands } from "../../lib/commands";
 import { buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, relativeTime } from "../../lib/fileTree";
 import { FileTree, LeafRow, BranchRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
 import { flattenTags } from "../../lib/tags";
 import { CommitDiffModal } from "./CommitDiffModal";
+import { Snippet } from "./Snippet";
 import {
   GettingStarted, GettingStartedStep, loadGettingStartedDismissed, saveGettingStartedDismissed,
 } from "./GettingStarted";
@@ -80,7 +81,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   onEscape, onOpenCommandPalette,
 }, ref) {
   const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<NoteEntry[] | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchHit[] | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -114,7 +115,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
         const q = query.toLowerCase();
         setSearchResults(notes.filter((n) =>
           n.title.toLowerCase().includes(q) || n.tags.some((t) => t.toLowerCase().includes(q)),
-        ));
+        ).map((n) => ({ ...n, snippet: "" })));
       }
     }, 200);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
@@ -587,18 +588,24 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
           <div className={styles.searchResults}>
             {searchResults.length === 0 && <p className={styles.empty}>No matches for "{query}"</p>}
             {searchResults.map((n) => (
-              <LeafRow
-                key={n.path}
-                id={`result:${n.path}`}
-                a11y={a11y}
-                depth={-1}
-                selected={n.path === selectedPath}
-                icon={n.icon ? <span className={styles.emoji}>{n.icon}</span> : <FileIcon />}
-                label={displayTitle(n)}
-                hint={dirOf(n.path).replace(/\/$/, "")}
-                title={n.path}
-                onClick={() => onSelect(n.path)}
-              />
+              <Fragment key={n.path}>
+                <LeafRow
+                  id={`result:${n.path}`}
+                  a11y={a11y}
+                  depth={-1}
+                  selected={n.path === selectedPath}
+                  icon={n.icon ? <span className={styles.emoji}>{n.icon}</span> : <FileIcon />}
+                  label={displayTitle(n)}
+                  hint={dirOf(n.path).replace(/\/$/, "")}
+                  title={n.path}
+                  onClick={() => onSelect(n.path)}
+                />
+                {n.snippet && (
+                  <div className={styles.resultSnippet} onClick={() => onSelect(n.path)}>
+                    <Snippet text={n.snippet} />
+                  </div>
+                )}
+              </Fragment>
             ))}
           </div>
         ) : (
