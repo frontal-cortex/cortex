@@ -129,6 +129,10 @@ enum Cmd {
         columns: Option<Vec<String>>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Summary row: field=function (repeatable or comma-separated) —
+        /// count, sum, avg, min, max, percent_checked, empty, not_empty
+        #[arg(long = "summary", value_delimiter = ',')]
+        summary: Vec<String>,
     },
     /// Show a property schema (collection name or note type); lists them if none given
     Schema { key: Option<String> },
@@ -354,15 +358,26 @@ fn run() -> Result<()> {
             let names = v.collections();
             if out.json { out.emit(&names) } else { for n in names { println!("{n}"); } Ok(()) }
         }
-        Cmd::View { collection, filter, sort, columns, limit } => {
-            let t = v.view(&collection, filter.as_deref(), &sort, columns.as_deref(), limit)?;
+        Cmd::View { collection, filter, sort, columns, limit, summary } => {
+            let summary: Vec<(String, String)> = summary.iter().map(|s| match s.split_once('=') {
+                Some((f, func)) if !f.trim().is_empty() && !func.trim().is_empty() => Ok((f.trim().to_string(), func.trim().to_string())),
+                _ => Err(format!("--summary expects field=function, got '{s}'")),
+            }).collect::<std::result::Result<_, _>>()?;
+            let t = v.view(&collection, filter.as_deref(), &sort, columns.as_deref(), limit, &summary)?;
             if out.json { return out.emit(&t); }
             let headers: Vec<&str> = std::iter::once("ID").chain(t.columns.iter().map(|c| c.key.as_str())).collect();
-            let rows = t.rows.iter().map(|r| {
+            let mut rows: Vec<Vec<String>> = t.rows.iter().map(|r| {
                 std::iter::once(r.id.clone())
                     .chain(t.columns.iter().map(|c| r.cells.get(&c.key).map(json_text).unwrap_or_default()))
                     .collect()
             }).collect();
+            // The summary row sits under the columns it summarises, labelled by function.
+            if !t.summary.is_empty() {
+                let label = |key: &str| summary.iter().find(|(f, _)| f == key)
+                    .and_then(|(_, func)| t.summary.get(key).map(|v| format!("{func}: {}", json_text(v))))
+                    .unwrap_or_default();
+                rows.push(std::iter::once(String::new()).chain(t.columns.iter().map(|c| label(&c.key))).collect());
+            }
             table(&headers, rows);
             Ok(())
         }
