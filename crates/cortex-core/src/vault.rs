@@ -59,7 +59,7 @@ Note body here. Use [[Note Title]] to link to other notes.
 |-----------|----------------------------------------------------|
 | `title`   | Display name — used in search, links, and the UI.  |
 | `type`    | Note type: `note`, `task`, `meeting`, or anything. |
-| `tags`    | List of tags for filtering.                        |
+| `tags`    | List of tags. `#tag` in the body counts too; `a/b` nests. |
 | `created` | ISO date the note was created (YYYY-MM-DD).        |
 
 Custom fields are fully supported — add any key/value pair you need.
@@ -187,6 +187,7 @@ follows every change you make on disk.
 ## Rules
 
 - Frontmatter keys are sorted alphabetically; `created` is `YYYY-MM-DD`; `tags` is a list.
+- A `#tag` in the body counts as a tag too (not in code, headings or URLs); `parent/child` nests. Never write derived tag lists back.
 - The app shows `title` as the page heading and `created` under it — don't repeat either as an H1 or a first line in the body.
   Prefer the tools below over editing YAML by hand — they keep files canonical so diffs stay clean.
 - Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by title, then by filename.
@@ -197,6 +198,7 @@ follows every change you make on disk.
 The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTEX_VAULT`):
 
     cortex ls [dir] [--type t] [--tag t]     list notes            cortex search <query>   ("phrase" -word OR tag:x type:x path:x)
+    cortex tags                              tags with counts, nested by /
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f] [--summary f=sum]
@@ -321,12 +323,7 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
                 let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
                 let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
                 let parent = parsed.frontmatter.get("parent").and_then(|v| v.as_str()).map(str::to_string);
-                let tags = parsed
-                    .frontmatter
-                    .get("tags")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-                    .unwrap_or_default();
+                let tags = crate::tags::note_tags(&parsed);
                 (title, note_type, icon, parent, tags)
             }
             Err(_) => {
@@ -344,6 +341,13 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
 
     entries.sort_by(|a, b| b.modified.cmp(&a.modified));
     entries
+}
+
+/// The vault's tag tree — frontmatter and inline `#tags` of every note,
+/// nested by `/` with counts. Computed, never stored.
+pub fn list_tags(root: &Path) -> Vec<crate::tags::TagNode> {
+    let notes = list_notes(root);
+    crate::tags::list_tags(notes.iter().map(|n| (n.path.as_str(), n.tags.as_slice())))
 }
 
 /// Resolve a reference the way the app resolves a `[[wiki link]]`: exact

@@ -292,6 +292,15 @@ export interface NoteEntry {
   parent: string | null;
 }
 
+/** One node of the vault's tag tree: `path` is the full tag (`project/alpha`),
+ *  `name` its last segment, `count` the notes carrying it or any child. */
+export interface TagNode {
+  name: string;
+  path: string;
+  count: number;
+  children: TagNode[];
+}
+
 /** A search result: the note plus one line of its body around the match,
  *  the matched words wrapped in `<mark>…</mark>` (empty for filter-only queries). */
 export interface SearchHit extends NoteEntry {
@@ -662,6 +671,9 @@ export const commands = {
 
   listNotes: () =>
     invoke<NoteEntry[]>("list_notes"),
+
+  listTags: () =>
+    invoke<TagNode[]>("list_tags"),
 
   readNote: (path: string) =>
     invoke<Note>("read_note", { path }),

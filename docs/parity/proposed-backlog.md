@@ -317,7 +317,7 @@ into an empty folder.
 created: 2026-09-09
 effort: M
 priority: 32
-status: planned
+status: done
 tags: [parity, tags]
 title: Tags — inline #tags in the body, a tag pane, and tag pages
 type: note

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { commands, NoteEntry, Note } from "../lib/commands";
+import { commands, NoteEntry, Note, TagNode } from "../lib/commands";
 
 function today(): string {
   return new Date().toISOString().split("T")[0];
@@ -23,18 +23,23 @@ function titleToSlug(title: string): string {
 export function useNotes(vaultOpen: boolean) {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [dirs, setDirs] = useState<string[]>([]);
+  // The tag tree (frontmatter + inline #tags, nested by `/`), computed by the
+  // backend from the same files as `notes` and refreshed with them.
+  const [tags, setTags] = useState<TagNode[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!vaultOpen) return;
     setLoading(true);
     try {
-      const [list, dirList] = await Promise.all([
+      const [list, dirList, tagTree] = await Promise.all([
         commands.listNotes(),
         commands.listVaultDirs(),
+        commands.listTags().catch(() => [] as TagNode[]),
       ]);
       setNotes(list);
       setDirs(dirList);
+      setTags(tagTree);
     } finally {
       setLoading(false);
     }
@@ -146,7 +151,7 @@ export function useNotes(vaultOpen: boolean) {
     [refresh],
   );
 
-  return { notes, dirs, loading, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote };
+  return { notes, dirs, tags, loading, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote };
 }
 
 // In-flight writes, keyed by note path. A note's loader must wait for a pending

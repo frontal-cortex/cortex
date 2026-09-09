@@ -5,7 +5,7 @@
 //! (`note`), the rebuildable SQLite index (`db`, `index`) and its query
 //! operators (`search`), collections and
 //! views over frontmatter (`data`, `schema`), the team roster (`members`),
-//! settings (`settings`), git operations (`git`), vault discovery (`vault`),
+//! settings (`settings`), tags (`tags`), git operations (`git`), vault discovery (`vault`),
 //! and which agent CLIs are installed (`agents`). The Tauri app and the `cortex` CLI are both thin layers over it,
 //! so an agent driving the CLI sees exactly the semantics the user sees.
 
@@ -25,6 +25,7 @@ pub mod recurrence;
 pub mod schema;
 pub mod search;
 pub mod settings;
+pub mod tags;
 pub mod template;
 pub mod tracker;
 pub mod vault;

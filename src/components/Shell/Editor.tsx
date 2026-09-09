@@ -12,7 +12,7 @@ import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { useColorScheme } from "../../hooks/useColorScheme";
-import { Note, NoteEntry, CommitEntry, Member, ViewDef, commands } from "../../lib/commands";
+import { Note, NoteEntry, TagNode, CommitEntry, Member, ViewDef, commands } from "../../lib/commands";
 import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
@@ -20,6 +20,7 @@ import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
+import { flattenTags } from "../../lib/tags";
 import { NoteHistoryModal } from "./NoteHistoryModal";
 import { PlusIcon, HistoryIcon, TrashIcon, TableIcon } from "./icons";
 import { cortexSchema } from "./schema";
@@ -109,6 +110,8 @@ interface Props {
   note: Note | null;
   saving: boolean;
   allNotes: NoteEntry[];
+  /** The vault's tag tree — what `#` autocompletes from. */
+  tags?: TagNode[];
   vaultPath?: string;
   /** Bumped by the shell when the note's file changed on disk (e.g. a sync
    *  pulled teammate edits) — remounts the editor so it re-parses content. */
@@ -145,7 +148,7 @@ export interface EditorHandle {
 const OUTLINE_OPEN_KEY = "cortex.outlineOpen";
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
-  note, saving, allNotes, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
+  note, saving, allNotes, tags = [], reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
 }, ref) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
@@ -194,6 +197,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
         note={note}
         saving={saving}
         allNotes={allNotes}
+        tags={tags}
         collab={collab}
         monk={monk}
         outlineOpen={outlineOpen}
@@ -224,12 +228,34 @@ interface SuggestionState {
   trigger: SuggestionTrigger;
 }
 
-/** An item offered in the suggestion dropdown: a note to wiki-link, or (for `@`)
- *  a date to insert as plain text. `display` is what the dropdown renders. */
+/** An item offered in the suggestion dropdown: a note to wiki-link, (for `@`)
+ *  a date to insert as plain text, or (for `#`) a tag. `display` is what the
+ *  dropdown renders. */
 type MentionItem =
   | { kind: "note"; note: NoteEntry; display: SuggestItem }
   | { kind: "date"; value: string; display: SuggestItem }
-  | { kind: "person"; name: string; display: SuggestItem };
+  | { kind: "person"; name: string; display: SuggestItem }
+  | { kind: "tag"; tag: string; display: SuggestItem };
+
+/** Existing tags offered after `#`, filtered by the typed query; a query that
+ *  matches no tag exactly is offered as a new one, so Enter completes it. */
+function tagItems(tags: TagNode[], query: string): MentionItem[] {
+  const q = query.toLowerCase();
+  const all = flattenTags(tags);
+  const hits = all
+    .filter((t) => !q || t.path.toLowerCase().includes(q))
+    .sort((a, b) => Number(b.path.toLowerCase().startsWith(q)) - Number(a.path.toLowerCase().startsWith(q)))
+    .slice(0, 8)
+    .map((t): MentionItem => ({
+      kind: "tag", tag: t.path,
+      display: { key: `tag:${t.path}`, title: `#${t.path}`, badge: `${t.count} note${t.count === 1 ? "" : "s"}` },
+    }));
+  const exact = all.some((t) => t.path.toLowerCase() === q);
+  if (q && !exact && !/^\d+$/.test(q)) {
+    hits.push({ kind: "tag", tag: query, display: { key: "tag:new", title: `#${query}`, badge: "New tag" } });
+  }
+  return hits;
+}
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -280,11 +306,12 @@ function personItems(members: Member[], query: string): MentionItem[] {
 const PROPS_EXPANDED_KEY = "cortex.propertiesExpanded";
 
 function NoteEditor({
-  note, saving, allNotes, collab, monk, outlineOpen, onToggleOutline, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
+  note, saving, allNotes, tags, collab, monk, outlineOpen, onToggleOutline, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
 }: {
   note: Note;
   saving: boolean;
   allNotes: NoteEntry[];
+  tags: TagNode[];
   collab: CollabConfig | null;
   monk: boolean;
   outlineOpen: boolean;
@@ -367,9 +394,10 @@ function NoteEditor({
   }, []);
 
   // Unified item list for the suggestion dropdown: notes for `[[`; people, dates,
-  // and notes for `@`.
+  // and notes for `@`; tags for `#`.
   const filteredItems = useMemo<MentionItem[]>(() => {
     if (!suggestion) return [];
+    if (suggestion.trigger === "tag") return tagItems(tags, suggestion.query);
     // `[[Note#Sec|alias` filters on `Note` alone; the rest is kept on insert.
     const q = (suggestion.trigger === "wiki" ? parseWikiLink(suggestion.query).target : suggestion.query).toLowerCase();
     const matchNote = (n: NoteEntry) =>
@@ -381,7 +409,7 @@ function NoteEditor({
       return [...personItems(members, suggestion.query), ...dateSuggestions(suggestion.query), ...notes];
     }
     return notes;
-  }, [suggestion, allNotes, members]);
+  }, [suggestion, allNotes, members, tags]);
 
   // Keep items accessible in the key handler without stale closure
   const filteredRef = useRef(filteredItems);
@@ -578,8 +606,10 @@ function NoteEditor({
 
   // ── Suggestion insertion ───────────────────────────────────────────────────
   // A note becomes a `[[wiki link]]` (for both `[[` and `@`); a date becomes
-  // plain ISO text. The trigger text (`[[query` or `@query`) is replaced wholesale;
-  // a `#section` or `|alias` already typed after `[[` is carried over.
+  // plain ISO text; a tag becomes `#tag ` (the space ends the tag, so the
+  // dropdown closes and the next keystroke is prose). The trigger text
+  // (`[[query`, `@query` or `#query`) is replaced wholesale; a `#section` or
+  // `|alias` already typed after `[[` is carried over.
   const insertItem = useCallback((item: MentionItem) => {
     if (!suggestion) return;
     const { from } = suggestion;
@@ -589,7 +619,9 @@ function NoteEditor({
       ? `[[${item.note.title || pathToTitle(item.note.path)}${typed.section ? `#${typed.section}` : ""}${typed.alias ? `|${typed.alias}` : ""}]]`
       : item.kind === "person"
         ? `@${item.name}`
-        : item.value;
+        : item.kind === "tag"
+          ? `#${item.tag} `
+          : item.value;
 
     editor._tiptapEditor.commands.command(({ tr, dispatch }) => {
       if (dispatch) {

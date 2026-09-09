@@ -25,6 +25,13 @@ pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
     Ok(cortex_core::vault::list_notes(&vault_path(&state)?))
 }
 
+/// The vault's tag tree with counts, nested by `/` — frontmatter and inline
+/// `#tags` alike. Computed from the notes on every call; nothing is stored.
+#[tauri::command]
+pub fn list_tags(state: State<'_, VaultState>) -> Result<Vec<cortex_core::tags::TagNode>> {
+    Ok(cortex_core::vault::list_tags(&vault_path(&state)?))
+}
+
 #[tauri::command]
 pub fn read_note(path: String, state: State<'_, VaultState>) -> Result<Note> {
     let root = vault_path(&state)?;

@@ -71,6 +71,7 @@ pub fn run() {
             commands::vault::get_vault_info,
             commands::recent::get_recent_vaults,
             commands::notes::list_notes,
+            commands::notes::list_tags,
             commands::notes::read_note,
             commands::notes::resolve_ref,
             commands::notes::write_note,

@@ -10,6 +10,7 @@ use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::schema::{PropertyChange, TypeSchema};
 use cortex_core::search::SearchHit;
 use cortex_core::settings::Settings;
+use cortex_core::tags::{self, TagNode};
 use cortex_core::tracker::{self, TrackerResult};
 use cortex_core::{index, schema, settings, vault};
 use serde::Serialize;
@@ -205,9 +206,16 @@ impl Vault {
                 None => !n.path.starts_with("templates/"),
             })
             .filter(|n| note_type.map_or(true, |t| n.note_type.as_deref() == Some(t)))
-            .filter(|n| tag.map_or(true, |t| n.tags.iter().any(|x| x == t)))
+            // Frontmatter and inline `#tags` alike; a parent tag matches its children.
+            .filter(|n| tag.map_or(true, |t| tags::has_tag(&n.tags, t)))
             .collect()
     }
+
+    /// The tag tree with counts, nested by `/` (templates excluded).
+    pub fn tags(&self) -> Vec<TagNode> {
+        vault::list_tags(&self.root)
+    }
+
 
     /// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
     /// `type:`, `path:`); see `cortex_core::search`.

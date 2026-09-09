@@ -20,7 +20,7 @@ database rows (one note per row, properties in frontmatter); templates/ holds no
 Notes link to each other with [[Title]] wiki links. Frontmatter keys are kept sorted so diffs \
 stay clean — use the tools rather than rewriting files by hand.
 
-Reading: list_notes, search, read_note, links, backlinks, list_collections, query_collection, \
+Reading: list_notes, list_tags, search, read_note, links, backlinks, list_collections, query_collection, \
 get_schema. Writing: create_note, write_note, set_properties. Writes are visible in the app \
 immediately. Schemas: rename_property / delete_property change a typed property everywhere at once \
 (schema, every row, views, dependent rollups and formulas) — never rename a frontmatter key by hand across rows. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
@@ -61,7 +61,7 @@ pub struct ListArgs {
     /// Only notes whose frontmatter `type` matches
     #[serde(rename = "type")]
     pub note_type: Option<String>,
-    /// Only notes carrying this tag
+    /// Only notes carrying this tag — in frontmatter or inline as #tag; a parent tag matches its children (project matches project/alpha)
     pub tag: Option<String>,
 }
 
@@ -235,6 +235,11 @@ impl CortexMcp {
     #[tool(description = "List notes, newest first. Optionally filter by folder, type, or tag.")]
     fn list_notes(&self, Parameters(a): Parameters<ListArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.list(a.dir.as_deref(), a.note_type.as_deref(), a.tag.as_deref()))
+    }
+
+    #[tool(description = "Every tag in the vault with note counts, nested by `/` (frontmatter `tags:` and inline #tags alike). Computed from the notes, never stored.")]
+    fn list_tags(&self) -> Result<CallToolResult, McpError> {
+        json(&self.vault.tags())
     }
 
     #[tool(description = "Full-text search over note titles and bodies. Words prefix-match; \"quoted phrases\", \
