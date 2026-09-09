@@ -131,8 +131,14 @@ exits.
 Every collection view — in `_index.md`, in a `cortex-view` fence, in `cortex view`
 and MCP `run_view` — shares one engine. What it understands:
 
-**Filters.** `field OP value` joined by `and` / `or`; ops `== != > >= < <= contains`;
-strings in single quotes. Values may be **relative dates**: `@today`, `@today-7`,
+**Filters.** `field OP value` joined by `and` / `or`; `and` binds tighter
+than `or`, parentheses group, `not` negates what follows:
+`(status == 'todo' or status == 'doing') and not owner is_empty`. Ops:
+`== != > >= < <= contains does_not_contain starts_with ends_with`,
+`is_empty` / `is_not_empty` (no value), `in [a, b]` (equal to any), and
+`within 7d` for dates (today through today+7; `-7d` the past week; units
+`d w m y`). Strings in single quotes; on a list property `contains` and `==`
+mean "has that item". Values may be **relative dates**: `@today`, `@today-7`,
 `@today+30`, `@tomorrow`, `@yesterday`, `@monday` (this week's), `@monday-1`,
 `@sunday`, `@month` (`YYYY-MM`), `@month-1`, `@year`, `@week` (`YYYY-Www`), and
 `@me` (the current member). An empty cell equals `''` and satisfies no ordering

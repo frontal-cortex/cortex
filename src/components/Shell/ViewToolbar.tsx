@@ -1,8 +1,11 @@
 // GUI filter / sort / group / columns builder for a data view. Edits the
 // STRUCTURED form of the spec (parsed by Rust) and serializes straight back to
 // YAML — the on-disk spec stays the source of truth, so a view built here is
-// identical to a hand-written one. A filter too complex to flatten (mixed
-// and/or) is surfaced as a notice that defers to the raw "Edit" escape hatch.
+// identical to a hand-written one. Clauses join under one connector, and a
+// clause may be one parenthesised group with its own — `a and (b or c)`. A
+// filter too complex to flatten (mixed and/or without parentheses, nested
+// groups, `not`) is surfaced as a notice that defers to the raw "Edit" escape
+// hatch.
 
 import { useEffect, useRef, useState } from "react";
 import { commands, StructuredSpec, FilterClause } from "../../lib/commands";
@@ -18,7 +21,21 @@ const OPS: { value: string; label: string }[] = [
   { value: "<", label: "<" },
   { value: "<=", label: "≤" },
   { value: "contains", label: "contains" },
+  { value: "does_not_contain", label: "does not contain" },
+  { value: "starts_with", label: "starts with" },
+  { value: "ends_with", label: "ends with" },
+  { value: "is_empty", label: "is empty" },
+  { value: "is_not_empty", label: "is not empty" },
+  { value: "in", label: "is any of" },
+  { value: "within", label: "within" },
 ];
+
+const NO_VALUE_OPS = new Set(["is_empty", "is_not_empty"]);
+const VALUE_HINT: Record<string, string> = { in: "a, b, c", within: "7d, -7d, 2w, 1m" };
+
+function newClause(field: string): FilterClause {
+  return { field, op: "==", value: "" };
+}
 
 function usePopover() {
   const [open, setOpen] = useState(false);
@@ -66,7 +83,7 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
   // the spec (so hidden-but-referenced fields stay editable).
   const referenced = new Set<string>([
     ...fields,
-    ...s.filters.map((f) => f.field),
+    ...s.filters.flatMap((f) => (f.clauses?.length ? f.clauses.map((c) => c.field) : [f.field])),
     ...s.sort.map((so) => so.field),
     ...(s.group ? [s.group] : []),
   ]);
@@ -78,15 +95,53 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
     commands.serializeViewSpec(next).then(onSpecChange).catch(() => {});
   };
 
-  // ── Filters ──
-  const setFilter = (i: number, patch: Partial<FilterClause>) =>
-    commit({ ...s, filters: s.filters.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
-  const addFilter = () =>
-    commit({ ...s, filters: [...s.filters, { field: firstField, op: "==", value: "" }] });
-  const removeFilter = (i: number) =>
-    commit({ ...s, filters: s.filters.filter((_, j) => j !== i) });
+  // ── Filters. A path is [i] for a top-level clause, [i, k] for the k-th
+  // clause of the group at i. ──
+  const updateAt = (path: number[], f: (c: FilterClause) => FilterClause | null): FilterClause[] => {
+    const [i, k] = path;
+    return s.filters.flatMap((c, j) => {
+      if (j !== i) return [c];
+      if (k === undefined) { const n = f(c); return n ? [n] : []; }
+      const inner = (c.clauses ?? []).flatMap((g, m) => { if (m !== k) return [g]; const n = f(g); return n ? [n] : []; });
+      return inner.length ? [{ ...c, clauses: inner }] : [];
+    });
+  };
+  const setFilter = (path: number[], patch: Partial<FilterClause>) =>
+    commit({ ...s, filters: updateAt(path, (c) => ({ ...c, ...patch, ...(patch.op && NO_VALUE_OPS.has(patch.op) ? { value: "" } : {}) })) });
+  const removeFilter = (path: number[]) => commit({ ...s, filters: updateAt(path, () => null) });
+  const addFilter = () => commit({ ...s, filters: [...s.filters, newClause(firstField)] });
+  const addGroup = () =>
+    commit({ ...s, filters: [...s.filters, { field: "", op: "", value: "", join: s.filterJoin === "or" ? "and" : "or", clauses: [newClause(firstField)] }] });
+  const addToGroup = (i: number) =>
+    commit({ ...s, filters: s.filters.map((c, j) => (j === i ? { ...c, clauses: [...(c.clauses ?? []), newClause(firstField)] } : c)) });
   const toggleJoin = () =>
     commit({ ...s, filterJoin: s.filterJoin === "or" ? "and" : "or" });
+  const toggleGroupJoin = (i: number) =>
+    commit({ ...s, filters: s.filters.map((c, j) => (j === i ? { ...c, join: c.join === "or" ? "and" : "or" } : c)) });
+
+  const clauseRow = (f: FilterClause, path: number[], lead: React.ReactNode) => (
+    <div key={path.join(".")} className={styles.clauseRow}>
+      {lead}
+      <Dropdown
+        value={f.field}
+        options={allFields.map((fl) => ({ value: fl, label: fl }))}
+        onChange={(v) => setFilter(path, { field: v })}
+      />
+      <Dropdown
+        value={f.op}
+        options={OPS}
+        onChange={(v) => setFilter(path, { op: v })}
+      />
+      {!NO_VALUE_OPS.has(f.op) && (
+        <input className={styles.valueInput} value={f.value} placeholder={VALUE_HINT[f.op] ?? "value"}
+          spellCheck={false}
+          onChange={(e) => setFilter(path, { value: e.target.value })} />
+      )}
+      <button className={styles.rowDel} onClick={() => removeFilter(path)} title="Remove">
+        <CloseIcon size={12} />
+      </button>
+    </div>
+  );
 
   // ── Sort ──
   const addSort = () =>
@@ -124,38 +179,39 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
           <div className={styles.popover}>
             {s.filterComplex ? (
               <div className={styles.notice}>
-                This filter mixes <code>and</code>/<code>or</code>. Use the raw
+                This filter nests groups, uses <code>not</code>, or mixes
+                <code> and</code>/<code>or</code> without parentheses. Use the raw
                 <strong> Edit </strong> view to change it.
               </div>
             ) : (
               <>
                 {s.filters.length === 0 && <div className={styles.empty}>No filters yet.</div>}
-                {s.filters.map((f, i) => (
-                  <div key={i} className={styles.clauseRow}>
-                    {i > 0 ? (
-                      <button className={styles.joinToggle} onClick={toggleJoin}>{s.filterJoin}</button>
-                    ) : (
-                      <span className={styles.joinWhere}>Where</span>
-                    )}
-                    <Dropdown
-                      value={f.field}
-                      options={allFields.map((fl) => ({ value: fl, label: fl }))}
-                      onChange={(v) => setFilter(i, { field: v })}
-                    />
-                    <Dropdown
-                      value={f.op}
-                      options={OPS}
-                      onChange={(v) => setFilter(i, { op: v })}
-                    />
-                    <input className={styles.valueInput} value={f.value} placeholder="value"
-                      spellCheck={false}
-                      onChange={(e) => setFilter(i, { value: e.target.value })} />
-                    <button className={styles.rowDel} onClick={() => removeFilter(i)} title="Remove">
-                      <CloseIcon size={12} />
-                    </button>
-                  </div>
-                ))}
-                <button className={styles.addBtn} onClick={addFilter}>+ Add filter</button>
+                {s.filters.map((f, i) => {
+                  const lead = i > 0 ? (
+                    <button className={styles.joinToggle} onClick={toggleJoin}>{s.filterJoin}</button>
+                  ) : (
+                    <span className={styles.joinWhere}>Where</span>
+                  );
+                  if (!f.clauses?.length) return clauseRow(f, [i], lead);
+                  const join = f.join || "and";
+                  return (
+                    <div key={i} className={styles.clauseRow}>
+                      {lead}
+                      <div className={styles.group}>
+                        {f.clauses.map((g, k) => clauseRow(g, [i, k], k > 0 ? (
+                          <button className={styles.joinToggle} onClick={() => toggleGroupJoin(i)}>{join}</button>
+                        ) : (
+                          <span className={styles.joinWhere}>(</span>
+                        )))}
+                        <button className={styles.addBtn} onClick={() => addToGroup(i)}>+ Add to group</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className={styles.clauseRow}>
+                  <button className={styles.addBtn} onClick={addFilter}>+ Add filter</button>
+                  <button className={styles.addBtn} onClick={addGroup}>+ Add group</button>
+                </div>
               </>
             )}
           </div>

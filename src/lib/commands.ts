@@ -94,8 +94,13 @@ export interface ViewColumn {
 
 export interface FilterClause {
   field: string;
+  /** `== != > >= < <= contains does_not_contain starts_with ends_with is_empty is_not_empty within in`. */
   op: string;
+  /** Comma-separated for `in`; empty for `is_empty` / `is_not_empty`. */
   value: string;
+  /** A parenthesised group: its own clauses and connector (field/op/value unused). */
+  clauses?: FilterClause[];
+  join?: string;
 }
 
 export interface SortClause {
