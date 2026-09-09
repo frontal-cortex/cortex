@@ -17,6 +17,7 @@ export type ShortcutId =
   | "new-note"
   | "today"
   | "graph"
+  | "local-graph"
   | "back"
   | "forward"
   | "settings"
@@ -44,6 +45,7 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "new-note":        { keys: "mod+n",       label: "New note" },
   "today":           { keys: "mod+shift+t", label: "Today's note" },
   "graph":           { keys: "mod+g",       label: "Graph view" },
+  "local-graph":     { keys: "mod+shift+g", label: "Local graph" },
   "back":            { keys: "mod+[",       label: "Back" },
   "forward":         { keys: "mod+]",       label: "Forward" },
   "settings":        { keys: "mod+,",       label: "Settings" },

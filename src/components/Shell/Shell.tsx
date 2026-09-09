@@ -59,7 +59,8 @@ export function Shell({
     toggleRight();
     if (opening) requestAnimationFrame(() => termRef.current?.focus());
   }, [monk, rightVisible, toggleRight]);
-  const [showGraph, setShowGraph] = useState(false);
+  // The graph modal: closed, or open globally / locally around the open note.
+  const [showGraph, setShowGraph] = useState<false | "global" | "local">(false);
   // A tag page: the notes carrying this tag, as a view over the index (nothing written).
   const [openTag, setOpenTag] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -500,7 +501,8 @@ export function Shell({
     "quick-capture":   () => setShowCapture(true),
     "new-note":        () => { handleNewNote(undefined); },
     "today":           () => { handleToday(); },
-    "graph":           () => setShowGraph((x) => !x),
+    "graph":           () => setShowGraph((x) => (x ? false : "global")),
+    "local-graph":     () => setShowGraph((x) => (x === "local" ? false : "local")),
     "back":            back,
     "forward":         forward,
     "settings":        () => setShowSettings((v) => !v),
@@ -528,7 +530,7 @@ export function Shell({
         onBack={back}
         onForward={forward}
         onSync={handleSync}
-        onOpenGraph={() => setShowGraph(true)}
+        onOpenGraph={() => setShowGraph("global")}
         onOpenSwitcher={() => setSwitcher("notes")}
         onToday={handleToday}
         leftOpen={leftVisible}
@@ -559,7 +561,7 @@ export function Shell({
           onTurnIntoDatabase={handleTurnIntoDatabase}
           onToggleFavorite={toggleFavorite}
           isFavorite={isFavorite}
-          onOpenGraph={() => setShowGraph(true)}
+          onOpenGraph={() => setShowGraph("global")}
           onNewFromTemplate={handleNewFromTemplate}
           onNewCollection={handleNewCollection}
           onOpenCollection={handleOpenCollection}
@@ -623,7 +625,7 @@ export function Shell({
           onClose={() => { setSwitcher(null); focusEditor(); }}
           onNewNote={() => handleNewNote()}
           onToday={handleToday}
-          onOpenGraph={() => setShowGraph(true)}
+          onOpenGraph={() => setShowGraph("global")}
           onNewFromTemplate={handleNewFromTemplate}
           onNewCollection={handleNewCollection}
           onSync={handleSync}
@@ -688,6 +690,8 @@ export function Shell({
       {showGraph && (
         <GraphView
           notes={notes}
+          currentPath={note?.path ?? null}
+          initialMode={showGraph}
           onNavigate={(path) => { setSelectedPath(path); setShowGraph(false); }}
           onClose={() => setShowGraph(false)}
         />
