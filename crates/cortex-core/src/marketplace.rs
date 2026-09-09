@@ -202,6 +202,168 @@ pub fn excerpt(pack: &Pack) -> Excerpt {
     e
 }
 
+// ── Structured preview: what the pack's page shows ─────────────────────────
+//
+// The page used to parse the schema and index.md itself with regexes, which
+// mistook a select's options for properties. Everything it needs is parsed
+// here, once, with the same YAML reader lint and install use.
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PreviewOption {
+    pub name: String,
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PreviewProperty {
+    pub name: String,
+    /// The schema's type name as written: `select`, `multi_select`, `relation`, …
+    #[serde(rename = "type")]
+    pub ty: String,
+    /// Number display (`stars`, `currency`, …), when set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// select / multi_select / status: the choices, in display order.
+    pub options: Vec<PreviewOption>,
+    /// relation, rollup, formula: a one-line descriptor (`→ weeks`, `count of milestones where done == true`, the expression).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PreviewView {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PreviewCollection {
+    /// The folder under `collections/`.
+    pub name: String,
+    /// The collection page's `title` and `icon` from its index frontmatter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    pub properties: Vec<PreviewProperty>,
+    pub views: Vec<PreviewView>,
+    /// The row template's body (Markdown after the frontmatter), if the pack ships one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+    /// Seed rows the pack installs.
+    pub seeds: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PreviewTemplate {
+    /// Path inside the pack, e.g. `templates/daily.md`.
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The Markdown body after the frontmatter.
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct PackPreview {
+    /// Collection packs: each collection the pack owns, primary first.
+    pub collections: Vec<PreviewCollection>,
+    /// Note templates (every `templates/*.md` that is not a collection's row template).
+    pub templates: Vec<PreviewTemplate>,
+    /// Bundles: the packs installed together.
+    pub includes: Vec<String>,
+}
+
+/// Frontmatter and body of a template or page. Placeholders are quoted in
+/// packs (lint enforces it), so the raw text parses; a template with the
+/// date words unquoted falls back to the resolved form lint uses.
+fn split_note(text: &str) -> (Option<serde_yaml::Mapping>, String) {
+    let body = text.strip_prefix("---").and_then(|r| r.find("\n---").map(|i| &r[i + 4..])).unwrap_or(text);
+    let fm = frontmatter_yaml(text).or_else(|| frontmatter_yaml(&strip_template_vars(&lint_dates(text))));
+    (fm, body.trim_start_matches(['\r', '\n']).trim_end().to_string())
+}
+
+fn fm_str(fm: &Option<serde_yaml::Mapping>, key: &str) -> Option<String> {
+    fm.as_ref()?.get(key).and_then(|v| v.as_str()).map(String::from).filter(|s| !s.is_empty())
+}
+
+fn property_detail(p: &schema::PropertyDef) -> Option<String> {
+    match p.ty {
+        schema::PropType::Relation => Some(match (&p.collection, &p.from) {
+            (Some(c), _) => format!("→ {c}"),
+            (None, Some(f)) => format!("← {f}"),
+            (None, None) => "→ rows".into(),
+        }),
+        schema::PropType::Rollup => {
+            let func = p.function.as_deref().unwrap_or("values");
+            let mut s = match (&p.from, &p.relation, &p.property) {
+                (Some(f), _, Some(prop)) => format!("{func} of {prop} across {f}"),
+                (Some(f), _, None) => format!("{func} of {f}"),
+                (None, Some(r), Some(prop)) => format!("{func} of {r}.{prop}"),
+                (None, Some(r), None) => format!("{func} of {r}"),
+                _ => func.to_string(),
+            };
+            if let Some(w) = &p.where_ { s.push_str(&format!(" where {w}")); }
+            Some(s)
+        }
+        schema::PropType::Formula => p.expr.clone(),
+        _ => None,
+    }
+}
+
+/// Everything the pack's page shows about what an install gives you.
+pub fn preview(pack: &Pack) -> PackPreview {
+    let m = &pack.manifest;
+    let mut out = PackPreview { includes: m.includes.clone(), ..Default::default() };
+    let colls = m.collections();
+    for (i, c) in colls.iter().enumerate() {
+        let mut pc = PreviewCollection { name: c.clone(), title: None, icon: None, properties: vec![], views: vec![], template: None, seeds: 0 };
+        if let Some(text) = pack.text(&format!("schemas/{c}.yaml")) {
+            if let Ok(s) = serde_yaml::from_str::<schema::TypeSchema>(&text) {
+                pc.properties = s.properties.iter().map(|p| PreviewProperty {
+                    name: p.name.clone(),
+                    ty: serde_yaml::to_value(p.ty).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| format!("{:?}", p.ty).to_lowercase()),
+                    format: p.format.clone(),
+                    options: p.options.iter().map(|o| PreviewOption { name: o.name.clone(), color: o.color.clone() }).collect(),
+                    detail: property_detail(p),
+                }).collect();
+            }
+        }
+        let index_path = if i == 0 { "index.md".to_string() } else { format!("index/{c}.md") };
+        if let Some(text) = pack.text(&index_path) {
+            let (fm, _) = split_note(&text);
+            pc.title = fm_str(&fm, "title");
+            pc.icon = fm_str(&fm, "icon");
+            for v in fm.as_ref().and_then(|f| f.get("views")).and_then(|v| v.as_sequence()).cloned().unwrap_or_default() {
+                pc.views.push(PreviewView {
+                    name: v.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                    ty: v.get("type").and_then(|x| x.as_str()).unwrap_or("table").to_string(),
+                });
+            }
+        }
+        if let Some(text) = pack.text(&format!("templates/{c}.md")) {
+            pc.template = Some(split_note(&text).1);
+        }
+        pc.seeds = pack.files.iter().filter(|f| f.path.ends_with(".md")).filter(|f| match f.path.strip_prefix("seed/") {
+            Some(rest) => match rest.split_once('/') {
+                Some((owner, _)) if colls.iter().any(|x| x == owner) => owner == c,
+                _ => i == 0,
+            },
+            None => false,
+        }).count();
+        out.collections.push(pc);
+    }
+    for f in &pack.files {
+        let Some(name) = f.path.strip_prefix("templates/").and_then(|t| t.strip_suffix(".md")) else { continue };
+        if colls.iter().any(|c| c == name) { continue }
+        let text = String::from_utf8_lossy(&f.contents);
+        let (fm, body) = split_note(&text);
+        out.templates.push(PreviewTemplate { path: f.path.clone(), title: fm_str(&fm, "title"), body });
+    }
+    out
+}
+
 /// The packs compiled into this build (the official tier).
 pub fn bundled() -> Vec<Pack> {
     let mut by_id: BTreeMap<&str, Vec<PackFile>> = BTreeMap::new();
@@ -245,8 +407,24 @@ pub struct Finding {
     pub message: String,
 }
 
-const ALLOWED_EXT: [&str; 6] = ["md", "yaml", "png", "jpg", "webp", "svg"];
-const ALLOWED_DIRS: [&str; 5] = ["templates", "schemas", "seed", "assets", "index"];
+const ALLOWED_EXT: [&str; 7] = ["md", "yaml", "png", "jpg", "jpeg", "webp", "svg"];
+const ALLOWED_DIRS: [&str; 6] = ["templates", "schemas", "seed", "assets", "index", "preview"];
+/// Screenshots in `preview/`: shown on the pack's page, never installed.
+const PREVIEW_EXT: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+const PREVIEW_MAX_BYTES: usize = 600 * 1024;
+const PREVIEW_MAX_FILES: usize = 8;
+
+/// `preview/<file>`: a screenshot of the gallery (one level deep only).
+fn is_gallery_image(path: &str) -> bool {
+    path.strip_prefix("preview/").map_or(false, |rest| !rest.is_empty() && !rest.contains('/'))
+}
+
+/// The gallery, sorted by filename — the order the page shows them in.
+pub fn gallery(pack: &Pack) -> Vec<String> {
+    let mut out: Vec<String> = pack.files.iter().map(|f| f.path.clone()).filter(|p| is_gallery_image(p)).collect();
+    out.sort();
+    out
+}
 const TEMPLATE_VARS: [&str; 4] = ["date", "time", "title", "uuid"];
 const RAW_HTML_OK: [&str; 6] = ["<br", "<sub", "</sub", "<sup", "</sup", "<!--"];
 const PRODUCT_WORDS: [&str; 6] = ["notion", "obsidian", "evernote", "roam", "logseq", "craft"];
@@ -286,12 +464,15 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
 
     // Files: listed ⇔ present, allowed types and places, size.
     let listed: BTreeSet<&str> = m.files.iter().map(String::as_str).collect();
-    let present: BTreeSet<&str> = pack.files.iter().map(|f| f.path.as_str()).filter(|p| *p != "manifest.yaml" && *p != "README.md" && *p != "preview.png").collect();
+    // The manifest, README, hero and gallery describe the pack; they are not
+    // installed, so `files` does not list them.
+    let describes = |p: &str| p == "manifest.yaml" || p == "README.md" || p == "preview.png" || p.starts_with("preview/");
+    let present: BTreeSet<&str> = pack.files.iter().map(|f| f.path.as_str()).filter(|p| !describes(p)).collect();
     for p in listed.difference(&present) { err(&mut out, Some(p), "listed in `files` but missing".into()); }
     for p in present.difference(&listed) { err(&mut out, Some(p), "present but not listed in `files`".into()); }
     let mut total = 0usize;
+    let mut gallery_count = 0usize;
     for f in &pack.files {
-        total += f.contents.len();
         let p = Path::new(&f.path);
         if p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
             err(&mut out, Some(&f.path), "path must be relative and free of `..`".into());
@@ -303,9 +484,25 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
         let top = f.path.split('/').next().unwrap_or("");
         let at_root = !f.path.contains('/');
         if !(at_root && ["manifest.yaml", "README.md", "index.md", "preview.png"].contains(&f.path.as_str())) && !ALLOWED_DIRS.contains(&top) {
-            err(&mut out, Some(&f.path), "files live in templates/, schemas/, seed/, index/, assets/ or are index.md / README.md / preview.png".into());
+            err(&mut out, Some(&f.path), "files live in templates/, schemas/, seed/, index/, assets/, preview/ or are index.md / README.md / preview.png".into());
         }
-        if ["png", "jpg", "webp", "svg"].contains(&ext.as_str()) && f.contents.len() > 200 * 1024 {
+        if top == "preview" {
+            // Screenshots: shown on the pack's page, never installed, so they
+            // have their own budget and do not count toward the pack's 2 MB.
+            if !is_gallery_image(&f.path) {
+                err(&mut out, Some(&f.path), "preview/ holds screenshots directly (preview/<name>.png), no subfolders".into());
+            } else if !PREVIEW_EXT.contains(&ext.as_str()) {
+                err(&mut out, Some(&f.path), "preview/ accepts only .png, .jpg, .jpeg and .webp screenshots".into());
+            } else {
+                gallery_count += 1;
+                if f.contents.len() > PREVIEW_MAX_BYTES {
+                    err(&mut out, Some(&f.path), format!("screenshots in preview/ must be {} KB or smaller (this one is {} KB)", PREVIEW_MAX_BYTES / 1024, f.contents.len() / 1024));
+                }
+            }
+            continue;
+        }
+        total += f.contents.len();
+        if ["png", "jpg", "jpeg", "webp", "svg"].contains(&ext.as_str()) && f.contents.len() > 200 * 1024 {
             err(&mut out, Some(&f.path), "images must be 200 KB or smaller".into());
         }
         if ext == "md" {
@@ -313,7 +510,10 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
             lint_markdown(&f.path, &text, &mut out);
         }
     }
-    if total > 2 * 1024 * 1024 { err(&mut out, None, "pack is larger than 2 MB".into()); }
+    if total > 2 * 1024 * 1024 { err(&mut out, None, "pack is larger than 2 MB (screenshots in preview/ not counted)".into()); }
+    if gallery_count > PREVIEW_MAX_FILES {
+        err(&mut out, Some("preview/"), format!("at most {PREVIEW_MAX_FILES} screenshots in preview/ (found {gallery_count}) — pick the views that show the pack best"));
+    }
 
     // Collection packs: per collection, the schema, views, seeds and row template agree.
     if m.kind == Kind::Collection {
@@ -975,9 +1175,16 @@ pub struct IndexEntry {
     #[serde(flatten)]
     pub manifest: Manifest,
     pub tier: Tier,
+    /// The card's hero, relative to the index base: `preview.png`, or the
+    /// first gallery screenshot when the pack ships none.
     #[serde(default)]
     pub preview: Option<String>,
-    /// path inside the pack → sha256 of the file's bytes.
+    /// The gallery: `<id>/preview/<file>` for every screenshot, sorted by
+    /// filename (`[]` when there are none). Shown on the pack's page; never installed.
+    #[serde(default)]
+    pub previews: Vec<String>,
+    /// path inside the pack → sha256 of the file's bytes, for every file an
+    /// install fetches (the gallery is not among them).
     pub sha256: BTreeMap<String, String>,
     #[serde(default)]
     pub commit: String,
@@ -1012,10 +1219,13 @@ pub fn generate_index(repo: &Path, base: &str) -> Result<Index> {
         if pack.manifest.id != dir.file_name().unwrap().to_string_lossy() {
             return Err(AppError::Other(format!("{}: id does not match folder", dir.display())));
         }
-        let sha256 = pack.files.iter().map(|f| (f.path.clone(), sha256_hex(&f.contents))).collect();
-        let preview = pack.file("preview.png").map(|_| format!("{}/preview.png", pack.manifest.id));
+        // The gallery is not hashed: install never fetches it, the page loads
+        // it by URL, and a pack may carry several hundred KB of screenshots.
+        let sha256 = pack.files.iter().filter(|f| !is_gallery_image(&f.path)).map(|f| (f.path.clone(), sha256_hex(&f.contents))).collect();
+        let previews: Vec<String> = gallery(&pack).into_iter().map(|p| format!("{}/{p}", pack.manifest.id)).collect();
+        let preview = pack.file("preview.png").map(|_| format!("{}/preview.png", pack.manifest.id)).or_else(|| previews.first().cloned());
         let tier = tiers.get(&pack.manifest.id).copied().unwrap_or(Tier::Community);
-        entries.push(IndexEntry { manifest: pack.manifest, tier, preview, sha256, commit: commit.clone() });
+        entries.push(IndexEntry { manifest: pack.manifest, tier, preview, previews, sha256, commit: commit.clone() });
     }
     Ok(Index { format: FORMAT, generated: chrono::Utc::now().to_rfc3339(), base: base.into(), packs: entries })
 }
@@ -1024,7 +1234,7 @@ pub fn generate_index(repo: &Path, base: &str) -> Result<Index> {
 /// a checkout, tests); anything else goes over HTTPS.
 pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
     if let Some(p) = url.strip_prefix("file://") {
-        return Ok(std::fs::read(p)?);
+        return std::fs::read(p).map_err(|e| AppError::Other(format!("read {url}: {e}")));
     }
     if !url.contains("://") {
         return Ok(std::fs::read(url)?);
@@ -1076,7 +1286,10 @@ pub struct CatalogEntry {
     pub manifest: Manifest,
     pub tier: Tier,
     pub source: String,
+    /// Hero image URL (the index's `preview`, resolved against its base). Bundled packs carry none.
     pub preview: Option<String>,
+    /// Gallery screenshot URLs, resolved the same way; empty for bundled packs.
+    pub previews: Vec<String>,
     /// The bundled copy's shape, for cards without an image (None for packs we only know from an index).
     pub excerpt: Option<Excerpt>,
     pub installed_version: Option<String>,
@@ -1120,11 +1333,12 @@ fn cache_path(cache_dir: &Path, url: &str) -> PathBuf {
 /// `refresh`, or on a cache miss when `online`). Higher version wins per id;
 /// bundled packs are the fallback when nothing can be fetched.
 pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: bool) -> Catalog {
-    let mut best: BTreeMap<String, (Manifest, Tier, String, Option<String>)> = BTreeMap::new();
+    // Per id, the best version seen so far: (manifest, tier, source, hero url, gallery urls).
+    let mut best: BTreeMap<String, (Manifest, Tier, String, Option<String>, Vec<String>)> = BTreeMap::new();
     let mut excerpts: BTreeMap<String, Excerpt> = BTreeMap::new();
     for p in bundled() {
         excerpts.insert(p.manifest.id.clone(), excerpt(&p));
-        best.insert(p.manifest.id.clone(), (p.manifest, Tier::Official, "bundled".into(), None));
+        best.insert(p.manifest.id.clone(), (p.manifest, Tier::Official, "bundled".into(), None, vec![]));
     }
     let mut errors = Vec::new();
     let mut fetched_at = None;
@@ -1152,20 +1366,22 @@ pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: boo
                 None => true,
             };
             if newer {
-                best.insert(e.manifest.id.clone(), (e.manifest, e.tier, url.clone(), e.preview.map(|p| format!("{}{p}", resolve_base(&url, &index.base)))));
+                let base = resolve_base(&url, &index.base);
+                let previews = e.previews.iter().map(|p| format!("{base}{p}")).collect();
+                best.insert(e.manifest.id.clone(), (e.manifest, e.tier, url.clone(), e.preview.map(|p| format!("{base}{p}")), previews));
             }
         }
     }
     let inst: BTreeMap<String, String> = installed(root).into_iter().map(|r| (r.id, r.version)).collect();
     let featured: Vec<String> = bundled_featured();
     let shown = tiers_shown(root);
-    let mut entries: Vec<CatalogEntry> = best.into_values().filter(|(_, tier, ..)| shown.contains(tier)).map(|(manifest, tier, source, preview)| {
+    let mut entries: Vec<CatalogEntry> = best.into_values().filter(|(_, tier, ..)| shown.contains(tier)).map(|(manifest, tier, source, preview, previews)| {
         let installed_version = inst.get(&manifest.id).cloned();
         let update_available = installed_version.as_deref().map(|v| version_gt(&manifest.version, v)).unwrap_or(false);
         let needs_newer_app = !min_version_ok(&manifest);
         let featured = featured.contains(&manifest.id);
         let excerpt = excerpts.get(&manifest.id).cloned();
-        CatalogEntry { manifest, tier, source, preview, excerpt, installed_version, update_available, needs_newer_app, featured }
+        CatalogEntry { manifest, tier, source, preview, previews, excerpt, installed_version, update_available, needs_newer_app, featured }
     }).collect();
     // Featured first (in curated order), then by tier, then by name.
     entries.sort_by_key(|e| (featured.iter().position(|f| *f == e.manifest.id).unwrap_or(usize::MAX), e.tier, e.manifest.name.to_lowercase()));
@@ -1271,6 +1487,175 @@ mod tests {
         assert!(e.views.iter().any(|(_, t)| t == "board"), "{e:?}");
         assert!(e.options.iter().any(|(p, opts)| p == "status" && !opts.is_empty()), "{e:?}");
         assert!(!e.seeds.is_empty());
+    }
+
+    fn fixture(id: &str, kind: Kind, collection: Option<&str>, collections: &[&str], files: &[(&str, &str)]) -> Pack {
+        let m = Manifest {
+            format: 1, id: id.into(), name: title_case(id), version: "1.0.0".into(), kind, summary: "s".into(), description: String::new(),
+            tags: vec![], author: Author::default(), license: "CC0-1.0".into(), credits: String::new(), min_cortex: String::new(),
+            collection: collection.map(String::from), collections: collections.iter().map(|s| s.to_string()).collect(), includes: vec![],
+            files: files.iter().map(|(p, _)| p.to_string()).filter(|p| !p.starts_with("preview")).collect(),
+        };
+        Pack { manifest: m, tier: Tier::Official, source: "test".into(), files: files.iter().map(|(p, c)| PackFile { path: p.to_string(), contents: c.as_bytes().to_vec() }).collect() }
+    }
+
+    #[test]
+    fn preview_is_structured_and_keeps_options_out_of_properties() {
+        // A select with options next to other properties: the options belong
+        // to `mood`, not the property list — the mistake the page used to make.
+        let p = fixture("journal", Kind::Collection, Some("journal"), &[], &[
+            ("schemas/journal.yaml", "properties:\n  - name: date\n    type: date\n  - name: mood\n    type: select\n    options:\n      - name: great\n        color: green\n      - name: rough\n        color: red\n  - name: energy\n    type: number\n    format: stars\n  - name: week\n    type: relation\n    collection: weeks\n  - name: score\n    type: formula\n    expr: energy * 2\n"),
+            ("index.md", "---\ntitle: Journal\nicon: \"📓\"\ntype: database\nviews:\n- name: This week\n  type: table\n- name: Calendar\n  type: calendar\n  date: date\n- name: Energy\n  type: chart\n---\nAbout the journal.\n"),
+            ("templates/journal.md", "---\ntitle: \"{{date}}\"\nmood:\n---\n\n## Morning\n\n- [ ] one\n"),
+            ("templates/reflection.md", "---\ntitle: \"Reflection {{date}}\"\n---\n\n## What went well\n"),
+            ("seed/a.md", "---\ntitle: A\n---\n"),
+            ("seed/b.md", "---\ntitle: B\n---\n"),
+        ]);
+        let pv = preview(&p);
+        assert_eq!(pv.collections.len(), 1);
+        let c = &pv.collections[0];
+        assert_eq!(c.name, "journal");
+        assert_eq!(c.title.as_deref(), Some("Journal"));
+        assert_eq!(c.icon.as_deref(), Some("📓"));
+        let names: Vec<&str> = c.properties.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["date", "mood", "energy", "week", "score"], "options are not properties");
+        let mood = &c.properties[1];
+        assert_eq!(mood.ty, "select");
+        assert_eq!(mood.options, vec![PreviewOption { name: "great".into(), color: "green".into() }, PreviewOption { name: "rough".into(), color: "red".into() }]);
+        assert_eq!(c.properties[2].format.as_deref(), Some("stars"));
+        assert_eq!(c.properties[3].detail.as_deref(), Some("→ weeks"));
+        assert_eq!(c.properties[4].detail.as_deref(), Some("energy * 2"));
+        assert_eq!(c.views, vec![
+            PreviewView { name: "This week".into(), ty: "table".into() },
+            PreviewView { name: "Calendar".into(), ty: "calendar".into() },
+            PreviewView { name: "Energy".into(), ty: "chart".into() },
+        ]);
+        assert_eq!(c.template.as_deref(), Some("## Morning\n\n- [ ] one"));
+        assert_eq!(c.seeds, 2);
+        // The row template is the collection's; the other template is a note template.
+        assert_eq!(pv.templates.len(), 1);
+        assert_eq!(pv.templates[0].path, "templates/reflection.md");
+        assert_eq!(pv.templates[0].title.as_deref(), Some("Reflection {{date}}"));
+        assert_eq!(pv.templates[0].body, "## What went well");
+        assert!(pv.includes.is_empty());
+
+        // Several collections: each gets its own schema, views, template and seed count.
+        let p = fixture("tracker", Kind::Collection, Some("habits"), &["habit-log"], &[
+            ("schemas/habits.yaml", "properties:\n  - name: frequency\n    type: select\n    options:\n      - name: daily\n"),
+            ("schemas/habit-log.yaml", "properties:\n  - name: date\n    type: date\n  - name: done\n    type: relation\n    collection: habits\n  - name: streak\n    type: rollup\n    from: habits\n    relation: done\n    function: count\n"),
+            ("index.md", "---\ntitle: Habits\ntype: database\nviews:\n- name: Week\n  type: tracker\n  log: collections/habit-log\n---\n"),
+            ("index/habit-log.md", "---\ntitle: Log\ntype: database\nviews:\n- name: Calendar\n  type: calendar\n  date: date\n---\n"),
+            ("templates/habits.md", "---\ntitle: \"{{title}}\"\n---\nHabit body\n"),
+            ("seed/habits/exercise.md", "---\ntitle: Exercise\n---\n"),
+            ("seed/habits/read.md", "---\ntitle: Read\n---\n"),
+            ("seed/habit-log/day.md", "---\ntitle: Day\n---\n"),
+        ]);
+        let pv = preview(&p);
+        assert_eq!(pv.collections.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["habits", "habit-log"]);
+        assert_eq!(pv.collections[0].properties[0].options[0].color, "gray", "colour defaults like the schema does");
+        assert_eq!(pv.collections[0].views[0].ty, "tracker");
+        assert_eq!(pv.collections[0].template.as_deref(), Some("Habit body"));
+        assert_eq!(pv.collections[0].seeds, 2);
+        assert_eq!(pv.collections[1].views[0].ty, "calendar");
+        assert_eq!(pv.collections[1].properties[2].detail.as_deref(), Some("count of habits"));
+        assert!(pv.collections[1].template.is_none());
+        assert_eq!(pv.collections[1].seeds, 1);
+        assert!(pv.templates.is_empty());
+
+        // The bundled Daily Note: mood's five options stay under mood.
+        let pv = preview(&pack("daily-note"));
+        let mood = pv.collections[0].properties.iter().find(|p| p.name == "mood").unwrap();
+        assert_eq!(mood.options.len(), 5);
+        assert!(pv.collections[0].properties.iter().all(|p| !["great", "good", "okay", "low", "rough"].contains(&p.name.as_str())));
+        assert!(pv.collections[0].views.iter().any(|v| v.ty == "chart"));
+        assert!(pv.collections[0].template.as_deref().unwrap_or("").starts_with("## Morning"));
+
+        // A bundle names what it installs.
+        let mut b = fixture("starter", Kind::Bundle, None, &[], &[]);
+        b.manifest.includes = vec!["tasks".into(), "daily-note".into()];
+        assert_eq!(preview(&b).includes, vec!["tasks", "daily-note"]);
+    }
+
+    #[test]
+    fn lint_gallery_rules() {
+        let base: Vec<(&str, &str)> = vec![("templates/daily.md", "---\ntitle: \"{{date}}\"\n---\n\n## Today\n")];
+        let ok = |extra: Vec<(&str, Vec<u8>)>| {
+            let mut p = fixture("note", Kind::Note, None, &[], &base);
+            for (path, bytes) in extra { p.files.push(PackFile { path: path.into(), contents: bytes }); }
+            p
+        };
+        let errors = |p: &Pack| lint(p).into_iter().filter(|f| f.severity == Severity::Error).map(|f| f.message).collect::<Vec<_>>();
+        // A gallery of screenshots is fine, unlisted in `files`, and sorted by name.
+        let p = ok(vec![("preview/week.png", vec![0; 1024]), ("preview/calendar.jpg", vec![0; 1024]), ("preview.png", vec![0; 512])]);
+        assert!(errors(&p).is_empty(), "{:?}", errors(&p));
+        assert_eq!(gallery(&p), vec!["preview/calendar.jpg", "preview/week.png"]);
+        // Only images, one level deep, 600 KB each, eight at most.
+        let e = errors(&ok(vec![("preview/notes.md", b"x".to_vec())]));
+        assert!(e.iter().any(|m| m.contains("only .png, .jpg, .jpeg and .webp")), "{e:?}");
+        let e = errors(&ok(vec![("preview/deep/a.png", vec![0; 10])]));
+        assert!(e.iter().any(|m| m.contains("no subfolders")), "{e:?}");
+        let e = errors(&ok(vec![("preview/big.png", vec![0; 600 * 1024 + 1])]));
+        assert!(e.iter().any(|m| m.contains("600 KB or smaller")), "{e:?}");
+        let many: Vec<(&str, Vec<u8>)> = ["preview/a.png", "preview/b.png", "preview/c.png", "preview/d.png", "preview/e.png", "preview/f.png", "preview/g.png", "preview/h.png", "preview/i.png"].into_iter().map(|p| (p, vec![0u8; 10])).collect();
+        let e = errors(&ok(many));
+        assert!(e.iter().any(|m| m.contains("at most 8 screenshots")), "{e:?}");
+        // Screenshots do not count toward the 2 MB pack budget.
+        let p = ok(vec![("preview/a.png", vec![0; 590 * 1024]), ("preview/b.png", vec![0; 590 * 1024]), ("preview/c.png", vec![0; 590 * 1024]), ("preview/d.png", vec![0; 590 * 1024])]);
+        assert!(errors(&p).is_empty(), "{:?}", errors(&p));
+        // Nothing in preview/ is ever installed.
+        assert_eq!(destination(&p.manifest, "preview/a.png"), None);
+    }
+
+    #[test]
+    fn index_lists_the_gallery_and_falls_back_to_it_for_the_hero() {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let src = if manifest_dir.join("packs").is_dir() { manifest_dir.join("packs") } else { manifest_dir.join("../../marketplace/packs") };
+        let repo = std::env::temp_dir().join(format!("cortex-mkt-galleryrepo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        for id in ["daily-note", "tasks"] {
+            let pack = load_dir(&src.join(id)).unwrap();
+            for f in &pack.files {
+                let dst = repo.join("packs").join(id).join(&f.path);
+                std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+                std::fs::write(dst, &f.contents).unwrap();
+            }
+        }
+        std::fs::create_dir_all(repo.join("packs/daily-note/preview")).unwrap();
+        std::fs::write(repo.join("packs/daily-note/preview/this-week.png"), [0u8; 64]).unwrap();
+        std::fs::write(repo.join("packs/daily-note/preview/calendar.png"), [0u8; 64]).unwrap();
+        std::fs::write(repo.join("packs/tasks/preview.png"), [0u8; 64]).unwrap();
+        std::fs::write(repo.join("tiers.yaml"), "daily-note: official\ntasks: official\n").unwrap();
+        let index = generate_index(&repo, "packs/").unwrap();
+        let daily = index.packs.iter().find(|e| e.manifest.id == "daily-note").unwrap();
+        assert_eq!(daily.previews, vec!["daily-note/preview/calendar.png", "daily-note/preview/this-week.png"]);
+        assert_eq!(daily.preview.as_deref(), Some("daily-note/preview/calendar.png"), "no preview.png: the first screenshot is the hero");
+        assert!(!daily.sha256.keys().any(|k| k.starts_with("preview/")), "the gallery is not fetched on install");
+        let tasks = index.packs.iter().find(|e| e.manifest.id == "tasks").unwrap();
+        assert_eq!(tasks.preview.as_deref(), Some("tasks/preview.png"));
+        assert!(tasks.previews.is_empty());
+        let json = serde_json::to_value(&index).unwrap();
+        assert_eq!(json["packs"].as_array().unwrap().iter().find(|p| p["id"] == "tasks").unwrap()["previews"], serde_json::json!([]), "`previews` is always present");
+        // The catalog resolves the gallery against the base, and a pack from
+        // the index carries it while the bundled copy carries none.
+        std::fs::write(repo.join("index.json"), serde_json::to_vec(&index).unwrap()).unwrap();
+        let url = format!("file://{}/index.json", repo.display());
+        let root = vault("gallery");
+        std::fs::write(root.join(".cortex/settings.yaml"), format!("marketplace_url: \"{url}\"\n")).unwrap();
+        let mut newer = index.clone();
+        for e in newer.packs.iter_mut() { e.manifest.version = "9.0.0".into(); }
+        std::fs::write(repo.join("index.json"), serde_json::to_vec(&newer).unwrap()).unwrap();
+        let cat = catalog(&root, None, true, true);
+        let d = cat.entries.iter().find(|e| e.manifest.id == "daily-note").unwrap();
+        assert_eq!(d.previews, vec![format!("file://{}/packs/daily-note/preview/calendar.png", repo.display()), format!("file://{}/packs/daily-note/preview/this-week.png", repo.display())]);
+        assert_eq!(d.preview.as_deref(), Some(d.previews[0].as_str()));
+        let t = cat.entries.iter().find(|e| e.manifest.id == "reading-list").unwrap();
+        assert!(t.previews.is_empty() && t.preview.is_none() && t.source == "bundled");
+        // The fetched pack has no gallery bytes and still passes lint.
+        let fetched = fetch_pack(&newer, &url, newer.packs.iter().find(|e| e.manifest.id == "daily-note").unwrap()).unwrap();
+        assert!(fetched.files.iter().all(|f| !f.path.starts_with("preview/")));
+        assert!(!lint(&fetched).iter().any(|f| f.severity == Severity::Error));
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

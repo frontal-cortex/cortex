@@ -597,7 +597,10 @@ export interface PackEntry extends PackManifest {
   tier: PackTier;
   /** `bundled` or the index URL. */
   source: string;
+  /** Hero image URL (preview.png, or the first gallery screenshot); null for bundled packs. */
   preview: string | null;
+  /** Gallery screenshot URLs, sorted by filename; empty for bundled packs. */
+  previews: string[];
   /** Present for bundled packs; null for packs known only from an index. */
   excerpt: PackExcerpt | null;
   installed_version: string | null;
@@ -649,11 +652,33 @@ export interface PackUpdateReport {
   added: string[];
 }
 
-/** A pack file's contents (Markdown / YAML only) and where it lands in the vault. */
-export interface PackText {
-  path: string;
-  dest: string | null;
-  text: string | null;
+/** What the pack's page shows, parsed in core from the schema, index and templates. */
+export interface PackPreviewOption { name: string; color: string }
+export interface PackPreviewProperty {
+  name: string;
+  /** `text`, `select`, `multi_select`, `relation`, … as written in the schema. */
+  type: string;
+  format?: string;
+  options: PackPreviewOption[];
+  /** relation / rollup / formula: a one-line descriptor. */
+  detail?: string;
+}
+export interface PackPreviewView { name: string; type: string }
+export interface PackPreviewCollection {
+  name: string;
+  title?: string;
+  icon?: string;
+  properties: PackPreviewProperty[];
+  views: PackPreviewView[];
+  /** The row template's Markdown body, if the pack ships one. */
+  template?: string;
+  seeds: number;
+}
+export interface PackPreviewTemplate { path: string; title?: string; body: string }
+export interface PackPreview {
+  collections: PackPreviewCollection[];
+  templates: PackPreviewTemplate[];
+  includes: string[];
 }
 
 export interface PackRemoveReport {
@@ -1006,8 +1031,8 @@ export const commands = {
     invoke<PackCatalog>("packs_catalog", { refresh }),
   packsShow: (id: string, force: boolean) =>
     invoke<[Pack, PackPlan]>("packs_show", { id, force }),
-  packsFiles: (id: string) =>
-    invoke<PackText[]>("packs_files", { id }),
+  packsPreview: (id: string) =>
+    invoke<PackPreview>("packs_preview", { id }),
   packsInstall: (id: string, force: boolean) =>
     invoke<PackInstallReport[]>("packs_install", { id, force }),
   packsUpdate: (id: string) =>

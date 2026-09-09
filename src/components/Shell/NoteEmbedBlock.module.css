@@ -105,41 +105,6 @@
   margin: var(--space-1) 0;
 }
 
-.heading {
-  font-weight: 600;
-  margin: var(--space-2) 0 var(--space-1);
-}
-
-.list {
-  margin: var(--space-1) 0;
-  padding-left: var(--space-4);
-}
-
-.quote {
-  border-left: 2px solid var(--border-focus);
-  padding-left: var(--space-2);
-  margin: var(--space-1) 0;
-  color: var(--text-secondary);
-}
-
-.code {
-  font-family: var(--font-mono);
-  font-size: 0.9em;
-  background: var(--bg-hover);
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
-}
-
-.wikiLink {
-  color: var(--accent);
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.wikiLink:hover {
-  text-decoration: underline;
-}
-
 .stub {
   color: var(--text-tertiary);
   font-size: var(--text-sm);

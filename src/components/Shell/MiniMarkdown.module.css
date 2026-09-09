@@ -1,0 +1,72 @@
+/* MiniMarkdown — the preview renderer's few block and inline styles. The host
+   sets font, size and colour; these only shape what is inside. */
+
+.heading {
+  font-weight: 600;
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+.list {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-4);
+}
+
+.task {
+  list-style: none;
+  margin-left: calc(-1 * var(--space-4));
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.checkbox {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid var(--border-focus);
+  transform: translateY(1px);
+}
+
+.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.quote {
+  border-left: 2px solid var(--border-focus);
+  padding-left: var(--space-2);
+  margin: var(--space-1) 0;
+  color: var(--text-secondary);
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-hover);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.placeholder {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  line-height: 1.4;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-light);
+  color: var(--accent);
+  vertical-align: baseline;
+}
+
+.wikiLink {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.wikiLink:hover {
+  text-decoration: underline;
+}

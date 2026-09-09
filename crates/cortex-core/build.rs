@@ -10,6 +10,9 @@
 
 use std::path::{Path, PathBuf};
 
+/// Image files are never bundled; see `walk`.
+const IMAGE_EXT: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+
 fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let candidates = [
@@ -68,6 +71,11 @@ fn walk(base: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
         if p.is_dir() {
             walk(base, &p, out);
         } else if p.is_file() {
+            // Screenshots (preview.png and the preview/ gallery) stay out of
+            // the binary: a bundled pack shows images only once the remote
+            // index supplies their URLs, and installs never write them.
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+            if IMAGE_EXT.contains(&ext.as_str()) { continue }
             let rel = p.strip_prefix(base).unwrap().to_string_lossy().replace('\\', "/");
             out.push((rel, p));
         }
