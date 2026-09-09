@@ -212,6 +212,7 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
           fields={table?.allColumns ?? []}
           visibleColumns={table?.columns.map((c) => c.key).filter((k) => k !== "$body") ?? []}
           isBoard={active.type === "board"}
+          isTable={active.type === "table"}
           onSpecChange={onSpecChange}
         />
       )}
@@ -246,7 +247,7 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
                       ? <GalleryView table={table} spec={activeSpec} source={source} onChanged={reload} />
                       : active.type === "timeline"
                         ? <TimelineView table={table} spec={activeSpec} source={source} onStartChange={(f) => updateActive({ ...active, start: f })} />
-                        : <DataTable table={table} spec={activeSpec} source={source} onChanged={reload} />)
+                        : <DataTable table={table} spec={activeSpec} source={source} onChanged={reload} onSpecChange={onSpecChange} />)
               : loading ? <div className={styles.stub}>Loading…</div> : null)}
        </ErrorBoundary>
       </div>

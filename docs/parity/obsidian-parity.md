@@ -16,10 +16,10 @@ at the end so they are not mistaken for gaps.
 |---|---|---|---|
 | `[[wiki links]]` stored as plain text | done | — | A ProseMirror decoration over the literal text (`src/lib/wikiLinkExtension.ts:37`); the file never holds a node type. |
 | Autocomplete on `[[` and `@` | done | — | `src/lib/wikiLinkSuggestion.ts:33`, inserted at `Editor.tsx:472`. |
-| Aliases `[[note\|alias]]` | partial | M | Only the static-site builder splits on `\|` (`publish.rs:268`). In the app the whole inner text is handed to navigation (`Shell.tsx:459`) so a click is a silent no-op, and the indexer stores `Note\|alias` verbatim (`note.rs:88`) so no backlink is recorded. |
-| Heading links `[[note#heading]]` | partial | M | Section slicing exists for embeds (`commands/notes.rs:44-74`) and publish; click-navigation never splits on `#` and the index stores the whole string. |
+| Aliases `[[note\|alias]]` | done | — | One parser, `note::parse_wiki_link`, feeds the indexer, `vault::resolve`, `resolve_ref`, publish, the CLI and the editor. The decoration shows only the alias (syntax reappears while the cursor is in the link); backlinks and the graph match on the target alone. |
+| Heading links `[[note#heading]]` | done | — | Same parser; a click opens the note and scrolls to the heading. Embeds still slice the section. |
 | Block references `^id` | missing | L | No block-id parsing or generation anywhere. |
-| Link resolution rules | partial | S | Three parallel resolvers that disagree: core (`vault.rs:342`) and the app (`Shell.tsx:459`) fall back to a *substring* stem match, the Tauri command (`commands/notes.rs:117`) to an exact one. `[[api]]` can land on `rapid-notes.md`. Duplicate titles resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
+| Link resolution rules | partial | S | `resolve_ref` now goes through core `vault::resolve`; the app's click handler (`Shell.tsx handleNavigate`) is a TS mirror of the same order (path, title, stem). The stem step is still a *substring* match, so `[[api]]` can land on `rapid-notes.md`. Duplicate titles resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
 | Automatic link update on rename / move | missing | M | `rename_note` and `move_note` (`commands/notes.rs:323`, `:410`) rename the file and reindex. Links resolve by title, so a *title* change orphans every inbound `[[Title]]`. |
 | Unlinked mentions | missing | M | No code. |
 | Backlinks panel | partial | S | Flat list of titles under the note (`BacklinksPanel.tsx`); `get_backlinks` (`db.rs:98`) returns no context snippet. Hidden when empty. |
@@ -90,11 +90,11 @@ at the end so they are not mistaken for gaps.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Full-text search (FTS5) | done | — | `notes_fts(title, body)`, ranked (`db.rs:40`, `:174`). |
-| Operators (`tag:`, `path:`, quotes, `-`, `OR`, regex) | missing | M | `fts_query` (`db.rs:215`) strips every non-alphanumeric character and appends `*` to each word, so `tag:foo` becomes `tagfoo*`. FTS5 already supports phrases, `NEAR` and column filters; the query builder discards them. |
-| Result snippets / highlights | missing | S | Results render as plain tree rows; `snippet()` never called. |
+| Operators (`tag:`, `path:`, quotes, `-`, `OR`, regex) | partial | S | `search::parse` (`search.rs`) translates `"phrases"`, `-word`, `OR`, `tag:` / `type:` / `path:` (negatable) into an FTS5 MATCH plus filters on the `notes` columns; shared by app, CLI and MCP. Title matches are boosted 5×. No regex, `NEAR`, or `line:` / `section:`. |
+| Result snippets / highlights | done | — | `snippet()` on the body, `<mark>` around the match, one line; shown under each sidebar result and in the quick switcher's FTS fallback. |
 | Vault-wide search and replace | missing | L | |
 | Find in note (`Ctrl+F`) | missing | S | Not bound in `keymap.ts`; BlockNote ships none. |
-| Quick switcher | partial | S | Case-insensitive substring over title/path/tags (`QuickSwitcher.tsx:69`), no fuzzy matching or ranking. |
+| Quick switcher | partial | S | Case-insensitive substring over title/path/tags, then falls back to FTS (with snippets) when that finds nothing, so a body word reaches the note. No fuzzy matching or ranking of the substring pass. |
 | Command palette (`>` prefix) | done | — | ~18 actions plus one per template; `mod+shift+p`. |
 
 ## 9. Workspace
@@ -199,9 +199,9 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 
 ## Notable gaps, ranked
 
-1. **Aliases and heading links break navigation and backlinks.** The parsing already exists in `publish.rs`; it is just not shared with the indexer and the app resolver. Best value for effort on this list.
+1. ~~**Aliases and heading links break navigation and backlinks.**~~ Closed: one parser in cortex-core, shared by every reader.
 2. **Rename / move never rewrites inbound links.** Table stakes for an Obsidian user.
-3. **Search has no operators and no snippets.** FTS5 can do it; the query builder throws the capability away.
+3. ~~**Search has no operators and no snippets.**~~ Done: phrases, `-`, `OR`, `tag:` / `type:` / `path:`, snippets, title boost, FTS fallback in the quick switcher. Still missing: regex, vault-wide replace, find-in-note.
 4. **No inline `#tags` and no tag pane.** For many Obsidian users tags are the organising layer.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
 6. **Graph is a static global snapshot.** No local graph, filters, colouring or live physics.
