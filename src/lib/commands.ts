@@ -299,6 +299,8 @@ export interface NoteEntry {
   note_type: string | null;
   tags: string[];
   modified: number;
+  /** Frontmatter `created:` as written (`YYYY-MM-DD`); null for search hits and notes without one. */
+  created: string | null;
   icon: string | null;
   /** `parent:` frontmatter — a collection name or a `notes/<folder>` path the page nests under in the sidebar. */
   parent: string | null;
@@ -390,6 +392,8 @@ export interface Settings {
   marketplace_extra: string;
   /** Tiers shown: official, verified, community (comma-separated). Empty = all. */
   marketplace_tiers: string;
+  /** Sidebar tree order: `<name|modified|created|type>-<asc|desc>` (see lib/fileTree.ts). */
+  explorer_sort: string;
 }
 
 // ── Import (see cortex_core::import) ──
@@ -748,6 +752,13 @@ export const commands = {
 
   getRecentVaults: () =>
     invoke<RecentVault[]>("get_recent_vaults"),
+
+  /** The last notes opened in this vault, most recent first (`.brain/ui-state.json`). */
+  getRecentNotes: () =>
+    invoke<string[]>("get_recent_notes"),
+
+  recordRecentNote: (path: string) =>
+    invoke<string[]>("record_recent_note", { path }),
 
   listNotes: () =>
     invoke<NoteEntry[]>("list_notes"),

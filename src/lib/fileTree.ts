@@ -1,4 +1,54 @@
-import { NoteEntry } from "./commands";
+import type { NoteEntry } from "./commands";
+
+// ── Explorer sort ─────────────────────────────────────────────────────────────
+// `explorer_sort` in .cortex/settings.yaml (`<field>-<dir>`), validated by
+// cortex-core `settings::parse_explorer_sort`; the same grammar is read here
+// so a value written by hand or by `cortex settings set` orders the tree.
+
+export type SortField = "name" | "modified" | "created" | "type";
+export type SortDir = "asc" | "desc";
+export interface ExplorerSort { field: SortField; dir: SortDir }
+
+export const SORT_FIELDS: { value: SortField; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "modified", label: "Modified" },
+  { value: "created", label: "Created" },
+  { value: "type", label: "Type" },
+];
+export const DEFAULT_SORT: ExplorerSort = { field: "name", dir: "asc" };
+
+/** `"modified-desc"` → `{ field, dir }`; a bare field is ascending; anything unknown is the default. */
+export function parseExplorerSort(raw: string | null | undefined): ExplorerSort {
+  const v = (raw ?? "").trim().toLowerCase();
+  const m = v.match(/^([a-z]+)(?:-(asc|desc))?$/);
+  if (!m || !SORT_FIELDS.some((f) => f.value === m[1])) return DEFAULT_SORT;
+  return { field: m[1] as SortField, dir: (m[2] as SortDir | undefined) ?? "asc" };
+}
+
+export function formatExplorerSort(sort: ExplorerSort): string {
+  return `${sort.field}-${sort.dir}`;
+}
+
+/**
+ * Order notes for the tree. Name is the tiebreak for every field, so the order
+ * is stable across saves (sorting by mtime alone reshuffled the sidebar on
+ * every keystroke). Notes without a `created:` sort last either way; for
+ * `type`, untyped notes sort last too.
+ */
+export function sortNotes<T extends { note: NoteEntry; name: string }>(items: T[], sort: ExplorerSort): T[] {
+  const byName = (a: T, b: T) => a.name.localeCompare(b.name) || b.note.modified - a.note.modified;
+  const sign = sort.dir === "desc" ? -1 : 1;
+  const missingLast = (a: string | null, b: string | null) => (a === null) === (b === null) ? 0 : a === null ? 1 : -1;
+  const cmp = (a: T, b: T): number => {
+    switch (sort.field) {
+      case "modified": return sign * (a.note.modified - b.note.modified) || byName(a, b);
+      case "created": return missingLast(a.note.created, b.note.created) || sign * (a.note.created ?? "").localeCompare(b.note.created ?? "") || byName(a, b);
+      case "type": return missingLast(a.note.note_type, b.note.note_type) || sign * (a.note.note_type ?? "").localeCompare(b.note.note_type ?? "") || byName(a, b);
+      default: return sign * byName(a, b);
+    }
+  };
+  return [...items].sort(cmp);
+}
 
 export interface FileNode {
   type: "file";
@@ -104,11 +154,13 @@ export function attachCollections(
  * @param prefix    Root path for this tree level, e.g. "notes/".
  * @param knownDirs All known directory paths (vault-relative, trailing slash).
  *                  Directories without any .md files are still rendered.
+ * @param sort      Order of the notes at each level (folders stay A→Z).
  */
 export function buildTree(
   notes: NoteEntry[],
   prefix: string,
   knownDirs: string[] = [],
+  sort: ExplorerSort = DEFAULT_SORT,
 ): TreeNode[] {
   const dirMap = new Map<string, NoteEntry[]>();
   const files: NoteEntry[] = [];
@@ -145,15 +197,13 @@ export function buildTree(
       type: "dir",
       name: dirName,
       path: dirPath,
-      children: buildTree(dirNotes, dirPath, knownDirs),
+      children: buildTree(dirNotes, dirPath, knownDirs, sort),
     });
   }
 
-  // Sort by display name (stable) — sorting by mtime made the sidebar reshuffle
-  // every time a note was opened or saved. Same-named notes (three "Untitled")
-  // fall back to newest-first so the one you just made is on top.
-  const named = files.map((note) => ({ note, name: displayTitle(note) }));
-  named.sort((a, b) => a.name.localeCompare(b.name) || b.note.modified - a.note.modified);
+  // Notes in the explorer's order (name by default). Same-named notes (three
+  // "Untitled") fall back to newest-first so the one you just made is on top.
+  const named = sortNotes(files.map((note) => ({ note, name: displayTitle(note) })), sort);
   for (const { note, name } of named) {
     result.push({ type: "file", name, path: note.path, note });
   }

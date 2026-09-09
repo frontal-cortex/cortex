@@ -422,4 +422,4 @@ No Tauri mobile build in this task.
 - **Tabs and split panes.** L, and tabs were removed once after a history bug; needs a design first.
 - **Property types**: date range, files, created/edited time and by as queryable columns. M.
 - **Calendar week view, in-database search box, list view.** S each.
-- **Resizable sidebar, recent files, explorer sort, `?` shortcut overlay.** S each.
+- ~~**Resizable sidebar, recent files, explorer sort, `?` shortcut overlay.** S each.~~ Done: drag handle (200–480px, per-vault), Recent section + `.brain/ui-state.json`, `explorer_sort` setting with a header menu, `?` / `mod+/` overlay from the keymap registry.

@@ -29,35 +29,50 @@ export type ShortcutId =
   | "marketplace"
   | "log-today"
   | "find-in-note"
-  | "toggle-outline";
+  | "toggle-outline"
+  | "shortcut-help";
+
+/** Where a shortcut belongs in the `?` overlay, in display order. */
+export type ShortcutArea = "Navigate" | "Create" | "Panes" | "Note" | "App";
+export const SHORTCUT_AREAS: ShortcutArea[] = ["Navigate", "Create", "Panes", "Note", "App"];
 
 export interface Shortcut {
   /** `mod` = ⌘ on macOS, Ctrl elsewhere. Lower-case, `+`-joined, key last. */
   keys: string;
   label: string;
+  area: ShortcutArea;
 }
 
 export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
-  "quick-switcher":  { keys: "mod+k",       label: "Quick switcher" },
-  "command-palette": { keys: "mod+shift+p", label: "Command palette" },
-  "quick-capture":   { keys: "mod+shift+k", label: "Quick capture" },
-  "new-note":        { keys: "mod+n",       label: "New note" },
-  "today":           { keys: "mod+shift+t", label: "Today's note" },
-  "graph":           { keys: "mod+g",       label: "Graph view" },
-  "back":            { keys: "mod+[",       label: "Back" },
-  "forward":         { keys: "mod+]",       label: "Forward" },
-  "settings":        { keys: "mod+,",       label: "Settings" },
-  "toggle-sidebar":  { keys: "mod+b",       label: "Toggle sidebar" },
-  "toggle-terminal": { keys: "mod+l",       label: "Toggle terminal" },
-  "monk-mode":       { keys: "mod+shift+m", label: "Monk mode" },
-  "focus-sidebar":   { keys: "mod+e",       label: "Focus sidebar" },
-  "focus-editor":    { keys: "mod+shift+e", label: "Focus editor" },
-  "toggle-properties": { keys: "mod+shift+i", label: "Toggle properties" },
-  "marketplace":       { keys: "mod+shift+b", label: "Browse templates" },
-  "log-today":         { keys: "mod+shift+h", label: "Log today" },
-  "find-in-note":      { keys: "mod+f",       label: "Find in note" },
-  "toggle-outline":    { keys: "mod+shift+o", label: "Toggle outline" },
+  "quick-switcher":  { keys: "mod+k",       label: "Quick switcher",   area: "Navigate" },
+  "command-palette": { keys: "mod+shift+p", label: "Command palette",  area: "Navigate" },
+  "quick-capture":   { keys: "mod+shift+k", label: "Quick capture",    area: "Create" },
+  "new-note":        { keys: "mod+n",       label: "New note",         area: "Create" },
+  "today":           { keys: "mod+shift+t", label: "Today's note",     area: "Create" },
+  "graph":           { keys: "mod+g",       label: "Graph view",       area: "Navigate" },
+  "back":            { keys: "mod+[",       label: "Back",             area: "Navigate" },
+  "forward":         { keys: "mod+]",       label: "Forward",          area: "Navigate" },
+  "settings":        { keys: "mod+,",       label: "Settings",         area: "App" },
+  "toggle-sidebar":  { keys: "mod+b",       label: "Toggle sidebar",   area: "Panes" },
+  "toggle-terminal": { keys: "mod+l",       label: "Toggle terminal",  area: "Panes" },
+  "monk-mode":       { keys: "mod+shift+m", label: "Monk mode",        area: "Panes" },
+  "focus-sidebar":   { keys: "mod+e",       label: "Focus sidebar",    area: "Navigate" },
+  "focus-editor":    { keys: "mod+shift+e", label: "Focus editor",     area: "Navigate" },
+  "toggle-properties": { keys: "mod+shift+i", label: "Toggle properties", area: "Note" },
+  "marketplace":       { keys: "mod+shift+b", label: "Browse templates",  area: "App" },
+  "log-today":         { keys: "mod+shift+h", label: "Log today",         area: "Create" },
+  "find-in-note":      { keys: "mod+f",       label: "Find in note",      area: "Note" },
+  "toggle-outline":    { keys: "mod+shift+o", label: "Toggle outline",    area: "Note" },
+  "shortcut-help":     { keys: "mod+/",       label: "Keyboard shortcuts", area: "App" },
 };
+
+/** The registry grouped for display: every area in order, with its shortcuts
+ *  in table order. Rendered by the `?` overlay, so a new shortcut shows up
+ *  there the moment it is declared above. */
+export function shortcutsByArea(): { area: ShortcutArea; ids: ShortcutId[] }[] {
+  const ids = Object.keys(SHORTCUTS) as ShortcutId[];
+  return SHORTCUT_AREAS.map((area) => ({ area, ids: ids.filter((id) => SHORTCUTS[id].area === area) }));
+}
 
 // ── Local keys ────────────────────────────────────────────────────────────────
 // Keys that only mean something while a particular widget has focus are not
@@ -77,6 +92,19 @@ export const TABLE_KEYS: { keys: string; label: string }[] = [
   { keys: "mod+Enter / o", label: "open the row as a note" },
   { keys: "n", label: "new row" },
   { keys: "Delete", label: "delete the row" },
+];
+
+/** The sidebar tree's keys (LeftPanel `handleTreeKeyDown`), for the overlay. */
+export const SIDEBAR_KEYS: { keys: string; label: string }[] = [
+  { keys: "↑ ↓ / j k", label: "move between rows" },
+  { keys: "← → / h l", label: "fold / unfold, or step to the parent" },
+  { keys: "Enter", label: "open the note, or fold the section" },
+  { keys: "n", label: "new note in this folder" },
+  { keys: "f", label: "favourite the note" },
+  { keys: "Delete", label: "trash the note" },
+  { keys: "/", label: "search" },
+  { keys: "?", label: "this overlay (outside a text field)" },
+  { keys: "Escape", label: "back to the editor" },
 ];
 
 /** One line for a tooltip or aria-label: "↑ ↓ ← → / j k h l move between cells · …". */

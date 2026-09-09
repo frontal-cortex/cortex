@@ -263,6 +263,7 @@ fn entry_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NoteEntry> {
         note_type: row.get(2)?,
         tags,
         modified: row.get(4)?,
+        created: None,
         icon: None,
         parent: None,
     })
@@ -290,6 +291,7 @@ mod tests {
             note_type: note_type.map(str::to_string),
             tags: tags.iter().map(|t| t.to_string()).collect(),
             modified: 0,
+            created: None,
             icon: None,
             parent: None,
         }

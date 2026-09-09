@@ -11,6 +11,7 @@ import { commands, Settings, VaultInfo, Member, CurrentUser, AgentCli, VaultChan
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
 import { syncTheme } from "../../lib/theme";
 import { PROSE_FONTS, PROSE_SLANTS, DEFAULT_PROSE_FONT, isPreset } from "../../lib/fonts";
+import { SORT_FIELDS, SortDir, SortField, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
 import {
   SHORTCUTS, ShortcutId, keysFor, formatKeys, isOverridden, comboFromEvent, conflictFor, shortcutFor, isMac,
 } from "../../lib/keymap";
@@ -259,6 +260,29 @@ const SECTIONS: SectionDef[] = [
             placeholder="daily.md · collections/journal"
             onChange={(e) => update({ journal_template: e.target.value })} />
         ),
+      },
+      {
+        key: "explorer_sort", label: "Sidebar order", keywords: "sort order explorer tree sidebar name modified created type ascending descending",
+        hint: "How notes are ordered in the sidebar tree; folders stay alphabetical. The Notes section's sort button sets the same key.",
+        render: ({ settings, update }) => {
+          const sort = parseExplorerSort(settings.explorer_sort);
+          return (
+            <div className={styles.stack}>
+              <Dropdown
+                fullWidth
+                value={sort.field}
+                options={SORT_FIELDS}
+                onChange={(v) => update({ explorer_sort: formatExplorerSort({ ...sort, field: v as SortField }) })}
+              />
+              <Dropdown
+                fullWidth
+                value={sort.dir}
+                options={[{ value: "asc", label: "Ascending" }, { value: "desc", label: "Descending" }]}
+                onChange={(v) => update({ explorer_sort: formatExplorerSort({ ...sort, dir: v as SortDir }) })}
+              />
+            </div>
+          );
+        },
       },
       {
         key: "trash_retention_days", label: "Trash retention", keywords: "delete purge prune days trash forever",

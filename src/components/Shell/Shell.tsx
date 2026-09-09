@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, CSSProperties, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
 import { parseWikiLink } from "../../lib/wikiLink";
@@ -8,6 +8,9 @@ import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
+import { useSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX } from "../../hooks/useSidebarWidth";
+import { useRecentNotes } from "../../hooks/useRecentNotes";
+import { ExplorerSort, DEFAULT_SORT, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
 import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/database";
@@ -24,6 +27,7 @@ import { MarketplaceView } from "./MarketplaceView";
 import { LogTodayModal } from "./LogTodayModal";
 import { PublishModal } from "./PublishModal";
 import { ImportModal } from "./ImportModal";
+import { ShortcutOverlay } from "./ShortcutOverlay";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
@@ -72,6 +76,21 @@ export function Shell({
   // The Import dialog — CSV into a collection, or a Markdown folder into notes/.
   const [showImport, setShowImport] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
+  // The `?` overlay — every shortcut, read from the keymap registry.
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  // Sidebar width: dragged on its edge, remembered per vault (localStorage).
+  const { width: sidebarWidth, setWidth: setSidebarWidth, reset: resetSidebarWidth } = useSidebarWidth(vault.path);
+  const sidebarDrag = useRef<{ startX: number; startW: number } | null>(null);
+  // Order of notes in the sidebar tree — `explorer_sort` in settings.yaml, so
+  // it travels with the vault; the sort menu writes it back through settings.
+  const [explorerSort, setExplorerSortState] = useState<ExplorerSort>(DEFAULT_SORT);
+  const handleSetExplorerSort = useCallback(async (sort: ExplorerSort) => {
+    setExplorerSortState(sort);
+    try {
+      const s = await commands.getSettings();
+      await commands.setSettings({ ...s, explorer_sort: formatExplorerSort(sort) });
+    } catch (e) { console.warn("explorer_sort not saved", e); }
+  }, []);
   // Conflicted files from a sync that hit a merge conflict; non-null shows the
   // resolution modal. Null = no merge in progress (or user dismissed it).
   const [conflicts, setConflicts] = useState<string[] | null>(null);
@@ -102,6 +121,7 @@ export function Shell({
       syncTheme(s);
       setJournalTemplate(s.journal_template?.trim() || "daily.md");
       applyKeymapOverrides(s.keybindings);
+      setExplorerSortState(parseExplorerSort(s.explorer_sort));
       setTerminalCommand(s.terminal_command ?? "");
       setAutoSyncMinutes(s.auto_sync_minutes);
       setAutoCommit(s.auto_commit);
@@ -167,6 +187,9 @@ export function Shell({
   }, [note, selectedPath]);
   const { favorites, toggleFavorite, isFavorite } = useFavorites(!!vault);
   const { trash, refreshTrash, restore, deleteForever, emptyTrash } = useTrash(!!vault);
+  // Whatever is on screen is the most recently opened note.
+  const { recent: recentNotes, record: recordRecent } = useRecentNotes(!!vault);
+  useEffect(() => { if (selectedPath) recordRecent(selectedPath); }, [selectedPath, recordRecent]);
 
   // ── Sync loop ────────────────────────────────────────────────────────────────
 
@@ -297,7 +320,14 @@ export function Shell({
   const actionsRef = useRef<Record<ShortcutId, () => void> | null>(null);
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setOpenTag(null); setShowCapture(false); return; }
+      if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setOpenTag(null); setShowCapture(false); setShowShortcuts(false); return; }
+      // A bare `?` (outside a text field, where it is just typing) is the
+      // shortcut overlay too — the Obsidian / GitHub habit. `mod+/` always works.
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e.target)) {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+        return;
+      }
       const id = findShortcut(e);
       if (!id) return;
       e.preventDefault();
@@ -514,6 +544,26 @@ export function Shell({
     "log-today":       () => setShowLogToday((v) => !v),
     "find-in-note":    () => editorRef.current?.openFind(),
     "toggle-outline":  () => editorRef.current?.toggleOutline(),
+    "shortcut-help":   () => setShowShortcuts((v) => !v),
+  };
+
+  // ── Sidebar resize handle ──────────────────────────────────────────────────
+  // Pointer capture keeps the drag alive when the cursor outruns the 6px
+  // handle; double-click restores the default; arrows nudge it from the keyboard.
+  const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    sidebarDrag.current = { startX: e.clientX, startW: sidebarWidth };
+  };
+  const onHandleMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = sidebarDrag.current;
+    if (d) setSidebarWidth(d.startW + e.clientX - d.startX);
+  };
+  const onHandleUp = () => { sidebarDrag.current = null; };
+  const onHandleKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); setSidebarWidth(sidebarWidth - 16); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); setSidebarWidth(sidebarWidth + 16); }
+    else if (e.key === "Home" || e.key === "Enter") { e.preventDefault(); resetSidebarWidth(); }
   };
 
   return (
@@ -538,7 +588,7 @@ export function Shell({
         onToggleMonk={toggleMonk}
       />}
 
-      <div className={styles.body}>
+      <div className={styles.body} style={{ "--left-panel-width": `${sidebarWidth}px` } as CSSProperties}>
         <div className={styles.leftSlot} style={leftVisible ? undefined : { display: "none" }}>
         <LeftPanel
           ref={leftRef}
@@ -547,6 +597,9 @@ export function Shell({
           notes={notes}
           dirs={dirs}
           tags={tags}
+          recent={recentNotes}
+          explorerSort={explorerSort}
+          onSetExplorerSort={handleSetExplorerSort}
           onOpenTag={setOpenTag}
           selectedPath={selectedPath}
           status={status}
@@ -573,6 +626,23 @@ export function Shell({
           onRestoreTrashed={handleRestoreTrashed}
           onDeleteTrashed={deleteForever}
           onEmptyTrash={emptyTrash}
+        />
+        <div
+          className={styles.resizeHandle}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={SIDEBAR_MIN}
+          aria-valuemax={SIDEBAR_MAX}
+          tabIndex={0}
+          title="Drag to resize the sidebar · double-click resets"
+          onPointerDown={onHandleDown}
+          onPointerMove={onHandleMove}
+          onPointerUp={onHandleUp}
+          onPointerCancel={onHandleUp}
+          onDoubleClick={resetSidebarWidth}
+          onKeyDown={onHandleKey}
         />
         </div>
 
@@ -618,6 +688,7 @@ export function Shell({
       {switcher && (
         <QuickSwitcher
           notes={notes}
+          recent={recentNotes}
           initialQuery={switcher === "actions" ? ">" : ""}
           onSelect={(p) => openNote(p)}
           onClose={() => { setSwitcher(null); focusEditor(); }}
@@ -630,6 +701,7 @@ export function Shell({
           onToggleTheme={handleToggleTheme}
           onOpenSettings={() => setShowSettings(true)}
           onOpenMarketplace={() => setShowMarketplace(true)}
+          onShortcutHelp={() => setShowShortcuts(true)}
           onLogToday={() => setShowLogToday(true)}
           onQuickCapture={() => setShowCapture(true)}
           onToggleSidebar={toggleLeft}
@@ -674,6 +746,13 @@ export function Shell({
         />
       )}
 
+      {showShortcuts && (
+        <ShortcutOverlay
+          onClose={() => { setShowShortcuts(false); focusEditor(); }}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+      )}
+
       {openTag && (
         <TagView
           tag={openTag}
@@ -713,4 +792,11 @@ export function Shell({
       )}
     </div>
   );
+}
+
+/** Is the key event aimed at a text field, where a bare letter is just typing? */
+function isTyping(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
 }

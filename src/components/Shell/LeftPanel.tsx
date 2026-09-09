@@ -1,11 +1,14 @@
 import {
   useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle,
-  KeyboardEvent as ReactKeyboardEvent, ReactNode, Fragment,
+  KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, Fragment,
 } from "react";
 import { shortcutFor, SHORTCUTS, ShortcutId, isMac } from "../../lib/keymap";
 import { NoteEntry, SearchHit, VaultStatus, AgentBranch, CommitEntry, TrashEntry, TagNode } from "../../lib/commands";
 import { commands } from "../../lib/commands";
-import { buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, relativeTime } from "../../lib/fileTree";
+import {
+  buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, relativeTime,
+  ExplorerSort, SORT_FIELDS,
+} from "../../lib/fileTree";
 import { FileTree, LeafRow, BranchRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
 import { flattenTags } from "../../lib/tags";
 import { CommitDiffModal } from "./CommitDiffModal";
@@ -16,9 +19,11 @@ import {
 import { TreeRow, useRovingRows, useTypeAhead } from "./treeRows";
 import {
   CloseIcon, MinusIcon, StarFilledIcon, PlusIcon, SearchIcon, GraphIcon, GearIcon, ChevronRightIcon,
-  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon, SparkleIcon, TagIcon,
+  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon, SparkleIcon, TagIcon, SortIcon,
 } from "./icons";
 import styles from "./LeftPanel.module.css";
+// The sort menu borrows the context menu's look, so every popover in the tree matches.
+import menuStyles from "./FileTree.module.css";
 
 interface Props {
   notes: NoteEntry[];
@@ -27,6 +32,11 @@ interface Props {
   tags: TagNode[];
   /** Open the tag page — every note carrying the tag or one of its children. */
   onOpenTag: (tag: string) => void;
+  /** Recently opened note paths, most recent first (the Recent section). */
+  recent: string[];
+  /** Order of notes in the tree — `explorer_sort` in settings, set from the Notes header. */
+  explorerSort: ExplorerSort;
+  onSetExplorerSort: (sort: ExplorerSort) => void;
   selectedPath: string | null;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
@@ -66,14 +76,15 @@ export interface LeftPanelHandle {
   focus(): void;
 }
 
-type SectionId = "favorites" | "notes" | "tags" | "templates" | "trash";
+type SectionId = "favorites" | "recent" | "notes" | "tags" | "templates" | "trash";
 
 const SECTION_DEFAULT_OPEN: Record<SectionId, boolean> = {
-  favorites: true, notes: true, tags: true, templates: false, trash: false,
+  favorites: true, recent: false, notes: true, tags: true, templates: false, trash: false,
 };
 
 export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
-  notes, dirs, tags, onOpenTag, selectedPath, status, agentBranches, commits, favorites,
+  notes, dirs, tags, onOpenTag, recent, explorerSort, onSetExplorerSort,
+  selectedPath, status, agentBranches, commits, favorites,
   onSelect, onNewNote, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite, onOpenGraph,
   onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings, onOpenMarketplace,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
@@ -91,6 +102,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   const [review, setReview] = useState<AgentBranch | null>(null);
   // Notes section root drop zone
   const [notesSectionDragOver, setNotesSectionDragOver] = useState(false);
+  // The explorer sort menu, anchored where the header's sort button was clicked.
+  const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Open/closed state for sections and folders lives here rather than in the
   // rows, because the keyboard walks a flat list of *visible* rows and that
@@ -232,9 +245,14 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   // page's `parent:`, top level otherwise), then notes. Rows never appear.
   const notesTree = useMemo(() => {
     const { roots, underFolder } = buildCollectionNodes(notes);
-    return attachCollections(buildTree(notes, "notes/", dirs), roots, underFolder);
-  }, [notes, dirs]);
-  const templateTree = useMemo(() => buildTree(notes, "templates/"),       [notes]);
+    return attachCollections(buildTree(notes, "notes/", dirs, explorerSort), roots, underFolder);
+  }, [notes, dirs, explorerSort]);
+  const templateTree = useMemo(() => buildTree(notes, "templates/", [], explorerSort), [notes, explorerSort]);
+  // Recent notes that still exist, in order — a renamed or trashed one drops out.
+  const recentNotes = useMemo(() => {
+    const byPath = new Map(notes.map((n) => [n.path, n]));
+    return recent.map((p) => byPath.get(p)).filter((n): n is NoteEntry => !!n);
+  }, [notes, recent]);
   const collectionCount = useMemo(() => new Set(notes.map((n) => n.path.match(/^collections\/([^/]+)\//)?.[1]).filter(Boolean)).size, [notes]);
 
   const handleDeleteCollection = useCallback(async (name: string) => {
@@ -380,6 +398,13 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       }
     }
 
+    if (recentNotes.length > 0) {
+      const pid = section("recent", "Recent");
+      if (pid) for (const note of recentNotes) {
+        out.push({ id: `recent:${note.path}`, kind: "note", label: displayTitle(note), depth: 1, parentId: pid, path: note.path, folder: dirOf(note.path) });
+      }
+    }
+
     {
       const pid = section("notes", "Notes", "notes/");
       if (pid) {
@@ -438,7 +463,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     }
 
     return out;
-  }, [searchResults, sectionOpen, isDirOpen, favorites, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
+  }, [searchResults, sectionOpen, isDirOpen, favorites, recentNotes, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
       notesTree, newFolderIn, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection, handleDeleteCollection,
       onRestoreTrashed, onDeleteTrashed, onEmptyTrash, tags, tagCount, tagOpen, onOpenTag]);
 
@@ -639,6 +664,25 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
               </Section>
             )}
 
+            {recentNotes.length > 0 && (
+              <Section {...sectionProps("recent")} label="Recent" count={recentNotes.length}>
+                {recentNotes.map((note) => (
+                  <LeafRow
+                    key={note.path}
+                    id={`recent:${note.path}`}
+                    a11y={a11y}
+                    depth={0}
+                    selected={note.path === selectedPath}
+                    icon={note.icon ? <span className={styles.emoji}>{note.icon}</span> : <FileIcon />}
+                    label={displayTitle(note)}
+                    hint={dirOf(note.path).replace(/\/$/, "")}
+                    title={note.path}
+                    onClick={() => onSelect(note.path)}
+                  />
+                ))}
+              </Section>
+            )}
+
             <Section
               {...sectionProps("notes")}
               label="Notes"
@@ -647,6 +691,11 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                 { title: NEW_NOTE_HINT, icon: <PlusIcon size={13} />, run: () => onNewNote() },
                 { title: "New folder", icon: <FolderPlusIcon size={13} />, run: () => requestNewFolder("notes/") },
                 { title: "New collection", icon: <DatabaseIcon size={13} />, run: onNewCollection },
+                {
+                  title: `Sort: ${SORT_FIELDS.find((f) => f.value === explorerSort.field)?.label} ${explorerSort.dir === "asc" ? "↑" : "↓"}`,
+                  icon: <SortIcon size={13} />,
+                  run: (e) => setSortMenu({ x: e.clientX, y: e.clientY }),
+                },
                 { title: `Graph view (${shortcutFor("graph")})`, icon: <GraphIcon size={12} />, run: onOpenGraph },
               ]}
               dropActive={notesSectionDragOver}
@@ -806,6 +855,15 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
         </button>
       </div>
 
+      {sortMenu && (
+        <SortMenu
+          x={sortMenu.x}
+          y={sortMenu.y}
+          sort={explorerSort}
+          onChange={onSetExplorerSort}
+          onClose={() => setSortMenu(null)}
+        />
+      )}
       {review && (
         <CommitDiffModal
           branch={review}
@@ -828,7 +886,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 interface SectionAction {
   title: string;
   icon: ReactNode;
-  run: () => void;
+  /** The click, for actions that anchor a menu to the button. */
+  run: (e: ReactMouseEvent<HTMLButtonElement>) => void;
 }
 
 function Section({
@@ -872,7 +931,7 @@ function Section({
                 key={a.title}
                 className={styles.sectionAction}
                 tabIndex={-1}
-                onClick={(e) => { e.stopPropagation(); a.run(); }}
+                onClick={(e) => { e.stopPropagation(); a.run(e); }}
                 title={a.title}
               >
                 {a.icon}
@@ -882,6 +941,58 @@ function Section({
         )}
       </div>
       {open && <div className={styles.sectionBody} role="group">{children}</div>}
+    </div>
+  );
+}
+
+// ── Explorer sort menu ────────────────────────────────────────────────────────
+// Field and direction are separate picks, each written straight to
+// `explorer_sort` in settings.yaml (so `cortex settings set` sees the same value).
+
+function SortMenu({ x, y, sort, onChange, onClose }: {
+  x: number;
+  y: number;
+  sort: ExplorerSort;
+  onChange: (sort: ExplorerSort) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  const left = Math.min(x, window.innerWidth - 200);
+  const top = Math.min(y, window.innerHeight - 220);
+  const pick = (next: ExplorerSort) => { onChange(next); onClose(); };
+  const check = (on: boolean) => <span className={menuStyles.ctxHint}>{on ? "✓" : ""}</span>;
+
+  return (
+    <div
+      ref={ref}
+      className={menuStyles.ctxMenu}
+      style={{ left, top }}
+      role="menu"
+      aria-label="Sort notes by"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {SORT_FIELDS.map((f) => (
+        <button key={f.value} className={menuStyles.ctxItem} role="menuitemradio" aria-checked={sort.field === f.value}
+          onClick={() => pick({ ...sort, field: f.value })}>
+          {f.label} {check(sort.field === f.value)}
+        </button>
+      ))}
+      <div className={menuStyles.ctxSep} />
+      <button className={menuStyles.ctxItem} role="menuitemradio" aria-checked={sort.dir === "asc"} onClick={() => pick({ ...sort, dir: "asc" })}>
+        Ascending {check(sort.dir === "asc")}
+      </button>
+      <button className={menuStyles.ctxItem} role="menuitemradio" aria-checked={sort.dir === "desc"} onClick={() => pick({ ...sort, dir: "desc" })}>
+        Descending {check(sort.dir === "desc")}
+      </button>
     </div>
   );
 }

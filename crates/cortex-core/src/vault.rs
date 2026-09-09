@@ -162,6 +162,7 @@ keybindings: {}              # shortcut overrides, id → keys, e.g. {toggle-sid
 terminal_command: ''         # command the terminal pane (Ctrl+L) opens with, e.g. claude (empty = shell)
 site_title: ''               # title of the published site (empty = the vault folder's name)
 site_home: ''                # published note shown on the site's front page, e.g. notes/about.md
+explorer_sort: name-asc      # sidebar tree order: name | modified | created | type, -asc or -desc
 ```
 
 From the terminal: `cortex settings` prints the file, `cortex settings describe`
@@ -242,6 +243,7 @@ and the app reloads it live when it changes. Edit it with
     terminal_command      command the app's terminal pane opens with (an agent CLI such as claude); empty = shell
     site_title            title of the published site; empty = the vault folder's name
     site_home             published note shown on the site's front page, e.g. notes/about.md; empty = list only
+    explorer_sort         order of notes in the app's sidebar: name | modified | created | type, with -asc / -desc (default name-asc)
 
 `cortex settings describe` prints this table with defaults; `cortex agents`
 lists which agent CLIs (claude, hermes, openclaw, codex, …) are installed.
@@ -321,14 +323,15 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let (title, note_type, icon, parent, tags) = match note::parse_note(&rel, &content) {
+        let (title, note_type, icon, parent, tags, created) = match note::parse_note(&rel, &content) {
             Ok(parsed) => {
                 let title = note::infer_title(&parsed);
                 let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
                 let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
                 let parent = parsed.frontmatter.get("parent").and_then(|v| v.as_str()).map(str::to_string);
                 let tags = crate::tags::note_tags(&parsed);
-                (title, note_type, icon, parent, tags)
+                let created = parsed.frontmatter.get("created").and_then(|v| v.as_str()).map(str::to_string);
+                (title, note_type, icon, parent, tags, created)
             }
             Err(_) => {
                 let title = Path::new(&rel)
@@ -336,11 +339,11 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
                     .and_then(|s| s.to_str())
                     .unwrap_or("Untitled")
                     .to_string();
-                (title, None, None, None, Vec::new())
+                (title, None, None, None, Vec::new(), None)
             }
         };
 
-        entries.push(NoteEntry { path: rel, title, note_type, icon, parent, tags, modified });
+        entries.push(NoteEntry { path: rel, title, note_type, icon, parent, tags, modified, created });
     }
 
     entries.sort_by(|a, b| b.modified.cmp(&a.modified));
@@ -384,7 +387,7 @@ mod tests {
     use super::*;
 
     fn entry(path: &str, title: &str) -> NoteEntry {
-        NoteEntry { path: path.into(), title: title.into(), note_type: None, icon: None, parent: None, tags: vec![], modified: 0 }
+        NoteEntry { path: path.into(), title: title.into(), note_type: None, icon: None, parent: None, tags: vec![], modified: 0, created: None }
     }
 
     #[test]

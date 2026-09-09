@@ -44,7 +44,7 @@ the app rebuilds it by scanning the vault on next open.
 | File | Description |
 |------|-------------|
 | `index.db` | SQLite database: full-text search (FTS5), note entries, link graph |
-| `settings.yaml` | Per-vault settings (not yet implemented) |
+| `ui-state.json` | Disposable UI memory: the last 10 opened notes (the sidebar's Recent section). Settings live in `.cortex/settings.yaml`, which is committed. |
 
 ## `VAULT.md`
 
