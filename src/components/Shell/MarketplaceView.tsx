@@ -6,7 +6,7 @@
 // and `.cortex/packs.yaml` records it so `cortex packs` sees the same state.
 
 import { useCallback, useEffect, useMemo, useRef, useState, ReactNode, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { openExternal } from "../../lib/links";
 import {
   commands, PackCatalog, PackEntry, Pack, PackPlan, PackText, PackKind, PackTier,
   PackInstallReport, PackUpdateReport, PackRemoveReport,
@@ -275,6 +275,21 @@ function KindIcon({ kind, size = 14 }: { kind: PackKind; size?: number }) {
   return kind === "collection" ? <DatabaseIcon size={size} /> : kind === "bundle" ? <FolderIcon size={size} /> : <TemplateIcon size={size} />;
 }
 
+/** The bundled packs and the official index; anything else is an index the
+ *  user added in Settings, whose images are not loaded and whose packs say so. */
+function isOfficialSource(source: string): boolean {
+  return source === "bundled" || source.startsWith("https://frontal-cortex.github.io/marketplace/");
+}
+
+function SourceBadge() {
+  return (
+    <span className={`${styles.tier} ${styles.tier_community}`}
+      title="From an index you added in Settings. Its hash check proves the files match that index, not that the index is honest — read the seeds and body before installing.">
+      Third-party index
+    </span>
+  );
+}
+
 function TierBadge({ tier }: { tier: PackTier }) {
   return <span className={`${styles.tier} ${styles[`tier_${tier}`]}`} title={TIER_HINT[tier]}>{TIER_LABEL[tier]}</span>;
 }
@@ -301,7 +316,7 @@ function Card({ entry, onOpen, onChanged }: { entry: PackEntry; onOpen: () => vo
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
     >
-      {entry.preview ? (
+      {entry.preview && isOfficialSource(entry.source) ? (
         <img className={styles.cardImage} src={entry.preview} alt="" loading="lazy" />
       ) : entry.excerpt ? (
         <CardExcerpt entry={entry} />
@@ -312,6 +327,7 @@ function Card({ entry, onOpen, onChanged }: { entry: PackEntry; onOpen: () => vo
         <div className={styles.cardHead}>
           <span className={styles.cardName}>{entry.name}</span>
           <TierBadge tier={entry.tier} />
+          {!isOfficialSource(entry.source) && <SourceBadge />}
         </div>
         <p className={styles.cardSummary}>{entry.summary}</p>
         <div className={styles.cardMeta}>
@@ -492,7 +508,7 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
       <div className={styles.packHead}>
         <span className={styles.packGlyph}><KindIcon kind={entry.kind} size={20} /></span>
         <div className={styles.packTitle}>
-          <h2 className={styles.sectionTitle}>{entry.name} <TierBadge tier={entry.tier} /></h2>
+          <h2 className={styles.sectionTitle}>{entry.name} <TierBadge tier={entry.tier} />{!isOfficialSource(entry.source) && <> <SourceBadge /></>}</h2>
           <div className={styles.cardMeta}>
             <span>{KIND_ONE[entry.kind]}</span>
             <span>·</span>

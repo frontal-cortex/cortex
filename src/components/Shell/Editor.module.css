@@ -221,6 +221,11 @@
   text-decoration: underline;
 }
 
+/* The `[[Note|` and `]]` around an alias; shown again while the cursor is in the link */
+:global(.wiki-link-syntax) {
+  display: none;
+}
+
 /* ── Cover image ──────────────────────────────────────────────────── */
 .coverEmpty {
   height: 12px;

@@ -2,12 +2,13 @@
 // Kept in its own module so the block files can import each other's helpers
 // without a cycle through the schema.
 
-import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
+import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from "@blocknote/core";
 import { cortexViewSpec } from "./CortexViewBlock";
 import { noteEmbedSpec } from "./NoteEmbedBlock";
 import { calloutSpec } from "./CalloutBlock";
 import { collectionViewsSpec } from "./CollectionViewsBlock";
 import { codeBlockSpec } from "./codeBlock";
+import { mathBlockSpec, inlineMathSpec } from "./MathBlock";
 
 export const cortexSchema = BlockNoteSchema.create({
   blockSpecs: {
@@ -17,5 +18,10 @@ export const cortexSchema = BlockNoteSchema.create({
     noteEmbed: noteEmbedSpec,
     callout: calloutSpec,
     collectionViews: collectionViewsSpec,
+    mathBlock: mathBlockSpec,
+  },
+  inlineContentSpecs: {
+    ...defaultInlineContentSpecs,
+    inlineMath: inlineMathSpec,
   },
 });

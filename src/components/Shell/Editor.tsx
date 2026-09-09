@@ -16,6 +16,7 @@ import { Note, NoteEntry, CommitEntry, Member, ViewDef, commands } from "../../l
 import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
+import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
@@ -30,6 +31,9 @@ import {
 import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, viewToFrontmatter } from "../../lib/database";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
+import { mathSlashItem, inlineMathInputRule } from "./MathBlock";
+import { extractMath, inflateMath, flattenMath, restoreMath } from "../../lib/math";
+import { inflateRichFormats, flattenRichFormats } from "./richFormats";
 import { shortcutFor } from "../../lib/keymap";
 import styles from "./Editor.module.css";
 
@@ -53,19 +57,31 @@ async function saveFileAsAsset(file: File): Promise<string> {
   return dataUri;
 }
 
-/** Replace `assets/X` paths with data URIs so BlockNote can display them. */
+/** Data URI for a vault asset, cached so the save path can map it back. */
+async function displayUrlFor(relPath: string): Promise<string> {
+  let dataUri = [...dataUriToRelPath.entries()].find(([, p]) => p === relPath)?.[0];
+  if (!dataUri) {
+    dataUri = await commands.readAsset(relPath);
+    dataUriToRelPath.set(dataUri, relPath);
+  }
+  return dataUri;
+}
+
+/** Replace `assets/X` paths with data URIs so BlockNote can display them —
+ *  both `![alt](assets/X)` and the `<img src="assets/X">` a sized or
+ *  captioned image is saved as. */
 async function assetsToDisplayUrls(body: string): Promise<string> {
-  const matches = [...body.matchAll(/!\[([^\]]*)\]\(assets\/([^)\s]+)\)/g)];
   let result = body;
-  for (const [full, alt, filename] of matches) {
-    const relPath = `assets/${filename}`;
+  for (const [full, alt, filename] of [...body.matchAll(/!\[([^\]]*)\]\(assets\/([^)\s]+)\)/g)]) {
     try {
-      let dataUri = [...dataUriToRelPath.entries()].find(([, p]) => p === relPath)?.[0];
-      if (!dataUri) {
-        dataUri = await commands.readAsset(relPath);
-        dataUriToRelPath.set(dataUri, relPath);
-      }
-      result = result.replace(full, `![${alt}](${dataUri})`);
+      result = result.replace(full, `![${alt}](${await displayUrlFor(`assets/${filename}`)})`);
+    } catch {
+      // Asset missing on disk — leave reference as-is
+    }
+  }
+  for (const [full, before, filename] of [...body.matchAll(/(<img\b[^>]*\bsrc=")assets\/([^"]+)"/g)]) {
+    try {
+      result = result.replace(full, `${before}${await displayUrlFor(`assets/${filename}`)}"`);
     } catch {
       // Asset missing on disk — leave reference as-is
     }
@@ -114,6 +130,8 @@ export interface EditorHandle {
   toggleProperties(): void;
   /** Flip `publish: true` on the note — marks it for the site, publishes nothing. */
   togglePublic(): void;
+  /** Scroll the body to the heading whose text matches (case-insensitive). */
+  scrollToHeading(section: string): void;
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
@@ -129,6 +147,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
     focusBody: () => inner.current?.focusBody(),
     toggleProperties: () => inner.current?.toggleProperties(),
     togglePublic: () => inner.current?.togglePublic(),
+    scrollToHeading: (section) => inner.current?.scrollToHeading(section),
   }), []);
 
   if (!note) {
@@ -324,7 +343,8 @@ function NoteEditor({
   // and notes for `@`.
   const filteredItems = useMemo<MentionItem[]>(() => {
     if (!suggestion) return [];
-    const q = suggestion.query.toLowerCase();
+    // `[[Note#Sec|alias` filters on `Note` alone; the rest is kept on insert.
+    const q = (suggestion.trigger === "wiki" ? parseWikiLink(suggestion.query).target : suggestion.query).toLowerCase();
     const matchNote = (n: NoteEntry) =>
       !q ||
       n.title.toLowerCase().includes(q) ||
@@ -380,6 +400,13 @@ function NoteEditor({
       },
       toggleProperties,
       togglePublic: () => togglePublicRef.current(),
+      scrollToHeading(section) {
+        const want = section.trim().toLowerCase();
+        const root = editorRef.current?._tiptapEditor.view.dom as HTMLElement | undefined;
+        const headings: HTMLElement[] = root ? Array.from(root.querySelectorAll("h1, h2, h3, h4, h5, h6")) : [];
+        const el = headings.find((h) => (h.textContent ?? "").trim().toLowerCase() === want);
+        el?.scrollIntoView({ block: "start", behavior: "smooth" });
+      },
     };
     return () => { handleRef.current = null; };
   }, [handleRef, toggleProperties]);
@@ -447,6 +474,7 @@ function NoteEditor({
         wikiLinkExtension((t) => navigateRef.current(t)),
         wikiLinkSuggestionExtension(handle),
         imagePasteDropExtension,
+        inlineMathInputRule,
       ],
     },
   });
@@ -468,13 +496,15 @@ function NoteEditor({
 
   // ── Suggestion insertion ───────────────────────────────────────────────────
   // A note becomes a `[[wiki link]]` (for both `[[` and `@`); a date becomes
-  // plain ISO text. The trigger text (`[[query` or `@query`) is replaced wholesale.
+  // plain ISO text. The trigger text (`[[query` or `@query`) is replaced wholesale;
+  // a `#section` or `|alias` already typed after `[[` is carried over.
   const insertItem = useCallback((item: MentionItem) => {
     if (!suggestion) return;
     const { from } = suggestion;
     const to = editor._tiptapEditor.state.selection.from;
+    const typed: WikiLink = suggestion.trigger === "wiki" ? parseWikiLink(suggestion.query) : { target: "" };
     const text = item.kind === "note"
-      ? `[[${item.note.title || pathToTitle(item.note.path)}]]`
+      ? `[[${item.note.title || pathToTitle(item.note.path)}${typed.section ? `#${typed.section}` : ""}${typed.alias ? `|${typed.alias}` : ""}]]`
       : item.kind === "person"
         ? `@${item.name}`
         : item.value;
@@ -526,10 +556,14 @@ function NoteEditor({
       assetsToDisplayUrls(note.body)
         .then((displayBody) => {
           try {
-            const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`, and
-            // `[!callout]` blockquotes into live blocks on load.
-            editor.replaceBlocks(editor.document, inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks)))) as typeof blocks);
+            // `$…$` / `$$…$$` are lifted out before parsing so the Markdown
+            // parser never sees LaTeX (see src/lib/math.ts).
+            const math = extractMath(displayBody);
+            const blocks = editor.tryParseMarkdownToBlocks(math.md);
+            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`,
+            // `[!callout]` blockquotes, `==highlights==` and math into live blocks on load.
+            const inflated = inflateMath(inflateRichFormats(inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks))))), math.spans);
+            editor.replaceBlocks(editor.document, inflated as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
             // would be suppressed forever for this note.
@@ -580,9 +614,12 @@ function NoteEditor({
       // immediately by navigating away — capturing here means the pending
       // write survives the editor being destroyed on unmount.
       void (async () => {
-        const doc = flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(editor.document)))) as typeof editor.document;
+        // richFormats runs last so toggles, underline, highlight and image
+        // width reach the exporter in a form it writes verbatim; math is
+        // flattened first so its nodes are plain text by then.
+        const doc = flattenRichFormats(flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenMath(editor.document)))))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
-        pendingMd.current = displayUrlsToAssets(md);
+        pendingMd.current = restoreMath(displayUrlsToAssets(md));
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
         bodyTimer.current = setTimeout(flush, 400);
       })();
@@ -734,7 +771,7 @@ function NoteEditor({
                 triggerCharacter="/"
                 getItems={async (query) =>
                   filterSuggestionItems(
-                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor)],
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor), mathSlashItem(editor)],
                     query,
                   )
                 }
