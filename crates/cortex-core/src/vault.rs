@@ -201,6 +201,8 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f]
     cortex schema [key]                      typed properties      cortex status
+    cortex schema rename <key> <old> <new>   rename a property everywhere (rows, views, rollups, formulas)
+    cortex schema rm <key> <name>            delete a property everywhere (refused while a rollup or formula uses it)
     cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)
 

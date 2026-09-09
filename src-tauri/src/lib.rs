@@ -115,6 +115,8 @@ pub fn run() {
             commands::schema::get_schema_for_note,
             commands::schema::set_schema,
             commands::schema::upsert_property,
+            commands::schema::rename_property,
+            commands::schema::delete_property,
             commands::members::get_members,
             commands::members::set_members,
             commands::members::current_user,

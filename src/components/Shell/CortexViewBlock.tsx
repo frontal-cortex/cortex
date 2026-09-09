@@ -58,15 +58,20 @@ const COLUMN_TYPES: { value: PropType; label: string }[] = [
 ];
 
 /** Column header with a Notion-style "property type" menu. Setting a select-like
- *  type creates the schema property, which turns the cells into colored pills. */
-function ColumnHeader({ col, canType, onSetType, onSetFormat }: {
+ *  type creates the schema property, which turns the cells into colored pills.
+ *  Rename and delete go through the engine, which rewrites every row, the
+ *  views and any rollup or formula that names the property. */
+function ColumnHeader({ col, canType, onSetType, onSetFormat, onRename, onDelete }: {
   col: ViewColumn;
   canType: boolean;
   onSetType: (type: PropType) => void;
   onSetFormat: (patch: Partial<PropertyDef>) => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [fmtOpen, setFmtOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,6 +82,13 @@ function ColumnHeader({ col, canType, onSetType, onSetFormat }: {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+  useEffect(() => { if (!open) { setRenaming(false); setFmtOpen(false); } }, [open]);
+
+  const commitRename = (raw: string) => {
+    const name = raw.trim();
+    setRenaming(false);
+    if (name && name !== col.key) { onRename(name); setOpen(false); }
+  };
 
   if (!canType) return <span>{col.key}</span>;
 
@@ -148,6 +160,26 @@ function ColumnHeader({ col, canType, onSetType, onSetFormat }: {
               )}
             </>
           )}
+          <div className={styles.colMenuSep} />
+          <button className={styles.colMenuItem} onClick={() => setRenaming((r) => !r)}>Rename…</button>
+          {renaming && (
+            <div className={styles.colSub}>
+              <input
+                className={styles.colSubInput}
+                autoFocus
+                defaultValue={col.key}
+                placeholder="New name"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitRename((e.target as HTMLInputElement).value);
+                  if (e.key === "Escape") setRenaming(false);
+                }}
+                onBlur={(e) => commitRename(e.target.value)}
+              />
+            </div>
+          )}
+          <button className={`${styles.colMenuItem} ${styles.colMenuDanger}`} onClick={() => { setOpen(false); onDelete(); }}>
+            Delete property
+          </button>
         </div>
       )}
     </div>
@@ -760,6 +792,21 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
     commands.upsertProperty(schemaKey, next).then(onChanged).catch((e) => setErr(String(e)));
   };
 
+  // Rename / delete rewrite the schema, every row and the views in one go
+  // (`rename_property` / `delete_property`); the view re-runs, and the page's
+  // own `_index.md` follows through the watcher.
+  const renameColumn = (col: ViewTable["columns"][number], name: string) => {
+    if (!schemaKey) return;
+    setErr(null);
+    commands.renameProperty(schemaKey, col.key, name).then(onChanged).catch((e) => setErr(String(e)));
+  };
+  const deleteColumn = (col: ViewTable["columns"][number]) => {
+    if (!schemaKey) return;
+    if (!window.confirm(`Delete "${col.key}" from every row of this collection?`)) return;
+    setErr(null);
+    commands.deleteProperty(schemaKey, col.key).then(onChanged).catch((e) => setErr(String(e)));
+  };
+
   const renderCell = (c: ViewTable["columns"][number], row: ViewTable["rows"][number]) => {
     // Computed columns — rollups, formulas, the reverse side of a relation — are read-only.
     if (isComputedColumn(c)) {
@@ -838,6 +885,8 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
                   canType={!!schemaKey && c.key !== "id" && c.key !== "$body"}
                   onSetType={(ty) => setColumnType(c, ty)}
                   onSetFormat={(patch) => setColumnFormat(c, patch)}
+                  onRename={(name) => renameColumn(c, name)}
+                  onDelete={() => deleteColumn(c)}
                 />
               </th>
             ))}

@@ -146,8 +146,8 @@ by inferring column types (`data.rs:128`).
 | Column resize, drag reorder | missing | M | |
 | Add property from the header (incl. relation / rollup / formula config) | done | — | `AddPropertyHeader` (`CortexViewBlock.tsx:171`). |
 | Change property type | partial | S | Nine basic types only; cannot retype into relation / rollup / formula. |
-| Rename property | missing | M | No command, no UI. Must also rewrite every row's frontmatter key. |
-| Delete property | missing | M | Only whole-schema `set_schema` exists and nothing calls it. |
+| Rename property | done | — | `schema::rename_property`: the schema, every row's frontmatter key (one line per file), the collection's views (columns, sort, filter, group, date/chart fields) and the rollups / formulas / auto-dates in any schema that name it. Column header menu, properties panel, `cortex schema rename`, MCP `rename_property`. Views embedded as `cortex-view` fences in other notes are not rewritten. |
+| Delete property | done | — | `schema::delete_property`: schema, every row, every view (a mixed and/or filter is left for the user). Refused while a rollup, formula or auto-date in any schema depends on it — the error names them. Column header menu, properties panel, `cortex schema rm`, MCP `delete_property`. |
 | Convert checklist note ⇄ database | done, beyond Notion | — | `Shell.tsx:419`. |
 
 ## 8. Import and export
@@ -215,7 +215,7 @@ by inferring column types (`data.rs:128`).
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | CLI | done, beyond Notion | — | 25 subcommands, `--json` everywhere. Full list in `docs/agent-integration.md`. |
-| MCP server | done, beyond Notion | — | 26 tools over stdio (`mcp.rs:208-345`). Absent from MCP but present in the app: delete / rename / move, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
+| MCP server | done, beyond Notion | — | 28 tools over stdio (`mcp.rs`). Absent from MCP but present in the app: delete / rename / move, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
 | Proposals (branch, list, diff, apply, discard) in app and CLI | done, beyond Notion | — | `git.rs:523-628`. |
 | Filesystem watcher | done | — | |
 | HTTP API / webhooks | missing | L | No server crate. |
@@ -255,7 +255,7 @@ by inferring column types (`data.rs:128`).
 1. **No import path.** Nobody can move in from Notion, CSV, or Evernote. Opening a Markdown folder works but writes files into it.
 2. **Silent formatting loss on save**: underline, colour, highlight, toggles, image width. They look like they work until the note is reopened.
 3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
-4. **Property rename and delete do not exist.** A mistyped property name is permanent from the app.
+4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
 6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; table view cannot group; no in-database search or summary row.
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.

@@ -822,7 +822,7 @@ fn normalize_op(tok: &str) -> Option<&'static str> {
 
 /// Flatten a filter string into clauses joined by a single connector. `None`
 /// when it mixes `and`/`or` or isn't a clean `field op value …` chain.
-fn flatten_filter(filter: &str) -> Option<(Vec<FilterClause>, String)> {
+pub(crate) fn flatten_filter(filter: &str) -> Option<(Vec<FilterClause>, String)> {
     let tokens = tokenize(filter);
     if tokens.is_empty() {
         return Some((vec![], "and".into()));
@@ -860,7 +860,7 @@ fn flatten_filter(filter: &str) -> Option<(Vec<FilterClause>, String)> {
 
 /// String values get quoted; bare numbers/bools don't — matching the spec style
 /// the engine already parses (`status == 'reading'`, `rating > 3`).
-fn build_filter(clauses: &[FilterClause], join: &str) -> String {
+pub(crate) fn build_filter(clauses: &[FilterClause], join: &str) -> String {
     let render = |c: &FilterClause| {
         let is_scalar = c.value.parse::<f64>().is_ok()
             || matches!(c.value.to_ascii_lowercase().as_str(), "true" | "false");
