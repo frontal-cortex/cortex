@@ -657,6 +657,17 @@ impl Vault {
         Ok(r)
     }
 
+    /// Import a Notion export (zip or folder): pages, collections, assets, report; index what was written.
+    pub fn import_notion(&self, src: &std::path::Path, into: &str, dry_run: bool) -> Result<cortex_core::import::notion::NotionReport> {
+        let r = cortex_core::import::notion::import_notion(&self.root, src, into, dry_run)?;
+        if !dry_run {
+            let db = self.db()?;
+            let rows = r.collections.iter().flat_map(|c| c.written.iter());
+            for p in r.notes.iter().chain(rows).chain(r.report.iter()) { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        }
+        Ok(r)
+    }
+
     // ── Git & proposals ─────────────────────────────────────────────────────
 
     pub fn status(&self) -> Result<StatusReport> {

@@ -153,7 +153,7 @@ export function QuickSwitcher({
       {
         id: "import",
         label: "Import…",
-        description: "A CSV file into a collection, or a folder of Markdown (an Obsidian vault, a Notion export) into notes/",
+        description: "A CSV file into a collection, a folder of Markdown (an Obsidian vault) into notes/, or a Notion export zip",
         icon: <DatabaseIcon size={14} />,
         run: () => { onImport(); onClose(); },
       },

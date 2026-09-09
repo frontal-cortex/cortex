@@ -4,6 +4,7 @@
 use tauri::State;
 
 use cortex_core::error::{AppError, Result};
+use cortex_core::import::notion::{self, NotionReport};
 use cortex_core::import::{self, ColumnMap, CsvOptions, CsvPlan, CsvReport, MarkdownReport};
 
 use super::vault::{DbState, VaultState};
@@ -62,6 +63,28 @@ pub fn import_markdown(
     if !dry_run {
         if let Some(db) = db_state.0.lock().unwrap().as_ref() {
             for p in &r.notes {
+                let _ = cortex_core::index::index_file(&root, &root.join(p), db);
+            }
+        }
+    }
+    Ok(r)
+}
+
+/// Import a Notion export zip (or its unpacked folder); `dry_run` only reports.
+#[tauri::command]
+pub fn import_notion(
+    path: String,
+    into: String,
+    dry_run: bool,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<NotionReport> {
+    let root = root(&state)?;
+    let r = notion::import_notion(&root, std::path::Path::new(&path), &into, dry_run)?;
+    if !dry_run {
+        if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+            let rows = r.collections.iter().flat_map(|c| c.written.iter());
+            for p in r.notes.iter().chain(rows).chain(r.report.iter()) {
                 let _ = cortex_core::index::index_file(&root, &root.join(p), db);
             }
         }

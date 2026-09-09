@@ -1,14 +1,16 @@
-// Import — the way in from somewhere else. Two sources, both ending in
+// Import — the way in from somewhere else. Three sources, all ending in
 // ordinary files: a CSV becomes rows of a collection (one note per record,
-// typed frontmatter, the schema written or merged), and a folder of Markdown
-// — an Obsidian vault, a Notion export — is copied under notes/ with its
-// images into assets/. Every step before the Import button is a plan the
-// Rust side computes without writing; the source is never modified.
+// typed frontmatter, the schema written or merged), a folder of Markdown —
+// an Obsidian vault — is copied under notes/ with its images into assets/,
+// and a Notion export zip becomes pages, collections and assets in one go
+// with a report note of what could not be mapped. Every step before the
+// Import button is a plan the Rust side computes without writing; the source
+// is never modified.
 
 import { useCallback, useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
-  commands, CsvImportPlan, CsvImportReport, ImportColumn, MarkdownImportReport,
+  commands, CsvImportPlan, CsvImportReport, ImportColumn, MarkdownImportReport, NotionImportReport,
 } from "../../lib/commands";
 import { CloseIcon, DatabaseIcon, FolderIcon, FileIcon } from "./icons";
 import styles from "./ImportModal.module.css";
@@ -20,7 +22,7 @@ interface Props {
   onOpenNote: (path: string) => void;
 }
 
-type Kind = "csv" | "markdown";
+type Kind = "csv" | "markdown" | "notion";
 
 const TYPES = ["text", "number", "date", "checkbox", "select", "multi_select", "url"];
 
@@ -46,6 +48,12 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
   const [into, setInto] = useState("");
   const [mdPlan, setMdPlan] = useState<MarkdownImportReport | null>(null);
   const [mdReport, setMdReport] = useState<MarkdownImportReport | null>(null);
+
+  // Notion
+  const [notionPath, setNotionPath] = useState("");
+  const [notionInto, setNotionInto] = useState("notion");
+  const [notionPlan, setNotionPlan] = useState<NotionImportReport | null>(null);
+  const [notionReport, setNotionReport] = useState<NotionImportReport | null>(null);
 
   useEffect(() => {
     commands.listCollections().then(setCollections).catch(() => {});
@@ -131,6 +139,38 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
     finally { setBusy(false); }
   };
 
+  // ── Notion: a dry run is the preview ────────────────────────────────────────
+  useEffect(() => {
+    if (kind !== "notion" || !notionPath || !notionInto.trim() || notionReport) return;
+    let stale = false;
+    setError(null);
+    commands.importNotion(notionPath, notionInto.trim(), true)
+      .then((r) => { if (!stale) setNotionPlan(r); })
+      .catch((e) => { if (!stale) { setNotionPlan(null); setError(String(e)); } });
+    return () => { stale = true; };
+  }, [kind, notionPath, notionInto, notionReport]);
+
+  const pickNotion = async (directory: boolean) => {
+    const f = await openDialog(directory
+      ? { directory: true, multiple: false, title: "Import an unpacked Notion export…" }
+      : { multiple: false, directory: false, title: "Import a Notion export…", filters: [{ name: "Notion export", extensions: ["zip"] }] });
+    if (!f || typeof f !== "string") return;
+    setNotionPath(f);
+    setNotionReport(null);
+  };
+
+  const runNotion = async () => {
+    if (!notionPlan) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await commands.importNotion(notionPath, notionInto.trim(), false);
+      setNotionReport(r);
+      onChanged();
+    } catch (e) { setError(String(e)); }
+    finally { setBusy(false); }
+  };
+
   const switchKind = (k: Kind) => { setKind(k); setError(null); };
 
   const previewKeys = plan
@@ -140,6 +180,8 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
 
   const csvReady = !!plan && !busy && !csvReport && plan.rows - plan.skipped.length > 0;
   const mdReady = !!mdPlan && !busy && !mdReport && mdPlan.notes.length > 0;
+  const notionCount = (r: NotionImportReport) => r.notes.length + r.collections.reduce((n, c) => n + c.written.length, 0);
+  const notionReady = !!notionPlan && !busy && !notionReport && notionCount(notionPlan) > 0;
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -157,6 +199,9 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
             </button>
             <button role="tab" aria-selected={kind === "markdown"} className={`${styles.kind} ${kind === "markdown" ? styles.kindOn : ""}`} onClick={() => switchKind("markdown")}>
               <FolderIcon size={14} /> Folder of Markdown
+            </button>
+            <button role="tab" aria-selected={kind === "notion"} className={`${styles.kind} ${kind === "notion" ? styles.kindOn : ""}`} onClick={() => switchKind("notion")}>
+              <DatabaseIcon size={14} /> Notion export
             </button>
           </div>
 
@@ -349,6 +394,39 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
             </>
           )}
 
+          {kind === "notion" && (
+            <>
+              <p className={styles.lead}>
+                A Notion <em>Markdown &amp; CSV</em> export, the zip or its unpacked folder. Pages go under{" "}
+                <code>notes/{notionInto.trim() || "<name>"}/</code> with Notion's hash suffixes stripped, every database becomes a
+                collection with its schema inferred from the cells, links between pages become <code>[[Title]]</code>, images go to{" "}
+                <code>assets/</code>, and an import report note lists what could not be mapped. Nothing already in the vault is overwritten.
+              </p>
+
+              <div className={styles.fields}>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Export</span>
+                  <span className={styles.fieldRow}>
+                    <button className={styles.pick} onClick={() => pickNotion(false)}>{notionPath ? "Change…" : "Choose zip…"}</button>
+                    <button className={styles.pick} onClick={() => pickNotion(true)}>Folder…</button>
+                    <span className={styles.path} title={notionPath}>{notionPath ? baseName(notionPath) : "No export chosen"}</span>
+                  </span>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Pages into</span>
+                  <span className={styles.fieldRow}>
+                    <span className={styles.prefix}>notes/</span>
+                    <input className={styles.input} value={notionInto} placeholder="folder name" onChange={(e) => { setNotionInto(e.target.value); setNotionReport(null); }} spellCheck={false} />
+                  </span>
+                </label>
+              </div>
+
+              {(notionReport ?? notionPlan) && (
+                <NotionSummary r={notionReport ?? notionPlan!} done={!!notionReport} onOpenNote={(p) => { onOpenNote(p); onClose(); }} />
+              )}
+            </>
+          )}
+
           {error && (
             <section className={`${styles.section} ${styles.outcome} ${styles.outcomeError}`}>
               <p>{error}</p>
@@ -360,16 +438,22 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
           <span className={styles.footHint}>
             {kind === "csv"
               ? (csvReport ? "Done." : "Nothing is written until you press Import.")
-              : (mdReport ? "Done." : "A dry run above; nothing is written until you press Import.")}
+              : kind === "markdown"
+                ? (mdReport ? "Done." : "A dry run above; nothing is written until you press Import.")
+                : (notionReport ? "Done." : "A dry run above; nothing is written until you press Import.")}
           </span>
-          <button className={styles.cancel} onClick={onClose}>{csvReport || mdReport ? "Close" : "Cancel"}</button>
+          <button className={styles.cancel} onClick={onClose}>{csvReport || mdReport || notionReport ? "Close" : "Cancel"}</button>
           {kind === "csv" ? (
             <button className={styles.primary} disabled={!csvReady} onClick={runCsv}>
               {busy ? "Importing…" : plan ? `Import ${plan.rows - plan.skipped.length} row${plan.rows - plan.skipped.length === 1 ? "" : "s"}` : "Import"}
             </button>
-          ) : (
+          ) : kind === "markdown" ? (
             <button className={styles.primary} disabled={!mdReady} onClick={runMarkdown}>
               {busy ? "Importing…" : mdPlan ? `Import ${mdPlan.notes.length} note${mdPlan.notes.length === 1 ? "" : "s"}` : "Import"}
+            </button>
+          ) : (
+            <button className={styles.primary} disabled={!notionReady} onClick={runNotion}>
+              {busy ? "Importing…" : notionPlan ? `Import ${notionCount(notionPlan)} note${notionCount(notionPlan) === 1 ? "" : "s"}` : "Import"}
             </button>
           )}
         </div>
@@ -382,11 +466,54 @@ function SkippedList({ skipped, unresolved }: { skipped: { path: string; reason:
   if (skipped.length === 0 && unresolved.length === 0) return null;
   return (
     <details className={styles.details}>
-      <summary>{skipped.length} skipped{unresolved.length > 0 ? `, ${unresolved.length} image reference${unresolved.length === 1 ? "" : "s"} not found` : ""}</summary>
+      <summary>{skipped.length} skipped{unresolved.length > 0 ? `, ${unresolved.length} reference${unresolved.length === 1 ? "" : "s"} left as written` : ""}</summary>
       <ul className={styles.list}>
         {skipped.map((s) => <li key={s.path}><span className={styles.mono}>{s.path}</span> <span className={styles.dim}>— {s.reason}</span></li>)}
-        {unresolved.map((u) => <li key={`u:${u}`}><span className={styles.mono}>{u}</span> <span className={styles.dim}>— image not found, left as written</span></li>)}
+        {unresolved.map((u) => <li key={`u:${u}`}><span className={styles.mono}>{u}</span> <span className={styles.dim}>— not found, left as written</span></li>)}
       </ul>
     </details>
+  );
+}
+
+/** What a Notion import would write (a dry run), or did write. */
+function NotionSummary({ r, done, onOpenNote }: { r: NotionImportReport; done: boolean; onOpenNote: (path: string) => void }) {
+  const rows = r.collections.reduce((n, c) => n + c.written.length, 0);
+  const verb = done ? "written" : "will be written";
+  return (
+    <section className={`${styles.section} ${done ? `${styles.outcome} ${styles.outcomeOk}` : ""}`}>
+      <h3 className={styles.sectionTitle}>
+        {r.notes.length} page{r.notes.length === 1 ? "" : "s"}, {rows} row{rows === 1 ? "" : "s"} in {r.collections.length} collection{r.collections.length === 1 ? "" : "s"} and {r.assets.length} image{r.assets.length === 1 ? "" : "s"} {verb}
+      </h3>
+      {r.collections.length > 0 && (
+        <ul className={styles.list}>
+          {r.collections.map((c) => (
+            <li key={c.name}>
+              <span className={styles.mono}>collections/{c.name}/</span>{" "}
+              <span className={styles.dim}>— {c.title}: {c.written.length} of {c.rows} row{c.rows === 1 ? "" : "s"}{c.schema_added.length > 0 ? `; schema: ${c.schema_added.join(", ")}` : ""}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {r.notes.length > 0 && (
+        <ul className={styles.list}>
+          {r.notes.slice(0, 30).map((n) => <li key={n} className={styles.mono}>{n}</li>)}
+          {r.notes.length > 30 && <li className={styles.dim}>… and {r.notes.length - 30} more</li>}
+        </ul>
+      )}
+      {r.unmapped.length > 0 && (
+        <details className={styles.details}>
+          <summary>{r.unmapped.length} thing{r.unmapped.length === 1 ? "" : "s"} could not be mapped exactly</summary>
+          <ul className={styles.list}>
+            {r.unmapped.map((u, i) => <li key={i}><span className={styles.mono}>{u.subject}</span> <span className={styles.dim}>— {u.detail}</span></li>)}
+          </ul>
+        </details>
+      )}
+      <SkippedList skipped={r.skipped} unresolved={r.unresolved} />
+      {done && r.report && (
+        <p className={styles.hint}>
+          The details are in <button className={styles.link} onClick={() => onOpenNote(r.report!)}>{r.report}</button>.
+        </p>
+      )}
+    </section>
   );
 }

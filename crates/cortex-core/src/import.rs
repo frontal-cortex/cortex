@@ -16,9 +16,14 @@
 //!   rewritten to that path. Dot-directories (`.obsidian/`, `.git/`) are
 //!   skipped. The source folder is never modified.
 //!
+//! - **Notion export → all of the above.** `notion` unpacks a Notion
+//!   "Markdown & CSV" zip into pages, collections and assets in one go.
+//!
 //! Nothing here writes derived data: what lands in a file came from the
 //! source file, coerced to a type at most. Existing files are never
 //! overwritten — a collision is reported as skipped.
+
+pub mod notion;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -406,17 +411,7 @@ pub fn import_csv(root: &Path, csv_path: &Path, opts: &CsvOptions) -> Result<Csv
     let dir = root.join("collections").join(&plan.collection);
     std::fs::create_dir_all(&dir)?;
 
-    let mut index_created = false;
-    let index = dir.join("_index.md");
-    if !index.exists() {
-        let mut fm: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-        fm.insert("title".into(), serde_json::Value::String(plan.collection.clone()));
-        fm.insert("type".into(), serde_json::Value::String("database".into()));
-        fm.insert("views".into(), serde_json::json!([{ "name": "Table", "type": "table" }]));
-        let note = crate::note::Note { path: format!("collections/{}/_index.md", plan.collection), frontmatter: fm, body: String::new() };
-        std::fs::write(&index, crate::note::serialize_note(&note)?)?;
-        index_created = true;
-    }
+    let index_created = write_index_note(root, &plan.collection, &plan.collection)?;
 
     let mut written = Vec::new();
     for row in rows {
@@ -430,6 +425,20 @@ pub fn import_csv(root: &Path, csv_path: &Path, opts: &CsvOptions) -> Result<Csv
         schema::save(root, &plan.collection, &schema)?;
     }
     Ok(CsvReport { collection: plan.collection, written, skipped: plan.skipped, schema_added, index_created })
+}
+
+/// `collections/<name>/_index.md` with a table view, unless the collection
+/// already has one. True when it was written.
+fn write_index_note(root: &Path, collection: &str, title: &str) -> Result<bool> {
+    let index = root.join("collections").join(collection).join("_index.md");
+    if index.exists() { return Ok(false); }
+    let mut fm: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    fm.insert("title".into(), serde_json::Value::String(title.to_string()));
+    fm.insert("type".into(), serde_json::Value::String("database".into()));
+    fm.insert("views".into(), serde_json::json!([{ "name": "Table", "type": "table" }]));
+    let note = crate::note::Note { path: format!("collections/{collection}/_index.md"), frontmatter: fm, body: String::new() };
+    std::fs::write(&index, crate::note::serialize_note(&note)?)?;
+    Ok(true)
 }
 
 // ── Markdown folder → notes ───────────────────────────────────────────────────
@@ -475,6 +484,19 @@ fn percent_decode(s: &str) -> String {
         i += 1;
     }
     String::from_utf8(out).unwrap_or_else(|_| s.to_string())
+}
+
+/// Lexical `..` resolution, so `a/b/../c.png` and `a/c.png` are one file.
+fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::ParentDir => { out.pop(); }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn check_dest(into: &str) -> Result<String> {
@@ -536,9 +558,9 @@ impl Assets<'_> {
     fn resolve(&self, note_dir: &Path, target: &str) -> Option<PathBuf> {
         let target = percent_decode(target.trim());
         if target.is_empty() || target.contains("://") || target.starts_with("data:") || target.starts_with('/') { return None; }
-        let direct = note_dir.join(&target);
+        let direct = normalize(&note_dir.join(&target));
         if direct.is_file() && is_image(&direct) { return Some(direct); }
-        let from_root = self.src_root.join(&target);
+        let from_root = normalize(&self.src_root.join(&target));
         if from_root.is_file() && is_image(&from_root) { return Some(from_root); }
         let base = Path::new(&target).file_name()?.to_str()?.to_ascii_lowercase();
         self.by_name.get(&base).and_then(|v| v.first()).cloned()

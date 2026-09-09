@@ -47,6 +47,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex packs lint [DIR]` / `new <id> --from templates/x.md\|collections/y` / `index [DIR]` | author a pack from your own setup, check it against the format rules, regenerate a registry's `index.json` |
 | `cortex import csv <file> --collection <name> [--title COL] [--map "Header=prop[:type]"]… [--dry-run]` | a CSV as rows of a collection (see [Importing](#importing)) |
 | `cortex import markdown <dir> [--into NAME] [--dry-run]` | a folder of Markdown copied under `notes/<name>/`, images into `assets/`; the source is never modified |
+| `cortex import notion <zip-or-dir> [--into NAME] [--dry-run]` | a Notion export in one go: pages, every database as a collection, images, and an import report note |
 | `cortex propose <name> [-m msg] [--all] <paths…>` | package changes for review |
 | `cortex proposals` / `diff` / `apply` / `discard <name>` | manage proposals from the terminal |
 | `cortex settings [get <key> \| set key=value… \| describe]` | read, edit, or explain `.cortex/settings.yaml` |
@@ -65,9 +66,9 @@ same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
 `update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can
 install one; every result is a plain file the user sees at once, and `.cortex/packs.yaml` makes it
 undoable), `run_view` (any cortex-view spec), `tracker` and `track` (a tracker view's grid with
-streaks, and ticking one item for a day — "I ran today" is one `track` call), `import_csv` and
-`import_markdown` (the importers below; both take `dry_run` so the agent can show the plan before
-writing), `list_published` (read-only — an agent can see what is marked public but cannot build or
+streaks, and ticking one item for a day — "I ran today" is one `track` call), `import_csv`,
+`import_markdown` and `import_notion` (the importers below; all take `dry_run` so the agent can show
+the plan before writing), `list_published` (read-only — an agent can see what is marked public but cannot build or
 push a site). Its instructions block teaches the agent the vault's
 conventions and the propose-for-review rule.
 
@@ -200,9 +201,9 @@ done creates next week's task.
 
 ## Importing
 
-Two importers, in `cortex-core` like everything else, so the app's Import
-dialog, the CLI and the MCP tools do exactly the same thing. Neither writes
-anything the source did not contain, and neither overwrites a file that is
+Three importers, in `cortex-core` like everything else, so the app's Import
+dialog, the CLI and the MCP tools do exactly the same thing. None writes
+anything the source did not contain, and none overwrites a file that is
 already there — a collision is reported as skipped.
 
 **A CSV into a collection.** Every record becomes one row note under
@@ -245,10 +246,41 @@ cortex import markdown ~/Obsidian/Personal --dry-run      # what would land wher
 cortex import markdown ~/Obsidian/Personal --into personal
 ```
 
+**A Notion export, in one go.** Notion's *Export → Markdown & CSV* gives a
+zip in which every page is `Title <hash>.md`, every database is
+`Title <hash>.csv` (plus a `_all` variant holding the rows a filtered view
+hid) beside a `Title <hash>/` folder of row pages, links are relative paths
+with `%20` and the hash, and a database page opens with a `Key: value` block
+of its properties. `cortex import notion <zip>` (or the folder the zip
+unpacks to) turns that into vault files: pages land under `notes/<into>/`
+(default `notion`) with the hashes stripped from every path component and
+the `# Title` heading moved into `title:`; each database becomes
+`collections/<name>/` — one row note per CSV record (the `_all` file wins),
+the row page's body under the frontmatter, the schema inferred from the
+header and the cells (`Yes`/`No` → checkbox, `January 5, 2024` → date,
+numbers, URLs, a `Status` column → status, comma-separated cells → multi-select,
+a small repeated vocabulary → select, `Title (../Other%20<hash>/Row.md)` →
+a relation to that collection holding the row titles), and `_index.md` with
+a table view; a page's property block becomes its frontmatter; links between
+exported files become `[[Title]]`; images go to `assets/`. Whatever has no
+exact equivalent — a time of day or a date range end that a `date` property
+cannot hold, a relation to a database outside the export, two pages that
+share a title so `[[Title]]` is ambiguous, links that point outside the
+export — is listed in `notes/<into>/Notion import report.md` as well as in
+the command's output. The zip is unpacked under the system temp folder and
+removed afterwards; the export itself is only read. Importing the same
+export twice writes nothing the second time and says so.
+
+```bash
+cortex import notion ~/Downloads/Export-3f2a….zip --dry-run    # what would land where
+cortex import notion ~/Downloads/Export-3f2a….zip --into notion
+```
+
 Over MCP the same operations are `import_csv` (`path`, `collection`,
 optional `title_column`, `columns` overrides of `{header, property, type}`,
-`dry_run`) and `import_markdown` (`path`, optional `into`, `dry_run`). In the
-app: **Import…** in the command palette.
+`dry_run`), `import_markdown` (`path`, optional `into`, `dry_run`) and
+`import_notion` (`path`, optional `into`, `dry_run`). In the app:
+**Import…** in the command palette.
 
 ## `AGENTS.md`
 
