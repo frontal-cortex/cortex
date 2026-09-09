@@ -327,9 +327,9 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, onForgetRecent, re
           <BrainIcon />
           <span>Cortex</span>
         </div>
-        <h1 className={styles.title}>Notes that link, remember, and stay yours.</h1>
+        <h1 className={styles.title}>Your notes. Your files. Your machine.</h1>
         <p className={styles.subtitle}>
-          Plain Markdown in a git repository you control. Local first; agents welcome.
+          A second brain that works offline and never leaves you.
         </p>
 
         {hasRecents && (
