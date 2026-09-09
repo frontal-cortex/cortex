@@ -28,7 +28,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | Command | Does |
 |---|---|
 | `cortex ls [dir] [--type t] [--tag t]` | list notes, newest first |
-| `cortex search <words>` | full-text search (prefix match per word) |
+| `cortex search <query>` | full-text search: words prefix-match; `"exact phrase"`, `-excluded`, `a OR b`, `tag:x`, `type:x`, `path:x` (any filter negatable, `-tag:x`; quote the whole query when a word starts with `-`); each hit carries a body snippet with the match in `<mark>` |
 | `cortex show <note> [--body]` | print a note — by path, title, or filename stem |
 | `cortex new <title> [--dir d] [--type t] [--tag t]… [--template x] [--body -]` | create; prints the path |
 | `cortex set <note> key=value… [key+=v] [key-=v] [key=]` | merge typed properties (`3`, `true`, `[a, b]`); `key+=v` / `key-=v` add to or remove from a list; `key=` removes. A missing `collections/<c>/<id>` row is created first from the collection's row template, so a tracker's day file needs no setup |

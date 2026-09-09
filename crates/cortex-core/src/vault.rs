@@ -196,7 +196,7 @@ follows every change you make on disk.
 
 The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTEX_VAULT`):
 
-    cortex ls [dir] [--type t] [--tag t]     list notes            cortex search <words>
+    cortex ls [dir] [--type t] [--tag t]     list notes            cortex search <query>   ("phrase" -word OR tag:x type:x path:x)
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f]
