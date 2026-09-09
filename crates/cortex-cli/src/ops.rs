@@ -7,7 +7,8 @@ use cortex_core::data::{self};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
-use cortex_core::schema::TypeSchema;
+use cortex_core::schema::{PropertyChange, TypeSchema};
+use cortex_core::search::SearchHit;
 use cortex_core::settings::Settings;
 use cortex_core::tracker::{self, TrackerResult};
 use cortex_core::{index, schema, settings, vault};
@@ -86,7 +87,12 @@ pub struct TrackEvent {
 
 #[derive(Debug, Serialize)]
 pub struct Link {
+    /// The note the link names — `[[Note|alias]]` and `[[Note#Section]]` both give `Note`.
     pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     /// Resolved note path, if the link points at an existing note.
     pub path: Option<String>,
 }
@@ -203,7 +209,9 @@ impl Vault {
             .collect()
     }
 
-    pub fn search(&self, query: &str) -> Result<Vec<NoteEntry>> {
+    /// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
+    /// `type:`, `path:`); see `cortex_core::search`.
+    pub fn search(&self, query: &str) -> Result<Vec<SearchHit>> {
         Ok(self.db()?.search(query)?)
     }
 
@@ -466,7 +474,12 @@ impl Vault {
         let notes = self.notes();
         Ok(note::extract_wiki_links(&note.body)
             .into_iter()
-            .map(|t| Link { path: vault::resolve(&notes, &t).map(|n| n.path.clone()), target: t })
+            .map(|l| Link {
+                path: vault::resolve(&notes, &l.target).map(|n| n.path.clone()),
+                target: l.target,
+                alias: l.alias,
+                section: l.section,
+            })
             .collect())
     }
 
@@ -498,6 +511,7 @@ impl Vault {
         sort: &[String],
         columns: Option<&[String]>,
         limit: Option<usize>,
+        summary: &[(String, String)],
     ) -> Result<data::ResolvedTable> {
         let mut spec = serde_json::Map::new();
         spec.insert("source".into(), format!("collections/{}", collection.trim_end_matches('/')).into());
@@ -505,6 +519,10 @@ impl Vault {
         if !sort.is_empty() { spec.insert("sort".into(), sort.into()); }
         if let Some(c) = columns { spec.insert("columns".into(), c.into()); }
         if let Some(l) = limit { spec.insert("limit".into(), l.into()); }
+        if !summary.is_empty() {
+            let m: serde_json::Map<String, serde_json::Value> = summary.iter().map(|(f, func)| (f.clone(), func.clone().into())).collect();
+            spec.insert("summary".into(), serde_json::Value::Object(m));
+        }
         let yaml = serde_yaml::to_string(&serde_json::Value::Object(spec))?;
         // The same table the app shows: schema attached, rollups and formulas computed.
         Ok(data::resolve_view(&self.root, &yaml)?)
@@ -512,6 +530,18 @@ impl Vault {
 
     pub fn schema(&self, key: &str) -> Result<TypeSchema> {
         Ok(schema::load(&self.root, key)?.ok_or_else(|| format!("no schema for '{key}'"))?)
+    }
+
+    /// Rename a property in the schema, every row, the collection's views and
+    /// the rollups / formulas that reference it (see `cortex_core::schema`).
+    pub fn rename_property(&self, key: &str, old: &str, new: &str) -> Result<PropertyChange> {
+        Ok(schema::rename_property(&self.root, key, old, new)?)
+    }
+
+    /// Delete a property from the schema, every row and every view; refused
+    /// while a rollup or formula depends on it.
+    pub fn delete_property(&self, key: &str, name: &str) -> Result<PropertyChange> {
+        Ok(schema::delete_property(&self.root, key, name)?)
     }
 
     pub fn schemas(&self) -> Vec<String> {

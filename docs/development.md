@@ -168,6 +168,10 @@ npm run test:lib
 
 # Rust tests (all crates)
 cargo test --workspace
+
+# Editor round-trip: canonical Markdown must survive open → save byte-for-byte
+# (toggles, highlight, underline, sized images, callouts). Needs `chromium`.
+tools/roundtrip/run.sh
 ```
 
 ## Adding a feature

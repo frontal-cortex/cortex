@@ -84,6 +84,16 @@ filter, multi-key sort and column projection; live views embedded in any
 note with a `cortex-view` fence; CLI `cortex set … key=value` and MCP
 `set_properties` write typed values correctly.
 
+The filter grammar (`parse_filter` in `data.rs`, shared by every view, the
+CLI and MCP) is a small precedence climber: `and` binds tighter than `or`,
+parentheses group, `not` is a prefix. Operators are `== != > >= < <=
+contains does_not_contain starts_with ends_with`, `is_empty` /
+`is_not_empty`, `in [a, b]` and `within 7d` (dates between today and
+today+7; `-7d` looks back; units `d w m y`), with `@today`, `@monday-1`,
+`@month` … as values. So a tracker item view can say `frequency in
+['daily', 'weekdays'] and (start is_empty or start <= @today)`. The
+toolbar edits one level of parentheses; deeper nesting is raw-edit.
+
 **Missing, and it is the whole difference.**
 
 | Gap | Where | Effect on a habit tracker |

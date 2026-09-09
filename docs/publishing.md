@@ -51,9 +51,11 @@ own manifest, so a typo cannot wipe a directory.
 
 - The note's title, its `created` date, and its tags (except `public`).
 - The body, rendered from Markdown: headings (with anchors), lists, tables,
-  task lists, code, images, callouts (`> [!tip] …`). Math (`$…$`,
-  `$$…$$`) is shown as its LaTeX source in a monospace span — the site ships
-  no KaTeX — so nothing is mangled and the equation is still readable.
+  task lists, code, images, callouts (`> [!tip] …`), highlights (`==…==`),
+  and the HTML the editor writes for toggles, underline and sized images.
+  Math (`$…$`, `$$…$$`) is shown as its LaTeX source in a monospace span —
+  the site ships no KaTeX — so nothing is mangled and the equation is still
+  readable.
 - **Wiki links** to other published notes become links, including
   `[[Note#Section]]` anchors and `[[Note|alias]]` labels. A link to a note
   that is *not* published becomes plain text — the site never reveals what

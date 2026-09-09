@@ -265,19 +265,12 @@ fn rewrite_wiki_links(body: &str, depth: usize, all: &[NoteEntry], by_path: &BTr
             out.push_str("]]");
             continue;
         }
-        let (target, alias) = match inner.split_once('|') {
-            Some((t, a)) => (t.trim(), a.trim()),
-            None => (inner.trim(), inner.trim()),
-        };
-        let (target, section) = match target.split_once('#') {
-            Some((t, s)) => (t.trim(), Some(s.trim())),
-            None => (target, None),
-        };
-        let label = if alias == inner.trim() { section.map_or(target.to_string(), |s| format!("{target} › {s}")) } else { alias.to_string() };
-        let resolved = vault::resolve(all, target).and_then(|e| by_path.get(e.path.as_str()));
+        let link = note::parse_wiki_link(inner);
+        let label = link.label();
+        let resolved = vault::resolve(all, &link.target).and_then(|e| by_path.get(e.path.as_str()));
         match resolved {
             Some(entry) => {
-                let anchor = section.map(|s| format!("#{}", slug(s))).unwrap_or_default();
+                let anchor = link.section.as_deref().map(|s| format!("#{}", slug(s))).unwrap_or_default();
                 out.push_str(&format!("[{}]({}{}{})", escape_md(&label), up(depth), entry.url, anchor));
             }
             None => out.push_str(&label),
@@ -398,7 +391,60 @@ fn render_body(
     }
     let mut out = String::new();
     html::push_html(&mut out, events.into_iter());
-    Ok(callouts(&out))
+    Ok(highlights(&callouts(&out)))
+}
+
+/// `==text==` (the editor's highlight syntax, as in Obsidian) → `<mark>`.
+/// Works on the rendered HTML so a span may cross inline tags
+/// (`==<strong>a</strong> b==`); `<code>` runs are left alone and the
+/// markers must hug their text, so `a == b` in prose is not a highlight.
+fn highlights(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        // Copy code runs through untouched, then mark up the prose before the next one.
+        let (prose, code, tail) = match rest.find("<code") {
+            Some(i) => match rest[i..].find("</code>") {
+                Some(j) => (&rest[..i], &rest[i..i + j + "</code>".len()], &rest[i + j + "</code>".len()..]),
+                None => (rest, "", ""),
+            },
+            None => (rest, "", ""),
+        };
+        out.push_str(&mark_spans(prose));
+        out.push_str(code);
+        if tail.is_empty() {
+            return out;
+        }
+        rest = tail;
+    }
+}
+
+fn mark_spans(prose: &str) -> String {
+    let hugs = |c: char| !c.is_whitespace();
+    let mut out = String::with_capacity(prose.len());
+    let mut rest = prose;
+    while let Some(open) = rest.find("==") {
+        let inner = &rest[open + 2..];
+        // Opening marker must be followed by text, closing marker preceded by it.
+        let close = inner.chars().next().filter(|&c| hugs(c) && c != '=').and_then(|_| {
+            inner.match_indices("==").find(|(k, _)| inner[..*k].chars().last().is_some_and(hugs)).map(|(k, _)| k)
+        });
+        match close {
+            Some(k) => {
+                out.push_str(&rest[..open]);
+                out.push_str("<mark>");
+                out.push_str(&inner[..k]);
+                out.push_str("</mark>");
+                rest = &inner[k + 2..];
+            }
+            None => {
+                out.push_str(&rest[..open + 2]);
+                rest = inner;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `> [!tip] text` blockquotes (the editor's callout syntax) → a styled aside.
@@ -664,6 +710,33 @@ pub fn write_github_action(root: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlights_render_as_mark() {
+        assert_eq!(highlights("<p>Some ==hot== text</p>"), "<p>Some <mark>hot</mark> text</p>");
+        assert_eq!(highlights("<p>==<strong>a</strong> b== and ==c==</p>"), "<p><mark><strong>a</strong> b</mark> and <mark>c</mark></p>");
+        // Markers must hug their text: comparisons in prose are not highlights.
+        assert_eq!(highlights("<p>if a == b and c == d</p>"), "<p>if a == b and c == d</p>");
+        // An unmatched marker is left alone.
+        assert_eq!(highlights("<p>==open only</p>"), "<p>==open only</p>");
+        // Code spans and fences are never touched, before or after a real highlight.
+        assert_eq!(highlights("<p><code>a ==b== c</code> ==x==</p>"), "<p><code>a ==b== c</code> <mark>x</mark></p>");
+        assert_eq!(highlights("<pre><code>if (==x==) {}\n</code></pre>"), "<pre><code>if (==x==) {}\n</code></pre>");
+    }
+
+    #[test]
+    fn rich_formats_survive_publish() {
+        let root = vault("rich");
+        std::fs::write(root.join("notes/rich.md"), "---\ntitle: Rich\npublish: true\n---\n\nA ==mark== and <u>under</u>.\n\n<details><summary>More</summary>\n\nhidden\n\n</details>\n\n<img src=\"assets/pic.png\" alt=\"pic\" width=\"480\">\n").unwrap();
+        let out = root.join("site");
+        let report = build(&root, &out, false).unwrap();
+        assert_eq!(report.assets, vec!["assets/pic.png"]);
+        let page = std::fs::read_to_string(out.join("notes/rich/index.html")).unwrap();
+        assert!(page.contains("A <mark>mark</mark> and <u>under</u>."), "{page}");
+        assert!(page.contains("<details><summary>More</summary>"), "{page}");
+        assert!(page.contains("<img src=\"assets/pic.png\" alt=\"pic\" width=\"480\">"), "{page}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     fn vault(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("cortex-publish-{name}-{}", std::process::id()));

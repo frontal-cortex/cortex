@@ -18,13 +18,13 @@ screen but the Markdown save path throws it away.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Paragraph, headings 1-6, bullet / numbered / check lists, quote, divider | done | — | BlockNote defaults. Check-list items strike through live (`index.css:61`). |
-| Toggle list / toggle heading | partial | M | Works on screen, but the Markdown exporter flattens `<details>` to a plain bullet or heading, so the toggle is gone on reopen. The roadmap's chosen serialisation is `<details><summary>`. |
+| Toggle list / toggle heading | done | — | Saved as `<details><summary>…</summary> … </details>` (a heading inside the summary for toggle headings), the roadmap's chosen form; inline styles in the summary go out as HTML tags. Translated at the load/save boundary (`richFormats.ts`). |
 | Callout | partial | S | Five fixed kinds (note, tip, info, warning, danger) with fixed emoji and colour (`CalloutBlock.tsx:21`); the icon click only cycles kinds. Inline content only, no nested blocks. Round-trips as `> [!type]`. |
 | Code block: language, highlighting | partial | S | The fence language survives the parse, but the app passes no `supportedLanguages` so there is no picker, and no highlighter is configured (no shiki dependency). Plain monospace. |
 | Table | partial | M | Default table block with handles. Saved as GFM, so cell colours, column widths, header column and merged cells are lost. |
 | Image: paste, drop, upload | done | — | Custom paste/drop plugin (`Editor.tsx:389-431`), stored in `assets/` (`commands/notes.rs:772`). |
-| Image: resize | partial | S | Resize handles work, but width has no Markdown form and resets on reload. |
-| Image: caption | partial | S | Serialised as `<figure>`, but the asset rehydration regex only matches `![](assets/…)` (`Editor.tsx:58`), so a captioned image renders broken after reload. |
+| Image: resize | done | — | A resized image is saved as `<img src="assets/…" alt="…" width="480">` (inside `<figure>` when captioned); an unsized one stays `![alt](assets/…)`. GitHub and Obsidian honour the width. |
+| Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
 | File attachment | partial | M | Uploads to `assets/`, degrades to a plain link on save; `read_asset` labels every non-image as `image/png` (`commands/notes.rs:833`) so non-image assets cannot be served. |
 | Video / audio | partial | M | Blocks exist; same asset rehydration gap; no YouTube/Vimeo player or oEmbed. |
 | Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
@@ -48,8 +48,9 @@ screen but the Markdown save path throws it away.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Bold, italic, strikethrough, code, link | done | — | |
-| Underline | partial | M | Applies on screen; the exporter strips `<u>` on save. |
-| Text colour, highlight | partial | M | Applies on screen; colour spans are stripped on save. Cortex needs a Markdown convention (`==mark==` for highlight is the obvious one; colour may be a non-goal). |
+| Underline | done | — | Saved as `<u>…</u>`; runs of underlined text keep bold / italic inside them (`<u>**a** b</u>`). |
+| Highlight | partial | S | Saved as `==text==` (Obsidian's syntax; rendered as `<mark>` by `cortex publish`). The highlight *colour* is not stored — every highlight reopens as the default yellow. |
+| Text colour | non-goal | — | Applies on screen only; the span is dropped on save. There is no legible Markdown form for a coloured run and inline `<span style>` would fail principle 3, so this stays a deliberate non-goal (see below). |
 | Inline math | done | — | `$E = mc^2$` typed in a paragraph becomes a KaTeX node; click to edit the source. Stored as plain `$…$`. |
 | `Ctrl+B` | note | S | Bound to toggle-sidebar in capture phase (`keymap.ts:49`), so bold is toolbar or `**` only. |
 
@@ -84,7 +85,7 @@ by inferring column types (`data.rs:128`).
 |---|---|---|---|
 | text, number, select, multi-select, status, date, checkbox, url, person | done | — | `schema.rs:26-46`. Select options carry colours. |
 | relation | done | — | Stored as a list of row titles (wiki-link semantics), not stable ids: renaming a related row silently breaks the link (`data.rs:1464`). |
-| rollup | done | — | count, values, sum, avg, min, max, plus percent on the reverse side; supports a `where` filter, which Notion lacks (`data.rs:1480`). Missing: median, range, unique, empty / not-empty counts, checked / unchecked. |
+| rollup | done | — | count, values, sum, avg, min, max, empty, not_empty, percent_checked, plus percent on the reverse side; supports a `where` filter, which Notion lacks (`data.rs:1480`). Missing: median, range, unique. |
 | formula | done | — | Own evaluator (`formula.rs`): arithmetic, comparison, boolean, `days_until`, `days_since`, `days_between`, `today`, `year`, `month`, `round`, `abs`, `min`, `max`, `if`, `coalesce`, `len`, `contains`, `concat`, `lower`, `upper`, `empty`. Missing: `format`, `dateAdd`, `formatDate`, `week`/`day`/`hour`, regex, `slice`, `join`, `map`/`filter` over relations, property names with spaces, any time-of-day. A bad expression silently yields nothing. |
 | Number formats | done | — | percent, progress bar, currency (bare unit prefix, not locale codes), stars, integer, decimal, with min / max / unit (`schema.rs:99`). |
 | Auto-stamped dates (`auto: status == done`) | done, beyond Notion | — | `data.rs:1111`. |
@@ -120,15 +121,15 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Filter operators | partial | M | `== != > >= < <= contains` (`data.rs:282`). Missing: `starts_with`, `ends_with`, `is_empty` (only via `== ''`), `does_not_contain`, date `is_within` / relative ranges. |
-| Compound and / or | partial | S | Left-to-right, no precedence, no parentheses (`data.rs:441`): `a or b and c` silently misgroups. |
-| Nested filter groups | missing | M | |
-| Filter UI | done | — | Clause rows with field / op / value; mixed and/or falls back to read-only raw edit (`ViewToolbar.tsx:120`). |
+| Filter operators | done | — | `== != > >= < <= contains does_not_contain starts_with ends_with is_empty is_not_empty in [a, b] within 7d` (`data.rs` `Op`). `within` takes `d w m y` and a sign for the past. |
+| Compound and / or | done | — | Precedence climber: `and` binds tighter than `or`, parentheses group, `not` prefix (`parse_filter`). |
+| Nested filter groups | done | — | Arbitrary depth in the grammar; the toolbar edits one level of parentheses and defers deeper nesting or `not` to raw edit. |
+| Filter UI | done | — | Clause rows with field / op / value, one parenthesised group per clause slot; nested groups, `not` and unparenthesised mixed and/or fall back to raw edit (`ViewToolbar.tsx`). |
 | Relative dates (`@today+30`, `@monday`, `@month`) and `@me` | done, beyond Notion | — | `data.rs:528`, `:686`. |
 | Multi-key sort with UI | done | — | Empty cells last; selects sort by option order. |
-| Group by in table view; sub-groups | missing | M / L | `group:` is board-only (`ViewToolbar.tsx:212`). |
+| Group by in table view; sub-groups | partial | L | `group:` folds a table into one collapsible section per value in option order, empty last, with a count and an in-group add row that seeds the value (`CortexViewBlock.tsx` `DataTable`). Sub-groups missing. |
 | Search box inside a database | missing | S | Global FTS is not collection-scoped. |
-| Summary row (count, sum, …) | missing | M | Footer shows a row count only. |
+| Summary row (count, sum, …) | done | — | `summary: {amount: sum, done: percent_checked}` in the view spec; count, sum, avg, min, max, percent_checked, empty, not_empty computed by the engine over the visible rows (`data.rs` `summarize`), so `cortex view --summary` and MCP return the same numbers. Picked per column from the footer; nothing is written to a row. Missing: median, range, unique, per-group summaries. |
 
 ## 7. Rows and editing
 
@@ -146,8 +147,8 @@ by inferring column types (`data.rs:128`).
 | Column resize, drag reorder | missing | M | |
 | Add property from the header (incl. relation / rollup / formula config) | done | — | `AddPropertyHeader` (`CortexViewBlock.tsx:171`). |
 | Change property type | partial | S | Nine basic types only; cannot retype into relation / rollup / formula. |
-| Rename property | missing | M | No command, no UI. Must also rewrite every row's frontmatter key. |
-| Delete property | missing | M | Only whole-schema `set_schema` exists and nothing calls it. |
+| Rename property | done | — | `schema::rename_property`: the schema, every row's frontmatter key (one line per file), the collection's views (columns, sort, filter, group, date/chart fields) and the rollups / formulas / auto-dates in any schema that name it. Column header menu, properties panel, `cortex schema rename`, MCP `rename_property`. Views embedded as `cortex-view` fences in other notes are not rewritten. |
+| Delete property | done | — | `schema::delete_property`: schema, every row, every view (a mixed and/or filter is left for the user). Refused while a rollup, formula or auto-date in any schema depends on it — the error names them. Column header menu, properties panel, `cortex schema rm`, MCP `delete_property`. |
 | Convert checklist note ⇄ database | done, beyond Notion | — | `Shell.tsx:419`. |
 
 ## 8. Import and export
@@ -203,11 +204,11 @@ by inferring column types (`data.rs:128`).
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Full-text index | done | — | FTS5 over title and body (`db.rs:42`); tags, type, parent, icon are in `notes` but not in FTS. `icon` / `parent` are computed by the indexer but never persisted (`db.rs:63`). |
-| Query syntax | partial | S | Non-alphanumerics stripped, `*` appended per word (`db.rs:209`): no phrases, `OR`, `NOT`, or field scoping. |
-| Snippets / highlights | missing | S | |
-| Ranking | partial | S | Raw BM25; no title boost or recency. |
-| Search filters (tag, type, date, folder) | missing | M | |
-| Quick switcher | partial | S | Client-side substring over the loaded note list; does not use FTS, so cannot match body text. |
+| Query syntax | done | — | `search.rs`: `"phrases"`, `-word`, `OR`, `tag:` / `type:` / `path:` filters (negatable); every term quoted so punctuation never breaks the FTS5 query. |
+| Snippets / highlights | done | — | `snippet()` on the body with `<mark>` around the match; under each sidebar result, in the quick switcher, in `cortex search` and the MCP `search` tool. |
+| Ranking | partial | S | BM25 with the title weighted 5× over the body; no recency. |
+| Search filters (tag, type, date, folder) | partial | S | `tag:`, `type:`, `path:` (folder as a path substring). No date filter. |
+| Quick switcher | partial | S | Substring over the loaded note list first; falls back to FTS when that finds nothing, so body text reaches the note. |
 | CLI `cortex search` | done | — | Note: every CLI invocation re-indexes the whole vault (`ops.rs:148`). |
 
 ## 13. API and automation
@@ -215,7 +216,7 @@ by inferring column types (`data.rs:128`).
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | CLI | done, beyond Notion | — | 25 subcommands, `--json` everywhere. Full list in `docs/agent-integration.md`. |
-| MCP server | done, beyond Notion | — | 26 tools over stdio (`mcp.rs:208-345`). Absent from MCP but present in the app: delete / rename / move, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
+| MCP server | done, beyond Notion | — | 28 tools over stdio (`mcp.rs`). Absent from MCP but present in the app: delete / rename / move, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
 | Proposals (branch, list, diff, apply, discard) in app and CLI | done, beyond Notion | — | `git.rs:523-628`. |
 | Filesystem watcher | done | — | |
 | HTTP API / webhooks | missing | L | No server crate. |
@@ -253,14 +254,18 @@ by inferring column types (`data.rs:128`).
 ## Notable gaps, ranked
 
 1. **No import path.** Nobody can move in from Notion, CSV, or Evernote. Opening a Markdown folder works but writes files into it.
-2. **Silent formatting loss on save**: underline, colour, highlight, toggles, image width. They look like they work until the note is reopened.
+2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
 3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
-4. **Property rename and delete do not exist.** A mistyped property name is permanent from the app.
+4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
-6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; table view cannot group; no in-database search or summary row.
+6. **No sub-groups in the table view**, and no in-database search. (Filter grammar precedence and operators, table group-by and the summary row have landed.)
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
-9. **Search discards FTS5's power**: no phrases, operators, snippets or filters; the quick switcher ignores FTS.
+9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
 12. **Mobile is a doc, not a target.**
+
+## Deliberate non-goals
+
+- **Text colour.** No Markdown convention exists for a coloured run, and `<span style="color:…">` in a note would fail the degradability principle. The editor still shows the colour while the note is open; it is not saved. Highlight is the supported way to mark text.
