@@ -40,12 +40,14 @@ interface Props {
   fields: string[];
   /** Fields currently shown (the projected columns) — for checkbox state. */
   visibleColumns: string[];
-  /** Whether this view is a board (enables the Group control). */
+  /** Whether this view is a board (a group is required). */
   isBoard: boolean;
+  /** Whether this view is a table (a group is optional — sections, or none). */
+  isTable?: boolean;
   onSpecChange: (nextSpec: string) => void;
 }
 
-export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChange }: Props) {
+export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, onSpecChange }: Props) {
   const [s, setS] = useState<StructuredSpec | null>(null);
 
   useEffect(() => {
@@ -105,8 +107,8 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
     commit({ ...s, columns: next });
   };
 
-  // ── Group (board only) ──
-  const setGroup = (field: string) => { commit({ ...s, group: field }); groupPop.setOpen(false); };
+  // ── Group (board: required; table: optional sections) ──
+  const setGroup = (field: string | null) => { commit({ ...s, group: field }); groupPop.setOpen(false); };
 
   const filterCount = s.filterComplex ? 1 : s.filters.length;
 
@@ -215,8 +217,8 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
         </div>
       )}
 
-      {/* Group (board) */}
-      {isBoard && (
+      {/* Group (board, table) */}
+      {(isBoard || isTable) && (
         <div className={styles.control} ref={groupPop.ref}>
           <button className={`${styles.chip} ${s.group ? styles.chipActive : ""}`}
             onClick={() => groupPop.setOpen((o) => !o)}>
@@ -224,6 +226,11 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, onSpecChang
           </button>
           {groupPop.open && (
             <div className={styles.popover}>
+              {isTable && (
+                <button className={`${styles.optionBtn} ${!s.group ? styles.optionOn : ""}`} onClick={() => setGroup(null)}>
+                  None{!s.group ? " ✓" : ""}
+                </button>
+              )}
               {allFields.map((f) => (
                 <button key={f}
                   className={`${styles.optionBtn} ${s.group === f ? styles.optionOn : ""}`}

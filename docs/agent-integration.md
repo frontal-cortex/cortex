@@ -37,7 +37,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex write <note> < body.md` | replace the body, keep the frontmatter |
 | `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
-| `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n]` | query a database like the app's table |
+| `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty) |
 | `cortex schema [key]` | typed properties for a collection or note type |
 | `cortex status` | changed files, sync counts, recent commits, proposals |
 | `cortex init [DIR]` | create a new vault (bundled starter template, git initialised, docs + settings written) — works offline |
@@ -137,6 +137,14 @@ strings in single quotes. Values may be **relative dates**: `@today`, `@today-7`
 `@sunday`, `@month` (`YYYY-MM`), `@month-1`, `@year`, `@week` (`YYYY-Www`), and
 `@me` (the current member). An empty cell equals `''` and satisfies no ordering
 comparison, so `due <= @today` never sweeps in undated rows.
+
+**Summary row.** `summary: {amount: sum, done: percent_checked}` on a table
+view computes one value per named field over the rows the view shows (after
+filter and limit): `count`, `sum`, `avg`, `min`, `max`, `percent_checked`
+(share of rows ticked, 0–100), `empty`, `not_empty`. The values come back as
+`summary` from `cortex view --summary amount=sum` and MCP `run_view` /
+`query_collection`; the app's footer shows the same numbers. A table with
+`group: status` folds into one section per value, in option order.
 
 **Sorting.** `sort: [due, priority desc]`. Empty cells sort last in either
 direction. A select or status property sorts by its option order, not

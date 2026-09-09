@@ -199,7 +199,7 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex ls [dir] [--type t] [--tag t]     list notes            cortex search <words>
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
-    cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f]
+    cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f] [--summary f=sum]
     cortex schema [key]                      typed properties      cortex status
     cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)

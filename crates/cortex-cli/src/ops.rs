@@ -498,6 +498,7 @@ impl Vault {
         sort: &[String],
         columns: Option<&[String]>,
         limit: Option<usize>,
+        summary: &[(String, String)],
     ) -> Result<data::ResolvedTable> {
         let mut spec = serde_json::Map::new();
         spec.insert("source".into(), format!("collections/{}", collection.trim_end_matches('/')).into());
@@ -505,6 +506,10 @@ impl Vault {
         if !sort.is_empty() { spec.insert("sort".into(), sort.into()); }
         if let Some(c) = columns { spec.insert("columns".into(), c.into()); }
         if let Some(l) = limit { spec.insert("limit".into(), l.into()); }
+        if !summary.is_empty() {
+            let m: serde_json::Map<String, serde_json::Value> = summary.iter().map(|(f, func)| (f.clone(), func.clone().into())).collect();
+            spec.insert("summary".into(), serde_json::Value::Object(m));
+        }
         let yaml = serde_yaml::to_string(&serde_json::Value::Object(spec))?;
         // The same table the app shows: schema attached, rollups and formulas computed.
         Ok(data::resolve_view(&self.root, &yaml)?)

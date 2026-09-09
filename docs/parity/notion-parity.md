@@ -84,7 +84,7 @@ by inferring column types (`data.rs:128`).
 |---|---|---|---|
 | text, number, select, multi-select, status, date, checkbox, url, person | done | — | `schema.rs:26-46`. Select options carry colours. |
 | relation | done | — | Stored as a list of row titles (wiki-link semantics), not stable ids: renaming a related row silently breaks the link (`data.rs:1464`). |
-| rollup | done | — | count, values, sum, avg, min, max, plus percent on the reverse side; supports a `where` filter, which Notion lacks (`data.rs:1480`). Missing: median, range, unique, empty / not-empty counts, checked / unchecked. |
+| rollup | done | — | count, values, sum, avg, min, max, empty, not_empty, percent_checked, plus percent on the reverse side; supports a `where` filter, which Notion lacks (`data.rs:1480`). Missing: median, range, unique. |
 | formula | done | — | Own evaluator (`formula.rs`): arithmetic, comparison, boolean, `days_until`, `days_since`, `days_between`, `today`, `year`, `month`, `round`, `abs`, `min`, `max`, `if`, `coalesce`, `len`, `contains`, `concat`, `lower`, `upper`, `empty`. Missing: `format`, `dateAdd`, `formatDate`, `week`/`day`/`hour`, regex, `slice`, `join`, `map`/`filter` over relations, property names with spaces, any time-of-day. A bad expression silently yields nothing. |
 | Number formats | done | — | percent, progress bar, currency (bare unit prefix, not locale codes), stars, integer, decimal, with min / max / unit (`schema.rs:99`). |
 | Auto-stamped dates (`auto: status == done`) | done, beyond Notion | — | `data.rs:1111`. |
@@ -126,9 +126,9 @@ by inferring column types (`data.rs:128`).
 | Filter UI | done | — | Clause rows with field / op / value; mixed and/or falls back to read-only raw edit (`ViewToolbar.tsx:120`). |
 | Relative dates (`@today+30`, `@monday`, `@month`) and `@me` | done, beyond Notion | — | `data.rs:528`, `:686`. |
 | Multi-key sort with UI | done | — | Empty cells last; selects sort by option order. |
-| Group by in table view; sub-groups | missing | M / L | `group:` is board-only (`ViewToolbar.tsx:212`). |
+| Group by in table view; sub-groups | partial | L | `group:` folds a table into one collapsible section per value in option order, empty last, with a count and an in-group add row that seeds the value (`CortexViewBlock.tsx` `DataTable`). Sub-groups missing. |
 | Search box inside a database | missing | S | Global FTS is not collection-scoped. |
-| Summary row (count, sum, …) | missing | M | Footer shows a row count only. |
+| Summary row (count, sum, …) | done | — | `summary: {amount: sum, done: percent_checked}` in the view spec; count, sum, avg, min, max, percent_checked, empty, not_empty computed by the engine over the visible rows (`data.rs` `summarize`), so `cortex view --summary` and MCP return the same numbers. Picked per column from the footer; nothing is written to a row. Missing: median, range, unique, per-group summaries. |
 
 ## 7. Rows and editing
 
@@ -257,7 +257,7 @@ by inferring column types (`data.rs:128`).
 3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
 4. **Property rename and delete do not exist.** A mistyped property name is permanent from the app.
 5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
-6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; table view cannot group; no in-database search or summary row.
+6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; no in-database search; table groups have no sub-groups.
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
 9. **Search discards FTS5's power**: no phrases, operators, snippets or filters; the quick switcher ignores FTS.

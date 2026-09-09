@@ -582,6 +582,12 @@ pub struct ViewSpec {
     pub date: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Table views: a per-column summary row, `summary: {amount: sum, done:
+    /// percent_checked}`. Functions: count, sum, avg, min, max,
+    /// percent_checked, empty, not_empty. Computed here over the rows the view
+    /// shows, never written anywhere.
+    #[serde(default)]
+    pub summary: BTreeMap<String, String>,
     /// Every other key: the options a view type reads — charts `x`, `y`,
     /// `agg`, `chartType`, `bucket`, `series`; trackers `log`, `done`,
     /// `range` and their field mappings. One map, so a new view type or
@@ -653,6 +659,10 @@ pub struct ResolvedTable {
     /// toolbar's hidden-column, sort and filter pickers.
     pub all_columns: Vec<String>,
     pub rows: Vec<ResolvedRow>,
+    /// The spec's `summary:` functions evaluated over `rows` — field → value.
+    /// Absent when the spec asks for none.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub summary: BTreeMap<String, serde_json::Value>,
 }
 
 /// Column type label for a schema-only property (one with no row values yet).
@@ -699,6 +709,7 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
         option_order: option_order(schema.as_ref()),
     };
     let table = query.apply(&table);
+    let summary = summarize_table(&table, &spec.summary).into_iter().map(|(k, v)| (k, v.to_json())).collect();
     let all_columns = if all_columns.is_empty() { table.columns.iter().map(|c| c.key.clone()).collect() } else {
         // Computed properties are fields too, for the toolbar's pickers.
         let mut all = all_columns;
@@ -723,7 +734,27 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
         all_columns,
         columns,
         rows: table.rows.into_iter().map(|r| ResolvedRow { id: r.id, cells: r.cells.into_iter().map(|(k, v)| (k, v.to_json())).collect() }).collect(),
+        summary,
     })
+}
+
+/// The functions a view's `summary:` (and a schema's rollup) may name.
+pub const SUMMARY_FUNCTIONS: &[&str] = &["count", "sum", "avg", "min", "max", "percent_checked", "empty", "not_empty"];
+
+/// One summary value over a set of rows: the same arithmetic a rollup uses, so
+/// a table's footer, `cortex view --summary` and MCP `run_view` agree. An
+/// unknown function yields `Null` rather than an error, like a rollup.
+pub fn summarize(rows: &[Row], field: &str, func: &str) -> CellValue {
+    let refs: Vec<&Row> = rows.iter().collect();
+    rollup_value(&refs, field, func.trim())
+}
+
+/// Evaluate a spec's `summary:` map over a table's rows, field → value.
+pub fn summarize_table(table: &Table, summary: &BTreeMap<String, String>) -> BTreeMap<String, CellValue> {
+    summary.iter()
+        .filter(|(_, func)| !func.trim().is_empty())
+        .map(|(field, func)| (field.clone(), summarize(&table.rows, field, func)))
+        .collect()
 }
 
 /// All field names a source offers (the `$body` pseudo-column excluded), before
@@ -801,6 +832,9 @@ pub struct StructuredSpec {
     pub date: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Table summary row, field → function (see `ViewSpec::summary`).
+    #[serde(default)]
+    pub summary: BTreeMap<String, String>,
     /// View-type options (`x`, `chartType`, `log`, `range`, …) exactly as
     /// written; the toolbar edits none of them and carries them all through.
     #[serde(flatten, default)]
@@ -890,6 +924,7 @@ pub fn parse_view_spec(spec_yaml: &str) -> Result<StructuredSpec> {
         group: vs.group,
         date: vs.date,
         limit: vs.limit,
+        summary: vs.summary,
         options,
         ..Default::default()
     };
@@ -944,6 +979,14 @@ pub fn serialize_view_spec(s: &StructuredSpec) -> String {
     }
     if let Some(l) = s.limit {
         out.push_str(&format!("limit: {l}\n"));
+    }
+    // Flow style keeps the summary on one line, like `sort` and `columns`.
+    let summary: Vec<String> = s.summary.iter()
+        .filter(|(_, f)| !f.trim().is_empty())
+        .map(|(k, f)| format!("{k}: {}", f.trim()))
+        .collect();
+    if !summary.is_empty() {
+        out.push_str(&format!("summary: {{{}}}\n", summary.join(", ")));
     }
     // Options in a fixed order: the well-known ones first, the rest alphabetically.
     let known = ["x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range"];
@@ -1479,9 +1522,35 @@ pub fn fill_relation_options(root: &Path, schema: &mut crate::schema::TypeSchema
     }
 }
 
+/// An empty cell: missing, null, blank text, or an empty list.
+fn cell_is_empty(v: Option<&CellValue>) -> bool {
+    match v {
+        None | Some(CellValue::Null) => true,
+        Some(CellValue::Text(t)) | Some(CellValue::Date(t)) => t.trim().is_empty(),
+        Some(CellValue::List(items)) => items.is_empty(),
+        _ => false,
+    }
+}
+
+fn cell_is_checked(v: Option<&CellValue>) -> bool {
+    match v {
+        Some(CellValue::Bool(b)) => *b,
+        Some(CellValue::Text(t)) => t.eq_ignore_ascii_case("true"),
+        _ => false,
+    }
+}
+
 fn rollup_value(rows: &[&Row], prop: &str, func: &str) -> CellValue {
     match func {
         "count" => CellValue::Num(rows.len() as f64),
+        "empty" => CellValue::Num(rows.iter().filter(|r| cell_is_empty(r.cells.get(prop))).count() as f64),
+        "not_empty" => CellValue::Num(rows.iter().filter(|r| !cell_is_empty(r.cells.get(prop))).count() as f64),
+        // Share of rows ticked, 0–100 like a rollup `percent`; unset counts as unticked.
+        "percent_checked" => {
+            if rows.is_empty() { return CellValue::Null; }
+            let checked = rows.iter().filter(|r| cell_is_checked(r.cells.get(prop))).count();
+            CellValue::Num((100.0 * checked as f64 / rows.len() as f64).round())
+        }
         "values" => CellValue::List(
             rows.iter().filter_map(|r| r.cells.get(prop).map(CellValue::as_text)).filter(|s| !s.is_empty()).collect(),
         ),
@@ -2272,6 +2341,66 @@ mod tests {
         assert_eq!(row.cells.get("task_count").unwrap().as_num(), Some(2.0));
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn summary_row_is_computed_over_the_visible_rows() {
+        let root = scratch("summary");
+        write(&root.join("collections/expenses/a.md"), "---\ntitle: Rent\namount: 1200\ndone: true\ncategory: home\n---\n");
+        write(&root.join("collections/expenses/b.md"), "---\ntitle: Food\namount: 300\ndone: false\ncategory: home\n---\n");
+        write(&root.join("collections/expenses/c.md"), "---\ntitle: Gym\namount: 40\ndone: true\n---\n");
+        write(&root.join("collections/expenses/d.md"), "---\ntitle: Pending\ndone: false\ncategory: ''\n---\n");
+
+        let spec = "source: collections/expenses\ntype: table\nsummary: {amount: sum, done: percent_checked, category: empty, title: count, unknown: median}\n";
+        let t = resolve_view(&root, spec).unwrap();
+        let get = |k: &str| t.summary.get(k).cloned().unwrap_or(serde_json::Value::Null);
+        assert_eq!(get("amount"), serde_json::json!(1540.0));
+        assert_eq!(get("done"), serde_json::json!(50.0)); // 2 of 4
+        assert_eq!(get("category"), serde_json::json!(2.0)); // c has none, d has ''
+        assert_eq!(get("title"), serde_json::json!(4.0));
+        assert_eq!(get("unknown"), serde_json::Value::Null);
+        // Nothing was written to any row.
+        assert!(!std::fs::read_to_string(root.join("collections/expenses/a.md")).unwrap().contains("summary"));
+
+        // The filter runs first: the summary covers only the rows shown.
+        let filtered = "source: collections/expenses\nfilter: category == 'home'\nsummary: {amount: avg, amount_max: max, done: not_empty}\n";
+        let t = resolve_view(&root, filtered).unwrap();
+        assert_eq!(t.rows.len(), 2);
+        assert_eq!(t.summary.get("amount"), Some(&serde_json::json!(750.0)));
+        assert_eq!(t.summary.get("done"), Some(&serde_json::json!(2.0)));
+        assert_eq!(t.summary.get("amount_max"), Some(&serde_json::Value::Null)); // no such field
+
+        // No summary asked for → none in the output.
+        let plain = resolve_view(&root, "source: collections/expenses\n").unwrap();
+        assert!(plain.summary.is_empty());
+        assert!(!serde_json::to_string(&plain).unwrap().contains("\"summary\""));
+
+        // Min/max of a date column and an empty table.
+        let empty = Table { name: "x".into(), columns: vec![], rows: vec![] };
+        let mut m = BTreeMap::new();
+        m.insert("amount".to_string(), "sum".to_string());
+        m.insert("done".to_string(), "percent_checked".to_string());
+        let out = summarize_table(&empty, &m);
+        assert_eq!(out.get("amount"), Some(&CellValue::Null));
+        assert_eq!(out.get("done"), Some(&CellValue::Null));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn summary_survives_the_structured_round_trip() {
+        let spec = "source: collections/expenses\ntype: table\nsummary:\n  amount: sum\n  done: percent_checked\nlimit: 10\n";
+        let s = parse_view_spec(spec).unwrap();
+        assert_eq!(s.summary.get("amount").map(String::as_str), Some("sum"));
+        assert_eq!(s.limit, Some(10));
+        assert!(!s.options.contains_key("summary"));
+        let yaml = serialize_view_spec(&s);
+        assert!(yaml.contains("summary: {amount: sum, done: percent_checked}\n"), "{yaml}");
+        let again = parse_view_spec(&yaml).unwrap();
+        assert_eq!(again.summary, s.summary);
+        // The engine reads the flow form back as the same map.
+        let vs: ViewSpec = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(vs.summary, s.summary);
     }
 
     #[test]
