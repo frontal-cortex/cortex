@@ -239,11 +239,7 @@ by inferring column types (`data.rs:128`).
 | Desktop builds | partial | S | The release matrix bundles Linux (deb / rpm / AppImage), macOS (aarch64 + x86_64) and Windows (msi / nsis) on every `v*` tag. No Apple notarization or Windows code-signing certificate yet. Tiling-WM decorations handled. |
 | CI / release workflow | done | — | `.github/workflows/ci.yml` (tests, tsc, vite build, clippy on every PR / push to main) and `release.yml` (tauri-action matrix → draft GitHub release with signed bundles + `latest.json`). |
 | Auto-update | done | — | `tauri-plugin-updater` wired (desktop only); Check for updates in the palette and Settings → Updates, install on confirm then relaunch. The committed `pubkey` is a placeholder: the app says "no update channel" until a maintainer generates the keypair per `docs/development.md`. |
-<<<<<<< HEAD
-| Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`. The git transport is ready (`remote::Git2Remote`, selected on iOS/Android). See `obsidian-parity.md` §14 and the mobile backlog rows. |
-=======
-| Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, git shells out. The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
->>>>>>> origin/main
+| Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, the git transport is ready (`remote::Git2Remote`, selected on iOS/Android). The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
 | Responsive layout | missing | M | Three `@media` rules, all in overlays; sidebar fixed at 260px; window `minWidth: 800`. |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 

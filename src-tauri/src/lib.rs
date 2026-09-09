@@ -5,6 +5,7 @@ mod theme;
 mod watcher;
 
 use commands::vault::{DbState, VaultState};
+use tauri::Manager;
 
 /// Tiling compositors own the window frame; GTK's client-side title bar with
 /// min/max/close only gets in the way there. Desktops that need a close button
