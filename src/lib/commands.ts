@@ -13,6 +13,8 @@ export interface VaultChanged {
   notes: string[];
   /** Notes that no longer exist on disk. */
   removed: string[];
+  /** Notes whose `.comments.yaml` sidecar changed on disk. */
+  comments: string[];
   dirs: boolean;
   config: boolean;
   git: boolean;
@@ -46,6 +48,33 @@ export interface Member {
 export interface CurrentUser {
   name: string;
   email: string;
+}
+
+// ── Comments (`<note>.comments.yaml`, see cortex-core comments.rs) ───────────
+
+/** Where a thread points: the nth exact occurrence of `quote` in the body. */
+export interface CommentAnchor {
+  quote: string;
+  /** 0 = the first occurrence. */
+  occurrence: number;
+}
+
+export interface CommentReply {
+  author: string;
+  created: string;
+  text: string;
+}
+
+export interface CommentThread {
+  id: string;
+  /** Absent for a comment about the whole note. */
+  anchor?: CommentAnchor | null;
+  author: string;
+  /** ISO-8601 UTC. */
+  created: string;
+  text: string;
+  resolved?: boolean;
+  replies: CommentReply[];
 }
 
 export interface SelectOption {
@@ -317,6 +346,16 @@ export interface TagNode {
  *  the matched words wrapped in `<mark>…</mark>` (empty for filter-only queries). */
 export interface SearchHit extends NoteEntry {
   snippet: string;
+}
+
+/** The sidecar omits defaults (`resolved: false`, `replies: []`, `occurrence: 0`); fill them in. */
+function normalizeThreads(threads: CommentThread[]): CommentThread[] {
+  return threads.map((t) => ({
+    ...t,
+    resolved: t.resolved ?? false,
+    replies: t.replies ?? [],
+    anchor: t.anchor ? { quote: t.anchor.quote, occurrence: t.anchor.occurrence ?? 0 } : null,
+  }));
 }
 
 // Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
@@ -733,6 +772,22 @@ export const commands = {
 
   currentUser: () =>
     invoke<CurrentUser>("current_user"),
+
+  // Comments live beside the note, never in it; every write returns the full list.
+  listComments: (path: string) =>
+    invoke<CommentThread[]>("list_comments", { path }).then(normalizeThreads),
+
+  addComment: (path: string, text: string, anchor: CommentAnchor | null) =>
+    invoke<CommentThread[]>("add_comment", { path, text, anchor }).then(normalizeThreads),
+
+  replyComment: (path: string, id: string, text: string) =>
+    invoke<CommentThread[]>("reply_comment", { path, id, text }).then(normalizeThreads),
+
+  resolveComment: (path: string, id: string, resolved: boolean) =>
+    invoke<CommentThread[]>("resolve_comment", { path, id, resolved }).then(normalizeThreads),
+
+  deleteComment: (path: string, id: string) =>
+    invoke<CommentThread[]>("delete_comment", { path, id }).then(normalizeThreads),
 
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),

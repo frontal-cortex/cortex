@@ -180,6 +180,7 @@ follows every change you make on disk.
 ## Layout
 
 - `notes/` — all notes, in whatever folders the owner likes. `notes/journal/` holds daily notes.
+  `notes/foo.comments.yaml` beside `notes/foo.md` is its comment threads — discussion about a note, never in it.
 - `collections/<name>/` — a database: one note per row, properties in frontmatter, `_index.md` is the table.
 - `templates/` — note templates (`{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}`).
 - `.cortex/` — committed config: settings, property schemas, members. `.brain/` is a cache; ignore it.
@@ -193,6 +194,7 @@ follows every change you make on disk.
 - Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by path, then title, then filename stem.
   Rename or move with `cortex mv` (or `set title=`), never by hand: every inbound link is rewritten to follow.
 - Never write derived data (rollups, counts) into notes; the app computes it.
+- To question or discuss a passage without changing it, comment (`cortex comment <note> --quote "…" "text"`); the thread lands in the note's sidecar, not its body.
 
 ## Tools
 
@@ -203,6 +205,7 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f] [--summary f=sum]
+    cortex comments <note> [--all]           comment threads       cortex comment <note> [--quote "…"] "text" | --reply ID "text" | --resolve ID
     cortex mv <note> <path-or-dir/> [--title t]   rename/move; inbound [[links]] are rewritten to follow
     cortex schema [key]                      typed properties      cortex status
     cortex schema rename <key> <old> <new>   rename a property everywhere (rows, views, rollups, formulas)

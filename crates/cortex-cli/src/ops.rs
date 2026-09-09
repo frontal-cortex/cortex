@@ -3,6 +3,7 @@
 //! and goes through cortex-core, so the semantics are the app's own.
 
 use cortex_core::agents::{self, AgentCli};
+use cortex_core::comments::{self, Anchor, Thread};
 use cortex_core::data::{self};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
@@ -687,6 +688,53 @@ impl Vault {
     /// Building or pushing a site is deliberately not an op here: publishing
     /// is the person's decision, made in the CLI or the app, never by an
     /// agent through MCP.
+    // ── Comments ────────────────────────────────────────────────────────────
+    // Threads live in `notes/foo.comments.yaml` beside the note; the note
+    // itself is never touched. Each write commits when auto_commit is on, like
+    // any other change made from the terminal.
+
+    /// Every comment thread on a note, plus the note's body so callers can
+    /// tell which anchors still point somewhere.
+    pub fn comments(&self, target: &str) -> Result<(Note, Vec<Thread>)> {
+        let note = self.read(target)?;
+        let threads = comments::load(&self.root, &note.path)?;
+        Ok((note, threads))
+    }
+
+    /// Open a thread; with `quote`, anchored to that passage (which must be in
+    /// the note, so the anchor never points nowhere from the start).
+    pub fn comment(&self, target: &str, text: &str, quote: Option<&str>, occurrence: usize) -> Result<Thread> {
+        let note = self.read(target)?;
+        let anchor = match quote.map(str::trim).filter(|q| !q.is_empty()) {
+            Some(q) => {
+                let anchor = Anchor { quote: q.to_string(), occurrence };
+                if comments::locate(&note.body, &anchor).is_none() {
+                    return Err(format!("'{q}' (occurrence {occurrence}) is not in {}", note.path).into());
+                }
+                Some(anchor)
+            }
+            None => None,
+        };
+        let thread = comments::add(&self.root, &note.path, anchor, text, None)?;
+        rename::commit_if_auto(&self.root, &format!("Comment on {}", note::infer_title(&note)))?;
+        Ok(thread)
+    }
+
+    pub fn reply_comment(&self, target: &str, id: &str, text: &str) -> Result<Thread> {
+        let note = self.read(target)?;
+        let thread = comments::reply(&self.root, &note.path, id, text, None)?;
+        rename::commit_if_auto(&self.root, &format!("Reply on {}", note::infer_title(&note)))?;
+        Ok(thread)
+    }
+
+    pub fn resolve_comment(&self, target: &str, id: &str, resolved: bool) -> Result<Thread> {
+        let note = self.read(target)?;
+        let thread = comments::resolve(&self.root, &note.path, id, resolved)?;
+        let verb = if resolved { "Resolve" } else { "Reopen" };
+        rename::commit_if_auto(&self.root, &format!("{verb} comment on {}", note::infer_title(&note)))?;
+        Ok(thread)
+    }
+
     pub fn publish_preview(&self) -> Result<Vec<cortex_core::publish::PublishEntry>> {
         Ok(cortex_core::publish::preview(&self.root)?)
     }

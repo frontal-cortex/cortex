@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, SearchHit, commands } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, CommentIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -39,6 +39,10 @@ interface Props {
   /** Absent when no note is open. */
   onFindInNote?: () => void;
   onToggleOutline: () => void;
+  /** Absent when no note is open. */
+  onToggleComments?: () => void;
+  /** Absent when no note is open. */
+  onComment?: () => void;
   onPublish: () => void;
   onImport: () => void;
   /** Absent when no note is open. */
@@ -54,7 +58,7 @@ export function QuickSwitcher({
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
-  onPublish, onImport, onTogglePublic, isPublic, hasRemote,
+  onToggleComments, onComment, onPublish, onImport, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -214,6 +218,20 @@ export function QuickSwitcher({
         icon: <TextLinesIcon size={14} />,
         run: () => { onToggleOutline(); onClose(); },
       },
+      ...(onToggleComments ? [{
+        id: "toggle-comments",
+        label: "Toggle comments",
+        description: `${shortcutFor("toggle-comments")} · the note's comment threads beside the page (stored in <note>.comments.yaml)`,
+        icon: <CommentIcon size={14} />,
+        run: () => { onToggleComments(); onClose(); },
+      }] : []),
+      ...(onComment ? [{
+        id: "comment",
+        label: "Comment on selection",
+        description: `${shortcutFor("comment")} · start a thread on the selected text, or on the whole note`,
+        icon: <CommentIcon size={14} />,
+        run: () => { onClose(); onComment(); },
+      }] : []),
       {
         id: "toggle-terminal",
         label: "Toggle terminal",
@@ -258,8 +276,8 @@ export function QuickSwitcher({
     return [...base, ...tplActions, ...more];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
-      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
-      onPublish, onTogglePublic, isPublic, onClose]);
+      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
+      onToggleComments, onComment, onPublish, onTogglePublic, isPublic, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>

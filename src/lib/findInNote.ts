@@ -35,11 +35,12 @@ const findKey = new PluginKey<PluginState>("cortexFind");
 
 const EMPTY: PluginState = { query: "", matches: [], active: 0, decorations: DecorationSet.empty };
 
-/** Case-insensitive search over every text block. Matches never cross a
- *  block boundary. Inline leaf nodes that aren't text (mentions, hard
- *  breaks) count as one opaque character so positions stay exact. */
-export function findMatches(doc: PMNode, query: string): FindMatch[] {
-  const q = query.toLowerCase();
+/** Search over every text block — case-insensitive, or `exact` for comment
+ *  anchors. Matches never cross a block boundary. Inline leaf nodes that
+ *  aren't text (mentions, hard breaks) count as one opaque character so
+ *  positions stay exact. */
+export function findMatches(doc: PMNode, query: string, exact = false): FindMatch[] {
+  const q = exact ? query : query.toLowerCase();
   if (!q) return [];
   const out: FindMatch[] = [];
   doc.descendants((node, pos) => {
@@ -59,7 +60,7 @@ export function findMatches(doc: PMNode, query: string): FindMatch[] {
     });
     // Lower-casing can change the length of some scripts; fall back to an
     // exact search in that case rather than misplacing highlights.
-    const hay = text.toLowerCase();
+    const hay = exact ? text : text.toLowerCase();
     const needle = hay.length === text.length ? q : query;
     const haystack = hay.length === text.length ? hay : text;
     let i = haystack.indexOf(needle);
