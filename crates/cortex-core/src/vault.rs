@@ -189,7 +189,8 @@ follows every change you make on disk.
 - Frontmatter keys are sorted alphabetically; `created` is `YYYY-MM-DD`; `tags` is a list.
 - The app shows `title` as the page heading and `created` under it — don't repeat either as an H1 or a first line in the body.
   Prefer the tools below over editing YAML by hand — they keep files canonical so diffs stay clean.
-- Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by title, then by filename.
+- Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by path, then title, then filename stem.
+  Rename or move with `cortex mv` (or `set title=`), never by hand: every inbound link is rewritten to follow.
 - Never write derived data (rollups, counts) into notes; the app computes it.
 
 ## Tools
@@ -200,6 +201,7 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f]
+    cortex mv <note> <path-or-dir/> [--title t]   rename/move; inbound [[links]] are rewritten to follow
     cortex schema [key]                      typed properties      cortex status
     cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)
@@ -338,9 +340,11 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
 }
 
 /// Resolve a reference the way the app resolves a `[[wiki link]]`: exact
-/// path, then exact title (case-insensitive), then a filename-stem match.
-/// `target` may be any written form — `Note`, `Note|alias`, `Note#Section`,
-/// `[[Note#Section|alias]]` — only the note part is matched.
+/// path, then exact title (case-insensitive), then exact filename stem
+/// (case-insensitive). `target` may be any written form — `Note`,
+/// `Note|alias`, `Note#Section`, `[[Note#Section|alias]]` — only the note
+/// part is matched. This is the one resolver: the app's click handler, the
+/// CLI, the MCP server, embeds and the publisher all go through it.
 pub fn resolve<'a>(notes: &'a [NoteEntry], target: &str) -> Option<&'a NoteEntry> {
     let target = crate::note::parse_wiki_link(target).target;
     if target.is_empty() {
@@ -352,15 +356,12 @@ pub fn resolve<'a>(notes: &'a [NoteEntry], target: &str) -> Option<&'a NoteEntry
         .iter()
         .find(|n| n.path == target || n.path == with_ext)
         .or_else(|| notes.iter().find(|n| n.title.to_lowercase() == lower))
-        .or_else(|| {
-            notes.iter().find(|n| {
-                Path::new(&n.path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_lowercase().contains(&lower))
-                    .unwrap_or(false)
-            })
-        })
+        .or_else(|| notes.iter().find(|n| stem(&n.path).to_lowercase() == lower))
+}
+
+/// The filename without directory or extension: `notes/a/plan.md` → `plan`.
+pub fn stem(path: &str) -> &str {
+    Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("")
 }
 
 #[cfg(test)]
@@ -385,5 +386,11 @@ mod tests {
         assert_eq!(path("notes/plan.md"), plan);
         assert_eq!(path("#Goals"), None);
         assert_eq!(path("Nope"), None);
+        // The stem step is an exact match: a fragment never lands on a longer filename.
+        assert_eq!(path("rapid-notes"), Some("notes/rapid-notes.md"));
+        assert_eq!(path("Rapid-Notes"), Some("notes/rapid-notes.md"));
+        assert_eq!(path("rapid"), Some("notes/rapid-notes.md")); // by title
+        assert_eq!(path("notes"), None);
+        assert_eq!(path("api"), None);
     }
 }

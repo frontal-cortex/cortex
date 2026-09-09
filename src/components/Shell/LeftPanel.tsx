@@ -170,7 +170,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     }
   }, [onRefresh, onSelect]);
 
-  // Rename the file (and set its title to match, so the displayed name updates).
+  // Rename the file and set its title to match; inbound links follow (one
+  // core call, one commit when auto-commit is on).
   const handleRenameFile = useCallback(async (path: string) => {
     const stem = path.split("/").pop()!.replace(/\.md$/, "");
     const current = notes.find((n) => n.path === path)?.title || stem.replace(/-/g, " ");
@@ -180,9 +181,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     const newPath = dir ? `${dir}/${slug}.md` : `${slug}.md`;
     try {
-      if (newPath !== path) await commands.renameNote(path, newPath);
-      const full = await commands.readNote(newPath);
-      await commands.writeNote(newPath, { ...full, frontmatter: { ...full.frontmatter, title: input } });
+      await commands.renameNote(path, newPath, input);
       onRefresh();
       if (selectedPath === path) onSelect(newPath);
     } catch (e) { window.alert(String(e)); }

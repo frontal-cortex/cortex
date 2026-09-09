@@ -465,8 +465,9 @@ export function Shell({
   }, [restore, refresh]);
 
   // Follow a wiki link in any written form: `Note`, `Note|alias`, `Note#Section`,
-  // `![[Note#Section]]`. Only the target picks the note (same order as
-  // cortex-core `vault::resolve`); a section scrolls to that heading once the
+  // `![[Note#Section]]`. The note is picked by cortex-core `vault::resolve`
+  // (path, then title, then exact filename stem) — the same resolver the CLI,
+  // embeds and the publisher use; a section scrolls to that heading once the
   // note is open. `[[#Section]]` stays in the current note.
   const handleNavigate = useCallback((raw: string) => {
     const link = parseWikiLink(raw);
@@ -474,20 +475,18 @@ export function Shell({
       if (link.section) editorRef.current?.scrollToHeading(link.section);
       return;
     }
-    const lower = link.target.toLowerCase();
-    const found =
-      notes.find((n) => n.path === link.target || n.path === `${link.target}.md`) ??
-      notes.find((n) => (n.title || "").toLowerCase() === lower) ??
-      notes.find((n) => n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(lower));
-    if (!found) return;
-    if (found.path === selectedPathRefForFocus.current) {
+    void (async () => {
+      const found = await commands.resolveNote(link.target).catch(() => null);
+      if (!found) return;
+      if (found.path === selectedPathRefForFocus.current) {
+        openNote(found.path);
+        if (link.section) editorRef.current?.scrollToHeading(link.section);
+        return;
+      }
+      pendingSection.current = link.section ?? null;
       openNote(found.path);
-      if (link.section) editorRef.current?.scrollToHeading(link.section);
-      return;
-    }
-    pendingSection.current = link.section ?? null;
-    openNote(found.path);
-  }, [notes, openNote]);
+    })();
+  }, [openNote]);
 
   actionsRef.current = {
     "quick-switcher":  () => setSwitcher("notes"),

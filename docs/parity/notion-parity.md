@@ -215,7 +215,7 @@ by inferring column types (`data.rs:128`).
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | CLI | done, beyond Notion | — | 25 subcommands, `--json` everywhere. Full list in `docs/agent-integration.md`. |
-| MCP server | done, beyond Notion | — | 26 tools over stdio (`mcp.rs:208-345`). Absent from MCP but present in the app: delete / rename / move, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
+| MCP server | done, beyond Notion | — | 26 tools over stdio (`mcp.rs:208-345`). `move_note` renames / moves with link rewriting. Absent from MCP but present in the app: delete, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
 | Proposals (branch, list, diff, apply, discard) in app and CLI | done, beyond Notion | — | `git.rs:523-628`. |
 | Filesystem watcher | done | — | |
 | HTTP API / webhooks | missing | L | No server crate. |

@@ -19,8 +19,8 @@ at the end so they are not mistaken for gaps.
 | Aliases `[[note\|alias]]` | done | — | One parser, `note::parse_wiki_link`, feeds the indexer, `vault::resolve`, `resolve_ref`, publish, the CLI and the editor. The decoration shows only the alias (syntax reappears while the cursor is in the link); backlinks and the graph match on the target alone. |
 | Heading links `[[note#heading]]` | done | — | Same parser; a click opens the note and scrolls to the heading. Embeds still slice the section. |
 | Block references `^id` | missing | L | No block-id parsing or generation anywhere. |
-| Link resolution rules | partial | S | `resolve_ref` now goes through core `vault::resolve`; the app's click handler (`Shell.tsx handleNavigate`) is a TS mirror of the same order (path, title, stem). The stem step is still a *substring* match, so `[[api]]` can land on `rapid-notes.md`. Duplicate titles resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
-| Automatic link update on rename / move | missing | M | `rename_note` and `move_note` (`commands/notes.rs:323`, `:410`) rename the file and reindex. Links resolve by title, so a *title* change orphans every inbound `[[Title]]`. |
+| Link resolution rules | done | — | One resolver, core `vault::resolve` (path, title, exact stem — all case-insensitive), called by `resolve_ref`, the app's click handler (`resolve_note`), the CLI, MCP and the publisher. Duplicate titles still resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
+| Automatic link update on rename / move | done | — | `rename::rename_note` in core: sidebar rename / move, editor title edits, `cortex mv`, `cortex set title=` and the MCP `move_note` tool all rewrite inbound `[[old]]`, `[[old\|alias]]`, `[[old#h]]`, `![[old]]` via the `links` table; one commit per rename with `auto_commit`. Ambiguous (shared) titles are left alone. |
 | Unlinked mentions | missing | M | No code. |
 | Backlinks panel | partial | S | Flat list of titles under the note (`BacklinksPanel.tsx`); `get_backlinks` (`db.rs:98`) returns no context snippet. Hidden when empty. |
 | Outgoing links panel | missing | S | Data exists (`db.rs:157`, `cortex links`); no UI. |
@@ -79,7 +79,7 @@ at the end so they are not mistaken for gaps.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | File tree, nesting, keyboard nav | done | — | Flat row model with roving tabindex, `j/k`, `Enter`, `n`, `/` (`treeRows.ts`). |
-| Drag-and-drop move, rename, context menu | done | — | Rename, Duplicate, Turn into collection, Favorite, Reveal, Export HTML, Copy path, Delete (`FileTree.tsx:485`). Rename does not update inbound links (§1). |
+| Drag-and-drop move, rename, context menu | done | — | Rename, Duplicate, Turn into collection, Favorite, Reveal, Export HTML, Copy path, Delete (`FileTree.tsx:485`). Rename and drop rewrite inbound links (§1). |
 | Folder notes | missing | M | No `folder/folder.md` convention for plain folders (collections have `_index.md`, which is the database page). |
 | Explorer sort options | missing | S | Hard-coded A→Z (`fileTree.ts:152`). |
 | Favourites | done | — | `.cortex/favorites.yaml`; no nested bookmark folders or bookmarked searches. |
@@ -138,7 +138,7 @@ at the end so they are not mistaken for gaps.
 |---|---|---|---|
 | JS plugin API / community plugins | missing, by design | L | `marketplace.rs:6`: "A pack is data, never code." |
 | Template and database packs | done | — | See §5. |
-| `cortex` CLI | done | — | `ls show new set write links backlinks search collections view schema status settings agents propose publish packs tracker track`, all with `--json`. |
+| `cortex` CLI | done | — | `ls show new set write mv links backlinks search collections view schema status settings agents propose publish packs tracker track`, all with `--json`. |
 | MCP server | done | — | 26 tools (`mcp.rs:208-345`). |
 | Declarative `cortex-view` specs in a note | done, beyond Obsidian | — | Same spec runs in the app, CLI and MCP. |
 | Agent proposals (branch, diff, apply / discard) | done, beyond Obsidian | — | `git.rs:523`; `CommitDiffModal.tsx`. |
@@ -199,7 +199,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 ## Notable gaps, ranked
 
 1. ~~**Aliases and heading links break navigation and backlinks.**~~ Closed: one parser in cortex-core, shared by every reader.
-2. **Rename / move never rewrites inbound links.** Table stakes for an Obsidian user.
+2. ~~**Rename / move never rewrites inbound links.**~~ Closed: `rename::rename_note` in cortex-core relinks every referrer; app, CLI and MCP share it.
 3. **Search has no operators and no snippets.** FTS5 can do it; the query builder throws the capability away.
 4. **No inline `#tags` and no tag pane.** For many Obsidian users tags are the organising layer.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.

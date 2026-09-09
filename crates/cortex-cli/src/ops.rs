@@ -7,13 +7,14 @@ use cortex_core::data::{self};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
+use cortex_core::rename::{self, RenameReport};
 use cortex_core::schema::TypeSchema;
 use cortex_core::settings::Settings;
 use cortex_core::tracker::{self, TrackerResult};
 use cortex_core::{index, schema, settings, vault};
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -192,6 +193,17 @@ impl Vault {
         Ok(())
     }
 
+    /// Write a note back and, if its title changed, point every `[[Old Title]]`
+    /// at the new one — a title change is a rename as far as links go.
+    fn write_relinking(&self, n: &Note, old_title: &str) -> Result<()> {
+        self.write(n)?;
+        let new_title = note::infer_title(n);
+        if new_title != old_title {
+            rename::title_changed(&self.root, &self.db()?, &n.path, old_title, &new_title)?;
+        }
+        Ok(())
+    }
+
     // ── Notes ───────────────────────────────────────────────────────────────
 
     pub fn list(&self, dir: Option<&str>, note_type: Option<&str>, tag: Option<&str>) -> Vec<NoteEntry> {
@@ -273,6 +285,7 @@ impl Vault {
     /// Merge properties into a note's frontmatter; a null value removes the key.
     pub fn set_properties(&self, target: &str, props: BTreeMap<String, serde_json::Value>) -> Result<Note> {
         let mut note = self.read(target)?;
+        let old_title = note::infer_title(&note);
         let changed: Vec<String> = props.keys().cloned().collect();
         for (k, v) in props {
             if v.is_null() {
@@ -281,7 +294,7 @@ impl Vault {
                 note.frontmatter.insert(k, v);
             }
         }
-        self.write(&note)?;
+        self.write_relinking(&note, &old_title)?;
         // Auto-stamped dates and repeats follow, as they do in the app.
         if !data::apply_row_effects(&self.root, &note.path, &changed)?.is_empty() {
             return self.read_path(&note.path);
@@ -318,6 +331,7 @@ impl Vault {
     pub fn apply_pairs(&self, target: &str, pairs: &[String]) -> Result<(Note, bool)> {
         let ops = Self::parse_pair_ops(pairs)?;
         let (mut note, created) = self.read_or_create_row(target)?;
+        let old_title = note::infer_title(&note);
         for (k, op) in ops {
             match op {
                 PairOp::Set(v) => {
@@ -335,7 +349,7 @@ impl Vault {
                 }
             }
         }
-        self.write(&note)?;
+        self.write_relinking(&note, &old_title)?;
         // The same consequences as an edit in the app: auto-stamped dates, the
         // next occurrence of a repeating row.
         let changed: Vec<String> = Self::parse_pair_ops(pairs)?.into_iter().map(|(k, _)| k).collect();
@@ -483,6 +497,24 @@ impl Vault {
     pub fn backlinks(&self, target: &str) -> Result<Vec<NoteEntry>> {
         let rel = self.resolve(target)?.path;
         Ok(self.db()?.get_backlinks(&rel)?)
+    }
+
+    /// Rename or move a note and rewrite every inbound link. `dest` is a new
+    /// path (`.md` added if missing) or, with a trailing `/` or naming an
+    /// existing folder, the folder to move into. Commits when auto_commit is on.
+    pub fn mv(&self, target: &str, dest: &str, title: Option<&str>) -> Result<RenameReport> {
+        let old_path = self.resolve(target)?.path;
+        let dest = dest.trim().replace('\\', "/");
+        let new_path = if dest.ends_with('/') || self.root.join(&dest).is_dir() {
+            let name = Path::new(&old_path).file_name().and_then(|f| f.to_str()).unwrap_or("note.md");
+            let dir = dest.trim_end_matches('/');
+            if dir.is_empty() { name.to_string() } else { format!("{dir}/{name}") }
+        } else if dest.ends_with(".md") {
+            dest
+        } else {
+            format!("{dest}.md")
+        };
+        Ok(rename::rename_note(&self.root, &self.db()?, &old_path, &new_path, title)?)
     }
 
     // ── Collections ─────────────────────────────────────────────────────────

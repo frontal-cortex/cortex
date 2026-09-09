@@ -98,7 +98,7 @@ interface Props {
   collab?: CollabConfig | null;
   /** Monk mode: just the page — no properties, backlinks, or action buttons. */
   monk?: boolean;
-  onSave: (note: Note) => void;
+  onSave: (note: Note) => void | Promise<void>;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onApplyNote: (note: Note) => void;
@@ -248,7 +248,7 @@ function NoteEditor({
   collab: CollabConfig | null;
   monk: boolean;
   handleRef: MutableRefObject<EditorHandle | null>;
-  onSave: (n: Note) => void;
+  onSave: (n: Note) => void | Promise<void>;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onShowHistory: () => void;
@@ -617,6 +617,29 @@ function NoteEditor({
     }, 400);
   }, [onSave]);
 
+  // A title change is a rename as far as `[[links]]` are concerned, but
+  // rewriting referrers on every keystroke would pass through half-typed
+  // titles (and any note that happens to share one). So: remember the title
+  // when the field gains focus, and once the edit is final — blur, or the
+  // editor going away — flush the save and let cortex-core point every
+  // `[[Old Title]]` at the new one (one commit when auto-commit is on).
+  const titleAtFocus = useRef<string | null>(null);
+  const titleLatest = useRef<string | null>(null);
+  const finishTitleEdit = useCallback(() => {
+    const before = titleAtFocus.current;
+    const after = titleLatest.current;
+    titleAtFocus.current = null;
+    titleLatest.current = null;
+    if (before === null || after === null || after.trim() === before.trim()) return;
+    const path = noteRef.current.path;
+    if (titleTimer.current) { clearTimeout(titleTimer.current); titleTimer.current = null; }
+    void (async () => {
+      await onSaveRef.current({ ...noteRef.current, frontmatter: { ...noteRef.current.frontmatter, title: after } });
+      await commands.titleChanged(path, before, after).catch(() => {});
+    })();
+  }, []);
+  useEffect(() => () => finishTitleEdit(), [finishTitleEdit]);
+
   const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
     onSave({ ...noteRef.current, frontmatter: updated });
   }, [onSave]);
@@ -687,7 +710,9 @@ function NoteEditor({
               className={styles.titleInput}
               defaultValue={title}
               placeholder="Untitled"
-              onChange={(e) => handleTitleChange(e.target.value)}
+              onFocus={(e) => { titleAtFocus.current = e.target.value; titleLatest.current = e.target.value; }}
+              onChange={(e) => { titleLatest.current = e.target.value; handleTitleChange(e.target.value); }}
+              onBlur={finishTitleEdit}
             />
             {!monk && <div className={styles.headerActions}>
               {peers.map((p, i) => (

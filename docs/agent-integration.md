@@ -37,6 +37,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex write <note> < body.md` | replace the body, keep the frontmatter |
 | `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
+| `cortex mv <note> <dest> [--title t]` | rename or move a note — `dest` is a new path (`notes/x/plan.md`) or a folder (`notes/x/`) — and rewrite every inbound `[[link]]` to follow it, aliases / sections / embeds kept; one commit when `auto_commit` is on. `cortex set <note> title=…` relinks the same way |
 | `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n]` | query a database like the app's table |
 | `cortex schema [key]` | typed properties for a collection or note type |
 | `cortex status` | changed files, sync counts, recent commits, proposals |
