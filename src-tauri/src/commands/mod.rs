@@ -1,3 +1,4 @@
+pub mod comments;
 pub mod config;
 pub mod data;
 pub mod git;
@@ -11,3 +12,6 @@ pub mod vault;
 pub mod publish;
 pub mod packs;
 pub mod tracker;
+pub mod preview;
+pub mod clipboard;
+pub mod updates;

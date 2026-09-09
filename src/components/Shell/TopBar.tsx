@@ -1,5 +1,5 @@
 import { VaultStatus } from "../../lib/commands";
-import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, TerminalIcon, MonkIcon } from "./icons";
+import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, TerminalIcon, MonkIcon, CommentIcon } from "./icons";
 import { shortcutFor } from "../../lib/keymap";
 import styles from "./TopBar.module.css";
 
@@ -21,12 +21,18 @@ interface Props {
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleMonk: () => void;
+  /** The comments margin of the open note; disabled when no note is open. */
+  commentsOpen: boolean;
+  unresolvedComments: number;
+  hasNote: boolean;
+  onToggleComments: () => void;
 }
 
 export function TopBar({
   vaultName, status, syncing, hasRemote, canBack, canForward, onBack, onForward,
   onSync, onOpenGraph, onOpenSwitcher, onToday,
   leftOpen, rightOpen, onToggleLeft, onToggleRight, onToggleMonk,
+  commentsOpen, unresolvedComments, hasNote, onToggleComments,
 }: Props) {
   const ahead = status?.ahead ?? 0;
   const behind = status?.behind ?? 0;
@@ -83,6 +89,15 @@ export function TopBar({
               {behind > 0 && <span>{behind}↓</span>}
             </span>
           )}
+        </button>
+        <button
+          className={`${styles.action} ${commentsOpen && hasNote ? styles.actionOn : ""}`}
+          onClick={onToggleComments}
+          disabled={!hasNote}
+          title={`Toggle comments (${shortcutFor("toggle-comments")})${unresolvedComments ? ` — ${unresolvedComments} open` : ""}`}
+        >
+          <CommentIcon size={15} />
+          {unresolvedComments > 0 && <span className={styles.syncCounts}>{unresolvedComments}</span>}
         </button>
         <button className={`${styles.action} ${rightOpen ? styles.actionOn : ""}`} onClick={onToggleRight} title={`Toggle terminal (${shortcutFor("toggle-terminal")})`}>
           <TerminalIcon size={15} />

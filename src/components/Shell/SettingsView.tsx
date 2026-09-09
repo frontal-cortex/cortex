@@ -11,14 +11,16 @@ import { commands, Settings, VaultInfo, Member, CurrentUser, AgentCli, VaultChan
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
 import { syncTheme } from "../../lib/theme";
 import { PROSE_FONTS, PROSE_SLANTS, DEFAULT_PROSE_FONT, isPreset } from "../../lib/fonts";
+import { SORT_FIELDS, SortDir, SortField, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
 import {
   SHORTCUTS, ShortcutId, keysFor, formatKeys, isOverridden, comboFromEvent, conflictFor, shortcutFor, isMac,
 } from "../../lib/keymap";
 import { Dropdown } from "./Dropdown";
 import { AgentIcon } from "./agentIcons";
+import { UpdateChecker } from "./UpdateModal";
 import {
   CloseIcon, SearchIcon, FolderIcon, ThemeIcon, TextLinesIcon, FileIcon, SyncIcon, TerminalIcon,
-  PersonIcon, LinkIcon, OpenIcon, GlobeIcon, TemplateIcon, SparkleIcon,
+  PersonIcon, LinkIcon, OpenIcon, GlobeIcon, TemplateIcon, SparkleIcon, DownloadIcon,
 } from "./icons";
 import styles from "./SettingsView.module.css";
 
@@ -261,6 +263,29 @@ const SECTIONS: SectionDef[] = [
         ),
       },
       {
+        key: "explorer_sort", label: "Sidebar order", keywords: "sort order explorer tree sidebar name modified created type ascending descending",
+        hint: "How notes are ordered in the sidebar tree; folders stay alphabetical. The Notes section's sort button sets the same key.",
+        render: ({ settings, update }) => {
+          const sort = parseExplorerSort(settings.explorer_sort);
+          return (
+            <div className={styles.stack}>
+              <Dropdown
+                fullWidth
+                value={sort.field}
+                options={SORT_FIELDS}
+                onChange={(v) => update({ explorer_sort: formatExplorerSort({ ...sort, field: v as SortField }) })}
+              />
+              <Dropdown
+                fullWidth
+                value={sort.dir}
+                options={[{ value: "asc", label: "Ascending" }, { value: "desc", label: "Descending" }]}
+                onChange={(v) => update({ explorer_sort: formatExplorerSort({ ...sort, dir: v as SortDir }) })}
+              />
+            </div>
+          );
+        },
+      },
+      {
         key: "trash_retention_days", label: "Trash retention", keywords: "delete purge prune days trash forever",
         hint: "Days a trashed note is kept before it is removed for good. 0 keeps trash forever.",
         render: ({ settings, update }) => (
@@ -490,6 +515,20 @@ const SECTIONS: SectionDef[] = [
           <input className={`${styles.input} ${styles.inputMono}`} value={settings.collab_url} spellCheck={false}
             placeholder="ws://host:1234" onChange={(e) => update({ collab_url: e.target.value.trim() })} />
         ),
+      },
+    ],
+  },
+  {
+    id: "updates",
+    title: "Updates",
+    blurb: "New releases of the app. Checks only when you ask; installs only when you confirm.",
+    icon: <DownloadIcon size={14} />,
+    rows: [
+      {
+        label: "Check for updates", wide: true,
+        keywords: "update upgrade version release latest download install about",
+        hint: "Asks the release channel compiled into this build for a newer version. A build from source has no channel and says so.",
+        render: () => <UpdateChecker />,
       },
     ],
   },

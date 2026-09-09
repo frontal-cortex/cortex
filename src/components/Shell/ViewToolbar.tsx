@@ -7,10 +7,11 @@
 // groups, `not`) is surfaced as a notice that defers to the raw "Edit" escape
 // hatch.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { commands, StructuredSpec, FilterClause } from "../../lib/commands";
+import { isMac } from "../../lib/keymap";
 import { Dropdown } from "./Dropdown";
-import { CloseIcon } from "./icons";
+import { CloseIcon, SearchIcon } from "./icons";
 import styles from "./ViewToolbar.module.css";
 
 const OPS: { value: string; label: string }[] = [
@@ -62,9 +63,15 @@ interface Props {
   /** Whether this view is a table (a group is optional — sections, or none). */
   isTable?: boolean;
   onSpecChange: (nextSpec: string) => void;
+  /** The search box: a client-side narrowing of the rows shown, never part of
+   *  the spec. Absent = no box. */
+  search?: string;
+  onSearchChange?: (query: string) => void;
+  /** So a data view can hand focus here on mod+f. */
+  searchRef?: RefObject<HTMLInputElement | null>;
 }
 
-export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, onSpecChange }: Props) {
+export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, onSpecChange, search, onSearchChange, searchRef }: Props) {
   const [s, setS] = useState<StructuredSpec | null>(null);
 
   useEffect(() => {
@@ -78,6 +85,17 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
   const sortPop = usePopover();
   const colsPop = usePopover();
   const groupPop = usePopover();
+
+  // The search box: typed text is debounced into the parent's query; clearing
+  // is immediate. The parent may reset it (a view switch) — follow that.
+  const [query, setQuery] = useState(search ?? "");
+  useEffect(() => { setQuery(search ?? ""); }, [search]);
+  useEffect(() => {
+    if (!onSearchChange || query === (search ?? "")) return;
+    const t = setTimeout(() => onSearchChange(query), 150);
+    return () => clearTimeout(t);
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clearSearch = () => { setQuery(""); onSearchChange?.(""); };
 
   if (!s) return null;
 
@@ -295,6 +313,34 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
                 </button>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Search — the rows shown, narrowed as you type. mod+f from the view
+          lands here; inside the box it stays here (no find-in-note). */}
+      {onSearchChange && (
+        <div className={`${styles.search} ${query ? styles.searchActive : ""}`}>
+          <SearchIcon size={12} />
+          <input
+            ref={searchRef}
+            className={styles.searchInput}
+            value={query}
+            placeholder="Search rows…"
+            spellCheck={false}
+            data-find-scope
+            aria-label="Search rows"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              const mod = isMac ? e.metaKey : e.ctrlKey;
+              if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); e.currentTarget.select(); return; }
+              if (e.key === "Escape") { e.preventDefault(); if (query) clearSearch(); else e.currentTarget.blur(); }
+            }}
+          />
+          {query && (
+            <button className={styles.searchClear} title="Clear search" onClick={clearSearch}>
+              <CloseIcon size={11} />
+            </button>
           )}
         </div>
       )}

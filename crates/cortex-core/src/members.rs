@@ -60,24 +60,10 @@ pub fn save(root: &Path, members: &[Member]) -> Result<()> {
     Ok(())
 }
 
-fn git_config(root: &Path, key: &str) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(["config", key])
-        .current_dir(root)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!s.is_empty()).then_some(s)
-}
-
+/// Who am I — via the build's git backend (`git config` on desktop, the repo
+/// config read in-process on mobile; see `remote.rs`).
 pub fn current_user(root: &Path) -> CurrentUser {
-    CurrentUser {
-        name: git_config(root, "user.name").unwrap_or_default(),
-        email: git_config(root, "user.email").unwrap_or_default(),
-    }
+    crate::remote::default_remote().identity(root)
 }
 
 /// Members as select options (name + color), for rendering person cells as pills.

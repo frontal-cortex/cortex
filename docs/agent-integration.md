@@ -38,6 +38,9 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex write <note> < body.md` | replace the body, keep the frontmatter |
 | `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
+| `cortex comments <note> [--all]` | the note's comment threads (open ones; `--all` includes resolved) — stored beside it in `<note>.comments.yaml`, never in the note |
+| `cortex comment <note> [--quote "…" [--occurrence n]] "text"` / `--reply ID "text"` / `--resolve ID` / `--reopen ID` | open a thread anchored to a passage of the body (the quote must be in it) or about the whole note, reply in one, or resolve it; author is the git identity; one commit when `auto_commit` is on |
+| `cortex assets [--unused]` | every file under `assets/` with its size, type and how many notes reference it; `--unused` keeps only the orphans. A report, never a delete |
 | `cortex mv <note> <dest> [--title t]` | rename or move a note — `dest` is a new path (`notes/x/plan.md`) or a folder (`notes/x/`) — and rewrite every inbound `[[link]]` to follow it, aliases / sections / embeds kept; one commit when `auto_commit` is on. `cortex set <note> title=…` relinks the same way |
 | `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty) |
 | `cortex schema [key]` | typed properties for a collection or note type |
@@ -63,7 +66,9 @@ Every command takes `--json`. Errors go to stderr with exit code 1.
 
 `cortex mcp` speaks the Model Context Protocol over stdio and exposes the
 same operations as tools: `list_notes`, `list_tags`, `search`, `read_note`, `create_note`,
-`write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
+`write_note`, `set_properties`, `links`, `backlinks`, `list_comments`, `add_comment`,
+`resolve_comment` (discussion in the note's comments sidecar — anchor a thread to a quoted
+passage, reply, resolve — without editing the note), `list_collections`,
 `query_collection`, `get_schema`, `rename_property`, `delete_property`, `status`, `propose`, `list_proposals`,
 `proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_packs`, `install_pack`,
 `update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can
@@ -133,6 +138,7 @@ exits.
 | `marketplace_url` | template marketplace index URL; empty = the official one. A company points this at its own registry |
 | `marketplace_extra` | additional index URLs, comma-separated, merged with the first (a team registry alongside the official one) |
 | `marketplace_tiers` | trust tiers shown: `official`, `verified`, `community` (comma-separated); empty = all three |
+| `explorer_sort` | order of notes in the app's sidebar tree: `name`, `modified`, `created` or `type`, with `-asc` / `-desc` (default `name-asc`); folders stay alphabetical |
 
 ## Views, filters and computed properties
 
@@ -159,6 +165,24 @@ filter and limit): `count`, `sum`, `avg`, `min`, `max`, `percent_checked`
 `summary` from `cortex view --summary amount=sum` and MCP `run_view` /
 `query_collection`; the app's footer shows the same numbers. A table with
 `group: status` folds into one section per value, in option order.
+
+**View types.** `type:` picks how the app draws the same rows; the engine
+returns the same table whatever it says, so `cortex view` and `run_view` never
+care. Beyond the query keys every view shares, each type reads its own:
+
+| `type` | Shows | Keys it reads |
+|---|---|---|
+| `table` | editable grid | `columns`, `group` (sections), `summary` |
+| `list` | one line per row: title and up to three property chips | `columns` (which chips) |
+| `board` | cards in columns by a select / status | `group` (required) |
+| `calendar` | rows on a month, week or day grid | `date` (the day), `mode: month \| week \| day`, `end` (a span's last day — default `end` when `date: start`; a cell holding `2026-09-01/2026-09-05` spans on its own) |
+| `gallery` | cards with a `cover` image | `columns` |
+| `timeline` | bars from a start to an end date on a week axis | `start`, `end` |
+| `chart` | a line or bar chart | `x`, `y`, `agg`, `chartType`, `bucket`, `series` |
+| `tracker` | items × days with streaks | `log`, `date`, `done`, `range` |
+
+The app's search box above a view narrows the rows on show without touching
+the spec — it is never written to a file.
 
 **Sorting.** `sort: [due, priority desc]`. Empty cells sort last in either
 direction. A select or status property sorts by its option order, not
@@ -195,7 +219,33 @@ properties:
     type: number
     format: currency          # percent | progress (a 0–100 bar) | currency | stars | integer | decimal
     unit: "€"
+  - name: added               # from git history, never written: when the row's
+    type: created_time        # file was first committed (created_by: by whom),
+  - name: touched             # and when it last changed (edited_time /
+    type: edited_time         # edited_by). Outside a repository the file's
+                              # mtime stands in and the author is empty.
+  - name: trip                # a start and an end under one key:
+    type: date_range          #   trip: {start: 2026-09-10, end: 2026-09-12}
+  - name: attachments         # a list of vault-relative paths (assets/…)
+    type: files
 ```
+
+A **date range** is one nested mapping — `trip:` with `start:` and an optional
+`end:` (a one-day range has none) — so either end changes on its own line and
+the pair cannot drift apart. In a filter `trip < d` means the range ends
+before `d`, `trip > d` that it starts after, `trip == d` and `trip within 7d`
+that it contains the day or overlaps the window; sorting is by start, and a
+`repeat` moves both ends. `cortex set collections/trips/x
+'trip={start: 2026-09-10, end: 2026-09-12}'` writes one. A timeline with
+`start: trip` draws both ends from it; a calendar shows the row on every day
+it spans.
+
+The **git-derived** values (`created_time` `created_by` `edited_time`
+`edited_by`) are `YYYY-MM-DDTHH:MM` local times and git author names, read
+from the history on every view run — one walk per collection — and never
+stored. A day literal in a filter (`touched >= @today-7`) compares against
+them by day. A file with uncommitted changes reports its mtime and the local
+git user as the last edit.
 
 Formulas know `+ - * / %`, comparisons, `and or not`, and `days_until(d)`,
 `days_since(d)`, `days_between(a, b)`, `today()`, `year(d)`, `month(d)`,
