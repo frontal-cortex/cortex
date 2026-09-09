@@ -36,12 +36,8 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
     let note_type = note.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
     let icon = note.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
     let parent = note.frontmatter.get("parent").and_then(|v| v.as_str()).map(str::to_string);
-    let tags = note
-        .frontmatter
-        .get("tags")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-        .unwrap_or_default();
+    // Frontmatter `tags:` merged with inline `#tags` from the body.
+    let tags = crate::tags::note_tags(&note);
 
     let ne = NoteEntry { path: rel.clone(), title, note_type, icon, parent, tags, modified };
     db.upsert_note(&ne, &note.body)?;

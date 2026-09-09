@@ -333,6 +333,10 @@ fn render_body(
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     opts.insert(Options::ENABLE_TASKLISTS);
     opts.insert(Options::ENABLE_FOOTNOTES);
+    // `$…$` / `$$…$$` (the editor's math syntax). The site ships no KaTeX, so
+    // the source is shown as-is in a `.math` span; parsing it as math keeps
+    // `_` and `*` inside an equation from being read as emphasis.
+    opts.insert(Options::ENABLE_MATH);
 
     // Headings get ids so `[[note#section]]` links land; images and `.md`
     // links get rewritten and the assets collected.
@@ -387,7 +391,60 @@ fn render_body(
     }
     let mut out = String::new();
     html::push_html(&mut out, events.into_iter());
-    Ok(callouts(&out))
+    Ok(highlights(&callouts(&out)))
+}
+
+/// `==text==` (the editor's highlight syntax, as in Obsidian) → `<mark>`.
+/// Works on the rendered HTML so a span may cross inline tags
+/// (`==<strong>a</strong> b==`); `<code>` runs are left alone and the
+/// markers must hug their text, so `a == b` in prose is not a highlight.
+fn highlights(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        // Copy code runs through untouched, then mark up the prose before the next one.
+        let (prose, code, tail) = match rest.find("<code") {
+            Some(i) => match rest[i..].find("</code>") {
+                Some(j) => (&rest[..i], &rest[i..i + j + "</code>".len()], &rest[i + j + "</code>".len()..]),
+                None => (rest, "", ""),
+            },
+            None => (rest, "", ""),
+        };
+        out.push_str(&mark_spans(prose));
+        out.push_str(code);
+        if tail.is_empty() {
+            return out;
+        }
+        rest = tail;
+    }
+}
+
+fn mark_spans(prose: &str) -> String {
+    let hugs = |c: char| !c.is_whitespace();
+    let mut out = String::with_capacity(prose.len());
+    let mut rest = prose;
+    while let Some(open) = rest.find("==") {
+        let inner = &rest[open + 2..];
+        // Opening marker must be followed by text, closing marker preceded by it.
+        let close = inner.chars().next().filter(|&c| hugs(c) && c != '=').and_then(|_| {
+            inner.match_indices("==").find(|(k, _)| inner[..*k].chars().last().is_some_and(hugs)).map(|(k, _)| k)
+        });
+        match close {
+            Some(k) => {
+                out.push_str(&rest[..open]);
+                out.push_str("<mark>");
+                out.push_str(&inner[..k]);
+                out.push_str("</mark>");
+                rest = &inner[k + 2..];
+            }
+            None => {
+                out.push_str(&rest[..open + 2]);
+                rest = inner;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `> [!tip] text` blockquotes (the editor's callout syntax) → a styled aside.
@@ -504,6 +561,7 @@ blockquote.callout{border-left-color:var(--accent);color:var(--fg);background:va
 .callout-warning,.callout-caution{border-left-color:#d9822b}.callout-warning .callout-label,.callout-caution .callout-label{color:#d9822b}
 table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:15px;margin:1.2em 0}th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{font-weight:600;color:var(--muted)}
 hr{border:0;border-top:1px solid var(--line);margin:2em 0}
+.math{font-family:var(--mono);font-size:.88em;background:var(--code);padding:2px 5px;border-radius:4px;white-space:pre-wrap}.math-display{display:block;text-align:center;padding:14px 16px;border-radius:8px;margin:1.2em 0;overflow:auto}
 input[type=checkbox]{accent-color:var(--accent)}
 .notes{font-family:var(--sans)}#q{width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);margin:8px 0 16px}#q:focus{outline:none;border-color:var(--accent)}
 #list{list-style:none;padding:0;margin:0}#list li{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line)}#list a{font-size:17px;text-decoration:none;color:var(--fg)}#list a:hover{color:var(--accent)}#list time{font-size:13px;color:var(--muted)}
@@ -653,6 +711,33 @@ pub fn write_github_action(root: &Path) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn highlights_render_as_mark() {
+        assert_eq!(highlights("<p>Some ==hot== text</p>"), "<p>Some <mark>hot</mark> text</p>");
+        assert_eq!(highlights("<p>==<strong>a</strong> b== and ==c==</p>"), "<p><mark><strong>a</strong> b</mark> and <mark>c</mark></p>");
+        // Markers must hug their text: comparisons in prose are not highlights.
+        assert_eq!(highlights("<p>if a == b and c == d</p>"), "<p>if a == b and c == d</p>");
+        // An unmatched marker is left alone.
+        assert_eq!(highlights("<p>==open only</p>"), "<p>==open only</p>");
+        // Code spans and fences are never touched, before or after a real highlight.
+        assert_eq!(highlights("<p><code>a ==b== c</code> ==x==</p>"), "<p><code>a ==b== c</code> <mark>x</mark></p>");
+        assert_eq!(highlights("<pre><code>if (==x==) {}\n</code></pre>"), "<pre><code>if (==x==) {}\n</code></pre>");
+    }
+
+    #[test]
+    fn rich_formats_survive_publish() {
+        let root = vault("rich");
+        std::fs::write(root.join("notes/rich.md"), "---\ntitle: Rich\npublish: true\n---\n\nA ==mark== and <u>under</u>.\n\n<details><summary>More</summary>\n\nhidden\n\n</details>\n\n<img src=\"assets/pic.png\" alt=\"pic\" width=\"480\">\n").unwrap();
+        let out = root.join("site");
+        let report = build(&root, &out, false).unwrap();
+        assert_eq!(report.assets, vec!["assets/pic.png"]);
+        let page = std::fs::read_to_string(out.join("notes/rich/index.html")).unwrap();
+        assert!(page.contains("A <mark>mark</mark> and <u>under</u>."), "{page}");
+        assert!(page.contains("<details><summary>More</summary>"), "{page}");
+        assert!(page.contains("<img src=\"assets/pic.png\" alt=\"pic\" width=\"480\">"), "{page}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn vault(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("cortex-publish-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -740,6 +825,27 @@ mod tests {
         let index = std::fs::read_to_string(out.join("index.html")).unwrap();
         assert!(index.contains("My Garden"));
         assert!(index.contains("class=\"home\"") && index.contains("Keep it short"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn math_is_kept_as_visible_source() {
+        let root = vault("math");
+        std::fs::write(
+            root.join("notes/math.md"),
+            "---\ntitle: Math\npublish: true\n---\n\nInline $x_1 + y_2$ and $\\{a,b\\}$ here; it costs $5 and $10.\n\n$$\n\\int_0^1 x\\,dx = \\frac{1}{2}\n$$\n",
+        )
+        .unwrap();
+        let out = root.join("site");
+        build(&root, &out, false).unwrap();
+        let page = std::fs::read_to_string(out.join("notes/math/index.html")).unwrap();
+        assert!(page.contains("<span class=\"math math-inline\">x_1 + y_2</span>"), "{page}");
+        assert!(page.contains("<span class=\"math math-inline\">\\{a,b\\}</span>"), "{page}");
+        assert!(page.contains("costs $5 and $10."), "dollar amounts stay prose: {page}");
+        assert!(page.contains("<span class=\"math math-display\">\n\\int_0^1 x\\,dx = \\frac{1}{2}\n</span>"), "{page}");
+        assert!(!page.contains("<em>"), "no emphasis inside equations: {page}");
+        let css = std::fs::read_to_string(out.join("style.css")).unwrap();
+        assert!(css.contains(".math-display"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

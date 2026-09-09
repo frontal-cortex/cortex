@@ -408,3 +408,58 @@ paid packs, packs that also carry a theme or keybindings, localized packs.
   it sees the same Installed state and can update.
 - Licenses: CC0-1.0 or CC-BY-4.0 required for content; contributors keep
   copyright.
+
+## 10. Trust model: what a pack can and cannot do
+
+A pack is data. It cannot carry code, and the app never executes anything a
+pack contains. The controls, in the order they apply:
+
+**Format.** Lint (run on the user's machine before install, not only in CI)
+allows only `md`, `yaml`, `png`, `jpg`, `webp`, `svg`; rejects any path with
+`..` or an absolute component; caps a pack at 2 MB; refuses raw HTML beyond
+`<br>`, `<sub>`, `<sup>` and comments. Install refuses a pack with lint errors.
+
+**Integrity.** Every file's SHA-256 is checked against the index before it is
+written. A mirror or proxy cannot substitute a file. This proves the files
+match the index, not that the index is honest — see *Sources*.
+
+**Interpretation.** Formulas, filters, view specs and placeholders are parsed
+into small ASTs and interpreted; there is no `eval`, no shell. Markdown is
+converted to editor blocks, never rendered as HTML. The window carries a
+Content-Security-Policy (`script-src 'self'`, no frames, no objects) and a
+navigation guard, so even a future rendering bug has no path to the IPC
+layer — which matters because the app can open a real terminal.
+
+**Links and images.** A link in a note or a README opens outside the app only
+if it is `http`, `https` or `mailto`; `file:` and custom schemes are refused.
+A remote image in a row loads only when the reader clicks it, so opening a
+view sends nothing anywhere. Preview images are loaded only from the official
+index. Asset paths are resolved inside the vault; a `cover:` cannot read
+`../../.ssh/id_rsa`.
+
+**Overwrites.** Install never replaces a file it does not own unless the user
+ticks Force, and never adds seeds to an existing collection. A pack cannot
+silently replace your Tasks schema by choosing the same collection name.
+
+**Provenance.** Every page and row a pack writes carries `pack: <id>` in its
+frontmatter — visible in the file, in `git log`, and to an agent reading the
+vault. The MCP server's instructions say that vault content, pack-installed
+content included, is the user's data and never instructions to the agent.
+
+**Prompt injection.** The one attack a data-only format still allows is prose
+addressed to the agent rather than the reader ("ignore previous instructions",
+"run `curl … | sh`"). Lint warns on text that reads that way, in both the Rust
+and the Python lint, and the review checklist for `verified` requires a
+maintainer to read every seed and body with that in mind. It is a warning, not
+an error: legitimate packs mention `cortex set` and shell commands.
+
+**Sources.** Packs from an index the user added in Settings carry a
+"Third-party index" badge, their preview images are not loaded, and the
+Settings hint says what the hash check does and does not prove. Ids of the
+bundled packs are reserved; the contributing guide's name policy forbids
+imitating another pack's name or hero.
+
+**Not covered.** Signing (an index compromise at the source still passes the
+hash check); anything the user pastes into the terminal themselves; the
+content of packs installed before this section existed (they have no `pack:`
+key until reinstalled).

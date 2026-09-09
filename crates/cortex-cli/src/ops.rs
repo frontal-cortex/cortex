@@ -8,8 +8,10 @@ use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::rename::{self, RenameReport};
-use cortex_core::schema::TypeSchema;
+use cortex_core::schema::{PropertyChange, TypeSchema};
+use cortex_core::search::SearchHit;
 use cortex_core::settings::Settings;
+use cortex_core::tags::{self, TagNode};
 use cortex_core::tracker::{self, TrackerResult};
 use cortex_core::{index, schema, settings, vault};
 use serde::Serialize;
@@ -216,11 +218,20 @@ impl Vault {
                 None => !n.path.starts_with("templates/"),
             })
             .filter(|n| note_type.map_or(true, |t| n.note_type.as_deref() == Some(t)))
-            .filter(|n| tag.map_or(true, |t| n.tags.iter().any(|x| x == t)))
+            // Frontmatter and inline `#tags` alike; a parent tag matches its children.
+            .filter(|n| tag.map_or(true, |t| tags::has_tag(&n.tags, t)))
             .collect()
     }
 
-    pub fn search(&self, query: &str) -> Result<Vec<NoteEntry>> {
+    /// The tag tree with counts, nested by `/` (templates excluded).
+    pub fn tags(&self) -> Vec<TagNode> {
+        vault::list_tags(&self.root)
+    }
+
+
+    /// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
+    /// `type:`, `path:`); see `cortex_core::search`.
+    pub fn search(&self, query: &str) -> Result<Vec<SearchHit>> {
         Ok(self.db()?.search(query)?)
     }
 
@@ -540,6 +551,7 @@ impl Vault {
         sort: &[String],
         columns: Option<&[String]>,
         limit: Option<usize>,
+        summary: &[(String, String)],
     ) -> Result<data::ResolvedTable> {
         let mut spec = serde_json::Map::new();
         spec.insert("source".into(), format!("collections/{}", collection.trim_end_matches('/')).into());
@@ -547,6 +559,10 @@ impl Vault {
         if !sort.is_empty() { spec.insert("sort".into(), sort.into()); }
         if let Some(c) = columns { spec.insert("columns".into(), c.into()); }
         if let Some(l) = limit { spec.insert("limit".into(), l.into()); }
+        if !summary.is_empty() {
+            let m: serde_json::Map<String, serde_json::Value> = summary.iter().map(|(f, func)| (f.clone(), func.clone().into())).collect();
+            spec.insert("summary".into(), serde_json::Value::Object(m));
+        }
         let yaml = serde_yaml::to_string(&serde_json::Value::Object(spec))?;
         // The same table the app shows: schema attached, rollups and formulas computed.
         Ok(data::resolve_view(&self.root, &yaml)?)
@@ -554,6 +570,18 @@ impl Vault {
 
     pub fn schema(&self, key: &str) -> Result<TypeSchema> {
         Ok(schema::load(&self.root, key)?.ok_or_else(|| format!("no schema for '{key}'"))?)
+    }
+
+    /// Rename a property in the schema, every row, the collection's views and
+    /// the rollups / formulas that reference it (see `cortex_core::schema`).
+    pub fn rename_property(&self, key: &str, old: &str, new: &str) -> Result<PropertyChange> {
+        Ok(schema::rename_property(&self.root, key, old, new)?)
+    }
+
+    /// Delete a property from the schema, every row and every view; refused
+    /// while a rollup or formula depends on it.
+    pub fn delete_property(&self, key: &str, name: &str) -> Result<PropertyChange> {
+        Ok(schema::delete_property(&self.root, key, name)?)
     }
 
     pub fn schemas(&self) -> Vec<String> {
@@ -661,6 +689,42 @@ impl Vault {
     /// agent through MCP.
     pub fn publish_preview(&self) -> Result<Vec<cortex_core::publish::PublishEntry>> {
         Ok(cortex_core::publish::preview(&self.root)?)
+    }
+
+    // ── Import ──────────────────────────────────────────────────────────────
+
+    /// `--map` arguments (`Header=property[:type]`, `Header=` to skip) as column overrides.
+    pub fn csv_options(collection: &str, title: Option<&str>, maps: &[String]) -> Result<cortex_core::import::CsvOptions> {
+        let mut columns = Vec::new();
+        for m in maps {
+            let (header, rest) = m.split_once('=').ok_or_else(|| format!("--map needs HEADER=property[:type], got '{m}'"))?;
+            let (property, ty) = rest.split_once(':').unwrap_or((rest, ""));
+            columns.push(cortex_core::import::ColumnMap { header: header.to_string(), property: property.to_string(), ty: ty.to_string(), options: vec![] });
+        }
+        Ok(cortex_core::import::CsvOptions { collection: collection.to_string(), title_column: title.map(str::to_string), columns })
+    }
+
+    /// What importing a CSV would write, without writing it.
+    pub fn import_csv_plan(&self, file: &std::path::Path, opts: &cortex_core::import::CsvOptions) -> Result<cortex_core::import::CsvPlan> {
+        Ok(cortex_core::import::plan_csv(&self.root, file, opts)?)
+    }
+
+    /// Import a CSV as rows of a collection and index them.
+    pub fn import_csv(&self, file: &std::path::Path, opts: &cortex_core::import::CsvOptions) -> Result<cortex_core::import::CsvReport> {
+        let r = cortex_core::import::import_csv(&self.root, file, opts)?;
+        let db = self.db()?;
+        for p in &r.written { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        Ok(r)
+    }
+
+    /// Copy a folder of Markdown under `notes/<into>/` (images into `assets/`) and index it.
+    pub fn import_markdown(&self, dir: &std::path::Path, into: &str, dry_run: bool) -> Result<cortex_core::import::MarkdownReport> {
+        let r = cortex_core::import::import_markdown(&self.root, dir, into, dry_run)?;
+        if !dry_run {
+            let db = self.db()?;
+            for p in &r.notes { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        }
+        Ok(r)
     }
 
     // ── Git & proposals ─────────────────────────────────────────────────────

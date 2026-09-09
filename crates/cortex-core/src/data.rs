@@ -125,7 +125,7 @@ fn col_type(v: &CellValue) -> ColumnType {
 
 /// Infer columns from the union of row keys, first-seen order, type from the
 /// first non-null cell seen for that key.
-fn infer_columns(rows: &[Row]) -> Vec<Column> {
+pub(crate) fn infer_columns(rows: &[Row]) -> Vec<Column> {
     let mut order: Vec<String> = Vec::new();
     let mut types: BTreeMap<String, ColumnType> = BTreeMap::new();
     for row in rows {
@@ -222,7 +222,7 @@ fn split_csv_record(line: &str) -> Vec<String> {
     out
 }
 
-fn infer_cell(raw: &str) -> CellValue {
+pub(crate) fn infer_cell(raw: &str) -> CellValue {
     let t = raw.trim();
     if t.is_empty() {
         return CellValue::Null;
@@ -287,11 +287,68 @@ pub enum Op {
     Lt,
     Le,
     Contains,
+    DoesNotContain,
+    StartsWith,
+    EndsWith,
+    /// `field is_empty` — no value.
+    IsEmpty,
+    /// `field is_not_empty` — no value.
+    IsNotEmpty,
+    /// `field within 7d` — a date between today and today+7 (`-7d`: the past
+    /// week; units d, w, m, y). Resolved at evaluation time.
+    Within,
+}
+
+impl Op {
+    /// The spelling a filter string uses (and the toolbar's `op` field).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Op::Eq => "==",
+            Op::Ne => "!=",
+            Op::Gt => ">",
+            Op::Ge => ">=",
+            Op::Lt => "<",
+            Op::Le => "<=",
+            Op::Contains => "contains",
+            Op::DoesNotContain => "does_not_contain",
+            Op::StartsWith => "starts_with",
+            Op::EndsWith => "ends_with",
+            Op::IsEmpty => "is_empty",
+            Op::IsNotEmpty => "is_not_empty",
+            Op::Within => "within",
+        }
+    }
+
+    fn parse(tok: &str) -> Option<Op> {
+        Some(match tok.to_lowercase().as_str() {
+            "==" | "=" => Op::Eq,
+            "!=" => Op::Ne,
+            ">" => Op::Gt,
+            ">=" => Op::Ge,
+            "<" => Op::Lt,
+            "<=" => Op::Le,
+            "contains" => Op::Contains,
+            "does_not_contain" => Op::DoesNotContain,
+            "starts_with" => Op::StartsWith,
+            "ends_with" => Op::EndsWith,
+            "is_empty" => Op::IsEmpty,
+            "is_not_empty" => Op::IsNotEmpty,
+            "within" => Op::Within,
+            _ => return None,
+        })
+    }
+
+    fn takes_value(&self) -> bool {
+        !matches!(self, Op::IsEmpty | Op::IsNotEmpty)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Condition {
     Cmp { field: String, op: Op, value: String },
+    /// `field in [a, b, c]` — equal to any of the values.
+    In { field: String, values: Vec<String> },
+    Not(Box<Condition>),
     And(Box<Condition>, Box<Condition>),
     Or(Box<Condition>, Box<Condition>),
 }
@@ -338,19 +395,40 @@ impl Condition {
         match self {
             Condition::And(a, b) => a.eval(row) && b.eval(row),
             Condition::Or(a, b) => a.eval(row) || b.eval(row),
+            Condition::Not(c) => !c.eval(row),
             Condition::Cmp { field, op, value } => {
                 let cell = row.cells.get(field).cloned().unwrap_or(CellValue::Null);
                 eval_cmp(&cell, *op, value)
+            }
+            Condition::In { field, values } => {
+                let cell = row.cells.get(field).cloned().unwrap_or(CellValue::Null);
+                values.iter().any(|v| eval_cmp(&cell, Op::Eq, v))
             }
         }
     }
 }
 
 fn eval_cmp(cell: &CellValue, op: Op, literal: &str) -> bool {
+    // The negations and the emptiness tests are defined in terms of their
+    // positives so every value kind agrees on them.
+    match op {
+        Op::DoesNotContain => return !eval_cmp(cell, Op::Contains, literal),
+        Op::IsNotEmpty => return !eval_cmp(cell, Op::IsEmpty, literal),
+        Op::Within => {
+            let Some((lo, hi)) = within_bounds(literal, crate::placeholders::today()) else { return false };
+            return eval_cmp(cell, Op::Ge, &lo) && eval_cmp(cell, Op::Le, &hi);
+        }
+        _ => {}
+    }
     // An empty cell equals '' and nothing else: it is neither before nor after
     // a date, neither above nor below a number — `due <= @today` must not
     // sweep in undated rows.
-    let empty = matches!(cell, CellValue::Null) || matches!(cell, CellValue::Text(t) if t.is_empty());
+    let empty = matches!(cell, CellValue::Null)
+        || matches!(cell, CellValue::Text(t) if t.is_empty())
+        || matches!(cell, CellValue::List(items) if items.is_empty());
+    if op == Op::IsEmpty {
+        return empty;
+    }
     if empty {
         return match op { Op::Eq => literal.is_empty(), Op::Ne => !literal.is_empty(), _ => false };
     }
@@ -364,12 +442,17 @@ fn eval_cmp(cell: &CellValue, op: Op, literal: &str) -> bool {
             Op::Lt => a < b,
             Op::Le => a <= b,
             Op::Contains => cell.as_text().contains(literal),
+            Op::StartsWith => cell.as_text().starts_with(literal),
+            Op::EndsWith => cell.as_text().ends_with(literal),
+            _ => false,
         };
     }
     if let CellValue::List(items) = cell {
         return match op {
             Op::Contains | Op::Eq => items.iter().any(|i| i == literal),
             Op::Ne => !items.iter().any(|i| i == literal),
+            Op::StartsWith => items.iter().any(|i| i.starts_with(literal)),
+            Op::EndsWith => items.iter().any(|i| i.ends_with(literal)),
             _ => false,
         };
     }
@@ -382,7 +465,36 @@ fn eval_cmp(cell: &CellValue, op: Op, literal: &str) -> bool {
         Op::Lt => a.as_str() < literal,
         Op::Le => a.as_str() <= literal,
         Op::Contains => a.contains(literal),
+        Op::StartsWith => a.starts_with(literal),
+        Op::EndsWith => a.ends_with(literal),
+        _ => false,
     }
+}
+
+/// The inclusive ISO date range `within` spans: `7d` / `7` is today through
+/// today+7, `-7d` today-7 through today; `w` weeks, `m` calendar months, `y`
+/// years. `None` for anything else.
+pub fn within_bounds(spec: &str, base: chrono::NaiveDate) -> Option<(String, String)> {
+    let spec = spec.trim().to_lowercase();
+    let (num, unit) = match spec.chars().last() {
+        Some(u) if u.is_ascii_alphabetic() => (&spec[..spec.len() - 1], u),
+        _ => (spec.as_str(), 'd'),
+    };
+    let n: i64 = num.parse().ok()?;
+    let other = match unit {
+        'd' => base.checked_add_signed(chrono::Duration::days(n))?,
+        'w' => base.checked_add_signed(chrono::Duration::days(7 * n))?,
+        'm' => shift_months(base, n)?,
+        'y' => shift_months(base, 12 * n)?,
+        _ => return None,
+    };
+    let iso = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
+    Some(if other < base { (iso(other), iso(base)) } else { (iso(base), iso(other)) })
+}
+
+fn shift_months(d: chrono::NaiveDate, by: i64) -> Option<chrono::NaiveDate> {
+    let months = chrono::Months::new(by.unsigned_abs() as u32);
+    if by < 0 { d.checked_sub_months(months) } else { d.checked_add_months(months) }
 }
 
 impl Query {
@@ -437,15 +549,27 @@ impl Query {
     }
 }
 
-// ── Minimal filter parser: `field op 'value'` joined by `and` / `or` ───────────
-// Left-to-right, no precedence (good enough for Slice 0; documented).
+// ── Filter parser ─────────────────────────────────────────────────────────────
+//
+//   expr    := and ("or" and)*             `and` binds tighter than `or`
+//   and     := unary ("and" unary)*
+//   unary   := "not" unary | "(" expr ")" | clause
+//   clause  := field OP value
+//            | field is_empty | field is_not_empty
+//            | field in "[" value ("," value)* "]"
+//            | field within 7d
+//
+// Values are quoted strings or bare words; `@today`, `@monday-1`, … resolve
+// to ISO dates when the condition is built (`@me` is substituted earlier by
+// the caller). The same tokens feed the toolbar's structured form, which
+// keeps `@today` literal.
 
 pub fn parse_filter(input: &str) -> Result<Condition> {
     let tokens = tokenize(input);
     let mut pos = 0;
-    let cond = parse_expr(&tokens, &mut pos)?;
+    let cond = parse_or(&tokens, &mut pos)?;
     if pos != tokens.len() {
-        return Err(AppError::Other(format!("Unexpected token in filter: {:?}", tokens.get(pos))));
+        return Err(AppError::Other(format!("Unexpected token in filter: {:?}", tokens.get(pos).map(display_token))));
     }
     Ok(cond)
 }
@@ -475,6 +599,10 @@ fn tokenize(s: &str) -> Vec<String> {
                 if chars.peek() == Some(&'=') { ops.push('='); chars.next(); }
                 out.push(ops);
             }
+            '(' | ')' | '[' | ']' | ',' => {
+                if !cur.is_empty() { out.push(std::mem::take(&mut cur)); }
+                out.push(c.to_string());
+            }
             _ => cur.push(c),
         }
     }
@@ -482,50 +610,102 @@ fn tokenize(s: &str) -> Vec<String> {
     out
 }
 
-fn parse_expr(tokens: &[String], pos: &mut usize) -> Result<Condition> {
-    let mut left = parse_cmp(tokens, pos)?;
-    while let Some(tok) = tokens.get(*pos) {
-        let connector = tok.to_lowercase();
-        if connector == "and" || connector == "or" {
-            *pos += 1;
-            let right = parse_cmp(tokens, pos)?;
-            left = if connector == "and" {
-                Condition::And(Box::new(left), Box::new(right))
-            } else {
-                Condition::Or(Box::new(left), Box::new(right))
-            };
-        } else {
-            break;
-        }
+fn is_literal(tok: &str) -> bool { tok.starts_with('\u{1}') }
+fn unquote(tok: &str) -> String { tok.strip_prefix('\u{1}').unwrap_or(tok).to_string() }
+fn display_token(tok: &String) -> String { if is_literal(tok) { format!("'{}'", unquote(tok)) } else { tok.clone() } }
+fn is_word(tok: &str, word: &str) -> bool { !is_literal(tok) && tok.eq_ignore_ascii_case(word) }
+
+fn parse_or(tokens: &[String], pos: &mut usize) -> Result<Condition> {
+    let mut left = parse_and(tokens, pos)?;
+    while tokens.get(*pos).map(|t| is_word(t, "or")).unwrap_or(false) {
+        *pos += 1;
+        let right = parse_and(tokens, pos)?;
+        left = Condition::Or(Box::new(left), Box::new(right));
     }
     Ok(left)
 }
 
-fn parse_cmp(tokens: &[String], pos: &mut usize) -> Result<Condition> {
-    let field = tokens.get(*pos).ok_or_else(|| AppError::Other("Expected field".into()))?.clone();
-    let op_tok = tokens.get(*pos + 1).ok_or_else(|| AppError::Other("Expected operator".into()))?;
-    let val_tok = tokens.get(*pos + 2).ok_or_else(|| AppError::Other("Expected value".into()))?;
-    *pos += 3;
+fn parse_and(tokens: &[String], pos: &mut usize) -> Result<Condition> {
+    let mut left = parse_unary(tokens, pos)?;
+    while tokens.get(*pos).map(|t| is_word(t, "and")).unwrap_or(false) {
+        *pos += 1;
+        let right = parse_unary(tokens, pos)?;
+        left = Condition::And(Box::new(left), Box::new(right));
+    }
+    Ok(left)
+}
 
-    let op = match op_tok.to_lowercase().as_str() {
-        "==" | "=" => Op::Eq,
-        "!=" => Op::Ne,
-        ">" => Op::Gt,
-        ">=" => Op::Ge,
-        "<" => Op::Lt,
-        "<=" => Op::Le,
-        "contains" => Op::Contains,
-        other => return Err(AppError::Other(format!("Unknown operator: {other}"))),
-    };
-    // strip the \u1 string-literal marker if present
-    let value = val_tok.strip_prefix('\u{1}').unwrap_or(val_tok).to_string();
-    // `@today`, `@today-7`, `@monday`, `@month` … resolve to ISO dates; `@me`
-    // is resolved earlier by the caller, anything else stays literal.
-    let value = match value.strip_prefix('@').and_then(|w| crate::placeholders::resolve(w, crate::placeholders::today())) {
-        Some(d) => d,
-        None => value,
-    };
-    Ok(Condition::Cmp { field, op, value })
+fn parse_unary(tokens: &[String], pos: &mut usize) -> Result<Condition> {
+    match tokens.get(*pos) {
+        Some(t) if is_word(t, "not") => {
+            *pos += 1;
+            Ok(Condition::Not(Box::new(parse_unary(tokens, pos)?)))
+        }
+        Some(t) if t == "(" => {
+            *pos += 1;
+            let inner = parse_or(tokens, pos)?;
+            match tokens.get(*pos) {
+                Some(t) if t == ")" => { *pos += 1; Ok(inner) }
+                other => Err(AppError::Other(format!("Expected ')' in filter, found {:?}", other.map(display_token)))),
+            }
+        }
+        _ => {
+            let c = parse_clause(tokens, pos)?;
+            let resolve = |v: &String| match v.strip_prefix('@').and_then(|w| crate::placeholders::resolve(w, crate::placeholders::today())) {
+                Some(d) => d,
+                None => v.clone(),
+            };
+            Ok(match c.op {
+                None => Condition::In { field: c.field, values: c.values.iter().map(resolve).collect() },
+                Some(op) => Condition::Cmp { field: c.field, op, value: c.values.first().map(resolve).unwrap_or_default() },
+            })
+        }
+    }
+}
+
+/// One `field op value` clause as written: `op` is `None` for `in`, whose
+/// values are the bracketed list; `is_empty` / `is_not_empty` carry none.
+struct Clause {
+    field: String,
+    op: Option<Op>,
+    values: Vec<String>,
+}
+
+fn parse_clause(tokens: &[String], pos: &mut usize) -> Result<Clause> {
+    let field = tokens.get(*pos).ok_or_else(|| AppError::Other("Expected field".into()))?;
+    if is_literal(field) || matches!(field.as_str(), "(" | ")" | "[" | "]" | ",") {
+        return Err(AppError::Other(format!("Expected field in filter, found {}", display_token(field))));
+    }
+    let field = field.clone();
+    let op_tok = tokens.get(*pos + 1).ok_or_else(|| AppError::Other("Expected operator".into()))?;
+    *pos += 2;
+    if is_word(op_tok, "in") {
+        if tokens.get(*pos).map(|t| t != "[").unwrap_or(true) {
+            return Err(AppError::Other("Expected '[' after in".into()));
+        }
+        *pos += 1;
+        let mut values = Vec::new();
+        loop {
+            match tokens.get(*pos) {
+                Some(t) if t == "]" => { *pos += 1; break; }
+                Some(t) if t == "," => { *pos += 1; }
+                Some(t) if t == "(" || t == ")" || t == "[" => return Err(AppError::Other(format!("Unexpected {t} in list"))),
+                Some(t) => { values.push(unquote(t)); *pos += 1; }
+                None => return Err(AppError::Other("Expected ']' to close the list".into())),
+            }
+        }
+        return Ok(Clause { field, op: None, values });
+    }
+    let op = Op::parse(op_tok).ok_or_else(|| AppError::Other(format!("Unknown operator: {}", display_token(op_tok))))?;
+    if !op.takes_value() {
+        return Ok(Clause { field, op: Some(op), values: vec![] });
+    }
+    let val_tok = tokens.get(*pos).ok_or_else(|| AppError::Other("Expected value".into()))?;
+    if !is_literal(val_tok) && matches!(val_tok.as_str(), "(" | ")" | "[" | "]" | ",") {
+        return Err(AppError::Other(format!("Expected value in filter, found {val_tok}")));
+    }
+    *pos += 1;
+    Ok(Clause { field, op: Some(op), values: vec![unquote(val_tok)] })
 }
 
 // ── Wire helpers (for the Tauri command layer) ────────────────────────────────
@@ -582,6 +762,12 @@ pub struct ViewSpec {
     pub date: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Table views: a per-column summary row, `summary: {amount: sum, done:
+    /// percent_checked}`. Functions: count, sum, avg, min, max,
+    /// percent_checked, empty, not_empty. Computed here over the rows the view
+    /// shows, never written anywhere.
+    #[serde(default)]
+    pub summary: BTreeMap<String, String>,
     /// Every other key: the options a view type reads — charts `x`, `y`,
     /// `agg`, `chartType`, `bucket`, `series`; trackers `log`, `done`,
     /// `range` and their field mappings. One map, so a new view type or
@@ -653,6 +839,10 @@ pub struct ResolvedTable {
     /// toolbar's hidden-column, sort and filter pickers.
     pub all_columns: Vec<String>,
     pub rows: Vec<ResolvedRow>,
+    /// The spec's `summary:` functions evaluated over `rows` — field → value.
+    /// Absent when the spec asks for none.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub summary: BTreeMap<String, serde_json::Value>,
 }
 
 /// Column type label for a schema-only property (one with no row values yet).
@@ -699,6 +889,7 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
         option_order: option_order(schema.as_ref()),
     };
     let table = query.apply(&table);
+    let summary = summarize_table(&table, &spec.summary).into_iter().map(|(k, v)| (k, v.to_json())).collect();
     let all_columns = if all_columns.is_empty() { table.columns.iter().map(|c| c.key.clone()).collect() } else {
         // Computed properties are fields too, for the toolbar's pickers.
         let mut all = all_columns;
@@ -723,7 +914,27 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
         all_columns,
         columns,
         rows: table.rows.into_iter().map(|r| ResolvedRow { id: r.id, cells: r.cells.into_iter().map(|(k, v)| (k, v.to_json())).collect() }).collect(),
+        summary,
     })
+}
+
+/// The functions a view's `summary:` (and a schema's rollup) may name.
+pub const SUMMARY_FUNCTIONS: &[&str] = &["count", "sum", "avg", "min", "max", "percent_checked", "empty", "not_empty"];
+
+/// One summary value over a set of rows: the same arithmetic a rollup uses, so
+/// a table's footer, `cortex view --summary` and MCP `run_view` agree. An
+/// unknown function yields `Null` rather than an error, like a rollup.
+pub fn summarize(rows: &[Row], field: &str, func: &str) -> CellValue {
+    let refs: Vec<&Row> = rows.iter().collect();
+    rollup_value(&refs, field, func.trim())
+}
+
+/// Evaluate a spec's `summary:` map over a table's rows, field → value.
+pub fn summarize_table(table: &Table, summary: &BTreeMap<String, String>) -> BTreeMap<String, CellValue> {
+    summary.iter()
+        .filter(|(_, func)| !func.trim().is_empty())
+        .map(|(field, func)| (field.clone(), summarize(&table.rows, field, func)))
+        .collect()
 }
 
 /// All field names a source offers (the `$body` pseudo-column excluded), before
@@ -759,15 +970,26 @@ pub fn run_view(root: &Path, spec_yaml: &str) -> Result<Table> {
 // The YAML spec stays the on-disk source of truth. The toolbar edits this
 // structured form and serializes it straight back, so a view authored in the
 // UI is byte-identical to one hand-written, and a hand-written one round-trips
-// without surprises. A filter that mixes `and`/`or` (which the flat UI can't
-// represent) is flagged `filter_complex` and kept verbatim — the UI then defers
-// to raw editing rather than mangling it.
+// without surprises. The structured form is a list of clauses under one
+// connector, where a clause may instead be one parenthesised group of plain
+// clauses with its own connector — `a and (b or c)`. Anything else (mixed
+// `and`/`or` without parentheses, nested groups, `not`) is flagged
+// `filter_complex` and kept verbatim — the UI then defers to raw editing
+// rather than mangling it.
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FilterClause {
     pub field: String,
+    /// One of `Op::as_str` or `in`; `value` is the list joined by `, ` for
+    /// `in` and empty for `is_empty` / `is_not_empty`.
     pub op: String,
     pub value: String,
+    /// A parenthesised group: its own clauses and connector; `field`, `op`
+    /// and `value` are then unused.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clauses: Vec<FilterClause>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub join: String,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -801,77 +1023,103 @@ pub struct StructuredSpec {
     pub date: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Table summary row, field → function (see `ViewSpec::summary`).
+    #[serde(default)]
+    pub summary: BTreeMap<String, String>,
     /// View-type options (`x`, `chartType`, `log`, `range`, …) exactly as
     /// written; the toolbar edits none of them and carries them all through.
     #[serde(flatten, default)]
     pub options: BTreeMap<String, String>,
 }
 
-fn normalize_op(tok: &str) -> Option<&'static str> {
-    match tok.to_lowercase().as_str() {
-        "==" | "=" => Some("=="),
-        "!=" => Some("!="),
-        ">" => Some(">"),
-        ">=" => Some(">="),
-        "<" => Some("<"),
-        "<=" => Some("<="),
-        "contains" => Some("contains"),
-        _ => None,
-    }
-}
-
-/// Flatten a filter string into clauses joined by a single connector. `None`
-/// when it mixes `and`/`or` or isn't a clean `field op value …` chain.
-fn flatten_filter(filter: &str) -> Option<(Vec<FilterClause>, String)> {
+/// Flatten a filter string into clauses joined by a single connector, where a
+/// clause may be one parenthesised group of plain clauses. `None` when it
+/// mixes `and`/`or` at one level, nests groups, uses `not`, or isn't a clean
+/// `field op value …` chain.
+pub(crate) fn flatten_filter(filter: &str) -> Option<(Vec<FilterClause>, String)> {
     let tokens = tokenize(filter);
     if tokens.is_empty() {
         return Some((vec![], "and".into()));
     }
+    let mut pos = 0;
+    let (clauses, join) = flatten_chain(&tokens, &mut pos, true)?;
+    if pos != tokens.len() {
+        return None;
+    }
+    Some((clauses, join))
+}
+
+/// `item (conn item)*` with one connector; items are clauses, or — at the top
+/// level only — parenthesised chains of clauses.
+fn flatten_chain(tokens: &[String], pos: &mut usize, top: bool) -> Option<(Vec<FilterClause>, String)> {
     let mut clauses = Vec::new();
     let mut join: Option<String> = None;
-    let mut i = 0;
     loop {
-        let field = tokens.get(i)?;
-        if field.starts_with('\u{1}') {
-            return None; // a literal where a field name belongs
+        let tok = tokens.get(*pos)?;
+        if tok == "(" {
+            if !top { return None; }
+            *pos += 1;
+            let (inner, inner_join) = flatten_chain(tokens, pos, false)?;
+            if tokens.get(*pos)? != ")" { return None; }
+            *pos += 1;
+            clauses.push(FilterClause { clauses: inner, join: inner_join, ..Default::default() });
+        } else {
+            if is_word(tok, "not") { return None; }
+            let c = parse_clause(tokens, pos).ok()?;
+            clauses.push(FilterClause {
+                field: c.field,
+                op: c.op.map(|o| o.as_str().to_string()).unwrap_or_else(|| "in".into()),
+                value: c.values.join(", "),
+                ..Default::default()
+            });
         }
-        let op = normalize_op(tokens.get(i + 1)?)?;
-        let raw_val = tokens.get(i + 2)?;
-        let value = raw_val.strip_prefix('\u{1}').unwrap_or(raw_val).to_string();
-        clauses.push(FilterClause { field: field.clone(), op: op.to_string(), value });
-        i += 3;
-        match tokens.get(i) {
+        match tokens.get(*pos) {
             None => break,
+            Some(t) if t == ")" => break,
             Some(conn) => {
                 let conn = conn.to_lowercase();
-                if conn != "and" && conn != "or" {
+                if is_literal(conn.as_str()) || (conn != "and" && conn != "or") {
                     return None;
                 }
                 match &join {
                     Some(j) if *j != conn => return None, // mixed → complex
                     _ => join = Some(conn),
                 }
-                i += 1;
+                *pos += 1;
             }
         }
     }
     Some((clauses, join.unwrap_or_else(|| "and".into())))
 }
 
-/// String values get quoted; bare numbers/bools don't — matching the spec style
-/// the engine already parses (`status == 'reading'`, `rating > 3`).
-fn build_filter(clauses: &[FilterClause], join: &str) -> String {
+/// String values get quoted; bare numbers/bools and relative dates don't —
+/// matching the spec style the engine already parses (`status == 'reading'`,
+/// `rating > 3`, `due <= @today`, `due within 7d`).
+pub(crate) fn build_filter(clauses: &[FilterClause], join: &str) -> String {
+    let literal = |v: &str| {
+        let v = v.trim();
+        let bare = v.parse::<f64>().is_ok()
+            || matches!(v.to_ascii_lowercase().as_str(), "true" | "false")
+            || v.starts_with('@')
+            || is_within_spec(v);
+        if bare { v.to_string() } else { format!("'{}'", v.replace('\'', "")) }
+    };
     let render = |c: &FilterClause| {
-        let is_scalar = c.value.parse::<f64>().is_ok()
-            || matches!(c.value.to_ascii_lowercase().as_str(), "true" | "false");
-        let v = if is_scalar {
-            c.value.clone()
-        } else {
-            format!("'{}'", c.value.replace('\'', ""))
-        };
-        format!("{} {} {}", c.field, c.op, v)
+        if !c.clauses.is_empty() {
+            let join = if c.join.is_empty() { "and" } else { &c.join };
+            return format!("({})", build_filter(&c.clauses, join));
+        }
+        match c.op.as_str() {
+            "in" => format!("{} in [{}]", c.field, c.value.split(',').map(literal).collect::<Vec<_>>().join(", ")),
+            "is_empty" | "is_not_empty" => format!("{} {}", c.field, c.op),
+            _ => format!("{} {} {}", c.field, c.op, literal(&c.value)),
+        }
     };
     clauses.iter().map(render).collect::<Vec<_>>().join(&format!(" {join} "))
+}
+
+fn is_within_spec(v: &str) -> bool {
+    within_bounds(v, chrono::NaiveDate::from_ymd_opt(2000, 1, 3).unwrap()).is_some()
 }
 
 /// Parse a YAML view spec into its structured (UI-editable) form.
@@ -890,6 +1138,7 @@ pub fn parse_view_spec(spec_yaml: &str) -> Result<StructuredSpec> {
         group: vs.group,
         date: vs.date,
         limit: vs.limit,
+        summary: vs.summary,
         options,
         ..Default::default()
     };
@@ -944,6 +1193,14 @@ pub fn serialize_view_spec(s: &StructuredSpec) -> String {
     }
     if let Some(l) = s.limit {
         out.push_str(&format!("limit: {l}\n"));
+    }
+    // Flow style keeps the summary on one line, like `sort` and `columns`.
+    let summary: Vec<String> = s.summary.iter()
+        .filter(|(_, f)| !f.trim().is_empty())
+        .map(|(k, f)| format!("{k}: {}", f.trim()))
+        .collect();
+    if !summary.is_empty() {
+        out.push_str(&format!("summary: {{{}}}\n", summary.join(", ")));
     }
     // Options in a fixed order: the well-known ones first, the rest alphabetically.
     let known = ["x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range"];
@@ -1479,9 +1736,35 @@ pub fn fill_relation_options(root: &Path, schema: &mut crate::schema::TypeSchema
     }
 }
 
+/// An empty cell: missing, null, blank text, or an empty list.
+fn cell_is_empty(v: Option<&CellValue>) -> bool {
+    match v {
+        None | Some(CellValue::Null) => true,
+        Some(CellValue::Text(t)) | Some(CellValue::Date(t)) => t.trim().is_empty(),
+        Some(CellValue::List(items)) => items.is_empty(),
+        _ => false,
+    }
+}
+
+fn cell_is_checked(v: Option<&CellValue>) -> bool {
+    match v {
+        Some(CellValue::Bool(b)) => *b,
+        Some(CellValue::Text(t)) => t.eq_ignore_ascii_case("true"),
+        _ => false,
+    }
+}
+
 fn rollup_value(rows: &[&Row], prop: &str, func: &str) -> CellValue {
     match func {
         "count" => CellValue::Num(rows.len() as f64),
+        "empty" => CellValue::Num(rows.iter().filter(|r| cell_is_empty(r.cells.get(prop))).count() as f64),
+        "not_empty" => CellValue::Num(rows.iter().filter(|r| !cell_is_empty(r.cells.get(prop))).count() as f64),
+        // Share of rows ticked, 0–100 like a rollup `percent`; unset counts as unticked.
+        "percent_checked" => {
+            if rows.is_empty() { return CellValue::Null; }
+            let checked = rows.iter().filter(|r| cell_is_checked(r.cells.get(prop))).count();
+            CellValue::Num((100.0 * checked as f64 / rows.len() as f64).round())
+        }
         "values" => CellValue::List(
             rows.iter().filter_map(|r| r.cells.get(prop).map(CellValue::as_text)).filter(|s| !s.is_empty()).collect(),
         ),
@@ -2196,6 +2479,145 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    fn row(cells: &[(&str, CellValue)]) -> Row {
+        Row { id: "r".into(), cells: cells.iter().map(|(k, v)| (k.to_string(), v.clone())).collect() }
+    }
+    fn text(s: &str) -> CellValue { CellValue::Text(s.into()) }
+    fn matches(filter: &str, r: &Row) -> bool { parse_filter(filter).unwrap().eval(r) }
+
+    #[test]
+    fn filter_precedence_parentheses_and_not() {
+        let r = row(&[("a", text("1")), ("b", text("2")), ("c", text("3"))]);
+        // `and` binds tighter than `or`: a or (b and c).
+        assert!(matches("a == '1' or b == 'x' and c == 'x'", &r));
+        assert!(!matches("a == 'x' or b == '2' and c == 'x'", &r));
+        assert!(matches("a == 'x' or b == '2' and c == '3'", &r));
+        // Parentheses regroup.
+        assert!(!matches("(a == '1' or b == 'x') and c == 'x'", &r));
+        assert!(matches("(a == 'x' or b == '2') and c == '3'", &r));
+        assert!(matches("((a == '1'))", &r));
+        // `not` is a prefix, and applies to a group.
+        assert!(matches("not a == 'x'", &r));
+        assert!(!matches("not a == '1'", &r));
+        assert!(matches("not (a == 'x' or b == 'x') and c == '3'", &r));
+        assert!(matches("a == '1' and not b == 'x'", &r));
+        // A plain chain still reads as before.
+        assert!(matches("a == '1' and b == '2' and c == '3'", &r));
+        // Errors, not panics.
+        assert!(parse_filter("(a == '1'").is_err());
+        assert!(parse_filter("a == '1')").is_err());
+        assert!(parse_filter("a ==").is_err());
+        assert!(parse_filter("a like 'x'").is_err());
+        assert!(parse_filter("a in 'x'").is_err());
+        assert!(parse_filter("a in [x").is_err());
+    }
+
+    #[test]
+    fn filter_new_operators() {
+        let r = row(&[
+            ("title", text("Piranesi")),
+            ("tags", CellValue::List(vec!["rust".into(), "notes".into()])),
+            ("none", CellValue::List(vec![])),
+            ("blank", text("")),
+            ("n", CellValue::Num(3.0)),
+        ]);
+        assert!(matches("title starts_with 'Pir'", &r));
+        assert!(!matches("title starts_with 'pir'", &r));
+        assert!(matches("title ends_with 'esi'", &r));
+        assert!(matches("tags starts_with 'ru'", &r));
+        assert!(matches("title does_not_contain 'x'", &r));
+        assert!(!matches("title does_not_contain 'ran'", &r));
+        assert!(!matches("tags does_not_contain 'rust'", &r));
+        assert!(matches("missing does_not_contain 'rust'", &r));
+        assert!(matches("blank is_empty", &r));
+        assert!(matches("missing is_empty", &r));
+        assert!(matches("none is_empty", &r));
+        assert!(!matches("title is_empty", &r));
+        assert!(matches("title is_not_empty", &r));
+        assert!(!matches("blank is_not_empty", &r));
+        assert!(matches("title in ['Piranesi', 'Other']", &r));
+        assert!(matches("title in [\"Other\", \"Piranesi\"]", &r));
+        assert!(!matches("title in ['Other']", &r));
+        assert!(matches("tags in ['notes', 'x']", &r));
+        assert!(matches("n in [1, 2, 3]", &r));
+        assert!(!matches("n in [1, 2]", &r));
+        assert!(!matches("blank in ['x']", &r));
+        assert!(matches("n starts_with '3'", &r));
+    }
+
+    #[test]
+    fn filter_within_dates() {
+        let base = chrono::NaiveDate::from_ymd_opt(2026, 9, 9).unwrap();
+        assert_eq!(within_bounds("7d", base).unwrap(), ("2026-09-09".to_string(), "2026-09-16".to_string()));
+        assert_eq!(within_bounds("7", base).unwrap(), ("2026-09-09".to_string(), "2026-09-16".to_string()));
+        assert_eq!(within_bounds("-7d", base).unwrap(), ("2026-09-02".to_string(), "2026-09-09".to_string()));
+        assert_eq!(within_bounds("2w", base).unwrap(), ("2026-09-09".to_string(), "2026-09-23".to_string()));
+        assert_eq!(within_bounds("1m", base).unwrap(), ("2026-09-09".to_string(), "2026-10-09".to_string()));
+        assert_eq!(within_bounds("-1y", base).unwrap(), ("2025-09-09".to_string(), "2026-09-09".to_string()));
+        assert!(within_bounds("soon", base).is_none());
+        assert!(within_bounds("7x", base).is_none());
+
+        let t = crate::placeholders::today();
+        let r = row(&[("due", CellValue::Date(iso(t + chrono::Duration::days(3)))), ("past", CellValue::Date(iso(t - chrono::Duration::days(3))))]);
+        assert!(matches("due within 7d", &r));
+        assert!(matches("due within '7d'", &r));
+        assert!(!matches("due within 2d", &r));
+        assert!(!matches("due within -7d", &r));
+        assert!(matches("past within -7d", &r));
+        assert!(!matches("past within 7d", &r));
+        assert!(!matches("missing within 7d", &r));
+        assert!(!matches("due within 'soon'", &r));
+    }
+
+    #[test]
+    fn structured_spec_round_trips_new_operators_and_a_group() {
+        let spec = "source: collections/tasks\nfilter: status in ['todo', 'doing'] and due within 7d and owner is_not_empty and title starts_with 'A'\n";
+        let s = parse_view_spec(spec).unwrap();
+        assert!(!s.filter_complex);
+        assert_eq!(s.filters.iter().map(|f| f.op.as_str()).collect::<Vec<_>>(), vec!["in", "within", "is_not_empty", "starts_with"]);
+        assert_eq!(s.filters[0].value, "todo, doing");
+        assert_eq!(s.filters[1].value, "7d");
+        assert_eq!(s.filters[2].value, "");
+        assert_eq!(serialize_view_spec(&s), spec);
+
+        // One parenthesised group round-trips; its position is kept.
+        let spec = "source: collections/tasks\nfilter: (status == 'todo' or status == 'doing') and due <= @today\n";
+        let s = parse_view_spec(spec).unwrap();
+        assert!(!s.filter_complex);
+        assert_eq!(s.filter_join, "and");
+        assert_eq!(s.filters.len(), 2);
+        assert_eq!(s.filters[0].join, "or");
+        assert_eq!(s.filters[0].clauses.len(), 2);
+        assert_eq!(s.filters[0].clauses[1].value, "doing");
+        assert_eq!(s.filters[1].value, "@today");
+        assert_eq!(serialize_view_spec(&s), spec);
+        let spec = "source: collections/tasks\nfilter: due <= @today and (status == 'todo' or status == 'doing')\n";
+        assert_eq!(serialize_view_spec(&parse_view_spec(spec).unwrap()), spec);
+        // The JSON the toolbar sees carries the group.
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["filters"][0]["join"], "or");
+        assert!(json["filters"][1].get("clauses").is_none());
+
+        // Nested groups, `not`, and mixed connectors inside a group stay raw.
+        for raw in ["not a == '1'", "(a == '1' and (b == '2' or c == '3'))", "(a == '1' or b == '2' and c == '3')", "a == '1' or b == '2' and c == '3'"] {
+            let s = parse_view_spec(&format!("source: collections/x\nfilter: {raw}\n")).unwrap();
+            assert!(s.filter_complex, "{raw}");
+            assert_eq!(s.filter_raw.as_deref(), Some(raw));
+        }
+    }
+
+    #[test]
+    fn marketplace_filters_still_parse() {
+        // Regression guard for the packs: CORTEX_FILTERS_FILE holds one filter per line.
+        let Ok(path) = std::env::var("CORTEX_FILTERS_FILE") else { return };
+        let mut bad = Vec::new();
+        for line in std::fs::read_to_string(path).unwrap().lines() {
+            if line.trim().is_empty() { continue; }
+            if let Err(e) = parse_filter(line) { bad.push(format!("{line}: {e}")); }
+        }
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
     #[test]
     fn structured_spec_round_trips_and_flags_complex_filters() {
         // Flat filter: parsed into clauses, rebuilt identically.
@@ -2272,6 +2694,66 @@ mod tests {
         assert_eq!(row.cells.get("task_count").unwrap().as_num(), Some(2.0));
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn summary_row_is_computed_over_the_visible_rows() {
+        let root = scratch("summary");
+        write(&root.join("collections/expenses/a.md"), "---\ntitle: Rent\namount: 1200\ndone: true\ncategory: home\n---\n");
+        write(&root.join("collections/expenses/b.md"), "---\ntitle: Food\namount: 300\ndone: false\ncategory: home\n---\n");
+        write(&root.join("collections/expenses/c.md"), "---\ntitle: Gym\namount: 40\ndone: true\n---\n");
+        write(&root.join("collections/expenses/d.md"), "---\ntitle: Pending\ndone: false\ncategory: ''\n---\n");
+
+        let spec = "source: collections/expenses\ntype: table\nsummary: {amount: sum, done: percent_checked, category: empty, title: count, unknown: median}\n";
+        let t = resolve_view(&root, spec).unwrap();
+        let get = |k: &str| t.summary.get(k).cloned().unwrap_or(serde_json::Value::Null);
+        assert_eq!(get("amount"), serde_json::json!(1540.0));
+        assert_eq!(get("done"), serde_json::json!(50.0)); // 2 of 4
+        assert_eq!(get("category"), serde_json::json!(2.0)); // c has none, d has ''
+        assert_eq!(get("title"), serde_json::json!(4.0));
+        assert_eq!(get("unknown"), serde_json::Value::Null);
+        // Nothing was written to any row.
+        assert!(!std::fs::read_to_string(root.join("collections/expenses/a.md")).unwrap().contains("summary"));
+
+        // The filter runs first: the summary covers only the rows shown.
+        let filtered = "source: collections/expenses\nfilter: category == 'home'\nsummary: {amount: avg, amount_max: max, done: not_empty}\n";
+        let t = resolve_view(&root, filtered).unwrap();
+        assert_eq!(t.rows.len(), 2);
+        assert_eq!(t.summary.get("amount"), Some(&serde_json::json!(750.0)));
+        assert_eq!(t.summary.get("done"), Some(&serde_json::json!(2.0)));
+        assert_eq!(t.summary.get("amount_max"), Some(&serde_json::Value::Null)); // no such field
+
+        // No summary asked for → none in the output.
+        let plain = resolve_view(&root, "source: collections/expenses\n").unwrap();
+        assert!(plain.summary.is_empty());
+        assert!(!serde_json::to_string(&plain).unwrap().contains("\"summary\""));
+
+        // Min/max of a date column and an empty table.
+        let empty = Table { name: "x".into(), columns: vec![], rows: vec![] };
+        let mut m = BTreeMap::new();
+        m.insert("amount".to_string(), "sum".to_string());
+        m.insert("done".to_string(), "percent_checked".to_string());
+        let out = summarize_table(&empty, &m);
+        assert_eq!(out.get("amount"), Some(&CellValue::Null));
+        assert_eq!(out.get("done"), Some(&CellValue::Null));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn summary_survives_the_structured_round_trip() {
+        let spec = "source: collections/expenses\ntype: table\nsummary:\n  amount: sum\n  done: percent_checked\nlimit: 10\n";
+        let s = parse_view_spec(spec).unwrap();
+        assert_eq!(s.summary.get("amount").map(String::as_str), Some("sum"));
+        assert_eq!(s.limit, Some(10));
+        assert!(!s.options.contains_key("summary"));
+        let yaml = serialize_view_spec(&s);
+        assert!(yaml.contains("summary: {amount: sum, done: percent_checked}\n"), "{yaml}");
+        let again = parse_view_spec(&yaml).unwrap();
+        assert_eq!(again.summary, s.summary);
+        // The engine reads the flow form back as the same map.
+        let vs: ViewSpec = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(vs.summary, s.summary);
     }
 
     #[test]

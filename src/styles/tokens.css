@@ -70,6 +70,21 @@
   --tag-purple-bg: #eae4f2;  --tag-purple-fg: #3c2b59;
   --tag-pink-bg:   #f4dfeb;  --tag-pink-fg:   #4f2741;
   --tag-red-bg:    #fbe4e4;  --tag-red-fg:    #5d1715;
+
+  /* Code blocks. shiki's CSS-variables theme (Shell/codeBlock.ts) colours
+     tokens with these, so highlighting follows the theme without a re-render.
+     Light/dark are hand-picked hues; the desktop palette maps its own names. */
+  --code-background:              #f6f5f2;
+  --code-foreground:              var(--text-primary);
+  --code-token-comment:           var(--text-secondary);
+  --code-token-punctuation:       var(--text-secondary);
+  --code-token-keyword:           #a626a4;
+  --code-token-string:            #3f8f3f;
+  --code-token-string-expression: #0b7a9c;
+  --code-token-constant:          #b26a00;
+  --code-token-function:          #3a6fd8;
+  --code-token-parameter:         #c0453c;
+  --code-token-link:              var(--accent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -116,6 +131,14 @@
     --border-focus: #4a4844;
 
     --accent-light: #1c2c3e;
+
+    --code-background:              #1f1e1c;
+    --code-token-keyword:           #c678dd;
+    --code-token-string:            #98c379;
+    --code-token-string-expression: #56b6c2;
+    --code-token-constant:          #d19a66;
+    --code-token-function:          #61afef;
+    --code-token-parameter:         #e06c75;
   }
 }
 
@@ -134,6 +157,14 @@
   --border-focus: #4a4844;
 
   --accent-light: #1c2c3e;
+
+  --code-background:              #1f1e1c;
+  --code-token-keyword:           #c678dd;
+  --code-token-string:            #98c379;
+  --code-token-string-expression: #56b6c2;
+  --code-token-constant:          #d19a66;
+  --code-token-function:          #61afef;
+  --code-token-parameter:         #e06c75;
 }
 
 /* ── Desktop palette ────────────────────────────────────────────────────────
@@ -186,4 +217,14 @@
   --tag-pink-fg:   color-mix(in srgb, color-mix(in srgb, var(--palette-magenta) 65%, var(--palette-red)) 75%, var(--palette-foreground));
   --tag-red-bg:    color-mix(in srgb, var(--palette-red) 22%, var(--palette-background));
   --tag-red-fg:    color-mix(in srgb, var(--palette-red) 75%, var(--palette-foreground));
+
+  /* Code tokens: the palette's own colour names, so highlighted code matches
+     the terminal's. */
+  --code-background:              color-mix(in srgb, var(--palette-background) 94%, var(--palette-foreground));
+  --code-token-keyword:           var(--palette-magenta);
+  --code-token-string:            var(--palette-green);
+  --code-token-string-expression: var(--palette-cyan, var(--palette-blue));
+  --code-token-constant:          var(--palette-yellow);
+  --code-token-function:          var(--palette-blue);
+  --code-token-parameter:         var(--palette-red);
 }

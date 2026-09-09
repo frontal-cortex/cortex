@@ -8,6 +8,7 @@ use crate::watcher::{self, SelfWrites};
 use cortex_core::error::{AppError, Result};
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::rename::RenameReport;
+use cortex_core::search::SearchHit;
 
 fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
     state
@@ -23,6 +24,13 @@ fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
 #[tauri::command]
 pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
     Ok(cortex_core::vault::list_notes(&vault_path(&state)?))
+}
+
+/// The vault's tag tree with counts, nested by `/` — frontmatter and inline
+/// `#tags` alike. Computed from the notes on every call; nothing is stored.
+#[tauri::command]
+pub fn list_tags(state: State<'_, VaultState>) -> Result<Vec<cortex_core::tags::TagNode>> {
+    Ok(cortex_core::vault::list_tags(&vault_path(&state)?))
 }
 
 #[tauri::command]
@@ -230,11 +238,13 @@ pub fn delete_note(
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
+/// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
+/// `type:`, `path:`); see `cortex_core::search`. Each hit carries a snippet.
 #[tauri::command]
 pub fn search_notes(
     query: String,
     db_state: State<'_, DbState>,
-) -> Result<Vec<NoteEntry>> {
+) -> Result<Vec<SearchHit>> {
     let guard = db_state.0.lock().unwrap();
     match guard.as_ref() {
         Some(db) => db.search(&query),
@@ -769,8 +779,14 @@ pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<Stri
     if !abs.exists() {
         return Err(AppError::Other(format!("Asset not found: {rel_path}")));
     }
+    // A `cover:` value comes from frontmatter — possibly a pack's seed row. It
+    // may point anywhere inside the vault, never outside it (no `..`, no symlink out).
+    let (real, real_root) = (abs.canonicalize()?, root.canonicalize()?);
+    if !real.starts_with(&real_root) {
+        return Err(AppError::Other(format!("Asset is outside the vault: {rel_path}")));
+    }
 
-    let data = std::fs::read(&abs)?;
+    let data = std::fs::read(&real)?;
     let b64 = general_purpose::STANDARD.encode(&data);
 
     let ext = std::path::Path::new(&rel_path)

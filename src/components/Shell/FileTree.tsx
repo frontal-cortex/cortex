@@ -448,6 +448,52 @@ export function LeafRow({
   );
 }
 
+/** An expandable row that isn't a folder on disk — a tag, say — drawn with
+ *  the folder row's geometry (chevron in the gutter, count on the right) so
+ *  it folds like one. The row itself runs `onActivate` (open the tag page);
+ *  only the chevron folds, so a click never has to choose between the two. */
+export function BranchRow({
+  id, a11y, depth, open, hasChildren, icon, label, count, title, onToggle, onActivate, children,
+}: {
+  id: string;
+  a11y: A11yFor;
+  depth: number;
+  open: boolean;
+  hasChildren: boolean;
+  icon: ReactNode;
+  label: string;
+  count: number;
+  title?: string;
+  onToggle: () => void;
+  onActivate: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div>
+      <div
+        {...a11y(id)}
+        className={`${styles.row} ${styles.dirRow}`}
+        style={rowStyle(depth)}
+        title={title}
+        onClick={onActivate}
+      >
+        <span
+          className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
+          style={hasChildren ? undefined : { visibility: "hidden" }}
+          aria-hidden
+          onClick={(e) => { if (hasChildren) { e.stopPropagation(); onToggle(); } }}
+        >
+          <ChevronRightIcon size={12} />
+        </span>
+        <span className={styles.rowIcon}>{icon}</span>
+        <span className={styles.dirName}>{label}</span>
+        <span className={styles.count}>{count}</span>
+      </div>
+      {open && hasChildren && <div role="group">{children}</div>}
+    </div>
+  );
+}
+
 /** A quiet one-line row whose whole surface is the action ("No databases · Create one"). */
 export function ActionRow({
   id, a11y, depth, icon, text, action, title, onClick,

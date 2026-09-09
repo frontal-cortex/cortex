@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
-import { NoteEntry, commands } from "../../lib/commands";
+import { NoteEntry, SearchHit, commands } from "../../lib/commands";
+import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -35,7 +36,11 @@ interface Props {
   onToggleMonk: () => void;
   onFocusSidebar: () => void;
   onToggleProperties: () => void;
+  /** Absent when no note is open. */
+  onFindInNote?: () => void;
+  onToggleOutline: () => void;
   onPublish: () => void;
+  onImport: () => void;
   /** Absent when no note is open. */
   onTogglePublic?: () => void;
   isPublic: boolean;
@@ -48,8 +53,8 @@ export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
-  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
-  onPublish, onTogglePublic, isPublic, hasRemote,
+  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
+  onPublish, onImport, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -66,7 +71,10 @@ export function QuickSwitcher({
   const rawQuery = isActionMode === "actions" ? query.slice(1).trimStart() : query;
 
   // ── Note results ────────────────────────────────────────────────────────────
-  const noteResults = isActionMode === "notes"
+  // Substring over title / path / tags first — instant, and what you want for
+  // a note you know by name. When that finds nothing, fall back to the
+  // full-text index so a note is reachable by a word in its body.
+  const substringResults: (NoteEntry & { snippet?: string })[] = isActionMode === "notes"
     ? (rawQuery
         ? notes.filter((n) =>
             n.title.toLowerCase().includes(rawQuery.toLowerCase()) ||
@@ -75,6 +83,19 @@ export function QuickSwitcher({
           )
         : notes.slice(0, 12))
     : [];
+  const needsFts = isActionMode === "notes" && !!rawQuery && substringResults.length === 0;
+  const [ftsResults, setFtsResults] = useState<SearchHit[]>([]);
+  useEffect(() => {
+    if (!needsFts) { setFtsResults([]); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      commands.searchNotes(rawQuery)
+        .then((hits) => { if (!cancelled) setFtsResults(hits.slice(0, 20)); })
+        .catch(() => {});
+    }, 120);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [needsFts, rawQuery]);
+  const noteResults = needsFts ? ftsResults : substringResults;
 
   // ── Action results ──────────────────────────────────────────────────────────
   const buildActions = useCallback((): Action[] => {
@@ -150,6 +171,13 @@ export function QuickSwitcher({
         run: () => { onFocusSidebar(); onClose(); },
       },
       {
+        id: "import",
+        label: "Import…",
+        description: "A CSV file into a collection, or a folder of Markdown (an Obsidian vault, a Notion export) into notes/",
+        icon: <DatabaseIcon size={14} />,
+        run: () => { onImport(); onClose(); },
+      },
+      {
         id: "publish",
         label: "Publish site…",
         description: "Build a static site from the notes marked public — nothing is published until you confirm",
@@ -171,6 +199,20 @@ export function QuickSwitcher({
         description: `${shortcutFor("toggle-properties")} · show or hide the note's property panel`,
         icon: <TagsListIcon size={14} />,
         run: () => { onToggleProperties(); onClose(); },
+      },
+      ...(onFindInNote ? [{
+        id: "find-in-note",
+        label: "Find in note",
+        description: `${shortcutFor("find-in-note")} · highlight matches in the open note; Enter steps through them`,
+        icon: <SearchIcon size={14} />,
+        run: () => { onClose(); onFindInNote(); },
+      }] : []),
+      {
+        id: "toggle-outline",
+        label: "Toggle outline",
+        description: `${shortcutFor("toggle-outline")} · the note's headings beside the page; click to jump`,
+        icon: <TextLinesIcon size={14} />,
+        run: () => { onToggleOutline(); onClose(); },
       },
       {
         id: "toggle-terminal",
@@ -285,7 +327,9 @@ export function QuickSwitcher({
                   >
                     <span className={styles.itemIcon}>{note.icon ?? "📄"}</span>
                     <span className={styles.itemTitle}>{note.title || "Untitled"}</span>
-                    <span className={styles.itemPath}>{note.path}</span>
+                    {note.snippet
+                      ? <span className={styles.itemSnippet} title={note.path}><Snippet text={note.snippet} /></span>
+                      : <span className={styles.itemPath}>{note.path}</span>}
                   </button>
                 ))
               : actionResults.map((action, i) => (
