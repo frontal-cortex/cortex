@@ -206,6 +206,7 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex schema rename <key> <old> <new>   rename a property everywhere (rows, views, rollups, formulas)
     cortex schema rm <key> <name>            delete a property everywhere (refused while a rollup or formula uses it)
     cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
+    cortex import csv <file> --collection <c> [--dry-run]   a CSV as rows   cortex import markdown <dir> [--into n] [--dry-run]
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)
 
 Add `--json` to any command for machine output. `cortex mcp` serves the same

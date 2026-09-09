@@ -659,6 +659,42 @@ impl Vault {
         Ok(cortex_core::publish::preview(&self.root)?)
     }
 
+    // ── Import ──────────────────────────────────────────────────────────────
+
+    /// `--map` arguments (`Header=property[:type]`, `Header=` to skip) as column overrides.
+    pub fn csv_options(collection: &str, title: Option<&str>, maps: &[String]) -> Result<cortex_core::import::CsvOptions> {
+        let mut columns = Vec::new();
+        for m in maps {
+            let (header, rest) = m.split_once('=').ok_or_else(|| format!("--map needs HEADER=property[:type], got '{m}'"))?;
+            let (property, ty) = rest.split_once(':').unwrap_or((rest, ""));
+            columns.push(cortex_core::import::ColumnMap { header: header.to_string(), property: property.to_string(), ty: ty.to_string(), options: vec![] });
+        }
+        Ok(cortex_core::import::CsvOptions { collection: collection.to_string(), title_column: title.map(str::to_string), columns })
+    }
+
+    /// What importing a CSV would write, without writing it.
+    pub fn import_csv_plan(&self, file: &std::path::Path, opts: &cortex_core::import::CsvOptions) -> Result<cortex_core::import::CsvPlan> {
+        Ok(cortex_core::import::plan_csv(&self.root, file, opts)?)
+    }
+
+    /// Import a CSV as rows of a collection and index them.
+    pub fn import_csv(&self, file: &std::path::Path, opts: &cortex_core::import::CsvOptions) -> Result<cortex_core::import::CsvReport> {
+        let r = cortex_core::import::import_csv(&self.root, file, opts)?;
+        let db = self.db()?;
+        for p in &r.written { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        Ok(r)
+    }
+
+    /// Copy a folder of Markdown under `notes/<into>/` (images into `assets/`) and index it.
+    pub fn import_markdown(&self, dir: &std::path::Path, into: &str, dry_run: bool) -> Result<cortex_core::import::MarkdownReport> {
+        let r = cortex_core::import::import_markdown(&self.root, dir, into, dry_run)?;
+        if !dry_run {
+            let db = self.db()?;
+            for p in &r.notes { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        }
+        Ok(r)
+    }
+
     // ── Git & proposals ─────────────────────────────────────────────────────
 
     pub fn status(&self) -> Result<StatusReport> {

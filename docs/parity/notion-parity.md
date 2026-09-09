@@ -155,9 +155,9 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Notion export (zip of Markdown + CSV) | missing | L | No importer of any kind. The single biggest adoption blocker. |
-| CSV import into a collection | missing | M | CSV is readable as a view *source* under `data/` (`data.rs:248`), never converted to rows. |
-| Markdown folder / Obsidian vault | partial | S | `open_vault` opens any directory, `git init`s it, writes `VAULT.md` / `AGENTS.md` and indexes every `.md`. "Import" is "point it at the folder", with side-effect files. |
+| Notion export (zip of Markdown + CSV) | partial | M | Unzip it, then `cortex import markdown <dir>` for the pages and `cortex import csv <file> --collection <name>` per database (`import.rs`). No one-shot zip importer yet: Notion's `Name abc123.md` suffixes and page ↔ database links are not rewritten. |
+| CSV import into a collection | done | — | `import.rs`: `cortex import csv`, MCP `import_csv`, **Import…** in the palette. One row note per record named from the title column, types inferred (number, date, checkbox, url, select from a small vocabulary; `--map` overrides), schema written or merged, `_index.md` for a new collection, dry-run preview of the first five rows. |
+| Markdown folder / Obsidian vault | done | — | `cortex import markdown <dir> [--into NAME]`, MCP `import_markdown`, **Import…** in the palette: copies `*.md` under `notes/<name>/`, frontmatter and `[[links]]` untouched, referenced images into `assets/` with paths rewritten, dot-folders skipped and every skip reported; the source is never modified. `open_vault` still works for "use this folder as the vault". |
 | Evernote, HTML import | missing | M | |
 | Export: Markdown | native | — | The files are already Markdown. |
 | Export: note → HTML, collection → CSV / HTML | done | — | `export.ts`, `data.rs:1627-1655`. |
@@ -253,7 +253,7 @@ by inferring column types (`data.rs:128`).
 
 ## Notable gaps, ranked
 
-1. **No import path.** Nobody can move in from Notion, CSV, or Evernote. Opening a Markdown folder works but writes files into it.
+1. **No one-shot Notion import.** CSV and Markdown folders import (§8); a Notion export still has to be unzipped and imported per database, and Evernote / HTML have no path.
 2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
 3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.

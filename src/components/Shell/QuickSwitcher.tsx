@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, SearchHit, commands } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -40,6 +40,7 @@ interface Props {
   onFindInNote?: () => void;
   onToggleOutline: () => void;
   onPublish: () => void;
+  onImport: () => void;
   /** Absent when no note is open. */
   onTogglePublic?: () => void;
   isPublic: boolean;
@@ -53,7 +54,7 @@ export function QuickSwitcher({
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
-  onPublish, onTogglePublic, isPublic, hasRemote,
+  onPublish, onImport, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -168,6 +169,13 @@ export function QuickSwitcher({
         description: `${shortcutFor("focus-sidebar")} · then arrows / j k, Enter to open, n for a new note`,
         icon: <PanelLeftIcon size={14} />,
         run: () => { onFocusSidebar(); onClose(); },
+      },
+      {
+        id: "import",
+        label: "Import…",
+        description: "A CSV file into a collection, or a folder of Markdown (an Obsidian vault, a Notion export) into notes/",
+        icon: <DatabaseIcon size={14} />,
+        run: () => { onImport(); onClose(); },
       },
       {
         id: "publish",
