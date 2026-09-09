@@ -239,7 +239,11 @@ by inferring column types (`data.rs:128`).
 | Desktop builds | partial | S | `targets: "all"` with no per-OS bundle or signing config (`tauri.conf.json:29`). Tiling-WM decorations handled. |
 | CI / release workflow | missing | M | No `.github/` in the repo. |
 | Auto-update | missing | M | No `tauri-plugin-updater`. |
+<<<<<<< HEAD
+| Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`. The git transport is ready (`remote::Git2Remote`, selected on iOS/Android). See `obsidian-parity.md` §14 and the mobile backlog rows. |
+=======
 | Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, git shells out. The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
+>>>>>>> origin/main
 | Responsive layout | missing | M | Three `@media` rules, all in overlays; sidebar fixed at 260px; window `minWidth: 800`. |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 

@@ -364,7 +364,7 @@ editor column, hidden in monk mode. Nothing stored. Screenshot all three.
 created: 2026-09-09
 effort: L
 priority: 34
-status: planned
+status: done
 tags: [parity, mobile]
 title: Mobile — in-process git transport (RemoteOps) with desktop tests
 type: note
