@@ -372,6 +372,22 @@ function peek(spec: string, key: string): string | undefined {
   return m?.[1]?.trim();
 }
 
+/** A map-valued spec key (`summary: {amount: sum}` on one line, or a YAML
+ *  block of `  field: function` lines) as an object. */
+function peekMap(spec: string, key: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const flow = spec.match(new RegExp(`^${key}:[ \\t]*\\{(.*)\\}[ \\t]*$`, "m"));
+  const block = flow ? null : spec.match(new RegExp(`^${key}:[ \\t]*\\n((?:[ \\t]+\\S.*(?:\\n|$))+)`, "m"));
+  const pairs = flow ? flow[1].split(",") : block ? block[1].split("\n") : [];
+  for (const part of pairs) {
+    const i = part.indexOf(":");
+    if (i < 0) continue;
+    const k = part.slice(0, i).trim(), v = part.slice(i + 1).trim().replace(/^['"]|['"]$/g, "");
+    if (k && v) out[k] = v;
+  }
+  return out;
+}
+
 function formatCell(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
   if (Array.isArray(v)) return v.join(", ");
@@ -751,9 +767,94 @@ function colClass(c: ViewColumn): string {
   return styles.colText;
 }
 
-export function DataTable({ table, spec, source, onChanged }: { table: ViewTable; spec: string; source: string; onChanged: () => void }) {
+/** The summary functions a table's footer can pick per column. */
+const SUMMARY_FUNCTIONS: { value: string; label: string }[] = [
+  { value: "count", label: "Count" },
+  { value: "empty", label: "Empty" },
+  { value: "not_empty", label: "Not empty" },
+  { value: "percent_checked", label: "Checked" },
+  { value: "sum", label: "Sum" },
+  { value: "avg", label: "Average" },
+  { value: "min", label: "Min" },
+  { value: "max", label: "Max" },
+];
+
+/** Which functions make sense for a column: every column counts; numbers add
+ *  the arithmetic, dates a min/max, checkboxes the share ticked. */
+function summaryChoices(c: ViewColumn): { value: string; label: string }[] {
+  const t = c.schema?.type;
+  const numeric = isNumericColumn(c);
+  const date = c.ty === "date" || t === "date";
+  const bool = c.ty === "bool" || t === "checkbox";
+  return SUMMARY_FUNCTIONS.filter((f) => {
+    switch (f.value) {
+      case "sum": case "avg": return numeric;
+      case "min": case "max": return numeric || date;
+      case "percent_checked": return bool;
+      default: return true;
+    }
+  });
+}
+
+/** The engine's summary value as text — a number in the column's own format. */
+function formatSummary(c: ViewColumn, func: string, v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = toNumber(v);
+  if (n === null) return formatCell(v);
+  if (func === "percent_checked") return `${fmtNum(n)}%`;
+  if (func === "count" || func === "empty" || func === "not_empty") return fmtNum(n);
+  return c.schema && numberFormat(c) && c.schema.format !== "stars" && c.schema.format !== "progress"
+    ? formatNumber(n, c.schema)
+    : fmtNum(n);
+}
+
+/** One footer cell: the chosen function and its value, or a hover "Calculate"
+ *  picker when the view can be edited. Nothing here is written to a row —
+ *  the pick goes into the view spec, the value comes from the engine. */
+function SummaryCell({ col, func, value, onPick }: {
+  col: ViewColumn; func: string | undefined; value: unknown; onPick?: (func: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const label = SUMMARY_FUNCTIONS.find((f) => f.value === func)?.label ?? func;
+  const body = func
+    ? <><span className={styles.summaryLabel}>{label}</span> <span className={styles.summaryValue}>{formatSummary(col, func, value)}</span></>
+    : <span className={styles.summaryLabel}>Calculate</span>;
+  if (!onPick) return func ? <span className={styles.summaryCell}>{body}</span> : null;
+  return (
+    <div className={`${styles.summaryWrap} ${func ? styles.summarySet : ""}`} ref={ref}>
+      <button className={styles.summaryBtn} title="Summarise this column" onClick={() => setOpen((o) => !o)}>
+        {body} <span className={styles.summaryCaret}>▾</span>
+      </button>
+      {open && (
+        <div className={styles.summaryMenu}>
+          <button className={styles.newRowItem} onClick={() => { setOpen(false); onPick(null); }}>None{!func ? " ✓" : ""}</button>
+          {summaryChoices(col).map((f) => (
+            <button key={f.value} className={styles.newRowItem} onClick={() => { setOpen(false); onPick(f.value); }}>
+              {f.label}{func === f.value ? " ✓" : ""}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
+  table: ViewTable; spec: string; source: string; onChanged: () => void;
+  /** Lets the footer write a `summary:` pick back into the view spec. */
+  onSpecChange?: (nextSpec: string) => void;
+}) {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Folded groups — a glance-state, kept in memory only.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   const commit = (col: ViewTable["columns"][number], rowId: string, value: string, ty?: string) => {
     const key = `${rowId}:${col.key}`;
@@ -873,6 +974,67 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
 
   const canOpen = source.startsWith("collections/");
 
+  const renderRow = (row: ViewTable["rows"][number]) => (
+    <tr key={row.id}>
+      {table.columns.map((c) => (
+        <td key={c.key}>{renderCell(c, row)}</td>
+      ))}
+      {schemaKey && <td className={styles.addPropCol} />}
+      <td className={styles.rowActionCol}>
+        <div className={styles.rowActions}>
+          {canOpen && (
+            <button className={styles.rowOpen} title="Open note" onClick={() => openRow(source, row.id)}>
+              <OpenIcon size={13} />
+            </button>
+          )}
+          <button className={styles.rowDelete} title="Delete row" onClick={() => del(row.id)}>
+            <CloseIcon size={13} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+
+  // ── Grouping: one section per value of `group:`, in the property's option
+  // order, then other values, then the rows with none. Same buckets as the board.
+  const groupField = peek(spec, "group");
+  const groupCol = groupField ? table.columns.find((c) => c.key === groupField) : undefined;
+  const groups = new Map<string, ViewTable["rows"]>();
+  if (groupField) {
+    for (const row of table.rows) {
+      const key = toInput(row.cells[groupField]) || "—";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row);
+    }
+  }
+  const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
+  const present = [...groups.keys()];
+  const groupKeys = [
+    ...optionOrder.filter((o) => groups.has(o)),
+    ...present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort(),
+    ...(groups.has("—") ? ["—"] : []),
+  ];
+  const toggleGroup = (g: string) =>
+    setCollapsed((prev) => { const next = new Set(prev); if (next.has(g)) next.delete(g); else next.add(g); return next; });
+  // A computed group value can't be seeded into a new row.
+  const canAddInGroup = !!groupField && !(groupCol && isComputedColumn(groupCol));
+  const colCount = table.columns.length + (schemaKey ? 1 : 0) + 1;
+
+  // ── Summary row: functions from the spec, values from the engine.
+  const summarySpec = peekMap(spec, "summary");
+  const hasSummary = Object.keys(summarySpec).length > 0;
+  const setSummary = (field: string, func: string | null) => {
+    if (!onSpecChange) return;
+    commands.parseViewSpec(spec)
+      .then((s) => {
+        const next = { ...(s.summary ?? {}) };
+        if (func) next[field] = func; else delete next[field];
+        return commands.serializeViewSpec({ ...s, summary: next });
+      })
+      .then(onSpecChange)
+      .catch((e) => setErr(String(e)));
+  };
+
   return (
     <div className={styles.tableWrap}>
       <table className={styles.table}>
@@ -903,33 +1065,57 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
             <th className={styles.rowActionCol} />
           </tr>
         </thead>
-        <tbody>
-          {table.rows.map((row) => (
-            <tr key={row.id}>
+        {!groupField && <tbody>{table.rows.map(renderRow)}</tbody>}
+        {groupField && groupKeys.map((g) => {
+          const rows = groups.get(g) ?? [];
+          const folded = collapsed.has(g);
+          return (
+            <tbody key={g} className={styles.group}>
+              <tr className={styles.groupRow}>
+                <td colSpan={colCount}>
+                  <button className={styles.groupToggle} onClick={() => toggleGroup(g)} aria-expanded={!folded}>
+                    <span className={`${styles.groupChevron} ${folded ? styles.groupChevronFolded : ""}`}>▾</span>
+                    <span className={styles.groupTitle}>{g === "—" ? `No ${groupField}` : g}</span>
+                    <span className={styles.groupCount}>{rows.length}</span>
+                  </button>
+                </td>
+              </tr>
+              {!folded && rows.map(renderRow)}
+              {!folded && canAddInGroup && (
+                <tr className={styles.groupAddRow}>
+                  <td colSpan={colCount}>
+                    <NewRowButton source={source} spec={spec} onChanged={onChanged} onError={setErr}
+                      extra={{ [groupField]: g === "—" ? "" : g }} compact />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          );
+        })}
+        {(hasSummary || onSpecChange) && (
+          <tfoot>
+            <tr className={styles.summaryRow}>
               {table.columns.map((c) => (
-                <td key={c.key}>{renderCell(c, row)}</td>
+                <td key={c.key}>
+                  <SummaryCell
+                    col={c}
+                    func={summarySpec[c.key]}
+                    value={table.summary?.[c.key]}
+                    onPick={onSpecChange ? (f) => setSummary(c.key, f) : undefined}
+                  />
+                </td>
               ))}
               {schemaKey && <td className={styles.addPropCol} />}
-              <td className={styles.rowActionCol}>
-                <div className={styles.rowActions}>
-                  {canOpen && (
-                    <button className={styles.rowOpen} title="Open note" onClick={() => openRow(source, row.id)}>
-                      <OpenIcon size={13} />
-                    </button>
-                  )}
-                  <button className={styles.rowDelete} title="Delete row" onClick={() => del(row.id)}>
-                    <CloseIcon size={13} />
-                  </button>
-                </div>
-              </td>
+              <td className={styles.rowActionCol} />
             </tr>
-          ))}
-        </tbody>
+          </tfoot>
+        )}
       </table>
       <div className={styles.footer}>
         <NewRowButton source={source} spec={spec} onChanged={onChanged} onError={setErr} />
         <span className={styles.count}>
           {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
+          {groupField && groupKeys.length > 0 && ` · ${groupKeys.length} group${groupKeys.length === 1 ? "" : "s"}`}
           {err && <span className={styles.error}> · {err}</span>}
         </span>
       </div>
@@ -939,8 +1125,12 @@ export function DataTable({ table, spec, source, onChanged }: { table: ViewTable
 
 /** "New row" — a plain button, or a dropdown (Blank / templates / New template)
  *  when the collection has row templates. */
-function NewRowButton({ source, spec, onChanged, onError }: {
+function NewRowButton({ source, spec, onChanged, onError, extra, compact }: {
   source: string; spec: string; onChanged: () => void; onError: (e: string) => void;
+  /** Fields seeded on top of the filter's — a table group's value, so the row lands in that section. */
+  extra?: Record<string, string>;
+  /** The quieter in-group button. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -959,9 +1149,10 @@ function NewRowButton({ source, spec, onChanged, onError }: {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const seed = () => ({ title: "Untitled", created: today(), ...seedFromFilter(spec) });
+  const seed = () => ({ title: "Untitled", created: today(), ...seedFromFilter(spec), ...(extra ?? {}) });
   const addBlank = () =>
     commands.addRow(source, newRowId(), seed()).then(onChanged).catch((e) => onError(String(e)));
+  const btnClass = compact ? styles.groupAddBtn : styles.newRowBtn;
   const addFromTemplate = (t: string) => {
     setOpen(false);
     commands.addRowFromTemplate(source, newRowId(), t, seed()).then(onChanged).catch((e) => onError(String(e)));
@@ -981,13 +1172,13 @@ function NewRowButton({ source, spec, onChanged, onError }: {
   };
 
   if (!collection) {
-    return <button className={styles.newRowBtn} onClick={addBlank}>+ New row</button>;
+    return <button className={btnClass} onClick={addBlank}>+ New row</button>;
   }
 
   return (
-    <div className={styles.newRowWrap} ref={ref}>
-      <button className={styles.newRowBtn} onClick={addBlank}>+ New row</button>
-      <button className={styles.newRowCaret} title="New from template" onClick={() => setOpen((o) => !o)}>▾</button>
+    <div className={`${styles.newRowWrap} ${compact ? styles.newRowCompact : ""}`} ref={ref}>
+      <button className={btnClass} onClick={addBlank}>+ New row</button>
+      <button className={`${styles.newRowCaret} ${compact ? styles.newRowCaretCompact : ""}`} title="New from template" onClick={() => setOpen((o) => !o)}>▾</button>
       {open && (
         <div className={styles.newRowMenu}>
           <button className={styles.newRowItem} onClick={() => { setOpen(false); addBlank(); }}>Blank</button>
@@ -1187,19 +1378,35 @@ export function BoardView({ table, spec, source, onChanged }: {
   );
 }
 
-/** Resolve a cover value (vault path / data URI / URL) to a displayable src. */
+/** Resolve a cover value (vault path / data URI / URL) to a displayable src.
+ *  A remote URL is fetched only when asked: an image in a row someone else
+ *  wrote (a pack's seed) must not call home just because a view was opened. */
 function AssetImg({ value, className }: { value: unknown; className?: string }) {
   const [src, setSrc] = useState<string | null>(null);
+  const [wanted, setWanted] = useState(false);
   const raw = typeof value === "string" ? value : "";
+  const remote = /^https?:\/\//i.test(raw);
   useEffect(() => {
     let alive = true;
-    if (!raw) { setSrc(null); return; }
-    if (raw.startsWith("data:") || raw.startsWith("http")) { setSrc(raw); return; }
+    setWanted(false);
+    if (!raw || remote) { setSrc(null); return; }
+    if (raw.startsWith("data:")) { setSrc(raw); return; }
     commands.readAsset(raw).then((d) => { if (alive) setSrc(d); }).catch(() => { if (alive) setSrc(null); });
     return () => { alive = false; };
-  }, [raw]);
-  if (!src) return null;
-  return <img src={src} className={className} alt="" />;
+  }, [raw, remote]);
+  if (remote && !wanted) {
+    let host = "";
+    try { host = new URL(raw).host; } catch { /* shown as-is */ }
+    return (
+      <button type="button" className={styles.remoteImg} title={raw}
+        onClick={(e) => { e.stopPropagation(); setWanted(true); }}>
+        Load image from {host || "the web"}
+      </button>
+    );
+  }
+  const shown = remote ? raw : src;
+  if (!shown) return null;
+  return <img src={shown} className={className} alt="" />;
 }
 
 /** Pick the date field for a calendar: explicit `date:`, else a date column,
@@ -1628,6 +1835,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
           fields={table?.allColumns ?? []}
           visibleColumns={table?.columns.map((c) => c.key).filter((k) => k !== "$body") ?? []}
           isBoard={isBoard}
+          isTable={declaredType === "table"}
           onSpecChange={applySpec}
         />
       )}
@@ -1663,7 +1871,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
                       ? <GalleryView table={table} spec={spec} source={source} onChanged={reload} />
                       : isTimeline
                         ? <TimelineView table={table} spec={spec} source={source} onStartChange={(f) => applySpec(specSet(spec, "start", f))} />
-                        : <DataTable table={table} spec={spec} source={source} onChanged={reload} />)
+                        : <DataTable table={table} spec={spec} source={source} onChanged={reload} onSpecChange={applySpec} />)
             : loading ? <div className={styles.stub}>Loading…</div> : null))}
     </div>
   );

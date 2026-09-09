@@ -1028,6 +1028,155 @@
   color: var(--text-tertiary);
 }
 
+/* Grouped table: one section per group value, foldable, with its own add row. */
+.groupRow td {
+  padding: 0;
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border);
+}
+
+.group + .group .groupRow td {
+  padding-top: var(--space-2);
+}
+
+.groupToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.groupChevron {
+  display: inline-block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  transition: transform 0.1s;
+}
+
+.groupChevronFolded {
+  transform: rotate(-90deg);
+}
+
+.groupTitle {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.groupCount {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.groupAddRow td {
+  padding: 2px var(--space-2);
+}
+
+.groupAddBtn {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.groupAddBtn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.newRowCompact .newRowCaret,
+.newRowCaretCompact {
+  border: none;
+  color: var(--text-tertiary);
+  opacity: 0;
+}
+
+.newRowCompact:hover .newRowCaretCompact {
+  opacity: 1;
+}
+
+/* Summary row: a per-column calculation chosen in the spec, computed by the engine. */
+.summaryRow td {
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+  padding: 2px var(--space-2);
+  background: var(--bg-app);
+}
+
+.summaryWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.summaryBtn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: var(--text-xs);
+  padding: 3px 4px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.summaryRow:hover .summaryBtn,
+.summarySet .summaryBtn {
+  opacity: 1;
+}
+
+.summaryBtn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.summaryCell {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.summaryLabel {
+  color: var(--text-tertiary);
+}
+
+.summaryValue {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryCaret {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.summaryMenu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  min-width: 140px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 /* New-row dropdown (templates) */
 .newRowWrap {
   position: relative;
@@ -1191,3 +1340,20 @@
 
 /* Second line of a stub (the missing-collection notice) */
 .stubSub { font-size: var(--text-xs); margin-top: 2px; }
+
+/* A remote cover waits for a click; nothing leaves the machine on open. */
+.remoteImg {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remoteImg:hover { color: var(--text-primary); border-color: var(--border-focus); }

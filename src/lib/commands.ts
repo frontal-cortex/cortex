@@ -102,8 +102,13 @@ export interface ViewColumn {
 
 export interface FilterClause {
   field: string;
+  /** `== != > >= < <= contains does_not_contain starts_with ends_with is_empty is_not_empty within in`. */
   op: string;
+  /** Comma-separated for `in`; empty for `is_empty` / `is_not_empty`. */
   value: string;
+  /** A parenthesised group: its own clauses and connector (field/op/value unused). */
+  clauses?: FilterClause[];
+  join?: string;
 }
 
 export interface SortClause {
@@ -149,6 +154,9 @@ export interface ViewDef {
   start?: string;
   /** Timeline: the bar's last day (default `end`, else the second date property; none = one-day bars). */
   end?: string;
+  /** Table: the summary row as a YAML flow map, `{amount: sum, done: percent_checked}`
+   *  (a real mapping in `_index.md` frontmatter; `database.ts` converts). */
+  summary?: string;
   /** Any other option a view type defines. */
   [option: string]: string | string[] | undefined;
 }
@@ -172,6 +180,8 @@ export interface StructuredSpec {
   group?: string | null;
   date?: string | null;
   limit?: number | null;
+  /** Table summary row, field → function. */
+  summary?: Record<string, string>;
   /** View-type options (x, chartType, log, range, …), carried through untouched. */
   [option: string]: unknown;
 }
@@ -187,6 +197,9 @@ export interface ViewTable {
   /** All source fields before column projection — for the toolbar's dropdowns. */
   allColumns: string[];
   rows: ViewRow[];
+  /** The spec's `summary:` functions evaluated by the engine over `rows`, field → value.
+   *  Absent when the spec asks for none. */
+  summary?: Record<string, string | number | boolean | string[] | null>;
 }
 
 export interface ChartPoint {
@@ -277,6 +290,12 @@ export interface NoteEntry {
   icon: string | null;
   /** `parent:` frontmatter — a collection name or a `notes/<folder>` path the page nests under in the sidebar. */
   parent: string | null;
+}
+
+/** A search result: the note plus one line of its body around the match,
+ *  the matched words wrapped in `<mark>…</mark>` (empty for filter-only queries). */
+export interface SearchHit extends NoteEntry {
+  snippet: string;
 }
 
 // Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
@@ -662,8 +681,9 @@ export const commands = {
   deleteNote: (path: string) =>
     invoke<void>("delete_note", { path }),
 
+  /** Full-text search. Operators: `"phrase"`, `-word`, `OR`, `tag:x`, `type:x`, `path:x`. */
   searchNotes: (query: string) =>
-    invoke<NoteEntry[]>("search_notes", { query }),
+    invoke<SearchHit[]>("search_notes", { query }),
 
   createFolder: (path: string) =>
     invoke<void>("create_folder", { path }),

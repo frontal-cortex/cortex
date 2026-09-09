@@ -84,8 +84,60 @@ pub fn infer_title(note: &Note) -> String {
         .to_string()
 }
 
-/// Extract all [[wiki link]] targets from a body string without a regex dep.
-pub fn extract_wiki_links(body: &str) -> Vec<String> {
+/// One `[[wiki link]]`, split into its parts. The written form is always
+/// `[[target#section|alias]]` (section and alias both optional); an embed is
+/// the same with a leading `!`. Only `target` identifies the note — backlinks,
+/// resolution and the graph match on it alone — while `alias` is what the
+/// reader sees and `section` is the heading inside the note.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WikiLink {
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+}
+
+impl WikiLink {
+    /// The text a reader should see: the alias when there is one, otherwise
+    /// `Target › Section` or just `Target`.
+    pub fn label(&self) -> String {
+        match (&self.alias, &self.section) {
+            (Some(a), _) => a.clone(),
+            (None, Some(s)) if self.target.is_empty() => s.clone(),
+            (None, Some(s)) => format!("{} › {s}", self.target),
+            (None, None) => self.target.clone(),
+        }
+    }
+}
+
+/// Parse one wiki link. Accepts the inner text (`Note#Section|alias`) or the
+/// whole form with brackets and an optional embed bang (`![[Note#Section]]`).
+/// Parts are trimmed; empty alias / section become `None`. Never fails: an
+/// unparseable string is a link whose target is the string itself.
+pub fn parse_wiki_link(raw: &str) -> WikiLink {
+    let mut inner = raw.trim();
+    inner = inner.strip_prefix('!').unwrap_or(inner);
+    inner = inner.strip_prefix("[[").unwrap_or(inner);
+    inner = inner.strip_suffix("]]").unwrap_or(inner);
+    let (head, alias) = match inner.split_once('|') {
+        Some((h, a)) => (h, Some(a.trim()).filter(|a| !a.is_empty())),
+        None => (inner, None),
+    };
+    let (target, section) = match head.split_once('#') {
+        Some((t, s)) => (t, Some(s.trim()).filter(|s| !s.is_empty())),
+        None => (head, None),
+    };
+    WikiLink {
+        target: target.trim().to_string(),
+        alias: alias.map(str::to_string),
+        section: section.map(str::to_string),
+    }
+}
+
+/// Extract every `[[wiki link]]` (and `![[embed]]`) in a body, parsed, in
+/// document order. No regex dep.
+pub fn extract_wiki_links(body: &str) -> Vec<WikiLink> {
     let mut links = Vec::new();
     let bytes = body.as_bytes();
     let len = bytes.len();
@@ -100,11 +152,54 @@ pub fn extract_wiki_links(body: &str) -> Vec<String> {
             if i + 1 < len {
                 let link = body[start..i].trim();
                 if !link.is_empty() && !link.contains('\n') {
-                    links.push(link.to_string());
+                    links.push(parse_wiki_link(link));
                 }
             }
         }
         i += 1;
     }
     links
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn link(target: &str, alias: Option<&str>, section: Option<&str>) -> WikiLink {
+        WikiLink { target: target.into(), alias: alias.map(Into::into), section: section.map(Into::into) }
+    }
+
+    #[test]
+    fn parses_the_three_forms_and_embeds() {
+        assert_eq!(parse_wiki_link("Note"), link("Note", None, None));
+        assert_eq!(parse_wiki_link("Note|alias"), link("Note", Some("alias"), None));
+        assert_eq!(parse_wiki_link("Note#Section"), link("Note", None, Some("Section")));
+        assert_eq!(parse_wiki_link("Note#Section|alias"), link("Note", Some("alias"), Some("Section")));
+        assert_eq!(parse_wiki_link("![[embed#h]]"), link("embed", None, Some("h")));
+        assert_eq!(parse_wiki_link("[[ Note | shown ]]"), link("Note", Some("shown"), None));
+        // Degenerate parts are dropped rather than kept as empty strings.
+        assert_eq!(parse_wiki_link("Note|"), link("Note", None, None));
+        assert_eq!(parse_wiki_link("Note#"), link("Note", None, None));
+        assert_eq!(parse_wiki_link("#Heading"), link("", None, Some("Heading")));
+    }
+
+    #[test]
+    fn labels_prefer_alias_then_section() {
+        assert_eq!(parse_wiki_link("Note").label(), "Note");
+        assert_eq!(parse_wiki_link("Note|alias").label(), "alias");
+        assert_eq!(parse_wiki_link("Note#Sec").label(), "Note › Sec");
+        assert_eq!(parse_wiki_link("Note#Sec|alias").label(), "alias");
+        assert_eq!(parse_wiki_link("#Sec").label(), "Sec");
+    }
+
+    #[test]
+    fn extracts_targets_from_every_form() {
+        let body = "See [[A]] and [[B|the b]] plus [[C#Top]] and\n\n![[D#h]]\n\n[[not\nclosed]] [[ ]]";
+        let links = extract_wiki_links(body);
+        let targets: Vec<&str> = links.iter().map(|l| l.target.as_str()).collect();
+        assert_eq!(targets, ["A", "B", "C", "D"]);
+        assert_eq!(links[1].alias.as_deref(), Some("the b"));
+        assert_eq!(links[2].section.as_deref(), Some("Top"));
+        assert_eq!(links[3].section.as_deref(), Some("h"));
+    }
 }

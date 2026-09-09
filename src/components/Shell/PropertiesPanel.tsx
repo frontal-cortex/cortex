@@ -30,7 +30,7 @@ interface Props {
 }
 
 // App-internal frontmatter that isn't a user-facing property.
-const HIDDEN = new Set(["title", "type", "icon", "cover", "views", "parent"]);
+const HIDDEN = new Set(["title", "type", "icon", "cover", "views", "parent", "pack"]);
 // Shown in the quiet line as prose ("Created 7 Sep 2026"), not as a chip.
 const CREATED = "created";
 
