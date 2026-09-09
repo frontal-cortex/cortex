@@ -74,9 +74,35 @@ function asStringArray(v: unknown): string[] | undefined {
   return out.length ? out : undefined;
 }
 
+/** Map-valued keys: a real YAML mapping in `_index.md`, a one-line flow map
+ *  (`{amount: sum, done: percent_checked}`) in a spec — the form the Rust
+ *  serializer emits, so both round-trip. */
+const MAP_KEYS = ["summary"] as const;
+
+function flowMapToObject(s: string): Record<string, string> | undefined {
+  const m = s.trim().match(/^\{(.*)\}$/);
+  if (!m) return undefined;
+  const out: Record<string, string> = {};
+  for (const part of m[1].split(",")) {
+    const i = part.indexOf(":");
+    if (i < 0) continue;
+    const k = part.slice(0, i).trim(), v = part.slice(i + 1).trim();
+    if (k && v) out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function objectToFlowMap(v: unknown): string | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const parts = Object.entries(v as Record<string, unknown>)
+    .filter(([k, val]) => k && typeof val === "string" && val !== "")
+    .map(([k, val]) => `${k}: ${val}`);
+  return parts.length ? `{${parts.join(", ")}}` : undefined;
+}
+
 /** Keys with a fixed place in a spec; every other option follows alphabetically. */
 const LIST_KEYS = ["sort", "columns"] as const;
-const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "limit", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range", "start", "end"];
+const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "limit", "summary", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range", "start", "end"];
 const orderOf = (k: string) => { const i = KEY_ORDER.indexOf(k); return i < 0 ? KEY_ORDER.length : i; };
 const optionKeys = (v: ViewDef) =>
   Object.keys(v).filter((k) => k !== "name" && k !== "type").sort((p, q) => orderOf(p) - orderOf(q) || p.localeCompare(q));
@@ -95,6 +121,7 @@ export function parseViews(frontmatter: Record<string, unknown>): ViewDef[] {
     for (const [k, val] of Object.entries(o)) {
       if (k === "name" || k === "type") continue;
       if ((LIST_KEYS as readonly string[]).includes(k)) { const arr = asStringArray(val); if (arr) v[k] = arr; }
+      else if ((MAP_KEYS as readonly string[]).includes(k)) { const flow = objectToFlowMap(val); if (flow) v[k] = flow; }
       else if (typeof val === "string" && val !== "") v[k] = val;
       else if (typeof val === "number" || typeof val === "boolean") v[k] = String(val);
     }
@@ -108,7 +135,10 @@ export function viewToFrontmatter(v: ViewDef): Record<string, unknown> {
   const o: Record<string, unknown> = { name: v.name, type: v.type };
   for (const k of optionKeys(v)) {
     const val = v[k];
-    if (Array.isArray(val) ? val.length : val) o[k] = val;
+    if ((MAP_KEYS as readonly string[]).includes(k) && typeof val === "string") {
+      const obj = flowMapToObject(val);
+      if (obj) o[k] = obj;
+    } else if (Array.isArray(val) ? val.length : val) o[k] = val;
   }
   return o;
 }

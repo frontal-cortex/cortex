@@ -220,6 +220,17 @@ export function ChevronRightIcon({ size = 16 }: IconProps) {
   );
 }
 
+export function DownloadIcon({ size = 14 }: IconProps) {
+  // "Check for updates" — a tray with an arrow coming down into it.
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M12 15V3" />
+    </svg>
+  );
+}
+
 export function OpenIcon({ size = 14 }: IconProps) {
   // "Open as page" — a document with a corner-out arrow.
   return (
@@ -421,6 +432,25 @@ export function TimelineIcon({ size = 15 }: IconProps) {
       <rect x="3" y="5" width="10" height="4" rx="1.5" fill="currentColor" />
       <rect x="8" y="11" width="13" height="4" rx="1.5" />
       <rect x="5" y="17" width="8" height="4" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function TagIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L3 13V4a1 1 0 0 1 1-1h9l7.6 7.6a2 2 0 0 1 0 2.8z" />
+      <circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function MoreIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
     </svg>
   );
 }

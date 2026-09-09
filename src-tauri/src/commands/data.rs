@@ -237,6 +237,27 @@ pub fn save_row_as_template(
     cortex_core::data::save_row_as_template(&root, &source, &row_id, &name)
 }
 
+/// Duplicate a row under a new id (frontmatter + body copied, `created` set
+/// to the given day, the title marked "copy").
+#[tauri::command]
+pub fn duplicate_row(
+    source: String,
+    row_id: String,
+    new_id: String,
+    created: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<()> {
+    let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
+    let written = cortex_core::data::duplicate_row(&root, &source, &row_id, &new_id, &created)?;
+    if let Some(path) = written {
+        if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+            let _ = cortex_core::index::index_file(&root, &path, db);
+        }
+    }
+    Ok(())
+}
+
 /// Delete a row. Collection rows go to the trash (recoverable); CSV rows are
 /// removed from the file.
 #[tauri::command]

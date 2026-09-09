@@ -12,13 +12,15 @@ import data from "@emoji-mart/data";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "prosemirror-state";
 import { useColorScheme } from "../../hooks/useColorScheme";
-import { Note, NoteEntry, CommitEntry, Member, ViewDef, ClipboardContent, commands } from "../../lib/commands";
+import { Note, NoteEntry, TagNode, CommitEntry, Member, ViewDef, ClipboardContent, commands } from "../../lib/commands";
 import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab";
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
+import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
+import { flattenTags } from "../../lib/tags";
 import { NoteHistoryModal } from "./NoteHistoryModal";
 import { PlusIcon, HistoryIcon, TrashIcon, TableIcon } from "./icons";
 import { cortexSchema } from "./schema";
@@ -30,7 +32,14 @@ import {
 import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, viewToFrontmatter } from "../../lib/database";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
+import { mathSlashItem, inlineMathInputRule } from "./MathBlock";
+import { extractMath, inflateMath, flattenMath, restoreMath } from "../../lib/math";
+import { inflateRichFormats, flattenRichFormats } from "./richFormats";
 import { shortcutFor } from "../../lib/keymap";
+import { findInNoteExtension, setFindQuery, stepFind, clearFind, FindState } from "../../lib/findInNote";
+import { textStats, formatStats, outlineOf, blockOrder, activeHeading, OutlineEntry, TextStats } from "../../lib/textStats";
+import { OutlinePane } from "./OutlinePane";
+import { FindBar } from "./FindBar";
 import styles from "./Editor.module.css";
 
 // Maps data URIs → vault-relative paths (e.g. "assets/image-123.png")
@@ -53,19 +62,31 @@ async function saveFileAsAsset(file: File): Promise<string> {
   return dataUri;
 }
 
-/** Replace `assets/X` paths with data URIs so BlockNote can display them. */
+/** Data URI for a vault asset, cached so the save path can map it back. */
+async function displayUrlFor(relPath: string): Promise<string> {
+  let dataUri = [...dataUriToRelPath.entries()].find(([, p]) => p === relPath)?.[0];
+  if (!dataUri) {
+    dataUri = await commands.readAsset(relPath);
+    dataUriToRelPath.set(dataUri, relPath);
+  }
+  return dataUri;
+}
+
+/** Replace `assets/X` paths with data URIs so BlockNote can display them —
+ *  both `![alt](assets/X)` and the `<img src="assets/X">` a sized or
+ *  captioned image is saved as. */
 async function assetsToDisplayUrls(body: string): Promise<string> {
-  const matches = [...body.matchAll(/!\[([^\]]*)\]\(assets\/([^)\s]+)\)/g)];
   let result = body;
-  for (const [full, alt, filename] of matches) {
-    const relPath = `assets/${filename}`;
+  for (const [full, alt, filename] of [...body.matchAll(/!\[([^\]]*)\]\(assets\/([^)\s]+)\)/g)]) {
     try {
-      let dataUri = [...dataUriToRelPath.entries()].find(([, p]) => p === relPath)?.[0];
-      if (!dataUri) {
-        dataUri = await commands.readAsset(relPath);
-        dataUriToRelPath.set(dataUri, relPath);
-      }
-      result = result.replace(full, `![${alt}](${dataUri})`);
+      result = result.replace(full, `![${alt}](${await displayUrlFor(`assets/${filename}`)})`);
+    } catch {
+      // Asset missing on disk — leave reference as-is
+    }
+  }
+  for (const [full, before, filename] of [...body.matchAll(/(<img\b[^>]*\bsrc=")assets\/([^"]+)"/g)]) {
+    try {
+      result = result.replace(full, `${before}${await displayUrlFor(`assets/${filename}`)}"`);
     } catch {
       // Asset missing on disk — leave reference as-is
     }
@@ -89,6 +110,8 @@ interface Props {
   note: Note | null;
   saving: boolean;
   allNotes: NoteEntry[];
+  /** The vault's tag tree — what `#` autocompletes from. */
+  tags?: TagNode[];
   vaultPath?: string;
   /** Bumped by the shell when the note's file changed on disk (e.g. a sync
    *  pulled teammate edits) — remounts the editor so it re-parses content. */
@@ -97,7 +120,7 @@ interface Props {
   collab?: CollabConfig | null;
   /** Monk mode: just the page — no properties, backlinks, or action buttons. */
   monk?: boolean;
-  onSave: (note: Note) => void;
+  onSave: (note: Note) => void | Promise<void>;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onApplyNote: (note: Note) => void;
@@ -114,14 +137,33 @@ export interface EditorHandle {
   toggleProperties(): void;
   /** Flip `publish: true` on the note — marks it for the site, publishes nothing. */
   togglePublic(): void;
+  /** Open (or refocus) the find-in-note bar. */
+  openFind(): void;
+  /** Show or hide the outline pane beside the page. */
+  toggleOutline(): void;
+  /** Scroll the body to the heading whose text matches (case-insensitive). */
+  scrollToHeading(section: string): void;
 }
 
+const OUTLINE_OPEN_KEY = "cortex.outlineOpen";
+
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
-  note, saving, allNotes, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
+  note, saving, allNotes, tags = [], reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
 }, ref) {
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
   const [rev, setRev] = useState(0);
+  // The outline pane is a way of reading, not a fact about the note, so its
+  // open state lives here (it outlives each NoteEditor) and in localStorage.
+  const [outlineOpen, setOutlineOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(OUTLINE_OPEN_KEY) === "1"; } catch { return false; }
+  });
+  const toggleOutline = useCallback(() => {
+    setOutlineOpen((v) => {
+      try { localStorage.setItem(OUTLINE_OPEN_KEY, v ? "0" : "1"); } catch { /* fine */ }
+      return !v;
+    });
+  }, []);
   // NoteEditor remounts per note; it re-registers itself here each time.
   const inner = useRef<EditorHandle | null>(null);
   useImperativeHandle(ref, () => ({
@@ -129,7 +171,10 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
     focusBody: () => inner.current?.focusBody(),
     toggleProperties: () => inner.current?.toggleProperties(),
     togglePublic: () => inner.current?.togglePublic(),
-  }), []);
+    openFind: () => inner.current?.openFind(),
+    toggleOutline,
+    scrollToHeading: (section) => inner.current?.scrollToHeading(section),
+  }), [toggleOutline]);
 
   if (!note) {
     return (
@@ -152,8 +197,11 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
         note={note}
         saving={saving}
         allNotes={allNotes}
+        tags={tags}
         collab={collab}
         monk={monk}
+        outlineOpen={outlineOpen}
+        onToggleOutline={toggleOutline}
         handleRef={inner}
         onSave={onSave}
         onDelete={onDelete}
@@ -180,12 +228,34 @@ interface SuggestionState {
   trigger: SuggestionTrigger;
 }
 
-/** An item offered in the suggestion dropdown: a note to wiki-link, or (for `@`)
- *  a date to insert as plain text. `display` is what the dropdown renders. */
+/** An item offered in the suggestion dropdown: a note to wiki-link, (for `@`)
+ *  a date to insert as plain text, or (for `#`) a tag. `display` is what the
+ *  dropdown renders. */
 type MentionItem =
   | { kind: "note"; note: NoteEntry; display: SuggestItem }
   | { kind: "date"; value: string; display: SuggestItem }
-  | { kind: "person"; name: string; display: SuggestItem };
+  | { kind: "person"; name: string; display: SuggestItem }
+  | { kind: "tag"; tag: string; display: SuggestItem };
+
+/** Existing tags offered after `#`, filtered by the typed query; a query that
+ *  matches no tag exactly is offered as a new one, so Enter completes it. */
+function tagItems(tags: TagNode[], query: string): MentionItem[] {
+  const q = query.toLowerCase();
+  const all = flattenTags(tags);
+  const hits = all
+    .filter((t) => !q || t.path.toLowerCase().includes(q))
+    .sort((a, b) => Number(b.path.toLowerCase().startsWith(q)) - Number(a.path.toLowerCase().startsWith(q)))
+    .slice(0, 8)
+    .map((t): MentionItem => ({
+      kind: "tag", tag: t.path,
+      display: { key: `tag:${t.path}`, title: `#${t.path}`, badge: `${t.count} note${t.count === 1 ? "" : "s"}` },
+    }));
+  const exact = all.some((t) => t.path.toLowerCase() === q);
+  if (q && !exact && !/^\d+$/.test(q)) {
+    hits.push({ kind: "tag", tag: query, display: { key: "tag:new", title: `#${query}`, badge: "New tag" } });
+  }
+  return hits;
+}
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -236,15 +306,18 @@ function personItems(members: Member[], query: string): MentionItem[] {
 const PROPS_EXPANDED_KEY = "cortex.propertiesExpanded";
 
 function NoteEditor({
-  note, saving, allNotes, collab, monk, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
+  note, saving, allNotes, tags, collab, monk, outlineOpen, onToggleOutline, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
 }: {
   note: Note;
   saving: boolean;
   allNotes: NoteEntry[];
+  tags: TagNode[];
   collab: CollabConfig | null;
   monk: boolean;
+  outlineOpen: boolean;
+  onToggleOutline: () => void;
   handleRef: MutableRefObject<EditorHandle | null>;
-  onSave: (n: Note) => void;
+  onSave: (n: Note) => void | Promise<void>;
   onDelete: (path: string) => void;
   onNavigate: (target: string) => void;
   onShowHistory: () => void;
@@ -321,10 +394,12 @@ function NoteEditor({
   }, []);
 
   // Unified item list for the suggestion dropdown: notes for `[[`; people, dates,
-  // and notes for `@`.
+  // and notes for `@`; tags for `#`.
   const filteredItems = useMemo<MentionItem[]>(() => {
     if (!suggestion) return [];
-    const q = suggestion.query.toLowerCase();
+    if (suggestion.trigger === "tag") return tagItems(tags, suggestion.query);
+    // `[[Note#Sec|alias` filters on `Note` alone; the rest is kept on insert.
+    const q = (suggestion.trigger === "wiki" ? parseWikiLink(suggestion.query).target : suggestion.query).toLowerCase();
     const matchNote = (n: NoteEntry) =>
       !q ||
       n.title.toLowerCase().includes(q) ||
@@ -334,7 +409,7 @@ function NoteEditor({
       return [...personItems(members, suggestion.query), ...dateSuggestions(suggestion.query), ...notes];
     }
     return notes;
-  }, [suggestion, allNotes, members]);
+  }, [suggestion, allNotes, members, tags]);
 
   // Keep items accessible in the key handler without stale closure
   const filteredRef = useRef(filteredItems);
@@ -380,11 +455,28 @@ function NoteEditor({
       },
       toggleProperties,
       togglePublic: () => togglePublicRef.current(),
+      openFind: () => openFindRef.current(),
+      toggleOutline: onToggleOutline,
+      scrollToHeading(section) {
+        const want = section.trim().toLowerCase();
+        const root = editorRef.current?._tiptapEditor.view.dom as HTMLElement | undefined;
+        const headings: HTMLElement[] = root ? Array.from(root.querySelectorAll("h1, h2, h3, h4, h5, h6")) : [];
+        const el = headings.find((h) => (h.textContent ?? "").trim().toLowerCase() === want);
+        el?.scrollIntoView({ block: "start", behavior: "smooth" });
+      },
     };
     return () => { handleRef.current = null; };
-  }, [handleRef, toggleProperties]);
-  // Assigned once handleFrontmatterChange exists (it is declared further down).
+  }, [handleRef, toggleProperties, onToggleOutline]);
+  // Assigned once their dependencies exist (they are declared further down).
   const togglePublicRef = useRef<() => void>(() => {});
+  const openFindRef = useRef<() => void>(() => {});
+
+  // ── Find in note ───────────────────────────────────────────────────────────
+  // The plugin owns the matches; React only shows the bar and relays keys.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocusToken, setFindFocusToken] = useState(0);
+  const [find, setFind] = useState<FindState>({ query: "", matches: [], active: 0 });
+  const findExtension = useMemo(() => findInNoteExtension(setFind), []);
 
   // WebKitGTK on Wayland sometimes swallows Ctrl+V: the keydown reaches the
   // page and no `paste` event follows, for text and images alike (seen with
@@ -506,11 +598,57 @@ function NoteEditor({
         wikiLinkExtension((t) => navigateRef.current(t)),
         wikiLinkSuggestionExtension(handle),
         imagePasteDropExtension,
+        findExtension,
+        inlineMathInputRule,
       ],
     },
   });
 
   editorRef.current = editor;
+
+  const pmView = () => editor._tiptapEditor.view;
+  openFindRef.current = () => {
+    // Seed the query from a text selection, the way a browser's find does.
+    const { from, to } = pmView().state.selection;
+    const selected = from === to ? "" : pmView().state.doc.textBetween(from, to, " ");
+    if (selected && !selected.includes("\n") && selected.length <= 120) setFindQuery(pmView(), selected);
+    setFindOpen(true);
+    setFindFocusToken((t) => t + 1);
+  };
+  const closeFind = useCallback(() => {
+    clearFind(pmView(), true);
+    setFindOpen(false);
+    editor.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
+
+  // ── Derived reading aids: outline + word count ─────────────────────────────
+  // Recomputed from the live document on every change; shown, never stored.
+  const [outline, setOutline] = useState<OutlineEntry[]>([]);
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+  const [stats, setStats] = useState<TextStats>({ words: 0, characters: 0, readingMinutes: 0 });
+  const outlineRef = useRef<OutlineEntry[]>([]);
+  const orderRef = useRef<string[]>([]);
+  const cursorBlockId = useCallback((): string | null => {
+    try { return editor.getTextCursorPosition().block.id; } catch { return null; }
+  }, [editor]);
+  const refreshDerived = useCallback(() => {
+    const blocks = editor.document;
+    outlineRef.current = outlineOf(blocks);
+    orderRef.current = blockOrder(blocks);
+    setOutline(outlineRef.current);
+    setActiveHeadingId(activeHeading(outlineRef.current, orderRef.current, cursorBlockId()));
+    const doc = editor._tiptapEditor.state.doc;
+    setStats(textStats(doc.textBetween(0, doc.content.size, "\n", " ")));
+  }, [editor, cursorBlockId]);
+  useEffect(() => editor.onSelectionChange(() => {
+    setActiveHeadingId(activeHeading(outlineRef.current, orderRef.current, cursorBlockId()));
+  }), [editor, cursorBlockId]);
+  const jumpToHeading = useCallback((id: string) => {
+    try { editor.setTextCursorPosition(id, "start"); } catch { return; }
+    editor.focus();
+    editor.domElement?.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [editor]);
 
   // Wire suggestion callbacks (updated every render via ref)
   callbacksRef.current = {
@@ -527,16 +665,22 @@ function NoteEditor({
 
   // ── Suggestion insertion ───────────────────────────────────────────────────
   // A note becomes a `[[wiki link]]` (for both `[[` and `@`); a date becomes
-  // plain ISO text. The trigger text (`[[query` or `@query`) is replaced wholesale.
+  // plain ISO text; a tag becomes `#tag ` (the space ends the tag, so the
+  // dropdown closes and the next keystroke is prose). The trigger text
+  // (`[[query`, `@query` or `#query`) is replaced wholesale; a `#section` or
+  // `|alias` already typed after `[[` is carried over.
   const insertItem = useCallback((item: MentionItem) => {
     if (!suggestion) return;
     const { from } = suggestion;
     const to = editor._tiptapEditor.state.selection.from;
+    const typed: WikiLink = suggestion.trigger === "wiki" ? parseWikiLink(suggestion.query) : { target: "" };
     const text = item.kind === "note"
-      ? `[[${item.note.title || pathToTitle(item.note.path)}]]`
+      ? `[[${item.note.title || pathToTitle(item.note.path)}${typed.section ? `#${typed.section}` : ""}${typed.alias ? `|${typed.alias}` : ""}]]`
       : item.kind === "person"
         ? `@${item.name}`
-        : item.value;
+        : item.kind === "tag"
+          ? `#${item.tag} `
+          : item.value;
 
     editor._tiptapEditor.commands.command(({ tr, dispatch }) => {
       if (dispatch) {
@@ -579,16 +723,21 @@ function NoteEditor({
       // A collection's page always shows its views, even before the note has a fence.
       if (collection) { try { ensureCollectionViewsBlock(editor, collection); } catch { /* editor torn down */ } }
       hydrating.current = false;
+      try { refreshDerived(); } catch { /* editor torn down */ }
     };
     const seedFromMarkdown = () => {
       if (!note.body.trim()) { finish(); return; }
       assetsToDisplayUrls(note.body)
         .then((displayBody) => {
           try {
-            const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`, and
-            // `[!callout]` blockquotes into live blocks on load.
-            editor.replaceBlocks(editor.document, inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks)))) as typeof blocks);
+            // `$…$` / `$$…$$` are lifted out before parsing so the Markdown
+            // parser never sees LaTeX (see src/lib/math.ts).
+            const math = extractMath(displayBody);
+            const blocks = editor.tryParseMarkdownToBlocks(math.md);
+            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`,
+            // `[!callout]` blockquotes, `==highlights==` and math into live blocks on load.
+            const inflated = inflateMath(inflateRichFormats(inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks))))), math.spans);
+            editor.replaceBlocks(editor.document, inflated as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
             // would be suppressed forever for this note.
@@ -633,15 +782,19 @@ function NoteEditor({
 
   useEffect(() => {
     const unsub = editor.onChange(() => {
+      refreshDerived();
       if (hydrating.current) return;
       // Serialize NOW, while the editor is definitely alive, and stash the
       // result. A checkbox toggle is a single quick action often followed
       // immediately by navigating away — capturing here means the pending
       // write survives the editor being destroyed on unmount.
       void (async () => {
-        const doc = flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(editor.document)))) as typeof editor.document;
+        // richFormats runs last so toggles, underline, highlight and image
+        // width reach the exporter in a form it writes verbatim; math is
+        // flattened first so its nodes are plain text by then.
+        const doc = flattenRichFormats(flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenMath(editor.document)))))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
-        pendingMd.current = displayUrlsToAssets(md);
+        pendingMd.current = restoreMath(displayUrlsToAssets(md));
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
         bodyTimer.current = setTimeout(flush, 400);
       })();
@@ -650,7 +803,7 @@ function NoteEditor({
       unsub();
       flush(); // persist any pending edit before this editor goes away
     };
-  }, [editor, flush]);
+  }, [editor, flush, refreshDerived]);
 
   // Title edits only update frontmatter. The filename is fixed at creation —
   // renaming the file on every keystroke caused stale paths (note couldn't open)
@@ -661,6 +814,29 @@ function NoteEditor({
       onSave({ ...noteRef.current, frontmatter: { ...noteRef.current.frontmatter, title: value } });
     }, 400);
   }, [onSave]);
+
+  // A title change is a rename as far as `[[links]]` are concerned, but
+  // rewriting referrers on every keystroke would pass through half-typed
+  // titles (and any note that happens to share one). So: remember the title
+  // when the field gains focus, and once the edit is final — blur, or the
+  // editor going away — flush the save and let cortex-core point every
+  // `[[Old Title]]` at the new one (one commit when auto-commit is on).
+  const titleAtFocus = useRef<string | null>(null);
+  const titleLatest = useRef<string | null>(null);
+  const finishTitleEdit = useCallback(() => {
+    const before = titleAtFocus.current;
+    const after = titleLatest.current;
+    titleAtFocus.current = null;
+    titleLatest.current = null;
+    if (before === null || after === null || after.trim() === before.trim()) return;
+    const path = noteRef.current.path;
+    if (titleTimer.current) { clearTimeout(titleTimer.current); titleTimer.current = null; }
+    void (async () => {
+      await onSaveRef.current({ ...noteRef.current, frontmatter: { ...noteRef.current.frontmatter, title: after } });
+      await commands.titleChanged(path, before, after).catch(() => {});
+    })();
+  }, []);
+  useEffect(() => () => finishTitleEdit(), [finishTitleEdit]);
 
   const handleFrontmatterChange = useCallback((updated: Record<string, unknown>) => {
     onSave({ ...noteRef.current, frontmatter: updated });
@@ -701,6 +877,8 @@ function NoteEditor({
   return (
     <CollectionPageContext.Provider value={page}>
     <div className={styles.root}>
+     <div className={styles.main}>
+     <div className={styles.column}>
       <div className={styles.docWrap}>
         <div className={styles.docInner}>
           {/* Everything above the body. Its affordances — add cover, history,
@@ -732,7 +910,9 @@ function NoteEditor({
               className={styles.titleInput}
               defaultValue={title}
               placeholder="Untitled"
-              onChange={(e) => handleTitleChange(e.target.value)}
+              onFocus={(e) => { titleAtFocus.current = e.target.value; titleLatest.current = e.target.value; }}
+              onChange={(e) => { titleLatest.current = e.target.value; handleTitleChange(e.target.value); }}
+              onBlur={finishTitleEdit}
             />
             {!monk && <div className={styles.headerActions}>
               {peers.map((p, i) => (
@@ -793,7 +973,7 @@ function NoteEditor({
                 triggerCharacter="/"
                 getItems={async (query) =>
                   filterSuggestionItems(
-                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor)],
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor), mathSlashItem(editor)],
                     query,
                   )
                 }
@@ -804,6 +984,27 @@ function NoteEditor({
           {!monk && <BacklinksPanel path={note.path} onNavigate={onNavigate} />}
         </div>
       </div>
+
+      {findOpen && (
+        <FindBar
+          query={find.query}
+          count={find.matches.length}
+          active={find.active}
+          focusToken={findFocusToken}
+          onQuery={(q) => setFindQuery(pmView(), q)}
+          onStep={(dir) => stepFind(pmView(), dir)}
+          onClose={closeFind}
+        />
+      )}
+
+      {/* A quiet status line: how much is here, and how long it takes to read. */}
+      {!monk && <div className={styles.statusLine}>{formatStats(stats)}</div>}
+     </div>
+
+     {outlineOpen && !monk && (
+       <OutlinePane entries={outline} activeId={activeHeadingId} onJump={jumpToHeading} onClose={onToggleOutline} />
+     )}
+     </div>
 
       {suggestion && (
         <WikiLinkDropdown

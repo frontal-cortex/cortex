@@ -158,13 +158,16 @@ export function inflateCollectionViews(blocks: any[]): any[] {
 }
 
 export function flattenCollectionViews(blocks: any[]): any[] {
-  return blocks.map((b) => {
+  // A fence cannot hold children, so anything nested under the block (Tab in
+  // the editor) is hoisted after it instead of being dropped on save.
+  return blocks.flatMap((b) => {
     if (b?.type === "collectionViews") {
       const c = String(b.props?.collection ?? "").trim();
-      return { type: "codeBlock", props: { language: VIEWS_FENCE }, content: [{ type: "text", text: c ? `collection: ${c}` : "", styles: {} }] };
+      const fence = { type: "codeBlock", props: { language: VIEWS_FENCE }, content: [{ type: "text", text: c ? `collection: ${c}` : "", styles: {} }] };
+      return [fence, ...flattenCollectionViews(Array.isArray(b.children) ? b.children : [])];
     }
-    if (Array.isArray(b?.children) && b.children.length) return { ...b, children: flattenCollectionViews(b.children) };
-    return b;
+    if (Array.isArray(b?.children) && b.children.length) return [{ ...b, children: flattenCollectionViews(b.children) }];
+    return [b];
   });
 }
 

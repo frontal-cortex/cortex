@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, createElement, Fragment } from "react
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { commands, NoteRef } from "../../lib/commands";
+import { parseWikiLink, wikiLinkLabel } from "../../lib/wikiLink";
 import { OpenIcon } from "./icons";
 import styles from "./NoteEmbedBlock.module.css";
 
@@ -35,7 +36,7 @@ function renderInline(text: string, keyBase: string): React.ReactNode[] {
       const target = tok.slice(2, -2).trim();
       out.push(
         <span key={`${keyBase}-w${i}`} className={styles.wikiLink} onClick={() => navigateTo(target)}>
-          {target}
+          {wikiLinkLabel(parseWikiLink(target))}
         </span>,
       );
     } else if (tok.startsWith("**")) {
@@ -126,7 +127,7 @@ function NoteEmbed({ block, editor }: { block: any; editor: any }) {
     setEditing(false);
   };
 
-  const sectioned = target.includes("#");
+  const section = parseWikiLink(target).section;
   const displayTarget = target || "Untitled";
 
   return (
@@ -135,7 +136,7 @@ function NoteEmbed({ block, editor }: { block: any; editor: any }) {
         <span className={styles.badge}>Embed</span>
         {ref?.found ? (
           <button className={styles.titleLink} onClick={() => navigateTo(target)} title="Open source note">
-            {ref.title}{sectioned ? ` › ${target.split("#")[1]}` : ""}
+            {ref.title}{section ? ` › ${section}` : ""}
             <OpenIcon size={12} />
           </button>
         ) : (
@@ -231,16 +232,19 @@ export function inflateEmbeds(blocks: any[]): any[] {
 
 /** Blocks → markdown: collapse embed blocks back to a `![[target]]` paragraph. */
 export function flattenEmbeds(blocks: any[]): any[] {
-  return blocks.map((b) => {
+  // Blocks nested under an embed (Tab in the editor) are hoisted after the
+  // `![[…]]` paragraph rather than lost on save.
+  return blocks.flatMap((b) => {
     if (b?.type === "noteEmbed") {
-      return {
+      const para = {
         type: "paragraph",
         content: [{ type: "text", text: `![[${String(b.props?.target ?? "")}]]`, styles: {} }],
       };
+      return [para, ...flattenEmbeds(Array.isArray(b.children) ? b.children : [])];
     }
     if (Array.isArray(b?.children) && b.children.length) {
-      return { ...b, children: flattenEmbeds(b.children) };
+      return [{ ...b, children: flattenEmbeds(b.children) }];
     }
-    return b;
+    return [b];
   });
 }

@@ -12,6 +12,7 @@ mod ops;
 
 use clap::{Parser, Subcommand};
 use cortex_core::note::NoteEntry;
+use cortex_core::search::SearchHit;
 use ops::{NewNote, Vault};
 use std::io::Read;
 use std::path::PathBuf;
@@ -42,10 +43,15 @@ enum Cmd {
         dir: Option<String>,
         #[arg(long = "type")]
         note_type: Option<String>,
+        /// Only notes carrying this tag (frontmatter or inline #tag; a parent matches its children)
         #[arg(long)]
         tag: Option<String>,
     },
-    /// Full-text search over titles and bodies
+    /// Every tag in the vault with note counts, nested by `/`
+    Tags,
+    /// Full-text search over titles and bodies. Words prefix-match; "quoted
+    /// phrases", -excluded, OR, and tag:x type:x path:x filters are understood.
+    /// Quote the query (or use --) when a word starts with a dash
     Search { query: Vec<String> },
     /// Print a note — by path, title, or filename stem
     Show {
@@ -110,6 +116,16 @@ enum Cmd {
     Links { target: String },
     /// Notes that link to this one
     Backlinks { target: String },
+    /// Rename or move a note and rewrite every inbound [[link]] to follow it
+    Mv {
+        /// The note: path, title, or filename stem
+        target: String,
+        /// New path (`notes/x/plan.md`, `.md` optional) or a folder to move into (`notes/x/`)
+        dest: String,
+        /// Also set the note's title
+        #[arg(long)]
+        title: Option<String>,
+    },
     /// List collections (databases)
     Collections,
     /// Query a collection the way the app's table view does
@@ -126,9 +142,17 @@ enum Cmd {
         columns: Option<Vec<String>>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Summary row: field=function (repeatable or comma-separated) —
+        /// count, sum, avg, min, max, percent_checked, empty, not_empty
+        #[arg(long = "summary", value_delimiter = ',')]
+        summary: Vec<String>,
     },
     /// Show a property schema (collection name or note type); lists them if none given
-    Schema { key: Option<String> },
+    Schema {
+        key: Option<String>,
+        #[command(subcommand)]
+        action: Option<SchemaCmd>,
+    },
     /// Working tree, sync state, recent commits and pending proposals
     Status,
     /// Package changes as a proposal: an agent/<name> branch the user reviews in the app
@@ -187,8 +211,54 @@ enum Cmd {
         #[command(subcommand)]
         action: PacksCmd,
     },
+    /// Import from elsewhere: a CSV into a collection, a folder of Markdown into notes/, or a Notion export zip
+    Import {
+        #[command(subcommand)]
+        action: ImportCmd,
+    },
     /// Serve the vault to an agent over MCP (stdio)
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum ImportCmd {
+    /// A CSV file → collections/<name>/: one row note per record, typed frontmatter, schema written or merged
+    Csv {
+        file: PathBuf,
+        /// Target collection (new or existing)
+        #[arg(long, value_name = "NAME")]
+        collection: String,
+        /// Column that names each row (default: title / name, else the first column)
+        #[arg(long, value_name = "COLUMN")]
+        title: Option<String>,
+        /// Override a column: 'Header=property', 'Header=property:type' (text number date checkbox select multi_select url), or 'Header=' to skip it
+        #[arg(long = "map", value_name = "HEADER=PROP[:TYPE]")]
+        maps: Vec<String>,
+        /// Show the mapping and the first five rows; write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// A folder of Markdown (an Obsidian vault) → notes/<into>/, images into assets/; the source is never modified
+    Markdown {
+        dir: PathBuf,
+        /// Folder under notes/ to import into (default: the source folder's name)
+        #[arg(long, value_name = "NAME")]
+        into: Option<String>,
+        /// List what would be copied and skipped; write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// A Notion "Markdown & CSV" export (the zip, or its unpacked folder) → pages under notes/<into>/, each database a collection, images in assets/, plus an import report note
+    Notion {
+        /// The export zip, or the folder it unpacks to
+        path: PathBuf,
+        /// Folder under notes/ for the pages (default: notion); collections go to collections/<name>/
+        #[arg(long, value_name = "NAME", default_value = "notion")]
+        into: String,
+        /// Report what would be written; write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -253,6 +323,23 @@ enum PacksCmd {
 }
 
 #[derive(Subcommand)]
+enum SchemaCmd {
+    /// Rename a property everywhere: the schema, every row, the views, and the rollups / formulas that use it
+    Rename {
+        /// Collection name or note type
+        key: String,
+        old: String,
+        new: String,
+    },
+    /// Delete a property from the schema, every row and every view (refused while a rollup or formula uses it)
+    Rm {
+        /// Collection name or note type
+        key: String,
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SettingsCmd {
     /// Print one setting; `keybindings.<id>` reads a single override
     Get { key: String },
@@ -304,7 +391,8 @@ fn run() -> Result<()> {
         Cmd::Ls { dir, note_type, tag } => {
             out.notes(&v.list(dir.as_deref(), note_type.as_deref(), tag.as_deref()))
         }
-        Cmd::Search { query } => out.notes(&v.search(&query.join(" "))?),
+        Cmd::Tags => out.tags(&v.tags()),
+        Cmd::Search { query } => out.hits(&v.search(&query.join(" "))?),
         Cmd::Show { target, body } => {
             if out.json { out.emit(&v.read(&target)?) }
             else if body { print!("{}", v.read(&target)?.body); Ok(()) }
@@ -347,28 +435,56 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::Backlinks { target } => out.notes(&v.backlinks(&target)?),
+        Cmd::Mv { target, dest, title } => {
+            let r = v.mv(&target, &dest, title.as_deref())?;
+            if out.json { return out.emit(&r); }
+            if r.old_path != r.new_path { println!("{} → {}", r.old_path, r.new_path); }
+            if r.old_title != r.new_title { println!("'{}' → '{}'", r.old_title, r.new_title); }
+            for p in &r.rewritten { println!("  relinked {p}"); }
+            if r.committed { eprintln!("committed: {}", r.commit_message()); }
+            Ok(())
+        }
         Cmd::Collections => {
             let names = v.collections();
             if out.json { out.emit(&names) } else { for n in names { println!("{n}"); } Ok(()) }
         }
-        Cmd::View { collection, filter, sort, columns, limit } => {
-            let t = v.view(&collection, filter.as_deref(), &sort, columns.as_deref(), limit)?;
+        Cmd::View { collection, filter, sort, columns, limit, summary } => {
+            let summary: Vec<(String, String)> = summary.iter().map(|s| match s.split_once('=') {
+                Some((f, func)) if !f.trim().is_empty() && !func.trim().is_empty() => Ok((f.trim().to_string(), func.trim().to_string())),
+                _ => Err(format!("--summary expects field=function, got '{s}'")),
+            }).collect::<std::result::Result<_, _>>()?;
+            let t = v.view(&collection, filter.as_deref(), &sort, columns.as_deref(), limit, &summary)?;
             if out.json { return out.emit(&t); }
             let headers: Vec<&str> = std::iter::once("ID").chain(t.columns.iter().map(|c| c.key.as_str())).collect();
-            let rows = t.rows.iter().map(|r| {
+            let mut rows: Vec<Vec<String>> = t.rows.iter().map(|r| {
                 std::iter::once(r.id.clone())
                     .chain(t.columns.iter().map(|c| r.cells.get(&c.key).map(json_text).unwrap_or_default()))
                     .collect()
             }).collect();
+            // The summary row sits under the columns it summarises, labelled by function.
+            if !t.summary.is_empty() {
+                let label = |key: &str| summary.iter().find(|(f, _)| f == key)
+                    .and_then(|(_, func)| t.summary.get(key).map(|v| format!("{func}: {}", json_text(v))))
+                    .unwrap_or_default();
+                rows.push(std::iter::once(String::new()).chain(t.columns.iter().map(|c| label(&c.key))).collect());
+            }
             table(&headers, rows);
             Ok(())
         }
-        Cmd::Schema { key } => match key {
-            Some(k) => {
+        Cmd::Schema { key, action } => match (action, key) {
+            (Some(SchemaCmd::Rename { key, old, new }), _) => {
+                let c = v.rename_property(&key, &old, &new)?;
+                if out.json { out.emit(&c) } else { println!("renamed {key}.{old} → {new}: {}", property_change(&c)); Ok(()) }
+            }
+            (Some(SchemaCmd::Rm { key, name }), _) => {
+                let c = v.delete_property(&key, &name)?;
+                if out.json { out.emit(&c) } else { println!("removed {key}.{name}: {}", property_change(&c)); Ok(()) }
+            }
+            (None, Some(k)) => {
                 let s = v.schema(&k)?;
                 if out.json { out.emit(&s) } else { print!("{}", serde_yaml::to_string(&s)?); Ok(()) }
             }
-            None => {
+            (None, None) => {
                 let keys = v.schemas();
                 if out.json { out.emit(&keys) } else { for k in keys { println!("{k}"); } Ok(()) }
             }
@@ -514,7 +630,95 @@ fn run() -> Result<()> {
             }
         }
         Cmd::Packs { action } => packs(&v, &out, action),
+        Cmd::Import { action } => import(&v, &out, action),
         Cmd::Mcp => tokio::runtime::Runtime::new()?.block_on(mcp::serve(v)),
+    }
+}
+
+fn import(v: &Vault, out: &Out, action: ImportCmd) -> Result<()> {
+    use cortex_core::import as im;
+    let skipped = |list: &[im::Skipped]| {
+        if !list.is_empty() {
+            println!("skipped {}:", list.len());
+            for s in list { println!("  {}  ({})", s.path, s.reason); }
+        }
+    };
+    match action {
+        ImportCmd::Csv { file, collection, title, maps, dry_run } => {
+            let opts = Vault::csv_options(&collection, title.as_deref(), &maps)?;
+            if dry_run {
+                let plan = v.import_csv_plan(&file, &opts)?;
+                if out.json { return out.emit(&plan); }
+                println!("{} row(s) → collections/{}/ ({}); title from '{}'", plan.rows, plan.collection,
+                    if plan.exists { "existing" } else { "new" }, plan.title_column);
+                table(&["COLUMN", "PROPERTY", "TYPE", "OPTIONS"], plan.columns.iter().map(|c| vec![
+                    c.header.clone(), if c.property.is_empty() { "(skipped)".into() } else { c.property.clone() },
+                    if c.property.is_empty() { String::new() } else { c.ty.clone() }, c.options.join(", "),
+                ]).collect());
+                if !plan.schema_added.is_empty() {
+                    println!("\nschema {}: {}", if plan.schema_exists { "gains" } else { "created with" }, plan.schema_added.join(", "));
+                }
+                let keys: Vec<String> = plan.preview.iter().flat_map(|r| r.frontmatter.keys().cloned()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+                let headers: Vec<&str> = std::iter::once("PATH").chain(keys.iter().map(String::as_str)).collect();
+                println!("\nfirst {} of {} row(s):", plan.preview.len(), plan.rows);
+                table(&headers, plan.preview.iter().map(|r| {
+                    std::iter::once(r.path.clone()).chain(keys.iter().map(|k| r.frontmatter.get(k).map(json_text).unwrap_or_default())).collect()
+                }).collect());
+                skipped(&plan.skipped);
+                println!("\nDry run — nothing written. Run again without --dry-run to import.");
+                return Ok(());
+            }
+            let r = v.import_csv(&file, &opts)?;
+            if out.json { return out.emit(&r); }
+            for p in &r.written { println!("{p}"); }
+            println!("{} row(s) written to collections/{}/{}{}", r.written.len(), r.collection,
+                if r.index_created { ", _index.md created" } else { "" },
+                if r.schema_added.is_empty() { String::new() } else { format!(", schema: +{}", r.schema_added.join(", +")) });
+            skipped(&r.skipped);
+            Ok(())
+        }
+        ImportCmd::Markdown { dir, into, dry_run } => {
+            let into = match into {
+                Some(i) => i,
+                None => dir.canonicalize().ok().and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()))
+                    .ok_or("cannot name the destination from the folder; pass --into NAME")?,
+            };
+            let r = v.import_markdown(&dir, &into, dry_run)?;
+            if out.json { return out.emit(&r); }
+            for p in &r.notes { println!("{p}"); }
+            println!("{} note(s){} → {}/, {} image(s) → assets/", r.notes.len(), if dry_run { " would be copied" } else { " copied" }, r.dest, r.assets.len());
+            skipped(&r.skipped);
+            if !r.unresolved.is_empty() {
+                println!("images not found (left as written): {}", r.unresolved.join(", "));
+            }
+            if dry_run { println!("Dry run — nothing written."); }
+            Ok(())
+        }
+        ImportCmd::Notion { path, into, dry_run } => {
+            let r = v.import_notion(&path, &into, dry_run)?;
+            if out.json { return out.emit(&r); }
+            let verb = if dry_run { "would be written" } else { "written" };
+            for p in &r.notes { println!("{p}"); }
+            println!("{} page(s) {verb} → {}/", r.notes.len(), r.dest);
+            for c in &r.collections {
+                println!("collections/{}/ ({}): {} of {} row(s) {verb}{}{}", c.name, c.title, c.written.len(), c.rows,
+                    if c.index_created { ", _index.md created" } else { "" },
+                    if c.schema_added.is_empty() { String::new() } else { format!(", schema: +{}", c.schema_added.join(", +")) });
+            }
+            println!("{} image(s) → assets/", r.assets.len());
+            if !r.unmapped.is_empty() {
+                println!("could not be mapped {}:", r.unmapped.len());
+                for u in &r.unmapped { println!("  {}  — {}", u.subject, u.detail); }
+            }
+            if !r.unresolved.is_empty() {
+                println!("links left as written {}:", r.unresolved.len());
+                for u in &r.unresolved { println!("  {u}"); }
+            }
+            skipped(&r.skipped);
+            if let Some(p) = &r.report { println!("report: {p}"); }
+            if dry_run { println!("Dry run — nothing written."); }
+            Ok(())
+        }
     }
 }
 
@@ -716,6 +920,14 @@ fn print_tracker(r: &cortex_core::tracker::TrackerResult) {
 
 // ── Output ──────────────────────────────────────────────────────────────────
 
+/// "3 rows, 1 view, schemas tasks, projects" — what a property edit touched.
+fn property_change(c: &cortex_core::schema::PropertyChange) -> String {
+    let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+    let mut parts = vec![plural(c.rows, "row"), plural(c.views, "view")];
+    if !c.schemas.is_empty() { parts.push(format!("schemas {}", c.schemas.join(", "))); }
+    parts.join(", ")
+}
+
 struct Out {
     json: bool,
 }
@@ -731,12 +943,36 @@ impl Out {
         if self.json { self.emit(s) } else { print!("{}", serde_yaml::to_string(s)?); Ok(()) }
     }
 
+    /// The tag tree, indented by nesting; JSON keeps the tree.
+    fn tags(&self, tags: &[cortex_core::tags::TagNode]) -> Result<()> {
+        if self.json {
+            return self.emit(&tags);
+        }
+        table(&["TAG", "NOTES"], cortex_core::tags::flatten(tags).iter().map(|t| vec![
+            format!("{}{}", "  ".repeat(t.path.matches('/').count()), t.name), t.count.to_string(),
+        ]).collect());
+        Ok(())
+    }
+
     fn notes(&self, notes: &[NoteEntry]) -> Result<()> {
         if self.json {
             return self.emit(&notes);
         }
         table(&["PATH", "TITLE", "TYPE", "TAGS"], notes.iter().map(|n| vec![
             n.path.clone(), n.title.clone(), n.note_type.clone().unwrap_or_default(), n.tags.join(","),
+        ]).collect());
+        Ok(())
+    }
+
+    /// Search results: the note table plus the matched excerpt, `<mark>`
+    /// tags stripped for the terminal (JSON keeps them).
+    fn hits(&self, hits: &[SearchHit]) -> Result<()> {
+        if self.json {
+            return self.emit(&hits);
+        }
+        table(&["PATH", "TITLE", "TYPE", "TAGS", "MATCH"], hits.iter().map(|h| vec![
+            h.entry.path.clone(), h.entry.title.clone(), h.entry.note_type.clone().unwrap_or_default(),
+            h.entry.tags.join(","), h.snippet.replace("<mark>", "").replace("</mark>", ""),
         ]).collect());
         Ok(())
     }

@@ -221,6 +221,11 @@
   text-decoration: underline;
 }
 
+/* The `[[Note|` and `]]` around an alias; shown again while the cursor is in the link */
+:global(.wiki-link-syntax) {
+  display: none;
+}
+
 /* ── Cover image ──────────────────────────────────────────────────── */
 .coverEmpty {
   height: 12px;
@@ -358,6 +363,41 @@
   font-family: var(--font-mono);
 }
 
+/* Code blocks: the app's surface and mono face instead of BlockNote's fixed
+   black box. Token colours are inline `var(--code-token-*)` styles written by
+   shiki's CSS-variables theme (Shell/codeBlock.ts, tokens.css). */
+.editorWrap :global(.bn-block-content[data-content-type="codeBlock"]) {
+  background: var(--code-background);
+  color: var(--code-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.editorWrap :global(.bn-block-content[data-content-type="codeBlock"] > pre) {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  line-height: 1.55;
+  padding: 26px 16px 14px;
+}
+/* The language picker: always legible, brighter on hover / focus. */
+.editorWrap :global(.bn-block-content[data-content-type="codeBlock"] > div > select) {
+  top: 6px;
+  left: 12px;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  opacity: 0.7;
+  transition-delay: 0s;
+}
+.editorWrap :global(.bn-block-content[data-content-type="codeBlock"]:hover > div > select),
+.editorWrap :global(.bn-block-content[data-content-type="codeBlock"] > div > select:focus) {
+  opacity: 1;
+  transition-delay: 0s;
+}
+.editorWrap :global(.bn-block-content[data-content-type="codeBlock"] > div > select > option) {
+  color: var(--text-primary);
+  background: var(--bg-panel);
+}
+
 /* Last-edited-by line (collaboration) */
 /* Presence chips — teammates currently in this note */
 .peerChip {
@@ -372,4 +412,47 @@
   font-weight: 600;
   flex-shrink: 0;
   cursor: default;
+}
+
+/* ── Page column + outline pane ─────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* The page and its chrome (find bar, status line); the outline sits beside it. */
+.column {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Word count and reading time — one quiet line under the page. */
+.statusLine {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 3px 54px 6px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Find-in-note highlights (ProseMirror decorations, see lib/findInNote.ts) */
+:global(.cortex-find-match) {
+  background: color-mix(in srgb, var(--git-dirty) 28%, transparent);
+  border-radius: 2px;
+}
+:global(.cortex-find-match-active) {
+  background: color-mix(in srgb, var(--git-dirty) 60%, transparent);
+  outline: 1px solid var(--git-dirty);
 }

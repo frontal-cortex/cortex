@@ -13,9 +13,10 @@ import { relativeTime } from "../../lib/fileTree";
 import { shortcutFor } from "../../lib/keymap";
 import { SelectCell } from "./SelectCell";
 import { Dropdown } from "./Dropdown";
+import { DatePicker } from "./DatePicker";
 import {
   CalendarIcon, CheckSquareIcon, SelectDotIcon, TagsListIcon, PersonIcon,
-  LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon, GlobeIcon,
+  LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon, GlobeIcon, MoreIcon,
 } from "./icons";
 import styles from "./PropertiesPanel.module.css";
 
@@ -106,6 +107,7 @@ interface Item {
 
 export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onToggle, onChange }: Props) {
   const [schema, setSchema] = useState<TypeSchema | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const noteType = typeof frontmatter["type"] === "string" ? (frontmatter["type"] as string) : null;
   const schemaKey = schemaKeyFor(notePath, noteType);
@@ -141,6 +143,29 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
     } else {
       set(name, type === "checkbox" ? false : "");
     }
+  };
+
+  // Rename / delete a property. With a schema key the engine rewrites the
+  // schema, every row (or every note of this type), the views and dependent
+  // rollups / formulas; this note's own frontmatter is updated in place too so
+  // the panel does not wait for the watcher. Without one, only this note changes.
+  const renameProperty = (item: Item, name: string) => {
+    if (!name || name === item.name) return;
+    const local = () => {
+      const next = { ...frontmatter };
+      if (item.name in next) { next[name] = next[item.name]; delete next[item.name]; }
+      onChange(next);
+    };
+    setError(null);
+    if (schemaKey) commands.renameProperty(schemaKey, item.name, name).then(() => { local(); loadSchema(); }).catch((e) => setError(String(e)));
+    else local();
+  };
+  const deleteProperty = (item: Item) => {
+    const local = () => { const next = { ...frontmatter }; delete next[item.name]; onChange(next); };
+    setError(null);
+    if (!schemaKey) { local(); return; }
+    if (!window.confirm(`Delete "${item.name}" from every ${schemaKey} note?`)) return;
+    commands.deleteProperty(schemaKey, item.name).then(() => { local(); loadSchema(); }).catch((e) => setError(String(e)));
   };
 
   // Build the ordered property list: schema properties first, then any other
@@ -226,6 +251,7 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
             <div className={styles.propLabel}>
               <span className={styles.propIcon}><PropIcon type={item.type} /></span>
               <span className={styles.propName} title={item.name}>{item.name}</span>
+              <PropMenu name={item.name} onRename={(n) => renameProperty(item, n)} onDelete={() => deleteProperty(item)} />
             </div>
             <div className={styles.propValue}>
               {isSelectType(item.type) ? (
@@ -248,6 +274,13 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
                   checked={frontmatter[item.name] === true}
                   onChange={(e) => set(item.name, e.target.checked)}
                 />
+              ) : item.type === "date" ? (
+                <DatePicker
+                  value={frontmatter[item.name] == null ? "" : String(frontmatter[item.name])}
+                  placeholder="Empty"
+                  inputClassName={styles.valueInput}
+                  onChange={(v) => set(item.name, v || undefined)}
+                />
               ) : (
                 <ValueInput
                   value={frontmatter[item.name]}
@@ -260,6 +293,7 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
         ))}
       </div>
 
+      {error && <div className={styles.error}>{error}</div>}
       <AddProperty onAdd={addProperty} />
       </div>}
     </div>
@@ -295,6 +329,55 @@ function ValueInput({ value, type, onCommit }: {
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
     />
+  );
+}
+
+/** "⋯" on a property row: rename (inline) or delete the property. */
+function PropMenu({ name, onRename, onDelete }: { name: string; onRename: (name: string) => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  useEffect(() => { if (!open) setRenaming(false); }, [open]);
+
+  const commit = (raw: string) => {
+    const next = raw.trim();
+    setRenaming(false);
+    if (next && next !== name) { setOpen(false); onRename(next); }
+  };
+
+  return (
+    <div className={styles.propMenu} ref={ref}>
+      <button type="button" className={styles.propMenuBtn} title="Property options" onClick={() => setOpen((o) => !o)}>
+        <MoreIcon size={13} />
+      </button>
+      {open && (
+        <div className={styles.propMenuList}>
+          <button type="button" className={styles.propMenuItem} onClick={() => setRenaming((r) => !r)}>Rename…</button>
+          {renaming && (
+            <input
+              className={styles.addPropInput}
+              autoFocus
+              defaultValue={name}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
+                if (e.key === "Escape") setRenaming(false);
+              }}
+              onBlur={(e) => commit(e.target.value)}
+            />
+          )}
+          <button type="button" className={`${styles.propMenuItem} ${styles.propMenuDanger}`} onClick={() => { setOpen(false); onDelete(); }}>
+            Delete property
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

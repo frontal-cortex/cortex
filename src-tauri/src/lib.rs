@@ -5,7 +5,6 @@ mod theme;
 mod watcher;
 
 use commands::vault::{DbState, VaultState};
-use tauri::Manager;
 
 /// Tiling compositors own the window frame; GTK's client-side title bar with
 /// min/max/close only gets in the way there. Desktops that need a close button
@@ -23,10 +22,19 @@ fn is_tiling_desktop() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_shell::init());
+    // In-app updates are desktop only. The plugin reads its endpoint and
+    // public key from `plugins.updater` in tauri.conf.json; with no endpoint
+    // (or the placeholder key) the UI reports "not configured" and nothing
+    // else changes — see commands/updates.rs and docs/development.md.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+    builder
         .manage(VaultState::default())
         .manage(DbState::default())
         .manage(watcher::WatcherState::default())
@@ -71,6 +79,7 @@ pub fn run() {
             commands::vault::get_vault_info,
             commands::recent::get_recent_vaults,
             commands::notes::list_notes,
+            commands::notes::list_tags,
             commands::notes::read_note,
             commands::notes::resolve_ref,
             commands::notes::write_note,
@@ -81,6 +90,8 @@ pub fn run() {
             commands::notes::create_folder,
             commands::notes::delete_folder,
             commands::notes::rename_note,
+            commands::notes::title_changed,
+            commands::notes::resolve_note,
             commands::notes::duplicate_note,
             commands::notes::reveal_path,
             commands::notes::convert_note_to_database,
@@ -124,6 +135,7 @@ pub fn run() {
             commands::data::set_cell,
             commands::data::add_row,
             commands::data::delete_row,
+            commands::data::duplicate_row,
             commands::data::list_row_templates,
             commands::data::add_row_from_template,
             commands::data::save_row_as_template,
@@ -137,10 +149,13 @@ pub fn run() {
             commands::schema::get_schema_for_note,
             commands::schema::set_schema,
             commands::schema::upsert_property,
+            commands::schema::rename_property,
+            commands::schema::delete_property,
             commands::members::get_members,
             commands::members::set_members,
             commands::members::current_user,
             agents::detect_agents,
+            commands::updates::update_config,
             commands::publish::publish_preview,
             commands::publish::publish_to_dir,
             commands::publish::publish_gh_pages,
@@ -155,6 +170,10 @@ pub fn run() {
             commands::tracker::run_tracker,
             commands::tracker::tracker_toggle,
             commands::tracker::list_trackers,
+            commands::import::import_csv_plan,
+            commands::import::import_csv,
+            commands::import::import_markdown,
+            commands::import::import_notion,
             commands::trash::trash_collection,
             commands::data::ensure_row,
             theme::watch_theme_file,

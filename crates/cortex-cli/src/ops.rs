@@ -7,13 +7,16 @@ use cortex_core::data::{self};
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
-use cortex_core::schema::TypeSchema;
+use cortex_core::rename::{self, RenameReport};
+use cortex_core::schema::{PropertyChange, TypeSchema};
+use cortex_core::search::SearchHit;
 use cortex_core::settings::Settings;
+use cortex_core::tags::{self, TagNode};
 use cortex_core::tracker::{self, TrackerResult};
 use cortex_core::{index, schema, settings, vault};
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -86,7 +89,12 @@ pub struct TrackEvent {
 
 #[derive(Debug, Serialize)]
 pub struct Link {
+    /// The note the link names — `[[Note|alias]]` and `[[Note#Section]]` both give `Note`.
     pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     /// Resolved note path, if the link points at an existing note.
     pub path: Option<String>,
 }
@@ -187,6 +195,17 @@ impl Vault {
         Ok(())
     }
 
+    /// Write a note back and, if its title changed, point every `[[Old Title]]`
+    /// at the new one — a title change is a rename as far as links go.
+    fn write_relinking(&self, n: &Note, old_title: &str) -> Result<()> {
+        self.write(n)?;
+        let new_title = note::infer_title(n);
+        if new_title != old_title {
+            rename::title_changed(&self.root, &self.db()?, &n.path, old_title, &new_title)?;
+        }
+        Ok(())
+    }
+
     // ── Notes ───────────────────────────────────────────────────────────────
 
     pub fn list(&self, dir: Option<&str>, note_type: Option<&str>, tag: Option<&str>) -> Vec<NoteEntry> {
@@ -199,11 +218,20 @@ impl Vault {
                 None => !n.path.starts_with("templates/"),
             })
             .filter(|n| note_type.map_or(true, |t| n.note_type.as_deref() == Some(t)))
-            .filter(|n| tag.map_or(true, |t| n.tags.iter().any(|x| x == t)))
+            // Frontmatter and inline `#tags` alike; a parent tag matches its children.
+            .filter(|n| tag.map_or(true, |t| tags::has_tag(&n.tags, t)))
             .collect()
     }
 
-    pub fn search(&self, query: &str) -> Result<Vec<NoteEntry>> {
+    /// The tag tree with counts, nested by `/` (templates excluded).
+    pub fn tags(&self) -> Vec<TagNode> {
+        vault::list_tags(&self.root)
+    }
+
+
+    /// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
+    /// `type:`, `path:`); see `cortex_core::search`.
+    pub fn search(&self, query: &str) -> Result<Vec<SearchHit>> {
         Ok(self.db()?.search(query)?)
     }
 
@@ -268,6 +296,7 @@ impl Vault {
     /// Merge properties into a note's frontmatter; a null value removes the key.
     pub fn set_properties(&self, target: &str, props: BTreeMap<String, serde_json::Value>) -> Result<Note> {
         let mut note = self.read(target)?;
+        let old_title = note::infer_title(&note);
         let changed: Vec<String> = props.keys().cloned().collect();
         for (k, v) in props {
             if v.is_null() {
@@ -276,7 +305,7 @@ impl Vault {
                 note.frontmatter.insert(k, v);
             }
         }
-        self.write(&note)?;
+        self.write_relinking(&note, &old_title)?;
         // Auto-stamped dates and repeats follow, as they do in the app.
         if !data::apply_row_effects(&self.root, &note.path, &changed)?.is_empty() {
             return self.read_path(&note.path);
@@ -313,6 +342,7 @@ impl Vault {
     pub fn apply_pairs(&self, target: &str, pairs: &[String]) -> Result<(Note, bool)> {
         let ops = Self::parse_pair_ops(pairs)?;
         let (mut note, created) = self.read_or_create_row(target)?;
+        let old_title = note::infer_title(&note);
         for (k, op) in ops {
             match op {
                 PairOp::Set(v) => {
@@ -330,7 +360,7 @@ impl Vault {
                 }
             }
         }
-        self.write(&note)?;
+        self.write_relinking(&note, &old_title)?;
         // The same consequences as an edit in the app: auto-stamped dates, the
         // next occurrence of a repeating row.
         let changed: Vec<String> = Self::parse_pair_ops(pairs)?.into_iter().map(|(k, _)| k).collect();
@@ -466,13 +496,36 @@ impl Vault {
         let notes = self.notes();
         Ok(note::extract_wiki_links(&note.body)
             .into_iter()
-            .map(|t| Link { path: vault::resolve(&notes, &t).map(|n| n.path.clone()), target: t })
+            .map(|l| Link {
+                path: vault::resolve(&notes, &l.target).map(|n| n.path.clone()),
+                target: l.target,
+                alias: l.alias,
+                section: l.section,
+            })
             .collect())
     }
 
     pub fn backlinks(&self, target: &str) -> Result<Vec<NoteEntry>> {
         let rel = self.resolve(target)?.path;
         Ok(self.db()?.get_backlinks(&rel)?)
+    }
+
+    /// Rename or move a note and rewrite every inbound link. `dest` is a new
+    /// path (`.md` added if missing) or, with a trailing `/` or naming an
+    /// existing folder, the folder to move into. Commits when auto_commit is on.
+    pub fn mv(&self, target: &str, dest: &str, title: Option<&str>) -> Result<RenameReport> {
+        let old_path = self.resolve(target)?.path;
+        let dest = dest.trim().replace('\\', "/");
+        let new_path = if dest.ends_with('/') || self.root.join(&dest).is_dir() {
+            let name = Path::new(&old_path).file_name().and_then(|f| f.to_str()).unwrap_or("note.md");
+            let dir = dest.trim_end_matches('/');
+            if dir.is_empty() { name.to_string() } else { format!("{dir}/{name}") }
+        } else if dest.ends_with(".md") {
+            dest
+        } else {
+            format!("{dest}.md")
+        };
+        Ok(rename::rename_note(&self.root, &self.db()?, &old_path, &new_path, title)?)
     }
 
     // ── Collections ─────────────────────────────────────────────────────────
@@ -498,6 +551,7 @@ impl Vault {
         sort: &[String],
         columns: Option<&[String]>,
         limit: Option<usize>,
+        summary: &[(String, String)],
     ) -> Result<data::ResolvedTable> {
         let mut spec = serde_json::Map::new();
         spec.insert("source".into(), format!("collections/{}", collection.trim_end_matches('/')).into());
@@ -505,6 +559,10 @@ impl Vault {
         if !sort.is_empty() { spec.insert("sort".into(), sort.into()); }
         if let Some(c) = columns { spec.insert("columns".into(), c.into()); }
         if let Some(l) = limit { spec.insert("limit".into(), l.into()); }
+        if !summary.is_empty() {
+            let m: serde_json::Map<String, serde_json::Value> = summary.iter().map(|(f, func)| (f.clone(), func.clone().into())).collect();
+            spec.insert("summary".into(), serde_json::Value::Object(m));
+        }
         let yaml = serde_yaml::to_string(&serde_json::Value::Object(spec))?;
         // The same table the app shows: schema attached, rollups and formulas computed.
         Ok(data::resolve_view(&self.root, &yaml)?)
@@ -512,6 +570,18 @@ impl Vault {
 
     pub fn schema(&self, key: &str) -> Result<TypeSchema> {
         Ok(schema::load(&self.root, key)?.ok_or_else(|| format!("no schema for '{key}'"))?)
+    }
+
+    /// Rename a property in the schema, every row, the collection's views and
+    /// the rollups / formulas that reference it (see `cortex_core::schema`).
+    pub fn rename_property(&self, key: &str, old: &str, new: &str) -> Result<PropertyChange> {
+        Ok(schema::rename_property(&self.root, key, old, new)?)
+    }
+
+    /// Delete a property from the schema, every row and every view; refused
+    /// while a rollup or formula depends on it.
+    pub fn delete_property(&self, key: &str, name: &str) -> Result<PropertyChange> {
+        Ok(schema::delete_property(&self.root, key, name)?)
     }
 
     pub fn schemas(&self) -> Vec<String> {
@@ -619,6 +689,53 @@ impl Vault {
     /// agent through MCP.
     pub fn publish_preview(&self) -> Result<Vec<cortex_core::publish::PublishEntry>> {
         Ok(cortex_core::publish::preview(&self.root)?)
+    }
+
+    // ── Import ──────────────────────────────────────────────────────────────
+
+    /// `--map` arguments (`Header=property[:type]`, `Header=` to skip) as column overrides.
+    pub fn csv_options(collection: &str, title: Option<&str>, maps: &[String]) -> Result<cortex_core::import::CsvOptions> {
+        let mut columns = Vec::new();
+        for m in maps {
+            let (header, rest) = m.split_once('=').ok_or_else(|| format!("--map needs HEADER=property[:type], got '{m}'"))?;
+            let (property, ty) = rest.split_once(':').unwrap_or((rest, ""));
+            columns.push(cortex_core::import::ColumnMap { header: header.to_string(), property: property.to_string(), ty: ty.to_string(), options: vec![] });
+        }
+        Ok(cortex_core::import::CsvOptions { collection: collection.to_string(), title_column: title.map(str::to_string), columns })
+    }
+
+    /// What importing a CSV would write, without writing it.
+    pub fn import_csv_plan(&self, file: &std::path::Path, opts: &cortex_core::import::CsvOptions) -> Result<cortex_core::import::CsvPlan> {
+        Ok(cortex_core::import::plan_csv(&self.root, file, opts)?)
+    }
+
+    /// Import a CSV as rows of a collection and index them.
+    pub fn import_csv(&self, file: &std::path::Path, opts: &cortex_core::import::CsvOptions) -> Result<cortex_core::import::CsvReport> {
+        let r = cortex_core::import::import_csv(&self.root, file, opts)?;
+        let db = self.db()?;
+        for p in &r.written { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        Ok(r)
+    }
+
+    /// Copy a folder of Markdown under `notes/<into>/` (images into `assets/`) and index it.
+    pub fn import_markdown(&self, dir: &std::path::Path, into: &str, dry_run: bool) -> Result<cortex_core::import::MarkdownReport> {
+        let r = cortex_core::import::import_markdown(&self.root, dir, into, dry_run)?;
+        if !dry_run {
+            let db = self.db()?;
+            for p in &r.notes { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        }
+        Ok(r)
+    }
+
+    /// Import a Notion export (zip or folder): pages, collections, assets, report; index what was written.
+    pub fn import_notion(&self, src: &std::path::Path, into: &str, dry_run: bool) -> Result<cortex_core::import::notion::NotionReport> {
+        let r = cortex_core::import::notion::import_notion(&self.root, src, into, dry_run)?;
+        if !dry_run {
+            let db = self.db()?;
+            let rows = r.collections.iter().flat_map(|c| c.written.iter());
+            for p in r.notes.iter().chain(rows).chain(r.report.iter()) { let _ = index::index_file(&self.root, &self.root.join(p), &db); }
+        }
+        Ok(r)
     }
 
     // ── Git & proposals ─────────────────────────────────────────────────────
