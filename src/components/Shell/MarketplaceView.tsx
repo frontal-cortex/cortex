@@ -177,6 +177,10 @@ export function MarketplaceView({ onClose, onChanged }: Props) {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 (e.currentTarget.closest("nav")?.querySelector(`.${styles.navList} button`) as HTMLButtonElement | null)?.focus();
+              } else if (e.key === "Enter" && query.trim() && shown.length > 0) {
+                // Type a name, press Enter: the first match opens.
+                e.preventDefault();
+                setOpenId(shown[0].id);
               }
             }}
           />
