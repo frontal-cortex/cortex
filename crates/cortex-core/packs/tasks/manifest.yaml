@@ -1,7 +1,7 @@
 format: 1
 id: tasks
 name: "Tasks"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "One row per task with status, priority, due and repeat; Today, This week, Upcoming, Inbox, a board and a done chart."
 description: |

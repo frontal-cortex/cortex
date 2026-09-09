@@ -1,7 +1,7 @@
 format: 1
 id: reading-list
 name: "Reading List"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "Books, articles and papers as rows with a note each, a progress bar per book, and an optional log of sittings."
 description: |

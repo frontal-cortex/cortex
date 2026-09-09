@@ -1,7 +1,7 @@
 format: 1
 id: meeting-notes
 name: "Meeting Notes"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "Meetings as rows with date, kind, status and attendees; action items in their own list, linked to the meeting."
 description: |

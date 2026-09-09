@@ -1,7 +1,7 @@
 format: 1
 id: para-index
 name: "PARA Index"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "Projects, Areas and Resources as three linked databases; archive is a status, and an index note shows it all live."
 description: |

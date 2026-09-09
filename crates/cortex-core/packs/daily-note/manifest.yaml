@@ -1,7 +1,7 @@
 format: 1
 id: daily-note
 name: "Daily Note"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "One page per day with mood, energy and sleep: this week's days, a calendar of the days you wrote, weekly trend charts."
 description: |

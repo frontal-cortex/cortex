@@ -24,6 +24,9 @@ mkdir -p "$DEST"
 # Official tier only: the app bundles what maintainers curate; the rest is fetched.
 for id in $(grep -E ': *official *$' "$TMP/marketplace/tiers.yaml" | cut -d: -f1); do
   cp -R "$TMP/marketplace/packs/$id" "$DEST/$id"
+  # Screenshots stay in the marketplace: the app fetches them from the index
+  # (build.rs skips images anyway), so keep the vendored copy small.
+  rm -rf "$DEST/$id/preview" "$DEST/$id/preview.png"
 done
 cp "$TMP/marketplace/featured.yaml" "$CRATE/featured.yaml"
 cp "$TMP/marketplace/tiers.yaml" "$CRATE/tiers.yaml"

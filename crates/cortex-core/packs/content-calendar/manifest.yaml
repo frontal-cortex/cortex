@@ -1,7 +1,7 @@
 format: 1
 id: content-calendar
 name: "Content Calendar"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "Content from idea to published: pipeline board, calendar, this week, overdue, a queue with days left, campaigns, chart."
 description: |

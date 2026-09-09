@@ -1,7 +1,7 @@
 format: 1
 id: recipe-box
 name: "Recipe Box"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "Recipes with cook counts and last-cooked dates, a meal plan for today and this week, a grocery list in aisle order."
 description: |

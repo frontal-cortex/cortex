@@ -1,7 +1,7 @@
 format: 1
 id: goals
 name: "Goals"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "Goals with milestones and dated check-ins; progress and days left computed per goal, a weekly review list, a timeline."
 description: |

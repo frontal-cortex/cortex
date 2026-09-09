@@ -1,7 +1,7 @@
 format: 1
 id: project-tracker
 name: "Project Tracker"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "Projects with status, priority, deadline, computed progress and one next action; milestones; a timeline; a page each."
 description: |

@@ -1,7 +1,7 @@
 format: 1
 id: decision-log
 name: "Decision Log"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "One row per decision: context, options, what was chosen and why, a review date that comes due by itself, the outcome."
 description: |
