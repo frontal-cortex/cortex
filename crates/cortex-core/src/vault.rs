@@ -180,6 +180,7 @@ follows every change you make on disk.
 ## Layout
 
 - `notes/` — all notes, in whatever folders the owner likes. `notes/journal/` holds daily notes.
+  `notes/foo.comments.yaml` beside `notes/foo.md` is its comment threads — discussion about a note, never in it.
 - `collections/<name>/` — a database: one note per row, properties in frontmatter, `_index.md` is the table.
 - `templates/` — note templates (`{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}`).
 - `.cortex/` — committed config: settings, property schemas, members. `.brain/` is a cache; ignore it.
@@ -195,6 +196,7 @@ follows every change you make on disk.
 - Never write derived data (rollups, counts, created/edited time and by) into notes; the app computes it.
 - A `date_range` property is one nested mapping, `trip: {start: YYYY-MM-DD, end: YYYY-MM-DD}`; a `files` property is a list of `assets/…` paths.
 - A paragraph that is only `[Label](https://…)` shows as a bookmark card; one that is only `<https://…>` embeds the page. A bare URL stays text.
+- To question or discuss a passage without changing it, comment (`cortex comment <note> --quote "…" "text"`); the thread lands in the note's sidecar, not its body.
 
 ## Tools
 
@@ -205,6 +207,7 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f] [--summary f=sum]
+    cortex comments <note> [--all]           comment threads       cortex comment <note> [--quote "…"] "text" | --reply ID "text" | --resolve ID
     cortex mv <note> <path-or-dir/> [--title t]   rename/move; inbound [[links]] are rewritten to follow
     cortex schema [key]                      typed properties      cortex status
     cortex schema rename <key> <old> <new>   rename a property everywhere (rows, views, rollups, formulas)

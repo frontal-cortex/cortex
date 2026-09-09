@@ -116,6 +116,34 @@ enum Cmd {
     Links { target: String },
     /// Notes that link to this one
     Backlinks { target: String },
+    /// Comment threads on a note (stored beside it in <note>.comments.yaml); open ones unless --all
+    Comments {
+        target: String,
+        /// Include resolved threads
+        #[arg(long)]
+        all: bool,
+    },
+    /// Comment on a note: open a thread (anchored to a --quote of the text, or about the whole note), --reply in one, or --resolve / --reopen one
+    Comment {
+        target: String,
+        /// The comment (not needed with --resolve / --reopen)
+        text: Option<String>,
+        /// Anchor the thread to this exact passage of the note's body
+        #[arg(long, value_name = "TEXT")]
+        quote: Option<String>,
+        /// Which occurrence of --quote is meant, counting from 0
+        #[arg(long, default_value_t = 0, requires = "quote")]
+        occurrence: usize,
+        /// Reply in this thread instead of opening a new one
+        #[arg(long, value_name = "ID", conflicts_with_all = ["quote", "resolve", "reopen"])]
+        reply: Option<String>,
+        /// Mark this thread resolved
+        #[arg(long, value_name = "ID", conflicts_with_all = ["quote", "reopen"])]
+        resolve: Option<String>,
+        /// Open this thread again
+        #[arg(long, value_name = "ID", conflicts_with = "quote")]
+        reopen: Option<String>,
+    },
     /// Rename or move a note and rewrite every inbound [[link]] to follow it
     Mv {
         /// The note: path, title, or filename stem
@@ -441,6 +469,44 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::Backlinks { target } => out.notes(&v.backlinks(&target)?),
+        Cmd::Comments { target, all } => {
+            let (note, threads) = v.comments(&target)?;
+            let threads: Vec<_> = threads.into_iter().filter(|t| all || !t.resolved).collect();
+            if out.json { return out.emit(&threads); }
+            let first_line = |s: &str| s.lines().next().unwrap_or("").to_string();
+            table(&["ID", "STATUS", "ANCHOR", "AUTHOR", "COMMENT", "REPLIES"], threads.iter().map(|t| {
+                let anchor = match &t.anchor {
+                    None => "(whole note)".to_string(),
+                    Some(a) if cortex_core::comments::locate(&note.body, a).is_some() => format!("\"{}\"", first_line(&a.quote)),
+                    Some(a) => format!("\"{}\" (not in the note any more)", first_line(&a.quote)),
+                };
+                vec![
+                    t.id.clone(), if t.resolved { "resolved".into() } else { "open".into() }, anchor,
+                    t.author.clone(), first_line(&t.text), t.replies.len().to_string(),
+                ]
+            }).collect());
+            if !all {
+                let hidden = cortex_core::comments::load(&v.root, &note.path)?.iter().filter(|t| t.resolved).count();
+                if hidden > 0 { eprintln!("{hidden} resolved thread{} hidden (--all shows them)", if hidden == 1 { "" } else { "s" }); }
+            }
+            Ok(())
+        }
+        Cmd::Comment { target, text, quote, occurrence, reply, resolve, reopen } => {
+            let thread = if let Some(id) = resolve {
+                v.resolve_comment(&target, &id, true)?
+            } else if let Some(id) = reopen {
+                v.resolve_comment(&target, &id, false)?
+            } else {
+                let text = text.ok_or("the comment text is missing")?;
+                match reply {
+                    Some(id) => v.reply_comment(&target, &id, &text)?,
+                    None => v.comment(&target, &text, quote.as_deref(), occurrence)?,
+                }
+            };
+            if out.json { return out.emit(&thread); }
+            println!("{}", thread.id);
+            Ok(())
+        }
         Cmd::Mv { target, dest, title } => {
             let r = v.mv(&target, &dest, title.as_deref())?;
             if out.json { return out.emit(&r); }

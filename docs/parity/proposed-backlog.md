@@ -417,7 +417,7 @@ relative to the two above: 36 → 34 → 37 → responsive shell → 38 → 35 �
 
 ## Next in line (not sized as rows yet)
 
-- **Comments as a committed sidecar** (`notes/foo.comments.yaml`, text-quote anchors, margin rendering; BlockNote's comments extension needs a thread store). M.
+- ~~**Comments as a committed sidecar**~~ Done: `notes/foo.comments.yaml`, text-quote anchors, a margin panel, `cortex comment`, MCP `add_comment`.
 - ~~**Publish database views**: render `cortex-view` fences as static tables on the site, and index body text into `search.json`. M.~~ Done.
 - ~~**CI and auto-update**: a `.github/` build matrix for the three desktop OSes plus `tauri-plugin-updater`. Not parity, but today nobody can receive a build. M.~~ Done: `.github/workflows/{ci,release}.yml`, updater plugin, Check for updates in palette + Settings; keypair setup in `docs/development.md`.
 - ~~**Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.~~ Done: `[Label](url)` alone is a card, `<url>` alone is a frame; previews in `.brain/previews/`.

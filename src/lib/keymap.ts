@@ -30,7 +30,9 @@ export type ShortcutId =
   | "marketplace"
   | "log-today"
   | "find-in-note"
-  | "toggle-outline";
+  | "toggle-outline"
+  | "toggle-comments"
+  | "comment";
 
 export interface Shortcut {
   /** `mod` = ⌘ on macOS, Ctrl elsewhere. Lower-case, `+`-joined, key last. */
@@ -59,6 +61,8 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "log-today":         { keys: "mod+shift+h", label: "Log today" },
   "find-in-note":      { keys: "mod+f",       label: "Find in note" },
   "toggle-outline":    { keys: "mod+shift+o", label: "Toggle outline" },
+  "toggle-comments":   { keys: "mod+shift+c", label: "Toggle comments" },
+  "comment":           { keys: "mod+alt+c",   label: "Comment on selection" },
 };
 
 // ── Local keys ────────────────────────────────────────────────────────────────

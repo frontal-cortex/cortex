@@ -168,7 +168,7 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Comments, threads, resolve | missing | L | Zero code. Roadmap: a committed `notes/foo.comments.yaml` sidecar with text-quote anchors. BlockNote has a comments extension that needs a thread store. |
+| Comments, threads, resolve | done | — | A committed sidecar `notes/foo.comments.yaml` beside the note (`comments.rs`): threads with a text-quote anchor (`quote` + nth `occurrence`, so it survives edits around it), git-identity author, replies, resolved. Margin panel in the app (top-bar toggle with the open count, palette, `mod+shift+c`), comment from a selection (toolbar button, `mod+alt+c`), the quoted passage highlighted while a thread is selected; `cortex comments` / `cortex comment`; MCP `list_comments` / `add_comment` / `resolve_comment`. Never indexed or published; follows `cortex mv`. Not Notion's: no @mention inside a comment, no notifications, no comments on the published site. |
 | @person mention with notification | partial | M | Plain text (§1). |
 | Notifications / inbox | missing | L | No notification plugin. |
 | Activity / updates feed | partial | M | The sidebar's recent-commits list; not per page, not "since you last looked". |
@@ -258,8 +258,8 @@ by inferring column types (`data.rs:128`).
 3. **No columns, TOC, synced blocks, buttons.** (Math, bookmark cards and web embeds landed.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation, a date picker and duplicate row landed.)
+7. ~~**No comments**~~ Done: threaded, anchored comments in a committed sidecar, from the app, CLI and MCP. **Mentions are still plain text, and there are no notifications.**
 6. **No sub-groups in the table view.** (Filter grammar precedence and operators, table group-by, the summary row and the in-database search box have landed.)
-7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
 9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.

@@ -1,3 +1,4 @@
+pub mod comments;
 pub mod config;
 pub mod data;
 pub mod git;

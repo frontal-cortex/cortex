@@ -38,6 +38,8 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex write <note> < body.md` | replace the body, keep the frontmatter |
 | `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
+| `cortex comments <note> [--all]` | the note's comment threads (open ones; `--all` includes resolved) — stored beside it in `<note>.comments.yaml`, never in the note |
+| `cortex comment <note> [--quote "…" [--occurrence n]] "text"` / `--reply ID "text"` / `--resolve ID` / `--reopen ID` | open a thread anchored to a passage of the body (the quote must be in it) or about the whole note, reply in one, or resolve it; author is the git identity; one commit when `auto_commit` is on |
 | `cortex assets [--unused]` | every file under `assets/` with its size, type and how many notes reference it; `--unused` keeps only the orphans. A report, never a delete |
 | `cortex mv <note> <dest> [--title t]` | rename or move a note — `dest` is a new path (`notes/x/plan.md`) or a folder (`notes/x/`) — and rewrite every inbound `[[link]]` to follow it, aliases / sections / embeds kept; one commit when `auto_commit` is on. `cortex set <note> title=…` relinks the same way |
 | `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty) |
@@ -64,7 +66,9 @@ Every command takes `--json`. Errors go to stderr with exit code 1.
 
 `cortex mcp` speaks the Model Context Protocol over stdio and exposes the
 same operations as tools: `list_notes`, `list_tags`, `search`, `read_note`, `create_note`,
-`write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
+`write_note`, `set_properties`, `links`, `backlinks`, `list_comments`, `add_comment`,
+`resolve_comment` (discussion in the note's comments sidecar — anchor a thread to a quoted
+passage, reply, resolve — without editing the note), `list_collections`,
 `query_collection`, `get_schema`, `rename_property`, `delete_property`, `status`, `propose`, `list_proposals`,
 `proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_packs`, `install_pack`,
 `update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can

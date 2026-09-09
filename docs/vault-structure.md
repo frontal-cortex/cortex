@@ -25,6 +25,12 @@ the left panel.
 - `notes/journal/YYYY-MM-DD.md` — daily notes (created by the Today button)
 - `notes/work/`, `notes/personal/`, etc. — any grouping that suits the user
 
+**Comments** on a note live beside it, never in it: `notes/foo.comments.yaml`
+is a committed list of threads on `notes/foo.md`, each anchored to a quoted
+passage (`quote` + which `occurrence`), with author (git identity), `created`,
+`resolved` and `replies`. The sidecar is not a note — it is never indexed,
+listed or published — and it moves with the note on rename.
+
 Empty directories are tracked via `.gitkeep` files so git preserves them.
 
 ## `templates/`

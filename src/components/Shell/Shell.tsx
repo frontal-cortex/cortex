@@ -8,6 +8,7 @@ import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
+import { useComments } from "../../hooks/useComments";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
 import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/database";
@@ -157,6 +158,19 @@ export function Shell({
 
   const { notes, dirs, tags, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
   const { note, saving, save, applyNote } = useNote(selectedPath);
+  // The open note's comment threads (its `.comments.yaml` sidecar) and the
+  // margin that shows them. Open/closed is a way of reading, so it lives in
+  // localStorage like the outline.
+  const commentsApi = useComments(selectedPath ?? "");
+  const [commentsOpen, setCommentsOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem("cortex.commentsOpen") === "1"; } catch { return false; }
+  });
+  const toggleComments = useCallback(() => {
+    setCommentsOpen((v) => {
+      try { localStorage.setItem("cortex.commentsOpen", v ? "0" : "1"); } catch { /* fine */ }
+      return !v;
+    });
+  }, []);
   useEffect(() => {
     const where = pendingFocus.current;
     if (!where || !note || note.path !== selectedPath) return;
@@ -214,6 +228,11 @@ export function Shell({
         }
       }
       if (payload.config) loadSettings();
+      // A comment sidecar changed under us (an agent, a teammate's sync): the
+      // panel for that note reloads.
+      for (const path of payload.comments ?? []) {
+        window.dispatchEvent(new CustomEvent("cortex:comments-changed", { detail: { path } }));
+      }
       // Any write dirties the working tree; refs moving changes branches/commits.
       onRefreshStatus();
     });
@@ -522,6 +541,8 @@ export function Shell({
     "log-today":       () => setShowLogToday((v) => !v),
     "find-in-note":    () => editorRef.current?.openFind(),
     "toggle-outline":  () => editorRef.current?.toggleOutline(),
+    "toggle-comments": () => { if (note) toggleComments(); },
+    "comment":         () => editorRef.current?.commentOnSelection(),
   };
 
   return (
@@ -544,6 +565,10 @@ export function Shell({
         onToggleLeft={toggleLeft}
         onToggleRight={handleToggleTerminal}
         onToggleMonk={toggleMonk}
+        commentsOpen={commentsOpen}
+        unresolvedComments={commentsApi.unresolved}
+        hasNote={!!note}
+        onToggleComments={toggleComments}
       />}
 
       <div className={styles.body}>
@@ -599,6 +624,13 @@ export function Shell({
           onNavigate={handleNavigate}
           onApplyNote={applyNote}
           onConvertToNote={handleConvertToNote}
+          comments={commentsApi.threads}
+          commentsOpen={commentsOpen}
+          onToggleComments={toggleComments}
+          onAddComment={async (text, anchor) => { await commentsApi.add(text, anchor); scheduleAutoCommit(); }}
+          onReplyComment={async (id, text) => { await commentsApi.reply(id, text); scheduleAutoCommit(); }}
+          onResolveComment={async (id, resolved) => { await commentsApi.resolve(id, resolved); scheduleAutoCommit(); }}
+          onDeleteComment={async (id) => { await commentsApi.remove(id); scheduleAutoCommit(); }}
         />
 
         {terminalMounted && (
@@ -647,6 +679,8 @@ export function Shell({
           onToggleProperties={() => editorRef.current?.toggleProperties()}
           onFindInNote={note ? () => editorRef.current?.openFind() : undefined}
           onToggleOutline={() => editorRef.current?.toggleOutline()}
+          onToggleComments={note ? toggleComments : undefined}
+          onComment={note ? () => editorRef.current?.commentOnSelection() : undefined}
           onPublish={() => setShowPublish(true)}
           onImport={() => setShowImport(true)}
           onCheckForUpdates={() => setShowUpdate(true)}
