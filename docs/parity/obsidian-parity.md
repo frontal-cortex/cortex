@@ -188,6 +188,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Obsidian Bases vs Cortex collections | done, well ahead | — | Typed schemas, relations, rollups, a real formula evaluator, recurrence, trackers with streaks, seven view types, same queries from the CLI and MCP. See `notion-parity.md` §4-§6. |
+| Math `$…$` / `$$…$$` (MathJax in Obsidian) | done | — | Same syntax on disk, rendered with KaTeX in the editor (`MathBlock.tsx`). `$$` on an empty line or `/math` opens a block; `$…$` typed inline becomes an equation. |
 | Audio recorder | missing | M | |
 | Slides / presentation mode | missing | M | |
 | PDF viewer | missing | L | Only images render from `assets/`. |

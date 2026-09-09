@@ -30,6 +30,8 @@ import {
 import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, viewToFrontmatter } from "../../lib/database";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
+import { mathSlashItem, inlineMathInputRule } from "./MathBlock";
+import { extractMath, inflateMath, flattenMath, restoreMath } from "../../lib/math";
 import { shortcutFor } from "../../lib/keymap";
 import styles from "./Editor.module.css";
 
@@ -447,6 +449,7 @@ function NoteEditor({
         wikiLinkExtension((t) => navigateRef.current(t)),
         wikiLinkSuggestionExtension(handle),
         imagePasteDropExtension,
+        inlineMathInputRule,
       ],
     },
   });
@@ -526,10 +529,14 @@ function NoteEditor({
       assetsToDisplayUrls(note.body)
         .then((displayBody) => {
           try {
-            const blocks = editor.tryParseMarkdownToBlocks(displayBody);
-            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`, and
-            // `[!callout]` blockquotes into live blocks on load.
-            editor.replaceBlocks(editor.document, inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks)))) as typeof blocks);
+            // `$…$` / `$$…$$` are lifted out before parsing so the Markdown
+            // parser never sees LaTeX (see src/lib/math.ts).
+            const math = extractMath(displayBody);
+            const blocks = editor.tryParseMarkdownToBlocks(math.md);
+            // Translate `cortex-view` / `cortex-views` fences, `![[embeds]]`,
+            // `[!callout]` blockquotes and math into live blocks on load.
+            const inflated = inflateMath(inflateCallouts(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(blocks)))), math.spans);
+            editor.replaceBlocks(editor.document, inflated as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
             // would be suppressed forever for this note.
@@ -580,9 +587,9 @@ function NoteEditor({
       // immediately by navigating away — capturing here means the pending
       // write survives the editor being destroyed on unmount.
       void (async () => {
-        const doc = flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(editor.document)))) as typeof editor.document;
+        const doc = flattenCallouts(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenMath(editor.document))))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
-        pendingMd.current = displayUrlsToAssets(md);
+        pendingMd.current = restoreMath(displayUrlsToAssets(md));
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
         bodyTimer.current = setTimeout(flush, 400);
       })();
@@ -734,7 +741,7 @@ function NoteEditor({
                 triggerCharacter="/"
                 getItems={async (query) =>
                   filterSuggestionItems(
-                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor)],
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor), mathSlashItem(editor)],
                     query,
                   )
                 }

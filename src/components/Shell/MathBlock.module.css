@@ -1,0 +1,116 @@
+/* Block equation */
+.block {
+  margin: var(--space-2) 0;
+  border-radius: var(--radius-md);
+  user-select: none;
+}
+
+.block[data-editing] {
+  background: var(--bg-hover);
+  padding: var(--space-2) var(--space-3);
+}
+
+.preview {
+  padding: var(--space-2) 0;
+  overflow-x: auto;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.preview:hover {
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.empty {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.source {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  user-select: text;
+}
+
+.source:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+/* Inline equation */
+.inline {
+  position: relative;
+  display: inline;
+}
+
+.inlinePreview {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.inlinePreview:hover {
+  background: var(--bg-hover);
+}
+
+.inlineEmpty {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.inlineEditor {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: var(--space-1);
+  white-space: nowrap;
+}
+
+.inlineInput {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  user-select: text;
+}
+
+.inlineInput:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.error {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}

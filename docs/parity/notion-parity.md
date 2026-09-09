@@ -29,7 +29,7 @@ screen but the Markdown save path throws it away.
 | Video / audio | partial | M | Blocks exist; same asset rehydration gap; no YouTube/Vimeo player or oEmbed. |
 | Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
 | Web embed (iframe) | missing | M | |
-| Math / equation (inline and block) | missing | M | No KaTeX dependency, no `$…$` handling anywhere. |
+| Math / equation (inline and block) | done | — | `$…$` and `$$…$$` on disk (GitHub/Obsidian syntax), KaTeX bundled locally (`MathBlock.tsx`, `src/lib/math.ts`). `/math` and `$$` on an empty line open a block; typing `$…$` makes an inline equation. The static site shows the LaTeX source in a `.math` span (no KaTeX shipped there). |
 | Columns | missing | L | Needs `@blocknote/xl-multi-column`; the roadmap rates it the weakest Markdown fit. |
 | Synced blocks | missing | L | Closest is the read-only `![[note]]` embed. |
 | Table of contents block | missing | M | |
@@ -50,7 +50,7 @@ screen but the Markdown save path throws it away.
 | Bold, italic, strikethrough, code, link | done | — | |
 | Underline | partial | M | Applies on screen; the exporter strips `<u>` on save. |
 | Text colour, highlight | partial | M | Applies on screen; colour spans are stripped on save. Cortex needs a Markdown convention (`==mark==` for highlight is the obvious one; colour may be a non-goal). |
-| Inline math | missing | M | |
+| Inline math | done | — | `$E = mc^2$` typed in a paragraph becomes a KaTeX node; click to edit the source. Stored as plain `$…$`. |
 | `Ctrl+B` | note | S | Bound to toggle-sidebar in capture phase (`keymap.ts:49`), so bold is toolbar or `**` only. |
 
 ## 3. Page level and editor chrome
@@ -254,7 +254,7 @@ by inferring column types (`data.rs:128`).
 
 1. **No import path.** Nobody can move in from Notion, CSV, or Evernote. Opening a Markdown folder works but writes files into it.
 2. **Silent formatting loss on save**: underline, colour, highlight, toggles, image width. They look like they work until the note is reopened.
-3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
+3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
 4. **Property rename and delete do not exist.** A mistyped property name is permanent from the app.
 5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
 6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; table view cannot group; no in-database search or summary row.
