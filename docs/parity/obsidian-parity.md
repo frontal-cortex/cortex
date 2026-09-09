@@ -81,9 +81,9 @@ at the end so they are not mistaken for gaps.
 | File tree, nesting, keyboard nav | done | — | Flat row model with roving tabindex, `j/k`, `Enter`, `n`, `/` (`treeRows.ts`). |
 | Drag-and-drop move, rename, context menu | done | — | Rename, Duplicate, Turn into collection, Favorite, Reveal, Export HTML, Copy path, Delete (`FileTree.tsx:485`). Rename and drop rewrite inbound links (§1). |
 | Folder notes | missing | M | No `folder/folder.md` convention for plain folders (collections have `_index.md`, which is the database page). |
-| Explorer sort options | missing | S | Hard-coded A→Z (`fileTree.ts:152`). |
+| Explorer sort options | done | — | Sort button on the Notes header: name / modified / created / type, ascending or descending (`SortMenu` in `LeftPanel.tsx`, applied by `fileTree.ts sortNotes`; folders stay A→Z). Stored as `explorer_sort` in `.cortex/settings.yaml` so it travels with the vault; also in Settings → Notes and `cortex settings set explorer_sort=modified-desc`. |
 | Favourites | done | — | `.cortex/favorites.yaml`; no nested bookmark folders or bookmarked searches. |
-| Recent files | missing | S | `recent.rs` is recent *vaults*, not notes. |
+| Recent files | done | — | Recent section in the sidebar (last 10 opened, `useRecentNotes`), the quick switcher's empty-query list, and a "Recent notes" palette action. Kept in memory and mirrored to `.brain/ui-state.json` (`cortex_core::ui_state`) — gitignored, never committed. |
 
 ## 8. Search and palettes
 
@@ -104,7 +104,7 @@ at the end so they are not mistaken for gaps.
 | Multiple panes / splits | missing | L | `useLayout.ts` is three booleans (left, right, monk); one editor, one `selectedPath`. |
 | Tabs, pinned tabs | missing | L | Deliberately removed after a history-corruption bug (`useNavHistory.ts:52`). |
 | Back / forward | done | — | 50-deep history, `mod+[` / `mod+]`. |
-| Resizable sidebar | missing | S | `--left-panel-width: 260px` is a constant (`tokens.css:60`); `LeftPanel.module.css` fixes both `width` and `min-width`. |
+| Resizable sidebar | done | — | Drag handle on the sidebar's edge (pointer capture, 200–480px, double-click resets, arrows nudge when focused); width remembered per vault in localStorage (`useSidebarWidth`) and applied as `--left-panel-width`. |
 | Outline pane | done | — | Headings derived from the live blocks, beside the page (`toggle-outline`, `mod+shift+o`); click jumps, the entry under the cursor is marked (`OutlinePane.tsx`). |
 | Properties pane | done | — | Typed, schema-driven, with option colours; richer than Obsidian's. |
 | Status bar (word / char / backlink count) | partial | S | Words, characters and reading time under the page (`lib/textStats.ts`), hidden in monk mode; no backlink count (backlinks list under the note). |
@@ -115,7 +115,8 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Central shortcut registry, platform labels | done | — | `keymap.ts`, 19 shortcuts, every hint renders from it. |
+| Central shortcut registry, platform labels | done | — | `keymap.ts`, 20 shortcuts, every hint renders from it. |
+| Shortcut overlay (`?`) | done | — | `?` outside a text field or `mod+/` (`shortcut-help`): every registered shortcut grouped by area, plus the sidebar and data-table keys, rendered from the registry so it cannot go stale (`ShortcutOverlay.tsx`); rebound keys are marked. |
 | Customisable keybindings + recorder | done | — | `keybindings:` in settings; conflict detection; recorder in Settings; settable from the CLI. |
 | Keyboard-first navigation | done | — | Sidebar roving tabindex, focus-sidebar / focus-editor; the data table is a roving grid with the same vim keys (`TABLE_KEYS` in `keymap.ts`). |
 | Vim keybindings in the editor | missing | L | BlockNote/ProseMirror, not CodeMirror. Non-goal unless a modal-editing plugin appears. |
@@ -169,9 +170,9 @@ at the end so they are not mistaken for gaps.
 | Tauri 2 mobile feasibility spike (Android) | done | — | `docs/parity/mobile-spike.md`: go, with a blocker list and four sequenced rows (36–39). No Android toolchain on the dev machine, so no build was attempted. |
 | Tauri mobile targets configured | missing | L | `tauri.conf.json` has no `android` / `ios` keys; no `src-tauri/gen/`; no mobile deps. The only mobile artefact is the boilerplate `mobile_entry_point` attribute (`src-tauri/src/lib.rs:24`). Spike row 38 owns `tauri android init`. |
 | Mobile-capable git backend | missing | L | pull, push, merge abort, ours/theirs, complete merge and `git config` all shell out (`git.rs`); `terminal.rs` and `reveal_path` spawn subprocesses. `docs/MOBILE.md` has the plan (a `RemoteOps` trait with a git2 implementation). The spike found libgit2 is built **without** the `https` feature (`Cargo.toml` `vendored-openssl` alone), so in-process HTTPS does not exist yet even on desktop. |
->>>>>>> origin/main
 | Responsive shell CSS | missing | M | Three `@media` rules in the whole app, all in overlays (Settings, Marketplace, Tracker). `Shell`, `LeftPanel`, `Editor`, `TopBar` have none. Sidebar fixed at 260px, right pane 440px, window `minWidth: 800`. |
 | Touch handling | partial | M | The graph pans, zooms and drags with pointer events (`touch-action: none`); the rest has no pointer or touch events; tree DnD is HTML5 only. |
+>>>>>>> origin/main
 
 The feasibility spike is done (`mobile-spike.md`); *Mobile mode —
 responsive shell groundwork*, the `RemoteOps` row and the spike's rows
@@ -216,7 +217,7 @@ responsive shell groundwork*, the `RemoteOps` row and the spike's rows
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
 8. **No block references.** The deepest structural gap and the most expensive.
 9. **No canvas.**
-10. **Small conveniences, individually cheap:** recent files, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions (outline, word count and find-in-note are done).
+10. **Small conveniences, individually cheap:** folder notes, CSS snippets, unlinked mentions (outline, word count, find-in-note, recent files, explorer sort, the resizable sidebar and the `?` overlay are done).
 
 ## Deliberate non-goals
 

@@ -423,4 +423,4 @@ relative to the two above: 36 → 34 → 37 → responsive shell → 38 → 35 �
 - ~~**Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.~~ Done: `[Label](url)` alone is a card, `<url>` alone is a frame; previews in `.brain/previews/`.
 - **Tabs and split panes.** L, and tabs were removed once after a history bug; needs a design first.
 - ~~**Calendar week view, in-database search box, list view.**~~ Done: month / week / day modes with multi-day spans, a client-side search box in the view toolbar, and `type: list`.
-- **Resizable sidebar, recent files, explorer sort, `?` shortcut overlay.** S each.
+- ~~**Resizable sidebar, recent files, explorer sort, `?` shortcut overlay.** S each.~~ Done: drag handle (200–480px, per-vault), Recent section + `.brain/ui-state.json`, `explorer_sort` setting with a header menu, `?` / `mod+/` overlay from the keymap registry.

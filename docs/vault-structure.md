@@ -50,8 +50,8 @@ the app rebuilds it by scanning the vault on next open.
 | File | Description |
 |------|-------------|
 | `index.db` | SQLite database: full-text search (FTS5), note entries, link graph |
+| `ui-state.json` | Disposable UI memory: the last 10 opened notes (the sidebar's Recent section). Settings live in `.cortex/settings.yaml`, which is committed. |
 | `previews/<sha256>.json` | Bookmark cards: a page's title, description, favicon and image, fetched once per URL. Derived, so never in the note; delete and the cards refetch |
-| `settings.yaml` | Per-vault settings (not yet implemented) |
 
 ## `VAULT.md`
 

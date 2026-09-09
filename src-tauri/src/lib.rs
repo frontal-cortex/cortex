@@ -89,6 +89,8 @@ pub fn run() {
             commands::vault::close_vault,
             commands::vault::get_vault_info,
             commands::recent::get_recent_vaults,
+            commands::recent::get_recent_notes,
+            commands::recent::record_recent_note,
             commands::notes::list_notes,
             commands::notes::list_tags,
             commands::notes::read_note,

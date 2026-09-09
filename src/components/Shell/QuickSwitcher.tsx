@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, SearchHit, commands } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, CommentIcon, DownloadIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, ClockIcon, KeyboardIcon, CommentIcon, DownloadIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -15,6 +15,8 @@ interface Action {
 
 interface Props {
   notes: NoteEntry[];
+  /** Recently opened note paths, most recent first — the empty-query list. */
+  recent: string[];
   /** Seed the input — ">" opens straight into command mode. */
   initialQuery?: string;
   onSelect: (path: string) => void;
@@ -31,6 +33,8 @@ interface Props {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenMarketplace: () => void;
+  /** The `?` overlay listing every shortcut. */
+  onShortcutHelp: () => void;
   onLogToday: () => void;
   onQuickCapture: () => void;
   onToggleSidebar: () => void;
@@ -57,9 +61,9 @@ interface Props {
 type Mode = "notes" | "actions";
 
 export function QuickSwitcher({
-  notes, initialQuery = "", onSelect, onClose,
+  notes, recent, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
-  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
+  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onShortcutHelp, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
   onToggleComments, onComment, onPublish, onImport, onCheckForUpdates, onTogglePublic, isPublic, hasRemote,
 }: Props) {
@@ -80,7 +84,8 @@ export function QuickSwitcher({
   // ── Note results ────────────────────────────────────────────────────────────
   // Substring over title / path / tags first — instant, and what you want for
   // a note you know by name. When that finds nothing, fall back to the
-  // full-text index so a note is reachable by a word in its body.
+  // full-text index so a note is reachable by a word in its body. With
+  // nothing typed: the notes you opened last, then the rest by modified.
   const substringResults: (NoteEntry & { snippet?: string })[] = isActionMode === "notes"
     ? (rawQuery
         ? notes.filter((n) =>
@@ -88,7 +93,7 @@ export function QuickSwitcher({
             n.path.toLowerCase().includes(rawQuery.toLowerCase()) ||
             n.tags.some((t) => t.toLowerCase().includes(rawQuery.toLowerCase())),
           )
-        : notes.slice(0, 12))
+        : recentFirst(notes, recent).slice(0, 12))
     : [];
   const needsFts = isActionMode === "notes" && !!rawQuery && substringResults.length === 0;
   const [ftsResults, setFtsResults] = useState<SearchHit[]>([]);
@@ -170,6 +175,13 @@ export function QuickSwitcher({
         icon: <SyncIcon size={14} />,
         run: () => { onSync(); onClose(); },
       }] : []),
+      {
+        id: "recent-notes",
+        label: "Recent notes",
+        description: `${shortcutFor("quick-switcher")} · the notes you opened last, most recent first`,
+        icon: <ClockIcon size={14} />,
+        run: () => setQuery(""),
+      },
       {
         id: "toggle-sidebar",
         label: "Toggle sidebar",
@@ -263,6 +275,13 @@ export function QuickSwitcher({
         run: () => { onToggleTheme(); onClose(); },
       },
       {
+        id: "shortcut-help",
+        label: "Keyboard shortcuts",
+        description: `${shortcutFor("shortcut-help")} or ? · every shortcut, grouped by area`,
+        icon: <KeyboardIcon size={14} />,
+        run: () => { onClose(); onShortcutHelp(); },
+      },
+      {
         id: "settings",
         label: "Settings",
         description: shortcutFor("settings"),
@@ -292,7 +311,7 @@ export function QuickSwitcher({
     }];
     return [...base, ...tplActions, ...more];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
-      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
+      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onShortcutHelp, onLogToday, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
       onToggleComments, onComment, onPublish, onCheckForUpdates, onTogglePublic, isPublic, onClose]);
 
@@ -399,4 +418,12 @@ export function QuickSwitcher({
       </div>
     </div>
   );
+}
+
+/** Recently opened notes (that still exist) first, then everything else in list order. */
+function recentFirst(notes: NoteEntry[], recent: string[]): NoteEntry[] {
+  const byPath = new Map(notes.map((n) => [n.path, n]));
+  const head = recent.map((p) => byPath.get(p)).filter((n): n is NoteEntry => !!n);
+  const seen = new Set(head.map((n) => n.path));
+  return [...head, ...notes.filter((n) => !seen.has(n.path))];
 }

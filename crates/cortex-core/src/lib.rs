@@ -8,6 +8,7 @@
 //! comment sidecars (`comments`),
 //! settings (`settings`), tags (`tags`), git operations (`git`) and their remote/merge backends (`remote`), importers (`import`), vault discovery (`vault`),
 //! link previews and web embeds for the editor's bookmark and embed blocks (`preview`, `embed`),
+//! disposable UI memory in `.brain/` (`ui_state`),
 //! and which agent CLIs are installed (`agents`). The Tauri app and the `cortex` CLI are both thin layers over it,
 //! so an agent driving the CLI sees exactly the semantics the user sees.
 
@@ -37,4 +38,5 @@ pub mod settings;
 pub mod tags;
 pub mod template;
 pub mod tracker;
+pub mod ui_state;
 pub mod vault;

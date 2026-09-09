@@ -138,6 +138,7 @@ exits.
 | `marketplace_url` | template marketplace index URL; empty = the official one. A company points this at its own registry |
 | `marketplace_extra` | additional index URLs, comma-separated, merged with the first (a team registry alongside the official one) |
 | `marketplace_tiers` | trust tiers shown: `official`, `verified`, `community` (comma-separated); empty = all three |
+| `explorer_sort` | order of notes in the app's sidebar tree: `name`, `modified`, `created` or `type`, with `-asc` / `-desc` (default `name-asc`); folders stay alphabetical |
 
 ## Views, filters and computed properties
 
