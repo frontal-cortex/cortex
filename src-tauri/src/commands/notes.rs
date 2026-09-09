@@ -7,6 +7,7 @@ use crate::commands::vault::{DbState, VaultState};
 use crate::watcher::{self, SelfWrites};
 use cortex_core::error::{AppError, Result};
 use cortex_core::note::{self, Note, NoteEntry};
+use cortex_core::search::SearchHit;
 
 fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
     state
@@ -229,11 +230,13 @@ pub fn delete_note(
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
+/// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
+/// `type:`, `path:`); see `cortex_core::search`. Each hit carries a snippet.
 #[tauri::command]
 pub fn search_notes(
     query: String,
     db_state: State<'_, DbState>,
-) -> Result<Vec<NoteEntry>> {
+) -> Result<Vec<SearchHit>> {
     let guard = db_state.0.lock().unwrap();
     match guard.as_ref() {
         Some(db) => db.search(&query),

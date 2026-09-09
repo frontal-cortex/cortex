@@ -8,6 +8,7 @@ use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::schema::TypeSchema;
+use cortex_core::search::SearchHit;
 use cortex_core::settings::Settings;
 use cortex_core::tracker::{self, TrackerResult};
 use cortex_core::{index, schema, settings, vault};
@@ -208,7 +209,9 @@ impl Vault {
             .collect()
     }
 
-    pub fn search(&self, query: &str) -> Result<Vec<NoteEntry>> {
+    /// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
+    /// `type:`, `path:`); see `cortex_core::search`.
+    pub fn search(&self, query: &str) -> Result<Vec<SearchHit>> {
         Ok(self.db()?.search(query)?)
     }
 

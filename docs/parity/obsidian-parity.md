@@ -90,11 +90,11 @@ at the end so they are not mistaken for gaps.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Full-text search (FTS5) | done | — | `notes_fts(title, body)`, ranked (`db.rs:40`, `:174`). |
-| Operators (`tag:`, `path:`, quotes, `-`, `OR`, regex) | missing | M | `fts_query` (`db.rs:215`) strips every non-alphanumeric character and appends `*` to each word, so `tag:foo` becomes `tagfoo*`. FTS5 already supports phrases, `NEAR` and column filters; the query builder discards them. |
-| Result snippets / highlights | missing | S | Results render as plain tree rows; `snippet()` never called. |
+| Operators (`tag:`, `path:`, quotes, `-`, `OR`, regex) | partial | S | `search::parse` (`search.rs`) translates `"phrases"`, `-word`, `OR`, `tag:` / `type:` / `path:` (negatable) into an FTS5 MATCH plus filters on the `notes` columns; shared by app, CLI and MCP. Title matches are boosted 5×. No regex, `NEAR`, or `line:` / `section:`. |
+| Result snippets / highlights | done | — | `snippet()` on the body, `<mark>` around the match, one line; shown under each sidebar result and in the quick switcher's FTS fallback. |
 | Vault-wide search and replace | missing | L | |
 | Find in note (`Ctrl+F`) | missing | S | Not bound in `keymap.ts`; BlockNote ships none. |
-| Quick switcher | partial | S | Case-insensitive substring over title/path/tags (`QuickSwitcher.tsx:69`), no fuzzy matching or ranking. |
+| Quick switcher | partial | S | Case-insensitive substring over title/path/tags, then falls back to FTS (with snippets) when that finds nothing, so a body word reaches the note. No fuzzy matching or ranking of the substring pass. |
 | Command palette (`>` prefix) | done | — | ~18 actions plus one per template; `mod+shift+p`. |
 
 ## 9. Workspace
@@ -200,7 +200,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 
 1. ~~**Aliases and heading links break navigation and backlinks.**~~ Closed: one parser in cortex-core, shared by every reader.
 2. **Rename / move never rewrites inbound links.** Table stakes for an Obsidian user.
-3. **Search has no operators and no snippets.** FTS5 can do it; the query builder throws the capability away.
+3. ~~**Search has no operators and no snippets.**~~ Done: phrases, `-`, `OR`, `tag:` / `type:` / `path:`, snippets, title boost, FTS fallback in the quick switcher. Still missing: regex, vault-wide replace, find-in-note.
 4. **No inline `#tags` and no tag pane.** For many Obsidian users tags are the organising layer.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
 6. **Graph is a static global snapshot.** No local graph, filters, colouring or live physics.
