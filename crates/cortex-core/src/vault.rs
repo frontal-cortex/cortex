@@ -207,6 +207,13 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
 Add `--json` to any command for machine output. `cortex mcp` serves the same
 operations over the Model Context Protocol (stdio).
 
+Filters (`--filter`, a view's `filter:`, MCP `run_view`): `field OP value`
+joined by `and` / `or` (`and` binds tighter; parentheses group; `not`
+negates). OP is `== != > >= < <= contains does_not_contain starts_with
+ends_with`, `is_empty` / `is_not_empty`, `in [a, b]`, or `within 7d` for
+dates (`-7d` = the past week; units d w m y). Values: `'quoted'`, numbers,
+`true`, `@today`, `@today-7`, `@monday`, `@month`, `@me`.
+
 ## Settings
 
 `.cortex/settings.yaml` is the one config file; every key is always present

@@ -120,10 +120,10 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Filter operators | partial | M | `== != > >= < <= contains` (`data.rs:282`). Missing: `starts_with`, `ends_with`, `is_empty` (only via `== ''`), `does_not_contain`, date `is_within` / relative ranges. |
-| Compound and / or | partial | S | Left-to-right, no precedence, no parentheses (`data.rs:441`): `a or b and c` silently misgroups. |
-| Nested filter groups | missing | M | |
-| Filter UI | done | — | Clause rows with field / op / value; mixed and/or falls back to read-only raw edit (`ViewToolbar.tsx:120`). |
+| Filter operators | done | — | `== != > >= < <= contains does_not_contain starts_with ends_with is_empty is_not_empty in [a, b] within 7d` (`data.rs` `Op`). `within` takes `d w m y` and a sign for the past. |
+| Compound and / or | done | — | Precedence climber: `and` binds tighter than `or`, parentheses group, `not` prefix (`parse_filter`). |
+| Nested filter groups | done | — | Arbitrary depth in the grammar; the toolbar edits one level of parentheses and defers deeper nesting or `not` to raw edit. |
+| Filter UI | done | — | Clause rows with field / op / value, one parenthesised group per clause slot; nested groups, `not` and unparenthesised mixed and/or fall back to raw edit (`ViewToolbar.tsx`). |
 | Relative dates (`@today+30`, `@monday`, `@month`) and `@me` | done, beyond Notion | — | `data.rs:528`, `:686`. |
 | Multi-key sort with UI | done | — | Empty cells last; selects sort by option order. |
 | Group by in table view; sub-groups | missing | M / L | `group:` is board-only (`ViewToolbar.tsx:212`). |
@@ -257,7 +257,7 @@ by inferring column types (`data.rs:128`).
 3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
 4. **Property rename and delete do not exist.** A mistyped property name is permanent from the app.
 5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
-6. **Filter grammar has no precedence** and no `is_empty` / `starts_with`; table view cannot group; no in-database search or summary row.
+6. **Table view cannot group**; no in-database search or summary row. (Filter grammar: precedence, parentheses and the missing operators landed.)
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
 9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
