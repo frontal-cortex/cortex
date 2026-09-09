@@ -240,7 +240,7 @@ by inferring column types (`data.rs:128`).
 | CI / release workflow | missing | M | No `.github/` in the repo. |
 | Auto-update | missing | M | No `tauri-plugin-updater`. |
 | Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`, git shells out. See `obsidian-parity.md` §14 and the two mobile backlog rows. |
-| Responsive layout | missing | M | Three `@media` rules, all in overlays; sidebar fixed at 260px; window `minWidth: 800`. |
+| Responsive layout | partial | M | Shell done: one breakpoint system (`lib/breakpoints.ts` → `data-viewport` on `<html>`, `useViewport`), drawer sidebar + bottom-sheet terminal + compact top bar below 600px, tokenised page inset, thumb-sized rows and toolbar buttons, window `minWidth: 360`. Database views are still mouse-first and wide (next mobile row). |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 
 ## Where Cortex is ahead of Notion
@@ -264,7 +264,7 @@ by inferring column types (`data.rs:128`).
 9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
-12. **Mobile is a doc, not a target.**
+12. **Mobile is a doc, not a target.** The shell is responsive to phone widths now; the git transport and Tauri mobile targets remain.
 
 ## Deliberate non-goals
 

@@ -107,7 +107,7 @@
 }
 
 .emojiPickerWrap {
-  padding-left: 54px;
+  padding-left: var(--page-inset);
   margin-bottom: var(--space-2);
   position: relative;
   z-index: 10;
@@ -146,9 +146,9 @@
   display: flex;
   align-items: flex-start;
   margin-bottom: 2px;
-  /* align with bn-editor's padding-inline: 54px */
-  padding-left: 54px;
-  padding-right: 54px;
+  /* align with bn-editor's padding-inline (overridden below to the token) */
+  padding-left: var(--page-inset);
+  padding-right: var(--page-inset);
 }
 
 .titleInput {
@@ -236,7 +236,7 @@
 .coverAddBtn {
   position: absolute;
   bottom: 4px;
-  left: 54px;
+  left: var(--page-inset);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   background: none;
@@ -351,6 +351,12 @@
   background: var(--bg-panel);
 }
 
+/* The body aligns on the same inset as the title and properties (BlockNote's
+   default is a fixed 54px). */
+.editorWrap :global(.bn-editor) {
+  padding-inline: var(--page-inset);
+}
+
 /* BlockNote pins Inter on the editor element itself; the page is set in the
    prose face, and inline code in the same mono as everything else. */
 .editorWrap :global(.bn-default-styles) {
@@ -436,7 +442,7 @@
   width: 100%;
   max-width: 740px;
   margin: 0 auto;
-  padding: 3px 54px 6px;
+  padding: 3px var(--page-inset) 6px;
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   text-align: right;
@@ -456,3 +462,14 @@
   background: color-mix(in srgb, var(--git-dirty) 60%, transparent);
   outline: 1px solid var(--git-dirty);
 }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   Full-bleed page: a smaller title, less air above it, a shorter cover, and
+   the hover-only header actions always shown. */
+:root[data-viewport="phone"] .docInner { padding-top: var(--space-4); }
+:root[data-viewport="phone"] .titleInput { font-size: 28px; }
+:root[data-viewport="phone"] .iconEmoji { font-size: 24px; }
+:root[data-viewport="phone"] .cover { height: 140px; }
+:root[data-viewport="phone"] .deleteBtn,
+:root[data-viewport="phone"] .coverActions { opacity: 1; }
+:root[data-viewport="phone"] .deleteBtn { padding: 10px; }

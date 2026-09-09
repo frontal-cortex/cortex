@@ -58,6 +58,13 @@
 
   /* Panels */
   --left-panel-width: 260px;
+  --right-panel-width: 440px;
+  /* The page's horizontal inset: title, properties, backlinks and the editor
+     body (BlockNote's own padding-inline is 54px) all align on it. */
+  --page-inset: 54px;
+  /* The smallest comfortable thumb target; rows and toolbar buttons grow to
+     it at phone widths. */
+  --tap-target: 44px;
 
   /* Tag / select pill palette — muted fills, readable text. Referenced from
      inline styles as var(--tag-<name>-bg/-fg); dark variants below. */
@@ -227,4 +234,20 @@
   --code-token-constant:          var(--palette-yellow);
   --code-token-function:          var(--palette-blue);
   --code-token-parameter:         var(--palette-red);
+}
+
+/* ── Viewport ───────────────────────────────────────────────────────────────
+   `data-viewport` is stamped on <html> by useViewport; lib/breakpoints.ts is
+   the one source of the numbers (`--bp-phone` / `--bp-compact` are mirrored
+   onto <html> at runtime, for reference). Components select on the attribute
+   — `:root[data-viewport="phone"] .x` — rather than each keeping its own
+   @media rule. */
+:root[data-viewport="compact"] {
+  --left-panel-width: 220px;
+  --right-panel-width: min(440px, 50vw);
+}
+
+:root[data-viewport="phone"] {
+  --left-panel-width: min(300px, 85vw);
+  --page-inset: 20px;
 }

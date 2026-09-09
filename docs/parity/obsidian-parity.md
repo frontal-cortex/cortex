@@ -163,7 +163,7 @@ at the end so they are not mistaken for gaps.
 |---|---|---|---|
 | Tauri mobile targets configured | missing | L | `tauri.conf.json` has no `android` / `ios` keys; no `src-tauri/gen/`; no mobile deps. The only mobile artefact is the boilerplate `mobile_entry_point` attribute (`src-tauri/src/lib.rs:24`). |
 | Mobile-capable git backend | missing | L | pull, push, merge abort, ours/theirs, complete merge and `git config` all shell out (`git.rs`); `terminal.rs` and `reveal_path` spawn subprocesses. `docs/MOBILE.md` has the plan (a `RemoteOps` trait with a git2 implementation). |
-| Responsive shell CSS | missing | M | Three `@media` rules in the whole app, all in overlays (Settings, Marketplace, Tracker). `Shell`, `LeftPanel`, `Editor`, `TopBar` have none. Sidebar fixed at 260px, right pane 440px, window `minWidth: 800`. |
+| Responsive shell CSS | done | — | One breakpoint system: `lib/breakpoints.ts` (phone < 600, compact < 820) stamped on `<html>` as `data-viewport` by `useViewport`; every module selects on it instead of its own `@media`. Below 600px the sidebar is an overlay drawer (Escape / backdrop / picking a note closes it), the terminal a bottom sheet, the top bar compact, the page full-bleed (`--page-inset`), rows and buttons thumb-sized (`--tap-target`). Settings, Marketplace and Tracker share the same breakpoints. Window `minWidth: 360`. Phone-width database views and touch input are the next row. |
 | Touch handling | missing | M | No pointer or touch events; graph is mouse+wheel; tree DnD is HTML5 only. |
 
 Two backlog rows already cover this: *Mobile mode — responsive shell
@@ -207,7 +207,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 4. ~~**No inline `#tags` and no tag pane.**~~ Done: inline tags are indexed, the sidebar has a tag tree, and every tag opens a page.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
 6. **Graph is a static global snapshot.** No local graph, filters, colouring or live physics.
-7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints.
+7. **Mobile is a doc, not a target.** The shell now has breakpoints and works at phone widths; zero mobile config and shell-out git remain.
 8. **No block references.** The deepest structural gap and the most expensive.
 9. **No canvas.**
 10. **Small conveniences, individually cheap:** recent files, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions (outline, word count and find-in-note are done).

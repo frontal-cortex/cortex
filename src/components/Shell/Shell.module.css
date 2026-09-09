@@ -22,7 +22,7 @@
 }
 
 .rightPane {
-  width: var(--right-panel-width, 440px);
+  width: var(--right-panel-width);
   min-width: 280px;
   height: 100%;
   display: flex;
@@ -36,4 +36,41 @@
    chrome (see Editor `monk`). */
 .monk .body {
   justify-content: center;
+}
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   The sidebar slides over the page as a drawer instead of pushing it (Shell
+   adds `drawer` below the phone breakpoint; Escape, a tap on the backdrop and
+   picking anything close it). The terminal becomes a bottom sheet. Both keep
+   the full-window pages (Settings, Marketplace, z-index 50) above them. */
+.drawer {
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  width: var(--left-panel-width);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.18);
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+:root[data-viewport="phone"] .rightPane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  min-width: 0;
+  height: min(55%, 420px);
+  border-left: none;
+  border-top: 1px solid var(--border);
+  z-index: 30;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
 }

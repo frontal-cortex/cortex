@@ -250,3 +250,11 @@
   background: var(--border);
   margin: 4px 2px;
 }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   Thumb-sized rows; the hover-only actions stay visible on a touch screen. */
+:root[data-viewport="phone"] .row { min-height: var(--tap-target); }
+:root[data-viewport="phone"] .actionRow { min-height: 40px; }
+:root[data-viewport="phone"] .rowActions,
+:root[data-viewport="phone"] .starBtn { opacity: 1; }
+:root[data-viewport="phone"] .chevron { width: 20px; height: 24px; }

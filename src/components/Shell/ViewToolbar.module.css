@@ -187,3 +187,8 @@
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   Chips you can hit with a thumb; popovers never run past the viewport. */
+:root[data-viewport="phone"] .chip { padding: 9px 12px; font-size: var(--text-sm); }
+:root[data-viewport="phone"] .popover { min-width: 0; width: max-content; max-width: calc(100vw - 32px); }

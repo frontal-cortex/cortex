@@ -43,8 +43,10 @@ pub fn run() {
                 title: String::new(),
                 width: 1280.0,
                 height: 840.0,
-                min_width: Some(800.0),
-                min_height: Some(600.0),
+                // Phone-width and up: below `compact` the shell rearranges itself
+                // (lib/breakpoints.ts), so a narrow window is a layout, not a bug.
+                min_width: Some(360.0),
+                min_height: Some(480.0),
                 resizable: true,
                 fullscreen: false,
                 title_bar_style: tauri::TitleBarStyle::Overlay,

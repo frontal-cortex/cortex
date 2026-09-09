@@ -104,3 +104,21 @@
 :global(:root[data-platform="mac"]) .bar {
   padding-left: 78px;
 }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   A compact bar: the vault name and the desk-only toggles (graph, monk mode)
+   go, what stays grows to a thumb. */
+:root[data-viewport="phone"] .bar {
+  height: 48px;
+  gap: var(--space-1);
+}
+
+:root[data-viewport="phone"] .action {
+  height: 40px;
+  min-width: 40px;
+  justify-content: center;
+}
+
+:root[data-viewport="phone"] .phoneHidden {
+  display: none;
+}

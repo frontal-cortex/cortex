@@ -7,7 +7,7 @@
 .inner {
   max-width: 1100px;
   margin: 0 auto;
-  padding: var(--space-6) 54px var(--space-6);
+  padding: var(--space-6) var(--page-inset) var(--space-6);
 }
 
 /* Header */
@@ -331,3 +331,9 @@
 .menuItem:hover {
   background: var(--bg-hover);
 }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   View tabs and the add button grow to a thumb. */
+:root[data-viewport="phone"] .tabBtn { padding: 12px 12px; min-height: var(--tap-target); }
+:root[data-viewport="phone"] .newBtn { padding: 10px 14px; }
+:root[data-viewport="phone"] .inner { padding-top: var(--space-4); }
