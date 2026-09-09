@@ -161,13 +161,20 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
+<<<<<<< HEAD
 | Tauri mobile targets configured | missing | L | `tauri.conf.json` has no `android` / `ios` keys; no `src-tauri/gen/`; no mobile deps. The only mobile artefact is the boilerplate `mobile_entry_point` attribute (`src-tauri/src/lib.rs:24`). |
 | Mobile-capable git backend | partial | M | `remote::RemoteOps` with `ShellRemote` (desktop, unchanged) and `Git2Remote` (libgit2: HTTPS + token, fetch/merge/conflicts/ours/theirs/abort/complete, identity), selected by target OS; unit-tested on desktop against a bare repo (`remote.rs`). Still missing: keychain-stored token (`MOBILE.md` Phase 2), clone-into-container vault flow (Phase 3); `terminal.rs` and `reveal_path` still spawn subprocesses. |
+=======
+| Tauri 2 mobile feasibility spike (Android) | done | — | `docs/parity/mobile-spike.md`: go, with a blocker list and four sequenced rows (36–39). No Android toolchain on the dev machine, so no build was attempted. |
+| Tauri mobile targets configured | missing | L | `tauri.conf.json` has no `android` / `ios` keys; no `src-tauri/gen/`; no mobile deps. The only mobile artefact is the boilerplate `mobile_entry_point` attribute (`src-tauri/src/lib.rs:24`). Spike row 38 owns `tauri android init`. |
+| Mobile-capable git backend | missing | L | pull, push, merge abort, ours/theirs, complete merge and `git config` all shell out (`git.rs`); `terminal.rs` and `reveal_path` spawn subprocesses. `docs/MOBILE.md` has the plan (a `RemoteOps` trait with a git2 implementation). The spike found libgit2 is built **without** the `https` feature (`Cargo.toml` `vendored-openssl` alone), so in-process HTTPS does not exist yet even on desktop. |
+>>>>>>> origin/main
 | Responsive shell CSS | missing | M | Three `@media` rules in the whole app, all in overlays (Settings, Marketplace, Tracker). `Shell`, `LeftPanel`, `Editor`, `TopBar` have none. Sidebar fixed at 260px, right pane 440px, window `minWidth: 800`. |
 | Touch handling | missing | M | No pointer or touch events; graph is mouse+wheel; tree DnD is HTML5 only. |
 
-Two backlog rows already cover this: *Mobile mode — responsive shell
-groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
+The feasibility spike is done (`mobile-spike.md`); *Mobile mode —
+responsive shell groundwork*, the `RemoteOps` row and the spike's rows
+36–39 cover the rest.
 
 ## 15. Publishing (vs Obsidian Publish)
 
@@ -207,7 +214,11 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 4. ~~**No inline `#tags` and no tag pane.**~~ Done: inline tags are indexed, the sidebar has a tag tree, and every tag opens a page.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
 6. **Graph is a static global snapshot.** No local graph, filters, colouring or live physics.
+<<<<<<< HEAD
 7. **Mobile is a doc, not a target.** Zero mobile config, no breakpoints — though the git transport now has an in-process backend (`remote.rs`).
+=======
+7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints. The spike (`mobile-spike.md`) says go and sequences the work.
+>>>>>>> origin/main
 8. **No block references.** The deepest structural gap and the most expensive.
 9. **No canvas.**
 10. **Small conveniences, individually cheap:** recent files, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions (outline, word count and find-in-note are done).
