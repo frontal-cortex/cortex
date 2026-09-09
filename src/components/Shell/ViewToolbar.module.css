@@ -187,3 +187,57 @@
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
+
+/* Search box: sits at the end of the bar; the icon stays quiet until typed in. */
+.search {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-tertiary);
+}
+
+.search:focus-within {
+  border-color: var(--border-focus);
+}
+
+.searchActive {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.searchInput {
+  width: 130px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-family: var(--font-sans);
+  padding: 3px 0;
+}
+
+.searchInput:focus {
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.searchClear {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 1px;
+}
+
+.searchClear:hover {
+  color: var(--text-primary);
+}

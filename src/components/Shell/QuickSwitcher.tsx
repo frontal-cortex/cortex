@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, SearchHit, commands } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, DownloadIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -43,6 +43,7 @@ interface Props {
   onToggleOutline: () => void;
   onPublish: () => void;
   onImport: () => void;
+  onCheckForUpdates: () => void;
   /** Absent when no note is open. */
   onTogglePublic?: () => void;
   isPublic: boolean;
@@ -56,7 +57,7 @@ export function QuickSwitcher({
   onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
-  onPublish, onImport, onTogglePublic, isPublic, hasRemote,
+  onPublish, onImport, onCheckForUpdates, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -250,6 +251,13 @@ export function QuickSwitcher({
         icon: <GearIcon size={14} />,
         run: () => { onOpenSettings(); onClose(); },
       },
+      {
+        id: "check-updates",
+        label: "Check for updates…",
+        description: "Ask the release channel for a newer Cortex; nothing is installed until you confirm",
+        icon: <DownloadIcon size={14} />,
+        run: () => { onCheckForUpdates(); onClose(); },
+      },
     ];
     const tplActions: Action[] = templates.map((t) => ({
       id: `tpl:${t}`,
@@ -268,7 +276,7 @@ export function QuickSwitcher({
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
-      onPublish, onTogglePublic, isPublic, onClose]);
+      onPublish, onCheckForUpdates, onTogglePublic, isPublic, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>

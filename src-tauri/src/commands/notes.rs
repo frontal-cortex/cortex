@@ -767,8 +767,9 @@ pub fn save_asset(
     Ok(format!("assets/{filename}"))
 }
 
-/// Read an asset from vault/assets/ and return it as a base64 data URI.
-/// `rel_path` is like `assets/image-1234.png`.
+/// Read an asset from vault/assets/ and return it as a base64 data URI with
+/// the MIME type its extension implies (`cortex_core::assets::mime_for_path`).
+/// `rel_path` is like `assets/image-1234.png` or `assets/clip-1234.mp4`.
 #[tauri::command]
 pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<String> {
     use base64::{Engine as _, engine::general_purpose};
@@ -789,18 +790,9 @@ pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<Stri
     let data = std::fs::read(&real)?;
     let b64 = general_purpose::STANDARD.encode(&data);
 
-    let ext = std::path::Path::new(&rel_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("png");
-
-    let mime = match ext {
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        _ => "image/png",
-    };
+    // The label matters: the editor hands this URI to an <img>, <video> or
+    // <audio> element, and WebKit trusts the type over the bytes.
+    let mime = cortex_core::assets::mime_for_path(&rel_path);
 
     Ok(format!("data:{mime};base64,{b64}"))
 }

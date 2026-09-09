@@ -9,15 +9,15 @@ import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } fro
 import { commands, ViewTable, ChartResult, ViewDef, ViewType } from "../../lib/commands";
 import { VIEW_TYPES, defaultViewOfType, viewFromSpec, specFromView } from "../../lib/database";
 import {
-  DataTable, BoardView, CalendarView, GalleryView, MiniChart, BoardSetup, MissingCollection, missingCollection,
-  newRowId, today, seedFromFilter,
+  DataTable, BoardView, CalendarView, GalleryView, ListView, MiniChart, BoardSetup, MissingCollection, missingCollection,
+  newRowId, today, seedFromFilter, searchRows,
 } from "./CortexViewBlock";
 import { ViewToolbar } from "./ViewToolbar";
 import { TrackerView, TrackerRange } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
 import { Dropdown } from "./Dropdown";
 import { ErrorBoundary } from "../ErrorBoundary";
-import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon, TimelineIcon } from "./icons";
+import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, TrackerIcon, TimelineIcon } from "./icons";
 import styles from "./DatabaseView.module.css";
 
 const AGGS = ["", "sum", "avg", "count", "min", "max"];
@@ -28,6 +28,7 @@ export function viewIcon(type: ViewType, size = 14) {
     case "board": return <BoardIcon size={size} />;
     case "calendar": return <CalendarIcon size={size} />;
     case "gallery": return <GalleryIcon size={size} />;
+    case "list": return <ListIcon size={size} />;
     case "chart": return <ChartIcon size={size} />;
     case "tracker": return <TrackerIcon size={size} />;
     case "timeline": return <TimelineIcon size={size} />;
@@ -112,6 +113,12 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
   const [chart, setChart] = useState<ChartResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The toolbar's search: narrows the rows on show, per view, never written.
+  const [search, setSearch] = useState("");
+  useEffect(() => { setSearch(""); }, [activeIdx]);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const focusSearch = () => searchRef.current?.focus();
+  const shown = useMemo(() => (table ? searchRows(table, search) : null), [table, search]);
 
   const reload = useCallback(() => {
     // The tracker loads its own data (items + log, computed streaks).
@@ -214,6 +221,9 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
           isBoard={active.type === "board"}
           isTable={active.type === "table"}
           onSpecChange={onSpecChange}
+          search={search}
+          onSearchChange={setSearch}
+          searchRef={searchRef}
         />
       )}
 
@@ -236,18 +246,22 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
                   ? <div className={styles.stub}>Set the chart's X and Y fields above.</div>
                   : <MiniChart chart={chart} />)
               : loading ? <div className={styles.stub}>Loading…</div> : null)
-          : (table
-              ? (active.type === "board"
+          : (table && shown
+              ? (search.trim() && shown.rows.length === 0 && active.type !== "calendar"
+                  ? <div className={styles.stub}>No rows match “{search.trim()}”.</div>
+                  : active.type === "board"
                   ? (active.group
-                      ? <BoardView table={table} spec={activeSpec} source={source} onChanged={reload} />
+                      ? <BoardView table={shown} spec={activeSpec} source={source} onChanged={reload} />
                       : <BoardSetup table={table} onPick={(f) => updateActive({ ...active, group: f })} />)
                   : active.type === "calendar"
-                    ? <CalendarView table={table} spec={activeSpec} source={source} onChanged={reload} />
+                    ? <CalendarView table={shown} spec={activeSpec} source={source} onChanged={reload} onModeChange={(m) => updateActive({ ...active, mode: m })} />
                     : active.type === "gallery"
-                      ? <GalleryView table={table} spec={activeSpec} source={source} onChanged={reload} />
+                      ? <GalleryView table={shown} spec={activeSpec} source={source} onChanged={reload} />
+                      : active.type === "list"
+                        ? <ListView table={shown} spec={activeSpec} source={source} onChanged={reload} onFind={focusSearch} />
                       : active.type === "timeline"
-                        ? <TimelineView table={table} spec={activeSpec} source={source} onStartChange={(f) => updateActive({ ...active, start: f })} />
-                        : <DataTable table={table} spec={activeSpec} source={source} onChanged={reload} onSpecChange={onSpecChange} />)
+                        ? <TimelineView table={shown} spec={activeSpec} source={source} onStartChange={(f) => updateActive({ ...active, start: f })} />
+                        : <DataTable table={shown} spec={activeSpec} source={source} onChanged={reload} onSpecChange={onSpecChange} onFind={focusSearch} />)
               : loading ? <div className={styles.stub}>Loading…</div> : null)}
        </ErrorBoundary>
       </div>

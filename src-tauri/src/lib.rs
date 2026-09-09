@@ -5,7 +5,6 @@ mod theme;
 mod watcher;
 
 use commands::vault::{DbState, VaultState};
-use tauri::Manager;
 
 /// Tiling compositors own the window frame; GTK's client-side title bar with
 /// min/max/close only gets in the way there. Desktops that need a close button
@@ -23,10 +22,19 @@ fn is_tiling_desktop() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_shell::init());
+    // In-app updates are desktop only. The plugin reads its endpoint and
+    // public key from `plugins.updater` in tauri.conf.json; with no endpoint
+    // (or the placeholder key) the UI reports "not configured" and nothing
+    // else changes — see commands/updates.rs and docs/development.md.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+    builder
         .manage(VaultState::default())
         .manage(DbState::default())
         .manage(watcher::WatcherState::default())
@@ -93,6 +101,7 @@ pub fn run() {
             commands::notes::list_vault_dirs,
             commands::notes::save_asset,
             commands::notes::read_asset,
+            commands::clipboard::read_clipboard,
             commands::config::get_favorites,
             commands::config::set_favorites,
             commands::config::get_settings,
@@ -115,6 +124,7 @@ pub fn run() {
             commands::git::git_log,
             commands::git::git_diff,
             commands::git::note_history,
+            commands::git::note_authorship,
             commands::git::note_at,
             commands::git::restore_note,
             commands::git::list_agent_branches,
@@ -146,6 +156,7 @@ pub fn run() {
             commands::members::set_members,
             commands::members::current_user,
             agents::detect_agents,
+            commands::updates::update_config,
             commands::publish::publish_preview,
             commands::publish::publish_to_dir,
             commands::publish::publish_gh_pages,

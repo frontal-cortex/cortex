@@ -25,8 +25,8 @@ screen but the Markdown save path throws it away.
 | Image: paste, drop, upload | done | — | Custom paste/drop plugin (`Editor.tsx:389-431`), stored in `assets/` (`commands/notes.rs:772`). |
 | Image: resize | done | — | A resized image is saved as `<img src="assets/…" alt="…" width="480">` (inside `<figure>` when captioned); an unsized one stays `![alt](assets/…)`. GitHub and Obsidian honour the width. |
 | Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
-| File attachment | partial | M | Uploads to `assets/`, degrades to a plain link on save; `read_asset` labels every non-image as `image/png` (`commands/notes.rs:833`) so non-image assets cannot be served. |
-| Video / audio | partial | M | Blocks exist; same asset rehydration gap; no YouTube/Vimeo player or oEmbed. |
+| File attachment | done | — | Uploads to `assets/`, saved as `[name](assets/x.pdf)`; that link is inflated back into a file block on load (`src/lib/assets.ts`), and `read_asset` serves every asset with the MIME type its extension implies (`cortex_core::assets::mime_for_path`). `cortex assets --unused` lists orphaned files (never deletes). No inline PDF preview. |
+| Video / audio | partial | S | Local files in `assets/` render and round-trip: `![name](assets/clip.mp4)`, `<audio src="assets/x.mp3" controls>`, and the captioned `<figure>` forms are all rehydrated on load. No YouTube/Vimeo player or oEmbed. |
 | Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
 | Web embed (iframe) | missing | M | |
 | Math / equation (inline and block) | done | — | `$…$` and `$$…$$` on disk (GitHub/Obsidian syntax), KaTeX bundled locally (`MathBlock.tsx`, `src/lib/math.ts`). `/math` and `$$` on an empty line open a block; typing `$…$` makes an inline equation. The static site shows the LaTeX source in a `.math` span (no KaTeX shipped there). |
@@ -90,10 +90,10 @@ by inferring column types (`data.rs:128`).
 | Number formats | done | — | percent, progress bar, currency (bare unit prefix, not locale codes), stars, integer, decimal, with min / max / unit (`schema.rs:99`). |
 | Auto-stamped dates (`auto: status == done`) | done, beyond Notion | — | `data.rs:1111`. |
 | Recurrence (`repeat: 2w`, `repeat_mode: advance`) | done, beyond Notion | — | `recurrence.rs`. Data-model only; nothing fires while the app is closed. |
-| date range (start + end in one property) | missing | M | The timeline uses two separate date properties. |
-| files / media | missing | M | Gallery covers are a `cover` string convention. |
+| date range (start + end in one property) | done | — | `type: date_range`, stored as `key: {start, end}` under one frontmatter key (`schema.rs`, `data.rs` `CellValue::Range`): `<`/`<=` compare the end, `>`/`>=` the start, `==` and `within` mean overlap, sort is by start; a repeat moves the whole range. Two date pickers in the table and panel; `start: trip` on a timeline draws both ends, a calendar shows the row on every day it spans. |
+| files / media | done | — | `type: files`: a list of `assets/…` paths; thumbnails for images, name chips otherwise, an upload button through `save_asset` (`PropertyInputs.tsx`). Gallery covers still read the `cover` string. |
 | email, phone | missing | S | Text with no validation or `mailto:` / `tel:` affordance. |
-| created time / by, last edited time / by | partial | M | `created` is a plain date seeded by the client. Last-edited-by comes from git and shows only in the properties panel header (`PropertiesPanel.tsx:194`); none are queryable columns. |
+| created time / by, last edited time / by | done | — | `created_time` / `created_by` / `edited_time` / `edited_by` property types, computed from git history in one walk per view run (`git.rs` `authorship`, `data.rs` `apply_authorship`) with the file's mtime standing in outside a repo; never written to a row. Read-only in the table and panel, usable in filter and sort (they run before filters, like rollups); a day literal compares against the `YYYY-MM-DDTHH:MM` value by day. |
 | unique id / auto-number | missing | M | Row id is `row-<base36 timestamp>`, hidden from cells. |
 | button property | missing | L | |
 
@@ -105,12 +105,12 @@ by inferring column types (`data.rs:128`).
 | Board, group by select / status, drag between columns | done | — | Column order follows the schema's option order (`CortexViewBlock.tsx:942`). |
 | Card reorder within a column | missing | M | Cards follow the query sort only. |
 | Calendar (month) with per-day add | done | — | |
-| Calendar week / day modes; multi-day spans | missing | S / M | Rows sit on one date. |
+| Calendar week / day modes; multi-day spans | done | — | Month / Week / Day segmented control, remembered as `mode:` in the view. A row spans days when the view names `end:` (or is placed by `start` and the collection has `end`), or the cell holds `2026-09-01/2026-09-05`; spans draw as one bar across the week, in lanes (`CortexViewBlock.tsx` `CalendarView`). No drag to reschedule. |
 | Gallery with cover | done | — | Cover is always the `cover` field; no "preview = page content". |
 | Timeline / Gantt | done | — | Read-only bars from `start` to `end`; no drag to reschedule (`TimelineView.tsx`). |
 | Chart | done, beyond Notion | — | `data.rs:1756`, dependency-free SVG. |
 | Tracker (habit grid with streaks) | done, beyond Notion | — | `tracker.rs`; same from CLI and MCP. |
-| List view | missing | S | `ViewType` has no `list` (`commands.ts:106`). |
+| List view | done | — | `type: list`: one line per row — title, up to three property chips (the view's `columns:` or the first real properties), the table's row menu (open / duplicate / save as template / delete); no header. Nothing new in the engine (`ListView` in `CortexViewBlock.tsx`). |
 | Multiple saved views, committed as YAML | done | — | `_index.md` frontmatter; add / rename / delete tabs (`DataViews.tsx`). |
 | Per-view visible columns and order | done | — | Toggling a column appends it; no drag reorder. |
 | Column width, wrap | missing | M | `min-width: 150px` in CSS only. |
@@ -128,7 +128,7 @@ by inferring column types (`data.rs:128`).
 | Relative dates (`@today+30`, `@monday`, `@month`) and `@me` | done, beyond Notion | — | `data.rs:528`, `:686`. |
 | Multi-key sort with UI | done | — | Empty cells last; selects sort by option order. |
 | Group by in table view; sub-groups | partial | L | `group:` folds a table into one collapsible section per value in option order, empty last, with a count and an in-group add row that seeds the value (`CortexViewBlock.tsx` `DataTable`). Sub-groups missing. |
-| Search box inside a database | missing | S | Global FTS is not collection-scoped. |
+| Search box inside a database | partial | S | Search box at the end of the view toolbar narrows the rows on show, client-side, over the title, the visible columns and the body; debounced, with a clear button; `mod+f` goes there while the table or list has focus (the editor's find-in-note keeps the key elsewhere). Not part of the spec. Missing: the summary row still counts every row, and there is no collection-scoped FTS for the CLI / MCP. |
 | Summary row (count, sum, …) | done | — | `summary: {amount: sum, done: percent_checked}` in the view spec; count, sum, avg, min, max, percent_checked, empty, not_empty computed by the engine over the visible rows (`data.rs` `summarize`), so `cortex view --summary` and MCP return the same numbers. Picked per column from the footer; nothing is written to a row. Missing: median, range, unique, per-group summaries. |
 
 ## 7. Rows and editing
@@ -179,11 +179,11 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Publish to web (static site) | done | — | One page per note, index, assets, `search.json`, write manifest for safe rebuilds (`publish.rs:146`). |
+| Publish to web (static site) | done | — | One page per note, index, assets, `search.json` (title, tags and the first ~2 KB of body text; the index page's search matches bodies and shows a snippet), write manifest for safe rebuilds (`publish.rs:146`). |
 | Per-note public flag | done | — | `publish: true` or the `public` tag; palette toggle; never `templates/`, `VAULT.md`, `AGENTS.md`. |
 | Wiki links, aliases, anchors; unpublished targets degrade to text | done | — | |
 | Callouts on the site | done | — | Eight kinds. |
-| Database views on the site | missing | M | A `cortex-view` fence publishes as a raw YAML code block. |
+| Database views on the site | done | — | `cortex-view` / `cortex-views` fences and a collection page's own `views:` render as static tables through `data::resolve_view` (columns, filter, sort, grouped sections, summary row, number formats; rows link to their page when published). Board / calendar / gallery / timeline / tracker degrade to that table with a note; a chart becomes its aggregated points table, not an SVG (`publish.rs` Database views). |
 | Site search | partial | S | Four-line `indexOf` over title and tags; body text never searchable; `search.json` unused. |
 | GitHub Pages push + Action | done | — | `workflow_dispatch` only, by design. |
 | Custom domain (`CNAME`) | missing | S | |
@@ -236,10 +236,14 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Desktop builds | partial | S | `targets: "all"` with no per-OS bundle or signing config (`tauri.conf.json:29`). Tiling-WM decorations handled. |
-| CI / release workflow | missing | M | No `.github/` in the repo. |
-| Auto-update | missing | M | No `tauri-plugin-updater`. |
-| Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`, git shells out. See `obsidian-parity.md` §14 and the two mobile backlog rows. |
+| Desktop builds | partial | S | The release matrix bundles Linux (deb / rpm / AppImage), macOS (aarch64 + x86_64) and Windows (msi / nsis) on every `v*` tag. No Apple notarization or Windows code-signing certificate yet. Tiling-WM decorations handled. |
+| CI / release workflow | done | — | `.github/workflows/ci.yml` (tests, tsc, vite build, clippy on every PR / push to main) and `release.yml` (tauri-action matrix → draft GitHub release with signed bundles + `latest.json`). |
+| Auto-update | done | — | `tauri-plugin-updater` wired (desktop only); Check for updates in the palette and Settings → Updates, install on confirm then relaunch. The committed `pubkey` is a placeholder: the app says "no update channel" until a maintainer generates the keypair per `docs/development.md`. |
+<<<<<<< HEAD
+| Mobile (Android / iOS) | missing | L | No mobile targets, no `gen/`. The git transport is ready (`remote::Git2Remote`, selected on iOS/Android). See `obsidian-parity.md` §14 and the mobile backlog rows. |
+=======
+| Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, git shells out. The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
+>>>>>>> origin/main
 | Responsive layout | missing | M | Three `@media` rules, all in overlays; sidebar fixed at 260px; window `minWidth: 800`. |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 
@@ -258,13 +262,13 @@ by inferring column types (`data.rs:128`).
 3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation, a date picker and duplicate row landed.)
-6. **No sub-groups in the table view**, and no in-database search. (Filter grammar precedence and operators, table group-by and the summary row have landed.)
+6. **No sub-groups in the table view.** (Filter grammar precedence and operators, table group-by, the summary row and the in-database search box have landed.)
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
 9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
-11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
-12. **Mobile is a doc, not a target.**
+11. ~~**No CI, no release pipeline, no auto-update.**~~ Done: CI on every PR, a tagged-release matrix, and in-app updates; the signing keypair still has to be generated once (`docs/development.md`).
+12. **Mobile is a doc, not a target.** The Android spike (`mobile-spike.md`) says go; the work is sequenced, not started.
 
 ## Deliberate non-goals
 
