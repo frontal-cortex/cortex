@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, SearchHit, commands } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, DownloadIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -23,6 +23,8 @@ interface Props {
   onNewNote: () => void;
   onToday: () => void;
   onOpenGraph: () => void;
+  /** Absent when no note is open. */
+  onOpenLocalGraph?: () => void;
   onNewFromTemplate: (tplName: string) => void;
   onNewCollection: () => void;
   onSync: () => void;
@@ -41,6 +43,7 @@ interface Props {
   onToggleOutline: () => void;
   onPublish: () => void;
   onImport: () => void;
+  onCheckForUpdates: () => void;
   /** Absent when no note is open. */
   onTogglePublic?: () => void;
   isPublic: boolean;
@@ -51,10 +54,10 @@ type Mode = "notes" | "actions";
 
 export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
-  onNewNote, onToday, onOpenGraph, onNewFromTemplate,
+  onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
-  onPublish, onImport, onTogglePublic, isPublic, hasRemote,
+  onPublish, onImport, onCheckForUpdates, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -128,6 +131,13 @@ export function QuickSwitcher({
         icon: <GraphIcon size={14} />,
         run: () => { onOpenGraph(); onClose(); },
       },
+      ...(onOpenLocalGraph ? [{
+        id: "local-graph",
+        label: "Local graph",
+        description: `${shortcutFor("local-graph")} · this note and its neighbours`,
+        icon: <GraphIcon size={14} />,
+        run: () => { onOpenLocalGraph(); onClose(); },
+      }] : []),
       {
         id: "new-database",
         label: "New collection",
@@ -241,6 +251,13 @@ export function QuickSwitcher({
         icon: <GearIcon size={14} />,
         run: () => { onOpenSettings(); onClose(); },
       },
+      {
+        id: "check-updates",
+        label: "Check for updates…",
+        description: "Ask the release channel for a newer Cortex; nothing is installed until you confirm",
+        icon: <DownloadIcon size={14} />,
+        run: () => { onCheckForUpdates(); onClose(); },
+      },
     ];
     const tplActions: Action[] = templates.map((t) => ({
       id: `tpl:${t}`,
@@ -256,10 +273,10 @@ export function QuickSwitcher({
       run: () => { onOpenMarketplace(); onClose(); },
     }];
     return [...base, ...tplActions, ...more];
-  }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
+  }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
-      onPublish, onTogglePublic, isPublic, onClose]);
+      onPublish, onCheckForUpdates, onTogglePublic, isPublic, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>

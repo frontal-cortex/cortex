@@ -182,6 +182,12 @@ enum Cmd {
     },
     /// Which agent CLIs (claude, hermes, openclaw, …) are installed, for `terminal_command`
     Agents,
+    /// Files under assets/ with how many notes reference each; --unused lists only the orphans (never deletes)
+    Assets {
+        /// Only assets no note references
+        #[arg(long)]
+        unused: bool,
+    },
     /// Build a static site from the notes marked `publish: true` (or tagged `public`)
     ///
     /// Nothing is ever published on its own: this command is the act. With no
@@ -580,6 +586,15 @@ fn run() -> Result<()> {
                 Ok(())
             }
         },
+        Cmd::Assets { unused } => {
+            let mut assets = v.assets()?;
+            if unused { assets.retain(|a| a.references == 0); }
+            if out.json { return out.emit(&assets); }
+            table(&["PATH", "SIZE", "TYPE", "REFS"], assets.iter().map(|a| vec![
+                a.path.clone(), a.size.to_string(), a.mime.clone(), a.references.to_string(),
+            ]).collect());
+            Ok(())
+        }
         Cmd::Agents => {
             let agents = v.agents();
             if out.json { return out.emit(&agents); }
@@ -1001,6 +1016,14 @@ fn json_text(v: &serde_json::Value) -> String {
         serde_json::Value::Number(n) => match n.as_f64() { Some(f) if f.fract() == 0.0 => format!("{}", f as i64), Some(f) => f.to_string(), None => n.to_string() },
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Array(items) => items.iter().map(json_text).collect::<Vec<_>>().join(", "),
+        // A date range: `start → end`, or the one day.
+        serde_json::Value::Object(o) if o.get("start").and_then(|s| s.as_str()).is_some() => {
+            let start = o["start"].as_str().unwrap_or("");
+            match o.get("end").and_then(|e| e.as_str()).filter(|e| !e.is_empty() && *e != start) {
+                Some(end) => format!("{start} → {end}"),
+                None => start.to_string(),
+            }
+        }
         other => other.to_string(),
     }
 }

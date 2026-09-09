@@ -12,7 +12,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, Rea
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, PropType, PropertyDef, ChartResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon, TimelineIcon, CheckIcon } from "./icons";
+import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, TrackerIcon, TimelineIcon, CheckIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
@@ -20,6 +20,7 @@ import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
 import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
+import { DateRangeInput, FilesInput, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
 import styles from "./CortexViewBlock.module.css";
 
 /** Select-like columns render as colored pills (incl. person + relation). The
@@ -29,11 +30,28 @@ function isSelectColumn(col: ViewColumn): boolean {
   return t === "select" || t === "status" || t === "multi_select" || t === "person" || (t === "relation" && !col.schema?.from);
 }
 
-/** Rollups, formulas and reverse relations: computed by the engine, read-only here. */
+/** Rollups, formulas, reverse relations and the git-derived properties
+ *  (created / edited time and by): computed by the engine, read-only here. */
 function isComputedColumn(col: ViewColumn): boolean {
   const t = col.schema?.type;
-  return t === "rollup" || t === "formula" || (t === "relation" && !!col.schema?.from);
+  return t === "rollup" || t === "formula" || (t === "relation" && !!col.schema?.from) || isAuthorshipType(t);
 }
+
+function isAuthorshipType(t: PropType | undefined): boolean {
+  return t === "created_time" || t === "created_by" || t === "edited_time" || t === "edited_by";
+}
+
+/** A date-range column: declared as one, or inferred from `{start, end}` values. */
+function isRangeColumn(col: ViewColumn): boolean {
+  return col.schema?.type === "date_range" || (!col.schema && col.ty === "date_range");
+}
+
+const AUTHORSHIP_LABELS: Record<string, string> = {
+  created_time: "Created time · from git history",
+  created_by: "Created by · from git history",
+  edited_time: "Last edited time · from git history",
+  edited_by: "Last edited by · from git history",
+};
 
 /** Columns whose values are numbers and can carry a display format. */
 function isNumericColumn(col: ViewColumn): boolean {
@@ -57,6 +75,12 @@ const COLUMN_TYPES: { value: PropType; label: string }[] = [
   { value: "multi_select", label: "Multi-select" },
   { value: "person", label: "Person" },
   { value: "url", label: "URL" },
+  { value: "date_range", label: "Date range" },
+  { value: "files", label: "Files" },
+  { value: "created_time", label: "Created time" },
+  { value: "created_by", label: "Created by" },
+  { value: "edited_time", label: "Last edited time" },
+  { value: "edited_by", label: "Last edited by" },
 ];
 
 /** Column header with a Notion-style "property type" menu. Setting a select-like
@@ -100,6 +124,8 @@ function ColumnHeader({ col, canType, onSetType, onSetFormat, onRename, onDelete
   const format = col.schema?.format ?? "";
   const computedLabel = col.schema?.type === "formula"
     ? `Formula · ${col.schema.expr ?? ""}`
+    : isAuthorshipType(col.schema?.type)
+      ? AUTHORSHIP_LABELS[col.schema!.type]
     : col.schema?.type === "rollup"
       ? `Rollup · ${col.schema.function ?? "count"}${col.schema.from ? ` from ${col.schema.from}` : ` via ${col.schema.relation ?? ""}`}`
       : `Rows of ${col.schema?.from ?? ""} linking here`;
@@ -111,7 +137,7 @@ function ColumnHeader({ col, canType, onSetType, onSetFormat, onRename, onDelete
       </button>
       {open && (
         <div className={styles.colMenu}>
-          {computed ? (
+          {computed && !isAuthorshipType(current) ? (
             <div className={styles.colMenuLabel}>{computedLabel}</div>
           ) : (
             <>
@@ -394,6 +420,7 @@ function formatCell(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
   if (Array.isArray(v)) return v.join(", ");
   if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (typeof v === "object") return formatRange(v) || JSON.stringify(v);
   return String(v);
 }
 
@@ -521,6 +548,9 @@ date: created`;
 
 export const STARTER_GALLERY_SPEC = `source: collections/books
 type: gallery`;
+
+export const STARTER_LIST_SPEC = `source: collections/books
+type: list`;
 
 export const STARTER_CHART_SPEC = `source: data/weight.csv
 type: chart
@@ -704,6 +734,7 @@ function CheckboxCell({ value, editable, saving, onCommit }: {
 function toInput(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (Array.isArray(v)) return v.join(", ");
+  if (typeof v === "object") return formatRange(v);
   return String(v);
 }
 
@@ -806,11 +837,46 @@ function DateCell({ value, editable, saving, onCommit, forceOpen, onDone }: {
   );
 }
 
+/** A date-range cell: "start → end" at rest; open, two date pickers. The
+ *  committed text carries both days; the engine stores `{start, end}`. */
+function DateRangeCell({ value, editable, saving, onCommit, forceOpen, onDone }: {
+  value: unknown;
+  editable: boolean;
+  saving: boolean;
+  onCommit: (v: string) => void;
+  forceOpen?: boolean;
+  onDone?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (forceOpen && editable) setEditing(true); }, [forceOpen, editable]);
+  if (!editable) return <span className={styles.cellReadonly}>{formatCell(value)}</span>;
+  if (!editing) {
+    const text = formatRange(value);
+    return (
+      <span className={`${styles.cellEditable} ${text === "" ? styles.cellEmpty : ""}`} title="Click to edit" onClick={() => setEditing(true)}>
+        {saving ? "…" : formatCell(value)}
+      </span>
+    );
+  }
+  const close = () => { setEditing(false); onDone?.(); };
+  return (
+    <div className={styles.cellDate}>
+      <DateRangeInput
+        value={value}
+        autoFocus
+        inputClassName={styles.cellInput}
+        onChange={(r) => { onCommit(r ? formatRange(r) : ""); if (!r || r.end) close(); }}
+        onCancel={close}
+      />
+    </div>
+  );
+}
+
 /** The width class for a column: a floor per kind of value so dates and pills
  *  never squeeze, and text never sprawls. */
 function colClass(c: ViewColumn): string {
   const t = c.schema?.type;
-  if (t === "relation" || t === "person") return styles.colRel;
+  if (t === "relation" || t === "person" || t === "files" || isRangeColumn(c)) return styles.colRel;
   if (isSelectColumn(c)) return styles.colSel;
   if (c.ty === "date" || t === "date") return styles.colDate;
   if (c.ty === "bool" || t === "checkbox") return styles.colBool;
@@ -825,6 +891,27 @@ function blankRowSeed(spec: string, extra?: Record<string, string>): Record<stri
 }
 
 type CellPos = { r: number; c: number };
+
+/** mod+f inside a data view goes to its search box (the Shell leaves the key
+ *  alone under a `data-find-scope` element). True when it was handled. */
+function findKey(e: React.KeyboardEvent, onFind?: () => void): boolean {
+  const mod = isMac ? e.metaKey : e.ctrlKey;
+  if (!onFind || !mod || e.altKey || e.shiftKey || e.key.toLowerCase() !== "f") return false;
+  e.preventDefault(); e.stopPropagation();
+  onFind();
+  return true;
+}
+
+/** The rows whose title, visible cells or body contain `query` — the toolbar's
+ *  search, applied on the client to what the engine returned. Never part of
+ *  the spec, so the file on disk stays as written. */
+export function searchRows(table: ViewTable, query: string): ViewTable {
+  const q = query.trim().toLowerCase();
+  if (!q) return table;
+  const keys = [...new Set(["title", ...table.columns.map((c) => c.key), "$body"])];
+  const rows = table.rows.filter((row) => keys.some((k) => toInput(row.cells[k]).toLowerCase().includes(q)));
+  return { ...table, rows };
+}
 
 /** The summary functions a table's footer can pick per column. */
 const SUMMARY_FUNCTIONS: { value: string; label: string }[] = [
@@ -909,10 +996,12 @@ function SummaryCell({ col, func, value, onPick }: {
  *  flat display order the keyboard navigates. */
 type GroupSection = { key: string; rows: ViewTable["rows"]; start: number; folded: boolean };
 
-export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
+export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind }: {
   table: ViewTable; spec: string; source: string; onChanged: () => void;
   /** Lets the footer write a `summary:` pick back into the view spec. */
   onSpecChange?: (nextSpec: string) => void;
+  /** mod+f while the table has focus: hand focus to the toolbar's search box. */
+  onFind?: () => void;
 }) {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1156,6 +1245,28 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
       );
     }
     const editable = c.key !== "$body" && c.key !== "id";
+    if (isRangeColumn(c)) {
+      return (
+        <DateRangeCell
+          value={row.cells[c.key]}
+          editable={editable}
+          saving={savingKey === key}
+          onCommit={(v) => commit(c, row.id, v, "date_range")}
+          forceOpen={opening}
+          onDone={done}
+        />
+      );
+    }
+    if (c.schema?.type === "files") {
+      return (
+        <FilesInput
+          value={row.cells[c.key]}
+          editable={editable}
+          compact
+          onChange={(next) => commit(c, row.id, next.join(", "), "list")}
+        />
+      );
+    }
     if (isDate(c)) {
       return (
         <DateCell
@@ -1197,7 +1308,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
     const c = cols[p.c], row = rows[p.r];
     if (!c || !row || !cellEditable(c)) return;
     if (isBool(c)) { const on = row.cells[c.key] === true || row.cells[c.key] === "true"; commit(c, row.id, on ? "false" : "true", "bool"); return; }
-    if (c.schema?.format === "stars") return;
+    if (c.schema?.format === "stars" || c.schema?.type === "files") return;
     setEditKey(cellKey(p));
   };
 
@@ -1222,6 +1333,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
       openRow(source, activeRow.id);
       return;
     }
+    if (findKey(e, onFind)) return;
     if (inField) {
       // Tab commits what is being typed (editors commit on blur) and moves on.
       if (e.key === "Tab" && active) {
@@ -1327,6 +1439,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
         onFocus={() => { focusWithin.current = true; }}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) focusWithin.current = false; }}
         aria-label={`Table — ${tableKeysHint()}`}
+        data-find-scope={onFind ? "" : undefined}
       >
         <thead>
           <tr>
@@ -1745,7 +1858,7 @@ function AssetImg({ value, className }: { value: unknown; className?: string }) 
 function dateFieldFor(table: ViewTable, spec: string): string {
   const declared = peek(spec, "date");
   if (declared) return declared;
-  const dateCol = table.columns.find((c) => c.ty === "date" && c.key !== "$body");
+  const dateCol = table.columns.find((c) => (c.ty === "date" || c.ty === "date_range") && c.key !== "$body");
   if (dateCol) return dateCol.key;
   for (const k of ["date", "created", "due"]) {
     if (table.columns.some((c) => c.key === k)) return k;
@@ -1754,45 +1867,150 @@ function dateFieldFor(table: ViewTable, spec: string): string {
 }
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+function parseYmd(s: string): Date {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function addDays(d: Date, n: number): Date {
+  const out = new Date(d);
+  out.setDate(out.getDate() + n);
+  return out;
+}
+/** Whole days from a to b (both local midnights). */
+function daysBetween(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+/** The Monday on or before d. */
+function mondayOf(d: Date): Date {
+  return addDays(d, -((d.getDay() + 6) % 7));
+}
+/** A cell's date as YYYY-MM-DD, or null when it is not one. */
+function dateOf(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+/** A span written in one cell — `2026-09-01/2026-09-05` (also `..`, `–`, `→`, `to`). */
+const RANGE_RE = /^(\d{4}-\d{2}-\d{2})\s*(?:\/|\.\.|–|—|->|→|to)\s*(\d{4}-\d{2}-\d{2})$/;
+function spanOf(v: unknown): [string, string] | null {
+  const m = typeof v === "string" ? v.trim().match(RANGE_RE) : null;
+  return m ? [m[1], m[2]] : null;
+}
 
-export function CalendarView({ table, spec, source, onChanged }: {
+/** The field that ends a span: `end:` in the spec, else the `end` column when
+ *  rows are placed by `start`. Two unrelated date columns (`created`, `due`)
+ *  are never paired on their own. */
+function endFieldFor(table: ViewTable, spec: string, dateField: string): string | null {
+  // Cells carry every field even when `columns:` hides some, so ask the source.
+  const has = (k: string) => table.allColumns.includes(k) || table.columns.some((c) => c.key === k);
+  const declared = peek(spec, "end");
+  if (declared && declared !== dateField && has(declared)) return declared;
+  return dateField === "start" && has("end") ? "end" : null;
+}
+
+export type CalendarMode = "month" | "week" | "day";
+const CAL_MODES: { id: CalendarMode; label: string }[] = [
+  { id: "month", label: "Month" }, { id: "week", label: "Week" }, { id: "day", label: "Day" },
+];
+function calendarMode(spec: string): CalendarMode {
+  const m = peek(spec, "mode");
+  return m === "week" || m === "day" ? m : "month";
+}
+
+interface CalEvent { id: string; title: string; start: string; end: string; color: string | null }
+
+/** An event placed in one week's grid: 1-based column, span, lane (0 = first
+ *  row under the day numbers), and whether it runs in from the week before or
+ *  on past the weekend. */
+interface Placed { ev: CalEvent; col: number; span: number; lane: number; before: boolean; after: boolean }
+
+/** Lay one week's events out in lanes: earliest first, longer first among
+ *  equals, each in the first lane where it fits. */
+function placeWeek(events: CalEvent[], weekStart: Date): { placed: Placed[]; lanes: number } {
+  const ws = ymd(weekStart), we = ymd(addDays(weekStart, 6));
+  const inWeek = events
+    .filter((e) => e.start <= we && e.end >= ws)
+    .map((e) => {
+      const col = e.start < ws ? 1 : daysBetween(weekStart, parseYmd(e.start)) + 1;
+      const endCol = e.end > we ? 7 : daysBetween(weekStart, parseYmd(e.end)) + 1;
+      return { ev: e, col, span: endCol - col + 1, before: e.start < ws, after: e.end > we };
+    })
+    .sort((a, b) => a.col - b.col || b.span - a.span || a.ev.title.localeCompare(b.ev.title));
+  const laneEnds: number[] = [];
+  const placed: Placed[] = inWeek.map((p) => {
+    let lane = laneEnds.findIndex((end) => end < p.col);
+    if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
+    laneEnds[lane] = p.col + p.span - 1;
+    return { ...p, lane };
+  });
+  return { placed, lanes: laneEnds.length };
+}
+
+export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
   table: ViewTable; spec: string; source: string; onChanged: () => void;
+  /** Persist a picked mode (`mode: week`) into the view. */
+  onModeChange?: (mode: CalendarMode) => void;
 }) {
   const dateField = dateFieldFor(table, spec);
+  const endField = endFieldFor(table, spec, dateField);
   const canOpen = source.startsWith("collections/");
+  // Event colour: the first select/status property's option colour, as on the timeline.
+  const colorCol = table.columns.find((c) => c.schema?.type === "select" || c.schema?.type === "status");
 
-  // Group rows by their YYYY-MM-DD date. Non-date / unparseable rows are skipped.
-  const byDay = new Map<string, ViewTable["rows"]>();
-  for (const row of table.rows) {
-    const v = row.cells[dateField];
-    const key = typeof v === "string" ? v.slice(0, 10) : "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
-    if (!byDay.has(key)) byDay.set(key, []);
-    byDay.get(key)!.push(row);
-  }
+  // One event per row with a date: a `{start, end}` range property, a span
+  // written in one cell, or a plain date plus `end:`. Rows with no usable
+  // date are left out.
+  const events = useMemo<CalEvent[]>(() => {
+    const out: CalEvent[] = [];
+    for (const row of table.rows) {
+      const raw = row.cells[dateField];
+      const span = spanOf(raw);
+      const dr = span ? null : rangeOf(raw);
+      const start = span ? span[0] : dr ? dr.start : dateOf(raw);
+      if (!start) continue;
+      let end = span ? span[1] : dr?.end ? rangeEnd(dr) : endField ? dateOf(row.cells[endField]) : null;
+      if (!end || end < start) end = start;
+      const val = colorCol ? toInput(row.cells[colorCol.key]) : "";
+      const color = colorCol?.schema?.options?.find((o) => o.name === val)?.color ?? null;
+      out.push({ id: row.id, title: formatCell(row.cells["title"] ?? row.id), start, end, color });
+    }
+    return out;
+  }, [table.rows, dateField, endField, colorCol]);
 
-  // Default to the month holding the most rows, else today.
-  const monthTally = new Map<string, number>();
-  for (const k of byDay.keys()) monthTally.set(k.slice(0, 7), (monthTally.get(k.slice(0, 7)) ?? 0) + byDay.get(k)!.length);
-  const busiest = [...monthTally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  const initial = busiest ? new Date(`${busiest}-01T00:00:00`) : new Date();
-  const [view, setView] = useState(new Date(initial.getFullYear(), initial.getMonth(), 1));
+  const specMode = calendarMode(spec);
+  const [mode, setMode] = useState<CalendarMode>(specMode);
+  useEffect(() => { setMode(specMode); }, [specMode]);
+  // The month grid opens on the month with the most rows, else today; the
+  // week and day views open on today.
+  const [anchor, setAnchor] = useState<Date>(() => {
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    if (specMode !== "month") return t;
+    const tally = new Map<string, number>();
+    for (const e of events) tally.set(e.start.slice(0, 7), (tally.get(e.start.slice(0, 7)) ?? 0) + 1);
+    const busiest = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    return busiest ? parseYmd(`${busiest}-01`) : new Date(t.getFullYear(), t.getMonth(), 1);
+  });
+  const pickMode = (m: CalendarMode) => {
+    if (m === mode) return;
+    // Leaving the month grid: land on today when it is in view, else stay put.
+    if (mode === "month") {
+      const t = new Date();
+      if (t.getFullYear() === anchor.getFullYear() && t.getMonth() === anchor.getMonth()) setAnchor(t);
+    }
+    setMode(m);
+    onModeChange?.(m);
+  };
 
-  const year = view.getFullYear();
-  const month = view.getMonth();
-  // Monday-first grid. JS getDay(): 0=Sun..6=Sat → shift so Mon=0.
-  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (Date | null)[] = [];
-  for (let i = 0; i < firstDow; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
-  while (cells.length % 7 !== 0) cells.push(null);
+  const step = (dir: 1 | -1) => setAnchor((a) =>
+    mode === "month" ? new Date(a.getFullYear(), a.getMonth() + dir, 1) : addDays(a, dir * (mode === "week" ? 7 : 1)));
+  const goToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); setAnchor(t); };
 
   const todayStr = ymd(new Date());
   const [picking, setPicking] = useState(false);
@@ -1800,43 +2018,121 @@ export function CalendarView({ table, spec, source, onChanged }: {
     commands.addRow(source, newRowId(), { ...blankRowSeed(spec), [dateField]: day })
       .then(onChanged).catch((e) => window.alert(String(e)));
 
-  return (
-    <div className={styles.calendar}>
-      <div className={styles.calHeader}>
-        <button className={styles.calNav} onClick={() => setView(new Date(year, month - 1, 1))}>‹</button>
-        <span className={styles.calTitle}>{MONTHS[month]} {year}</span>
-        <button className={styles.calNav} onClick={() => setView(new Date(year, month + 1, 1))}>›</button>
-        <button className={styles.calToday} onClick={() => { const n = new Date(); setView(new Date(n.getFullYear(), n.getMonth(), 1)); }}>Today</button>
-        <span className={styles.calField}>by {dateField}</span>
-      </div>
-      <div className={styles.calGrid}>
-        {WEEKDAYS.map((w) => <div key={w} className={styles.calWeekday}>{w}</div>)}
-        {cells.map((d, i) => {
-          if (!d) return <div key={i} className={styles.calEmpty} />;
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
+  // The weeks on show: every week touching the month, one week, or none (day).
+  const weekStarts: Date[] = [];
+  if (mode === "month") {
+    const last = new Date(year, month + 1, 0);
+    for (let w = mondayOf(new Date(year, month, 1)); w <= last; w = addDays(w, 7)) weekStarts.push(w);
+  } else if (mode === "week") {
+    weekStarts.push(mondayOf(anchor));
+  }
+
+  const title = mode === "month"
+    ? `${MONTHS[month]} ${year}`
+    : mode === "week"
+      ? weekLabel(weekStarts[0])
+      : `${WEEKDAYS_LONG[(anchor.getDay() + 6) % 7]}, ${anchor.getDate()} ${MONTHS[month]} ${year}`;
+
+  const eventStyle = (e: CalEvent): React.CSSProperties | undefined =>
+    e.color ? { "--bar-bg": `var(--tag-${e.color}-bg)`, "--bar-fg": `var(--tag-${e.color}-fg)` } as React.CSSProperties : undefined;
+  const eventTitle = (e: CalEvent) => e.start === e.end ? `${e.title} · ${e.start}` : `${e.title} · ${e.start} → ${e.end}`;
+
+  const renderWeek = (weekStart: Date) => {
+    const { placed, lanes } = placeWeek(events, weekStart);
+    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    // Rows: the day numbers, one per lane, then a stretch of empty cell.
+    const rows = `auto repeat(${lanes}, auto) minmax(${mode === "week" ? 120 : 24}px, 1fr)`;
+    return (
+      <div key={ymd(weekStart)} className={styles.calWeek} style={{ gridTemplateRows: rows }}>
+        {days.map((d, i) => {
           const key = ymd(d);
-          const rows = byDay.get(key) ?? [];
+          const outside = mode === "month" && d.getMonth() !== month;
           return (
-            <div key={i} className={`${styles.calCell} ${key === todayStr ? styles.calCellToday : ""}`}>
-              <div className={styles.calDayRow}>
-                <span className={styles.calDay}>{d.getDate()}</span>
-                {canOpen && (
-                  <button className={styles.calAdd} title="Add here" onClick={() => addOn(key)}>+</button>
-                )}
-              </div>
-              {rows.map((row) => (
-                <div
-                  key={row.id}
-                  className={canOpen ? styles.calEventOpen : styles.calEvent}
-                  title={formatCell(row.cells["title"] ?? row.id)}
-                  onClick={canOpen ? () => openRow(source, row.id) : undefined}
-                >
-                  {formatCell(row.cells["title"] ?? row.id)}
-                </div>
-              ))}
+            <div
+              key={`bg-${key}`}
+              className={`${styles.calCell} ${outside ? styles.calOutside : ""} ${key === todayStr ? styles.calCellToday : ""}`}
+              style={{ gridColumn: i + 1, gridRow: "1 / -1" }}
+            />
+          );
+        })}
+        {days.map((d, i) => {
+          const key = ymd(d);
+          const outside = mode === "month" && d.getMonth() !== month;
+          return (
+            <div key={`day-${key}`} className={styles.calDayRow} style={{ gridColumn: i + 1, gridRow: 1 }}>
+              <span className={`${styles.calDay} ${outside ? styles.calDayOutside : ""}`}>
+                {mode === "week" || d.getDate() === 1 ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : d.getDate()}
+              </span>
+              {canOpen && !outside && (
+                <button className={styles.calAdd} title="Add here" onClick={() => addOn(key)}>+</button>
+              )}
             </div>
           );
         })}
+        {placed.map((p) => (
+          <button
+            key={p.ev.id}
+            type="button"
+            className={`${canOpen ? styles.calEventOpen : styles.calEvent} ${p.before ? styles.calEventBefore : ""} ${p.after ? styles.calEventAfter : ""}`}
+            style={{ ...eventStyle(p.ev), gridColumn: `${p.col} / span ${p.span}`, gridRow: p.lane + 2 }}
+            title={eventTitle(p.ev)}
+            onClick={canOpen ? () => openRow(source, p.ev.id) : undefined}
+          >
+            {p.ev.title}
+          </button>
+        ))}
       </div>
+    );
+  };
+
+  const dayKey = ymd(anchor);
+  const dayEvents = mode === "day" ? events.filter((e) => e.start <= dayKey && e.end >= dayKey) : [];
+
+  return (
+    <div className={styles.calendar}>
+      <div className={styles.calHeader}>
+        <button className={styles.calNav} onClick={() => step(-1)}>‹</button>
+        <span className={styles.calTitle}>{title}</span>
+        <button className={styles.calNav} onClick={() => step(1)}>›</button>
+        <button className={styles.calToday} onClick={goToday}>Today</button>
+        <div className={styles.calModes} role="tablist">
+          {CAL_MODES.map((m) => (
+            <button key={m.id} role="tab" aria-selected={mode === m.id}
+              className={`${styles.calModeBtn} ${mode === m.id ? styles.calModeOn : ""}`} onClick={() => pickMode(m.id)}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <span className={styles.calField}>by {dateField}{endField ? ` → ${endField}` : ""}</span>
+      </div>
+      {mode !== "day" ? (
+        <div className={styles.calGrid}>
+          <div className={styles.calWeekdays}>
+            {WEEKDAYS.map((w) => <div key={w} className={styles.calWeekday}>{w}</div>)}
+          </div>
+          {weekStarts.map(renderWeek)}
+        </div>
+      ) : (
+        <div className={`${styles.calDayList} ${dayKey === todayStr ? styles.calCellToday : ""}`}>
+          {dayEvents.length === 0 && <div className={styles.stub}>Nothing on this day.</div>}
+          {dayEvents.map((e) => (
+            <button
+              key={e.id}
+              type="button"
+              className={`${canOpen ? styles.calEventOpen : styles.calEvent} ${styles.calDayEvent}`}
+              style={eventStyle(e)}
+              title={eventTitle(e)}
+              onClick={canOpen ? () => openRow(source, e.id) : undefined}
+            >
+              <span className={styles.calDayEventTitle}>{e.title}</span>
+              {e.start !== e.end && <span className={styles.calDayEventSpan}>{e.start} → {e.end}</span>}
+            </button>
+          ))}
+          {canOpen && <button className={styles.calAddDay} onClick={() => addOn(dayKey)}>+ Add here</button>}
+        </div>
+      )}
       {canOpen && (
         <div className={styles.calFooter}>
           {picking ? (
@@ -1857,6 +2153,15 @@ export function CalendarView({ table, spec, source, onChanged }: {
       )}
     </div>
   );
+}
+
+/** "8 – 14 Sep 2026", or "28 Sep – 4 Oct 2026" across a month edge. */
+function weekLabel(weekStart: Date): string {
+  const end = addDays(weekStart, 6);
+  const mon = (d: Date) => MONTHS[d.getMonth()].slice(0, 3);
+  if (weekStart.getMonth() === end.getMonth()) return `${weekStart.getDate()} – ${end.getDate()} ${mon(end)} ${end.getFullYear()}`;
+  const y = weekStart.getFullYear() === end.getFullYear() ? "" : ` ${weekStart.getFullYear()}`;
+  return `${weekStart.getDate()} ${mon(weekStart)}${y} – ${end.getDate()} ${mon(end)} ${end.getFullYear()}`;
 }
 
 export function GalleryView({ table, spec, source, onChanged }: {
@@ -1925,6 +2230,89 @@ export function GalleryView({ table, spec, source, onChanged }: {
   );
 }
 
+/** One line per row: the title, up to three property chips, the row menu. No
+ *  header, no cells to edit — the reading view of a collection. */
+export function ListView({ table, spec, source, onChanged, onFind }: {
+  table: ViewTable; spec: string; source: string; onChanged: () => void;
+  /** mod+f while the list has focus: hand focus to the toolbar's search box. */
+  onFind?: () => void;
+}) {
+  const canOpen = source.startsWith("collections/");
+  const schemaKey = collectionKey(source);
+  const titleField = table.columns.find((c) => c.key === "title") ? "title" : "id";
+  // Three chips at most, whatever `columns:` lists — a line stays a line.
+  const fieldCols = cardFields(table, spec, [titleField], 3).slice(0, 3);
+  const [menuRow, setMenuRow] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [templatesVersion, setTemplatesVersion] = useState(0);
+
+  const del = (rowId: string) => {
+    if (!window.confirm("Delete this row?")) return;
+    commands.deleteRow(source, rowId).then(onChanged).catch((e) => setErr(String(e)));
+  };
+  const duplicate = (rowId: string) =>
+    commands.duplicateRow(source, rowId, newRowId(), today()).then(onChanged).catch((e) => setErr(String(e)));
+  const saveAsTemplate = (rowId: string) => {
+    const name = window.prompt("Template name")?.trim();
+    if (!name) return;
+    commands.saveRowAsTemplate(source, rowId, name)
+      .then(() => setTemplatesVersion((v) => v + 1))
+      .catch((e) => setErr(String(e)));
+  };
+
+  return (
+    <div className={styles.list} data-find-scope={onFind ? "" : undefined} onKeyDown={(e) => { findKey(e, onFind); }}>
+      {table.rows.map((row) => (
+        <div key={row.id} className={styles.listRow}>
+          {canOpen ? (
+            <button type="button" className={styles.listTitleOpen} title="Open note" onClick={() => openRow(source, row.id)}>
+              {formatCell(row.cells[titleField])}
+            </button>
+          ) : (
+            <span className={styles.listTitle}>{formatCell(row.cells[titleField])}</span>
+          )}
+          <span className={styles.listChips}>
+            {fieldCols.filter((c) => hasValue(row.cells[c.key])).map((c) => (
+              isSelectColumn(c)
+                ? <span key={c.key} className={styles.listPills}>
+                    <SelectCell value={row.cells[c.key]} options={c.schema!.options ?? []}
+                      multi={c.schema!.type === "multi_select"} editable={false} onChange={() => {}} />
+                  </span>
+                : <span key={c.key} className={styles.listChip} title={c.key}>
+                    <span className={styles.listChipKey}>{c.key}</span>{displayCell(c, row.cells[c.key])}
+                  </span>
+            ))}
+          </span>
+          <div className={styles.rowActions}>
+            {canOpen && (
+              <button className={styles.rowOpen} title="Open note" tabIndex={-1} onClick={() => openRow(source, row.id)}>
+                <OpenIcon size={13} />
+              </button>
+            )}
+            <RowMenu
+              open={menuRow === row.id}
+              onToggle={() => setMenuRow((m) => (m === row.id ? null : row.id))}
+              items={[
+                ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }] : []),
+                { label: "Duplicate", run: () => duplicate(row.id) },
+                ...(schemaKey ? [{ label: "Save as template…", run: () => saveAsTemplate(row.id) }] : []),
+                { label: "Delete", run: () => del(row.id), danger: true },
+              ]}
+            />
+          </div>
+        </div>
+      ))}
+      <div className={styles.footer}>
+        <NewRowButton source={source} spec={spec} onChanged={onChanged} onError={setErr} templatesVersion={templatesVersion} />
+        <span className={styles.count}>
+          {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
+          {err && <span className={styles.error}> · {err}</span>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── View configuration helpers — keep the YAML spec out of the user's face ────
 
 /** Set a top-level `key: value` in a spec, replacing the line or appending it. */
@@ -1974,6 +2362,7 @@ const VIEW_TYPE_OPTIONS: { type: string; label: string; render: (s: number) => R
   { type: "board", label: "Board", render: (s) => <BoardIcon size={s} /> },
   { type: "calendar", label: "Calendar", render: (s) => <CalendarIcon size={s} /> },
   { type: "gallery", label: "Gallery", render: (s) => <GalleryIcon size={s} /> },
+  { type: "list", label: "List", render: (s) => <ListIcon size={s} /> },
   { type: "chart", label: "Chart", render: (s) => <ChartIcon size={s} /> },
   { type: "tracker", label: "Tracker", render: (s) => <TrackerIcon size={s} /> },
   { type: "timeline", label: "Timeline", render: (s) => <TimelineIcon size={s} /> },
@@ -2095,10 +2484,16 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   const isBoard = declaredType === "board";
   const isCalendar = declaredType === "calendar";
   const isGallery = declaredType === "gallery";
+  const isList = declaredType === "list";
   const isTracker = declaredType === "tracker";
   const isTimeline = declaredType === "timeline";
 
   const [table, setTable] = useState<ViewTable | null>(null);
+  // The toolbar's search: narrows the rows on show, client-side, never written.
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const focusSearch = () => searchRef.current?.focus();
+  const shown = useMemo(() => (table ? searchRows(table, search) : null), [table, search]);
   const [chart, setChart] = useState<ChartResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2187,6 +2582,9 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
           isBoard={isBoard}
           isTable={declaredType === "table"}
           onSpecChange={applySpec}
+          search={search}
+          onSearchChange={setSearch}
+          searchRef={searchRef}
         />
       )}
 
@@ -2210,18 +2608,22 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
                 ? <div className={styles.stub}>No data points yet.</div>
                 : <MiniChart chart={chart} />)
             : loading ? <div className={styles.stub}>Loading…</div> : null)
-        : (table
+        : (table && shown
             ? (table.rows.length === 0 && !isCalendar
                 ? <div className={styles.stub}>Nothing here yet — add a row below.</div>
+                : shown.rows.length === 0 && !isCalendar
+                  ? <div className={styles.stub}>No rows match “{search.trim()}”.</div>
                 : isBoard
-                  ? <BoardView table={table} spec={spec} source={source} onChanged={reload} />
+                  ? <BoardView table={shown} spec={spec} source={source} onChanged={reload} />
                   : isCalendar
-                    ? <CalendarView table={table} spec={spec} source={source} onChanged={reload} />
+                    ? <CalendarView table={shown} spec={spec} source={source} onChanged={reload} onModeChange={(m) => applySpec(specSet(spec, "mode", m))} />
                     : isGallery
-                      ? <GalleryView table={table} spec={spec} source={source} onChanged={reload} />
+                      ? <GalleryView table={shown} spec={spec} source={source} onChanged={reload} />
+                      : isList
+                        ? <ListView table={shown} spec={spec} source={source} onChanged={reload} onFind={focusSearch} />
                       : isTimeline
-                        ? <TimelineView table={table} spec={spec} source={source} onStartChange={(f) => applySpec(specSet(spec, "start", f))} />
-                        : <DataTable table={table} spec={spec} source={source} onChanged={reload} onSpecChange={applySpec} />)
+                        ? <TimelineView table={shown} spec={spec} source={source} onStartChange={(f) => applySpec(specSet(spec, "start", f))} />
+                        : <DataTable table={shown} spec={spec} source={source} onChanged={reload} onSpecChange={applySpec} onFind={focusSearch} />)
             : loading ? <div className={styles.stub}>Loading…</div> : null))}
     </div>
   );
@@ -2281,8 +2683,8 @@ export function cortexSlashItems(editor: any): DefaultReactSuggestionItem[] {
     },
     {
       title: "Calendar",
-      subtext: "Place rows on a month grid by a date field",
-      aliases: ["calendar", "month", "schedule", "date"],
+      subtext: "Rows on a month, week or day grid by a date field",
+      aliases: ["calendar", "month", "week", "day", "schedule", "date"],
       group: "Data",
       onItemClick: () => insert(STARTER_CALENDAR_SPEC, "cortex-view"),
     },
@@ -2292,6 +2694,13 @@ export function cortexSlashItems(editor: any): DefaultReactSuggestionItem[] {
       aliases: ["gallery", "cards", "grid", "cover"],
       group: "Data",
       onItemClick: () => insert(STARTER_GALLERY_SPEC, "cortex-view"),
+    },
+    {
+      title: "List",
+      subtext: "One line per row: title and a few properties",
+      aliases: ["list", "rows", "compact"],
+      group: "Data",
+      onItemClick: () => insert(STARTER_LIST_SPEC, "cortex-view"),
     },
     {
       title: "Chart",
@@ -2344,18 +2753,21 @@ export function inflateViewBlocks(blocks: any[]): any[] {
 
 /** Blocks → markdown: collapse live view blocks back to standard code fences. */
 export function flattenViewBlocks(blocks: any[]): any[] {
-  return blocks.map((b) => {
+  // A fence cannot hold children: blocks nested under a view (Tab in the
+  // editor) are hoisted after it rather than lost on save.
+  return blocks.flatMap((b) => {
     if (b?.type === "cortexView") {
-      return {
+      const fence = {
         type: "codeBlock",
         props: { language: String(b.props?.lang ?? "cortex-view") },
         content: [{ type: "text", text: String(b.props?.spec ?? ""), styles: {} }],
       };
+      return [fence, ...flattenViewBlocks(Array.isArray(b.children) ? b.children : [])];
     }
     if (Array.isArray(b?.children) && b.children.length) {
-      return { ...b, children: flattenViewBlocks(b.children) };
+      return [{ ...b, children: flattenViewBlocks(b.children) }];
     }
-    return b;
+    return [b];
   });
 }
 

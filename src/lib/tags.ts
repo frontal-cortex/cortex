@@ -1,4 +1,4 @@
-import { TagNode } from "./commands";
+import type { TagNode } from "./commands";
 
 // Client-side companions to cortex-core's `tags` module. The tree itself comes
 // from the backend (`commands.listTags`); these only walk it and mirror the

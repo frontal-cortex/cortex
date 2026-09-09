@@ -35,7 +35,27 @@ export type PropType =
   | "url"
   | "person"
   | "relation"
-  | "rollup" | "formula";
+  | "rollup" | "formula"
+  /** `{start, end}` under one key; filters compare the end for `<`, the start for `>`, overlap for `within`. */
+  | "date_range"
+  /** A list of vault-relative file paths (`assets/…`). */
+  | "files"
+  /** Computed from git history (mtime outside a repo); never written to a row. */
+  | "created_time" | "created_by" | "edited_time" | "edited_by";
+
+/** The four git-derived properties, computed on read (`note_authorship`). */
+export interface Authorship {
+  created_at: string;
+  created_by: string;
+  edited_at: string;
+  edited_by: string;
+}
+
+/** A date range property's value as stored: `{start, end?}`. */
+export interface DateRange {
+  start: string;
+  end?: string;
+}
 
 export interface Member {
   name: string;
@@ -93,9 +113,15 @@ export interface TypeSchema {
   properties: PropertyDef[];
 }
 
+export interface ClipboardContent {
+  kind: "image" | "text" | "none";
+  mime: string;
+  data_base64: string;
+}
+
 export interface ViewColumn {
   key: string;
-  ty: "text" | "number" | "bool" | "date" | "list";
+  ty: "text" | "number" | "bool" | "date" | "list" | "date_range";
   /** Typed-property schema for select/status columns (options + colors). */
   schema?: PropertyDef;
 }
@@ -116,7 +142,7 @@ export interface SortClause {
   desc: boolean;
 }
 
-export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart" | "tracker" | "timeline";
+export type ViewType = "table" | "board" | "calendar" | "gallery" | "list" | "chart" | "tracker" | "timeline";
 
 /** One named view in a database / embedded data block.
  *
@@ -135,6 +161,8 @@ export interface ViewDef {
   group?: string;
   /** Calendar: the date property. Tracker: the log's date property (default `date`). */
   date?: string;
+  /** Calendar: month | week | day (default month). */
+  mode?: string;
   limit?: string;
   x?: string;
   y?: string;
@@ -152,7 +180,8 @@ export interface ViewDef {
   range?: string;
   /** Timeline: the bar's first day (default `start`, else the first date property). */
   start?: string;
-  /** Timeline: the bar's last day (default `end`, else the second date property; none = one-day bars). */
+  /** Timeline: the bar's last day (default `end`, else the second date property; none = one-day bars).
+   *  Calendar: the property that ends a multi-day span (default `end` when the date field is `start`). */
   end?: string;
   /** Table: the summary row as a YAML flow map, `{amount: sum, done: percent_checked}`
    *  (a real mapping in `_index.md` frontmatter; `database.ts` converts). */
@@ -591,6 +620,15 @@ export interface PackRemoveReport {
 }
 
 /** An agent CLI the terminal pane can open into (see cortex_core::agents). */
+/** What this build knows about where updates come from (`plugins.updater`
+ *  in tauri.conf.json). `configured` is false for a development build, which
+ *  has no endpoint or only the placeholder public key. */
+export interface UpdateConfig {
+  current_version: string;
+  endpoint: string | null;
+  configured: boolean;
+}
+
 export interface AgentCli {
   id: string;
   label: string;
@@ -863,6 +901,12 @@ export const commands = {
   allowEmbedFrame: (url: string) =>
     invoke<void>("allow_embed_frame", { url }),
 
+  /** The system clipboard as the Rust side sees it (wl-paste / xclip): an image
+   *  if there is one, else text. The editor asks when Ctrl+V produced no paste
+   *  event — WebKitGTK on Wayland sometimes skips its own paste. */
+  readClipboard: () =>
+    invoke<ClipboardContent>("read_clipboard"),
+
   getFavorites: () =>
     invoke<string[]>("get_favorites"),
 
@@ -886,6 +930,10 @@ export const commands = {
   /** Known agent CLIs (claude, hermes, …) and whether each is on $PATH. */
   detectAgents: () =>
     invoke<AgentCli[]>("detect_agents"),
+
+  /** The update channel compiled into this build; see lib/updater.ts. */
+  updateConfig: () =>
+    invoke<UpdateConfig>("update_config"),
 
   // ── Template marketplace — fetch/install only when the user asks ──
   packsCatalog: (refresh: boolean) =>
@@ -976,6 +1024,10 @@ export const commands = {
 
   noteHistory: (path: string, limit: number) =>
     invoke<CommitEntry[]>("note_history", { path, limit }),
+
+  /** Created / last edited time and author of one note, from git (mtime outside a repo). */
+  noteAuthorship: (path: string) =>
+    invoke<Authorship>("note_authorship", { path }),
 
   noteAt: (path: string, hash: string) =>
     invoke<string>("note_at", { path, hash }),

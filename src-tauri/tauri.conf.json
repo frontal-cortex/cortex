@@ -25,5 +25,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/frontal-cortex/cortex/releases/latest/download/latest.json"
+      ],
+      "pubkey": ""
+    }
   }
 }
