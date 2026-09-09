@@ -31,6 +31,10 @@ import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, view
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
 import { shortcutFor } from "../../lib/keymap";
+import { findInNoteExtension, setFindQuery, stepFind, clearFind, FindState } from "../../lib/findInNote";
+import { textStats, formatStats, outlineOf, blockOrder, activeHeading, OutlineEntry, TextStats } from "../../lib/textStats";
+import { OutlinePane } from "./OutlinePane";
+import { FindBar } from "./FindBar";
 import styles from "./Editor.module.css";
 
 // Maps data URIs → vault-relative paths (e.g. "assets/image-123.png")
@@ -114,7 +118,13 @@ export interface EditorHandle {
   toggleProperties(): void;
   /** Flip `publish: true` on the note — marks it for the site, publishes nothing. */
   togglePublic(): void;
+  /** Open (or refocus) the find-in-note bar. */
+  openFind(): void;
+  /** Show or hide the outline pane beside the page. */
+  toggleOutline(): void;
 }
+
+const OUTLINE_OPEN_KEY = "cortex.outlineOpen";
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
   note, saving, allNotes, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
@@ -122,6 +132,17 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
   const [showHistory, setShowHistory] = useState(false);
   // Bumping `rev` forces NoteEditor to remount so it re-parses restored content.
   const [rev, setRev] = useState(0);
+  // The outline pane is a way of reading, not a fact about the note, so its
+  // open state lives here (it outlives each NoteEditor) and in localStorage.
+  const [outlineOpen, setOutlineOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(OUTLINE_OPEN_KEY) === "1"; } catch { return false; }
+  });
+  const toggleOutline = useCallback(() => {
+    setOutlineOpen((v) => {
+      try { localStorage.setItem(OUTLINE_OPEN_KEY, v ? "0" : "1"); } catch { /* fine */ }
+      return !v;
+    });
+  }, []);
   // NoteEditor remounts per note; it re-registers itself here each time.
   const inner = useRef<EditorHandle | null>(null);
   useImperativeHandle(ref, () => ({
@@ -129,7 +150,9 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
     focusBody: () => inner.current?.focusBody(),
     toggleProperties: () => inner.current?.toggleProperties(),
     togglePublic: () => inner.current?.togglePublic(),
-  }), []);
+    openFind: () => inner.current?.openFind(),
+    toggleOutline,
+  }), [toggleOutline]);
 
   if (!note) {
     return (
@@ -154,6 +177,8 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
         allNotes={allNotes}
         collab={collab}
         monk={monk}
+        outlineOpen={outlineOpen}
+        onToggleOutline={toggleOutline}
         handleRef={inner}
         onSave={onSave}
         onDelete={onDelete}
@@ -236,13 +261,15 @@ function personItems(members: Member[], query: string): MentionItem[] {
 const PROPS_EXPANDED_KEY = "cortex.propertiesExpanded";
 
 function NoteEditor({
-  note, saving, allNotes, collab, monk, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
+  note, saving, allNotes, collab, monk, outlineOpen, onToggleOutline, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
 }: {
   note: Note;
   saving: boolean;
   allNotes: NoteEntry[];
   collab: CollabConfig | null;
   monk: boolean;
+  outlineOpen: boolean;
+  onToggleOutline: () => void;
   handleRef: MutableRefObject<EditorHandle | null>;
   onSave: (n: Note) => void;
   onDelete: (path: string) => void;
@@ -380,11 +407,21 @@ function NoteEditor({
       },
       toggleProperties,
       togglePublic: () => togglePublicRef.current(),
+      openFind: () => openFindRef.current(),
+      toggleOutline: onToggleOutline,
     };
     return () => { handleRef.current = null; };
-  }, [handleRef, toggleProperties]);
-  // Assigned once handleFrontmatterChange exists (it is declared further down).
+  }, [handleRef, toggleProperties, onToggleOutline]);
+  // Assigned once their dependencies exist (they are declared further down).
   const togglePublicRef = useRef<() => void>(() => {});
+  const openFindRef = useRef<() => void>(() => {});
+
+  // ── Find in note ───────────────────────────────────────────────────────────
+  // The plugin owns the matches; React only shows the bar and relays keys.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocusToken, setFindFocusToken] = useState(0);
+  const [find, setFind] = useState<FindState>({ query: "", matches: [], active: 0 });
+  const findExtension = useMemo(() => findInNoteExtension(setFind), []);
 
   const imagePasteDropExtension = useMemo(() => Extension.create({
     name: "imagePasteDrop",
@@ -447,11 +484,56 @@ function NoteEditor({
         wikiLinkExtension((t) => navigateRef.current(t)),
         wikiLinkSuggestionExtension(handle),
         imagePasteDropExtension,
+        findExtension,
       ],
     },
   });
 
   editorRef.current = editor;
+
+  const pmView = () => editor._tiptapEditor.view;
+  openFindRef.current = () => {
+    // Seed the query from a text selection, the way a browser's find does.
+    const { from, to } = pmView().state.selection;
+    const selected = from === to ? "" : pmView().state.doc.textBetween(from, to, " ");
+    if (selected && !selected.includes("\n") && selected.length <= 120) setFindQuery(pmView(), selected);
+    setFindOpen(true);
+    setFindFocusToken((t) => t + 1);
+  };
+  const closeFind = useCallback(() => {
+    clearFind(pmView(), true);
+    setFindOpen(false);
+    editor.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
+
+  // ── Derived reading aids: outline + word count ─────────────────────────────
+  // Recomputed from the live document on every change; shown, never stored.
+  const [outline, setOutline] = useState<OutlineEntry[]>([]);
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+  const [stats, setStats] = useState<TextStats>({ words: 0, characters: 0, readingMinutes: 0 });
+  const outlineRef = useRef<OutlineEntry[]>([]);
+  const orderRef = useRef<string[]>([]);
+  const cursorBlockId = useCallback((): string | null => {
+    try { return editor.getTextCursorPosition().block.id; } catch { return null; }
+  }, [editor]);
+  const refreshDerived = useCallback(() => {
+    const blocks = editor.document;
+    outlineRef.current = outlineOf(blocks);
+    orderRef.current = blockOrder(blocks);
+    setOutline(outlineRef.current);
+    setActiveHeadingId(activeHeading(outlineRef.current, orderRef.current, cursorBlockId()));
+    const doc = editor._tiptapEditor.state.doc;
+    setStats(textStats(doc.textBetween(0, doc.content.size, "\n", " ")));
+  }, [editor, cursorBlockId]);
+  useEffect(() => editor.onSelectionChange(() => {
+    setActiveHeadingId(activeHeading(outlineRef.current, orderRef.current, cursorBlockId()));
+  }), [editor, cursorBlockId]);
+  const jumpToHeading = useCallback((id: string) => {
+    try { editor.setTextCursorPosition(id, "start"); } catch { return; }
+    editor.focus();
+    editor.domElement?.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [editor]);
 
   // Wire suggestion callbacks (updated every render via ref)
   callbacksRef.current = {
@@ -520,6 +602,7 @@ function NoteEditor({
       // A collection's page always shows its views, even before the note has a fence.
       if (collection) { try { ensureCollectionViewsBlock(editor, collection); } catch { /* editor torn down */ } }
       hydrating.current = false;
+      try { refreshDerived(); } catch { /* editor torn down */ }
     };
     const seedFromMarkdown = () => {
       if (!note.body.trim()) { finish(); return; }
@@ -574,6 +657,7 @@ function NoteEditor({
 
   useEffect(() => {
     const unsub = editor.onChange(() => {
+      refreshDerived();
       if (hydrating.current) return;
       // Serialize NOW, while the editor is definitely alive, and stash the
       // result. A checkbox toggle is a single quick action often followed
@@ -591,7 +675,7 @@ function NoteEditor({
       unsub();
       flush(); // persist any pending edit before this editor goes away
     };
-  }, [editor, flush]);
+  }, [editor, flush, refreshDerived]);
 
   // Title edits only update frontmatter. The filename is fixed at creation —
   // renaming the file on every keystroke caused stale paths (note couldn't open)
@@ -642,6 +726,8 @@ function NoteEditor({
   return (
     <CollectionPageContext.Provider value={page}>
     <div className={styles.root}>
+     <div className={styles.main}>
+     <div className={styles.column}>
       <div className={styles.docWrap}>
         <div className={styles.docInner}>
           {/* Everything above the body. Its affordances — add cover, history,
@@ -745,6 +831,27 @@ function NoteEditor({
           {!monk && <BacklinksPanel path={note.path} onNavigate={onNavigate} />}
         </div>
       </div>
+
+      {findOpen && (
+        <FindBar
+          query={find.query}
+          count={find.matches.length}
+          active={find.active}
+          focusToken={findFocusToken}
+          onQuery={(q) => setFindQuery(pmView(), q)}
+          onStep={(dir) => stepFind(pmView(), dir)}
+          onClose={closeFind}
+        />
+      )}
+
+      {/* A quiet status line: how much is here, and how long it takes to read. */}
+      {!monk && <div className={styles.statusLine}>{formatStats(stats)}</div>}
+     </div>
+
+     {outlineOpen && !monk && (
+       <OutlinePane entries={outline} activeId={activeHeadingId} onJump={jumpToHeading} onClose={onToggleOutline} />
+     )}
+     </div>
 
       {suggestion && (
         <WikiLinkDropdown

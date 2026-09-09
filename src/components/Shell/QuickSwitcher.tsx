@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, commands } from "../../lib/commands";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -35,6 +35,9 @@ interface Props {
   onToggleMonk: () => void;
   onFocusSidebar: () => void;
   onToggleProperties: () => void;
+  /** Absent when no note is open. */
+  onFindInNote?: () => void;
+  onToggleOutline: () => void;
   onPublish: () => void;
   /** Absent when no note is open. */
   onTogglePublic?: () => void;
@@ -48,7 +51,7 @@ export function QuickSwitcher({
   notes, initialQuery = "", onSelect, onClose,
   onNewNote, onToday, onOpenGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
-  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
+  onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
   onPublish, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
@@ -171,6 +174,20 @@ export function QuickSwitcher({
         description: `${shortcutFor("toggle-properties")} · show or hide the note's property panel`,
         icon: <TagsListIcon size={14} />,
         run: () => { onToggleProperties(); onClose(); },
+      },
+      ...(onFindInNote ? [{
+        id: "find-in-note",
+        label: "Find in note",
+        description: `${shortcutFor("find-in-note")} · highlight matches in the open note; Enter steps through them`,
+        icon: <SearchIcon size={14} />,
+        run: () => { onClose(); onFindInNote(); },
+      }] : []),
+      {
+        id: "toggle-outline",
+        label: "Toggle outline",
+        description: `${shortcutFor("toggle-outline")} · the note's headings beside the page; click to jump`,
+        icon: <TextLinesIcon size={14} />,
+        run: () => { onToggleOutline(); onClose(); },
       },
       {
         id: "toggle-terminal",

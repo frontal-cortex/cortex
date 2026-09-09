@@ -63,9 +63,9 @@ screen but the Markdown save path throws it away.
 | Properties panel | done | — | Typed rows, schema-ordered, option colours, add property with nine types (`PropertiesPanel.tsx`). |
 | Slash menu, drag handle, nesting, Markdown shortcuts | done | — | Defaults plus Cortex items: seven view types, collection views, embed, callout. |
 | Undo / redo | done | — | ProseMirror history; no buttons or palette entries. |
-| Find in note | missing | S | |
-| Word count | missing | S | |
-| Outline / TOC panel | missing | M | |
+| Find in note | done | — | `mod+f` (`find-in-note`); ProseMirror decorations, match count, Enter / Shift+Enter, Esc lands on the match (`lib/findInNote.ts`, `FindBar.tsx`). |
+| Word count | done | — | Words, characters and reading time in a status line under the page; hidden in monk mode; nothing stored (`lib/textStats.ts`). |
+| Outline / TOC panel | done | — | Headings derived live from the blocks, pane beside the page (`mod+shift+o`), click jumps, follows the cursor (`OutlinePane.tsx`). |
 | Spell check | partial | S | Webview default; no dictionary or language control. |
 | Raw Markdown / source mode | missing | M | The file is plain Markdown but there is no source view. |
 | Focus mode | done, beyond Notion | — | Monk mode, `mod+shift+m`. |

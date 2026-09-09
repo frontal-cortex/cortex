@@ -93,7 +93,7 @@ at the end so they are not mistaken for gaps.
 | Operators (`tag:`, `path:`, quotes, `-`, `OR`, regex) | missing | M | `fts_query` (`db.rs:215`) strips every non-alphanumeric character and appends `*` to each word, so `tag:foo` becomes `tagfoo*`. FTS5 already supports phrases, `NEAR` and column filters; the query builder discards them. |
 | Result snippets / highlights | missing | S | Results render as plain tree rows; `snippet()` never called. |
 | Vault-wide search and replace | missing | L | |
-| Find in note (`Ctrl+F`) | missing | S | Not bound in `keymap.ts`; BlockNote ships none. |
+| Find in note (`Ctrl+F`) | done | — | `find-in-note` (`mod+f`) in `keymap.ts`; decoration-based highlights with count and next / previous (`lib/findInNote.ts`, `FindBar.tsx`). |
 | Quick switcher | partial | S | Case-insensitive substring over title/path/tags (`QuickSwitcher.tsx:69`), no fuzzy matching or ranking. |
 | Command palette (`>` prefix) | done | — | ~18 actions plus one per template; `mod+shift+p`. |
 
@@ -105,9 +105,9 @@ at the end so they are not mistaken for gaps.
 | Tabs, pinned tabs | missing | L | Deliberately removed after a history-corruption bug (`useNavHistory.ts:52`). |
 | Back / forward | done | — | 50-deep history, `mod+[` / `mod+]`. |
 | Resizable sidebar | missing | S | `--left-panel-width: 260px` is a constant (`tokens.css:60`); `LeftPanel.module.css` fixes both `width` and `min-width`. |
-| Outline pane | missing | M | No heading extraction UI. |
+| Outline pane | done | — | Headings derived from the live blocks, beside the page (`toggle-outline`, `mod+shift+o`); click jumps, the entry under the cursor is marked (`OutlinePane.tsx`). |
 | Properties pane | done | — | Typed, schema-driven, with option colours; richer than Obsidian's. |
-| Status bar (word / char / backlink count) | missing | S | No footer, no word-count code. |
+| Status bar (word / char / backlink count) | partial | S | Words, characters and reading time under the page (`lib/textStats.ts`), hidden in monk mode; no backlink count (backlinks list under the note). |
 | Focus / zen mode | done | — | "Monk mode", `mod+shift+m`. |
 | Right sidebar | partial | S | Exists but is the terminal only (fixed 440px); backlinks and properties live inside the editor column. |
 
@@ -115,7 +115,7 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Central shortcut registry, platform labels | done | — | `keymap.ts:38-56`, 17 shortcuts, every hint renders from it. |
+| Central shortcut registry, platform labels | done | — | `keymap.ts`, 19 shortcuts, every hint renders from it. |
 | Customisable keybindings + recorder | done | — | `keybindings:` in settings; conflict detection; recorder in Settings; settable from the CLI. |
 | Keyboard-first navigation | done | — | Sidebar roving tabindex, focus-sidebar / focus-editor. |
 | Vim keybindings in the editor | missing | L | BlockNote/ProseMirror, not CodeMirror. Non-goal unless a modal-editing plugin appears. |
@@ -207,7 +207,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints.
 8. **No block references.** The deepest structural gap and the most expensive.
 9. **No canvas.**
-10. **Small conveniences, individually cheap:** recent files, outline, word count, find-in-note, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions.
+10. **Small conveniences, individually cheap:** recent files, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions (outline, word count and find-in-note are done).
 
 ## Deliberate non-goals
 
