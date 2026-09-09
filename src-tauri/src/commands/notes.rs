@@ -7,6 +7,7 @@ use crate::commands::vault::{DbState, VaultState};
 use crate::watcher::{self, SelfWrites};
 use cortex_core::error::{AppError, Result};
 use cortex_core::note::{self, Note, NoteEntry};
+use cortex_core::rename::RenameReport;
 use cortex_core::search::SearchHit;
 
 fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
@@ -23,6 +24,13 @@ fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
 #[tauri::command]
 pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
     Ok(cortex_core::vault::list_notes(&vault_path(&state)?))
+}
+
+/// The vault's tag tree with counts, nested by `/` — frontmatter and inline
+/// `#tags` alike. Computed from the notes on every call; nothing is stored.
+#[tauri::command]
+pub fn list_tags(state: State<'_, VaultState>) -> Result<Vec<cortex_core::tags::TagNode>> {
+    Ok(cortex_core::vault::list_tags(&vault_path(&state)?))
 }
 
 #[tauri::command]
@@ -276,37 +284,47 @@ pub fn delete_folder(
     Ok(())
 }
 
-/// Rename a note to a new vault-relative path (can change directory and/or filename).
-/// Returns the new path.
+/// Rename a note to a new vault-relative path (can change directory and/or
+/// filename) and, if `title` is given, retitle it. Every inbound link is
+/// rewritten to follow, and the change is committed when auto-commit is on —
+/// all in cortex-core (`rename::rename_note`), shared with `cortex mv`.
 #[tauri::command]
 pub fn rename_note(
     old_path: String,
     new_path: String,
+    title: Option<String>,
     state: State<'_, VaultState>,
     db_state: State<'_, DbState>,
-) -> Result<()> {
+) -> Result<RenameReport> {
     let root = vault_path(&state)?;
-    let from_abs = root.join(&old_path);
-    let to_abs = root.join(&new_path);
+    let guard = db_state.0.lock().unwrap();
+    let db = guard.as_ref().ok_or(AppError::NoVault)?;
+    cortex_core::rename::rename_note(&root, db, &old_path, &new_path, title.as_deref())
+}
 
-    if !from_abs.exists() {
-        return Err(AppError::Other(format!("Source not found: {old_path}")));
-    }
-    if to_abs.exists() && to_abs != from_abs {
-        return Err(AppError::Other(format!("Target already exists: {new_path}")));
-    }
-    if let Some(parent) = to_abs.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+/// The editor saves a title as it is typed; once the edit is final it calls
+/// this so links written against the old title are pointed at the new one.
+#[tauri::command]
+pub fn title_changed(
+    path: String,
+    old_title: String,
+    new_title: String,
+    state: State<'_, VaultState>,
+    db_state: State<'_, DbState>,
+) -> Result<RenameReport> {
+    let root = vault_path(&state)?;
+    let guard = db_state.0.lock().unwrap();
+    let db = guard.as_ref().ok_or(AppError::NoVault)?;
+    cortex_core::rename::title_changed(&root, db, &path, &old_title, &new_title)
+}
 
-    std::fs::rename(&from_abs, &to_abs)?;
-
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = db.rename_note(&old_path, &new_path);
-        let _ = cortex_core::index::index_file(&root, &to_abs, db);
-    }
-
-    Ok(())
+/// The note a `[[wiki link]]` (any written form) points at, resolved by
+/// cortex-core the same way for the app, the CLI and the publisher.
+#[tauri::command]
+pub fn resolve_note(target: String, state: State<'_, VaultState>) -> Result<Option<NoteEntry>> {
+    let root = vault_path(&state)?;
+    let notes = cortex_core::vault::list_notes(&root);
+    Ok(cortex_core::vault::resolve(&notes, &target).cloned())
 }
 
 /// Duplicate a note as a `<stem>-copy[-N].md` sibling, bumping its title so the
@@ -364,8 +382,8 @@ pub fn reveal_path(path: String, state: State<'_, VaultState>) -> Result<()> {
     Ok(())
 }
 
-/// Move a note to a different folder, keeping the same filename.
-/// Returns the new vault-relative path.
+/// Move a note to a different folder, keeping the same filename. Inbound
+/// links follow (see `rename_note`). Returns the new vault-relative path.
 #[tauri::command]
 pub fn move_note(
     from_path: String,
@@ -374,38 +392,18 @@ pub fn move_note(
     db_state: State<'_, DbState>,
 ) -> Result<String> {
     let root = vault_path(&state)?;
-    let from_abs = root.join(&from_path);
-
-    if !from_abs.exists() {
-        return Err(AppError::Other(format!("Source not found: {from_path}")));
-    }
-
-    let filename = from_abs
+    let filename = std::path::Path::new(&from_path)
         .file_name()
+        .and_then(|f| f.to_str())
         .ok_or_else(|| AppError::Other("Invalid source path".into()))?;
-
     let to_dir_clean = to_dir.trim_end_matches('/');
-    let to_dir_abs = root.join(to_dir_clean);
-    std::fs::create_dir_all(&to_dir_abs)?;
-
-    let to_abs = to_dir_abs.join(filename);
-
-    if to_abs.exists() {
-        return Err(AppError::Other(format!(
-            "A note with this name already exists in {}",
-            to_dir_clean
-        )));
+    let new_path = if to_dir_clean.is_empty() { filename.to_string() } else { format!("{to_dir_clean}/{filename}") };
+    if root.join(&new_path).exists() {
+        return Err(AppError::Other(format!("A note with this name already exists in {to_dir_clean}")));
     }
-
-    let new_path = format!("{}/{}", to_dir_clean, filename.to_string_lossy());
-    std::fs::rename(&from_abs, &to_abs)?;
-
-    // Update index: rename the path row, then re-index the content at new location
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
-        let _ = db.rename_note(&from_path, &new_path);
-        let _ = cortex_core::index::index_file(&root, &to_abs, db);
-    }
-
+    let guard = db_state.0.lock().unwrap();
+    let db = guard.as_ref().ok_or(AppError::NoVault)?;
+    cortex_core::rename::rename_note(&root, db, &from_path, &new_path, None)?;
     Ok(new_path)
 }
 

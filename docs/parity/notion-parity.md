@@ -18,18 +18,18 @@ screen but the Markdown save path throws it away.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Paragraph, headings 1-6, bullet / numbered / check lists, quote, divider | done | — | BlockNote defaults. Check-list items strike through live (`index.css:61`). |
-| Toggle list / toggle heading | partial | M | Works on screen, but the Markdown exporter flattens `<details>` to a plain bullet or heading, so the toggle is gone on reopen. The roadmap's chosen serialisation is `<details><summary>`. |
+| Toggle list / toggle heading | done | — | Saved as `<details><summary>…</summary> … </details>` (a heading inside the summary for toggle headings), the roadmap's chosen form; inline styles in the summary go out as HTML tags. Translated at the load/save boundary (`richFormats.ts`). |
 | Callout | partial | S | Five fixed kinds (note, tip, info, warning, danger) with fixed emoji and colour (`CalloutBlock.tsx:21`); the icon click only cycles kinds. Inline content only, no nested blocks. Round-trips as `> [!type]`. |
-| Code block: language, highlighting | partial | S | The fence language survives the parse, but the app passes no `supportedLanguages` so there is no picker, and no highlighter is configured (no shiki dependency). Plain monospace. |
+| Code block: language, highlighting | done | — | Picker over a curated list of 33 languages and lazily loaded shiki highlighting (`Shell/codeBlock.ts`). Colours are `--code-*` tokens (`tokens.css`), so they follow light/dark and the desktop palette. Still an ordinary ```lang fence on disk; a fence language outside the list is kept as-is. |
 | Table | partial | M | Default table block with handles. Saved as GFM, so cell colours, column widths, header column and merged cells are lost. |
 | Image: paste, drop, upload | done | — | Custom paste/drop plugin (`Editor.tsx:389-431`), stored in `assets/` (`commands/notes.rs:772`). |
-| Image: resize | partial | S | Resize handles work, but width has no Markdown form and resets on reload. |
-| Image: caption | partial | S | Serialised as `<figure>`, but the asset rehydration regex only matches `![](assets/…)` (`Editor.tsx:58`), so a captioned image renders broken after reload. |
+| Image: resize | done | — | A resized image is saved as `<img src="assets/…" alt="…" width="480">` (inside `<figure>` when captioned); an unsized one stays `![alt](assets/…)`. GitHub and Obsidian honour the width. |
+| Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
 | File attachment | partial | M | Uploads to `assets/`, degrades to a plain link on save; `read_asset` labels every non-image as `image/png` (`commands/notes.rs:833`) so non-image assets cannot be served. |
 | Video / audio | partial | M | Blocks exist; same asset rehydration gap; no YouTube/Vimeo player or oEmbed. |
 | Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
 | Web embed (iframe) | missing | M | |
-| Math / equation (inline and block) | missing | M | No KaTeX dependency, no `$…$` handling anywhere. |
+| Math / equation (inline and block) | done | — | `$…$` and `$$…$$` on disk (GitHub/Obsidian syntax), KaTeX bundled locally (`MathBlock.tsx`, `src/lib/math.ts`). `/math` and `$$` on an empty line open a block; typing `$…$` makes an inline equation. The static site shows the LaTeX source in a `.math` span (no KaTeX shipped there). |
 | Columns | missing | L | Needs `@blocknote/xl-multi-column`; the roadmap rates it the weakest Markdown fit. |
 | Synced blocks | missing | L | Closest is the read-only `![[note]]` embed. |
 | Table of contents block | missing | M | |
@@ -48,9 +48,10 @@ screen but the Markdown save path throws it away.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Bold, italic, strikethrough, code, link | done | — | |
-| Underline | partial | M | Applies on screen; the exporter strips `<u>` on save. |
-| Text colour, highlight | partial | M | Applies on screen; colour spans are stripped on save. Cortex needs a Markdown convention (`==mark==` for highlight is the obvious one; colour may be a non-goal). |
-| Inline math | missing | M | |
+| Underline | done | — | Saved as `<u>…</u>`; runs of underlined text keep bold / italic inside them (`<u>**a** b</u>`). |
+| Highlight | partial | S | Saved as `==text==` (Obsidian's syntax; rendered as `<mark>` by `cortex publish`). The highlight *colour* is not stored — every highlight reopens as the default yellow. |
+| Text colour | non-goal | — | Applies on screen only; the span is dropped on save. There is no legible Markdown form for a coloured run and inline `<span style>` would fail principle 3, so this stays a deliberate non-goal (see below). |
+| Inline math | done | — | `$E = mc^2$` typed in a paragraph becomes a KaTeX node; click to edit the source. Stored as plain `$…$`. |
 | `Ctrl+B` | note | S | Bound to toggle-sidebar in capture phase (`keymap.ts:49`), so bold is toolbar or `**` only. |
 
 ## 3. Page level and editor chrome
@@ -63,9 +64,9 @@ screen but the Markdown save path throws it away.
 | Properties panel | done | — | Typed rows, schema-ordered, option colours, add property with nine types (`PropertiesPanel.tsx`). |
 | Slash menu, drag handle, nesting, Markdown shortcuts | done | — | Defaults plus Cortex items: seven view types, collection views, embed, callout. |
 | Undo / redo | done | — | ProseMirror history; no buttons or palette entries. |
-| Find in note | missing | S | |
-| Word count | missing | S | |
-| Outline / TOC panel | missing | M | |
+| Find in note | done | — | `mod+f` (`find-in-note`); ProseMirror decorations, match count, Enter / Shift+Enter, Esc lands on the match (`lib/findInNote.ts`, `FindBar.tsx`). |
+| Word count | done | — | Words, characters and reading time in a status line under the page; hidden in monk mode; nothing stored (`lib/textStats.ts`). |
+| Outline / TOC panel | done | — | Headings derived live from the blocks, pane beside the page (`mod+shift+o`), click jumps, follows the cursor (`OutlinePane.tsx`). |
 | Spell check | partial | S | Webview default; no dictionary or language control. |
 | Raw Markdown / source mode | missing | M | The file is plain Markdown but there is no source view. |
 | Focus mode | done, beyond Notion | — | Monk mode, `mod+shift+m`. |
@@ -154,9 +155,9 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Notion export (zip of Markdown + CSV) | missing | L | No importer of any kind. The single biggest adoption blocker. |
-| CSV import into a collection | missing | M | CSV is readable as a view *source* under `data/` (`data.rs:248`), never converted to rows. |
-| Markdown folder / Obsidian vault | partial | S | `open_vault` opens any directory, `git init`s it, writes `VAULT.md` / `AGENTS.md` and indexes every `.md`. "Import" is "point it at the folder", with side-effect files. |
+| Notion export (zip of Markdown + CSV) | done | — | `cortex import notion <zip-or-dir> [--into NAME] [--dry-run]`, MCP `import_notion`, the **Notion export** tab of **Import…** (`import/notion.rs`, pure-Rust `zip`): hashes stripped from every path, each CSV + row folder a collection with the schema inferred from the cells (select, multi-select, date, checkbox, url, number, status, relation by title), the page property block as frontmatter, intra-export links → `[[Title]]`, images → `assets/`, and a `Notion import report` note listing what could not be mapped (times and range ends dropped from dates, relations to databases outside the export, ambiguous titles, dangling links). Idempotent: a re-run writes nothing. Not carried: Notion's page icons / covers, per-block formatting that Markdown lacks, and attachments other than images (skipped and listed). |
+| CSV import into a collection | done | — | `import.rs`: `cortex import csv`, MCP `import_csv`, **Import…** in the palette. One row note per record named from the title column, types inferred (number, date, checkbox, url, select from a small vocabulary; `--map` overrides), schema written or merged, `_index.md` for a new collection, dry-run preview of the first five rows. |
+| Markdown folder / Obsidian vault | done | — | `cortex import markdown <dir> [--into NAME]`, MCP `import_markdown`, **Import…** in the palette: copies `*.md` under `notes/<name>/`, frontmatter and `[[links]]` untouched, referenced images into `assets/` with paths rewritten, dot-folders skipped and every skip reported; the source is never modified. `open_vault` still works for "use this folder as the vault". |
 | Evernote, HTML import | missing | M | |
 | Export: Markdown | native | — | The files are already Markdown. |
 | Export: note → HTML, collection → CSV / HTML | done | — | `export.ts`, `data.rs:1627-1655`. |
@@ -215,7 +216,7 @@ by inferring column types (`data.rs:128`).
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | CLI | done, beyond Notion | — | 25 subcommands, `--json` everywhere. Full list in `docs/agent-integration.md`. |
-| MCP server | done, beyond Notion | — | 28 tools over stdio (`mcp.rs`). Absent from MCP but present in the app: delete / rename / move, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
+| MCP server | done, beyond Notion | — | 28 tools over stdio (`mcp.rs`). `move_note` renames / moves with link rewriting. Absent from MCP but present in the app: delete, trash, publish build, git sync / commit, proposal apply / discard, members, favorites. |
 | Proposals (branch, list, diff, apply, discard) in app and CLI | done, beyond Notion | — | `git.rs:523-628`. |
 | Filesystem watcher | done | — | |
 | HTTP API / webhooks | missing | L | No server crate. |
@@ -252,9 +253,9 @@ by inferring column types (`data.rs:128`).
 
 ## Notable gaps, ranked
 
-1. **No import path.** Nobody can move in from Notion, CSV, or Evernote. Opening a Markdown folder works but writes files into it.
-2. **Silent formatting loss on save**: underline, colour, highlight, toggles, image width. They look like they work until the note is reopened.
-3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
+1. **Evernote / HTML have no import path.** Notion exports, CSV and Markdown folders all import (§8).
+2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
+3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation, a date picker and duplicate row landed.)
 6. **No sub-groups in the table view**, and no in-database search. (Filter grammar precedence and operators, table group-by and the summary row have landed.)
@@ -264,3 +265,7 @@ by inferring column types (`data.rs:128`).
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
 12. **Mobile is a doc, not a target.**
+
+## Deliberate non-goals
+
+- **Text colour.** No Markdown convention exists for a coloured run, and `<span style="color:…">` in a note would fail the degradability principle. The editor still shows the colour while the note is open; it is not saved. Highlight is the supported way to mark text.

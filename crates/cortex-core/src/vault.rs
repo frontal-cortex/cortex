@@ -59,7 +59,7 @@ Note body here. Use [[Note Title]] to link to other notes.
 |-----------|----------------------------------------------------|
 | `title`   | Display name — used in search, links, and the UI.  |
 | `type`    | Note type: `note`, `task`, `meeting`, or anything. |
-| `tags`    | List of tags for filtering.                        |
+| `tags`    | List of tags. `#tag` in the body counts too; `a/b` nests. |
 | `created` | ISO date the note was created (YYYY-MM-DD).        |
 
 Custom fields are fully supported — add any key/value pair you need.
@@ -187,9 +187,11 @@ follows every change you make on disk.
 ## Rules
 
 - Frontmatter keys are sorted alphabetically; `created` is `YYYY-MM-DD`; `tags` is a list.
+- A `#tag` in the body counts as a tag too (not in code, headings or URLs); `parent/child` nests. Never write derived tag lists back.
 - The app shows `title` as the page heading and `created` under it — don't repeat either as an H1 or a first line in the body.
   Prefer the tools below over editing YAML by hand — they keep files canonical so diffs stay clean.
-- Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by title, then by filename.
+- Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by path, then title, then filename stem.
+  Rename or move with `cortex mv` (or `set title=`), never by hand: every inbound link is rewritten to follow.
 - Never write derived data (rollups, counts) into notes; the app computes it.
 
 ## Tools
@@ -197,13 +199,17 @@ follows every change you make on disk.
 The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTEX_VAULT`):
 
     cortex ls [dir] [--type t] [--tag t]     list notes            cortex search <query>   ("phrase" -word OR tag:x type:x path:x)
+    cortex tags                              tags with counts, nested by /
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f] [--summary f=sum]
+    cortex mv <note> <path-or-dir/> [--title t]   rename/move; inbound [[links]] are rewritten to follow
     cortex schema [key]                      typed properties      cortex status
     cortex schema rename <key> <old> <new>   rename a property everywhere (rows, views, rollups, formulas)
     cortex schema rm <key> <name>            delete a property everywhere (refused while a rollup or formula uses it)
     cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
+    cortex import csv <file> --collection <c> [--dry-run]   a CSV as rows   cortex import markdown <dir> [--into n] [--dry-run]
+    cortex import notion <zip> [--into n] [--dry-run]   a Notion export: pages, databases as collections, a report note
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)
 
 Add `--json` to any command for machine output. `cortex mcp` serves the same
@@ -321,12 +327,7 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
                 let note_type = parsed.frontmatter.get("type").and_then(|v| v.as_str()).map(str::to_string);
                 let icon = parsed.frontmatter.get("icon").and_then(|v| v.as_str()).map(str::to_string);
                 let parent = parsed.frontmatter.get("parent").and_then(|v| v.as_str()).map(str::to_string);
-                let tags = parsed
-                    .frontmatter
-                    .get("tags")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-                    .unwrap_or_default();
+                let tags = crate::tags::note_tags(&parsed);
                 (title, note_type, icon, parent, tags)
             }
             Err(_) => {
@@ -346,10 +347,19 @@ pub fn list_notes(root: &Path) -> Vec<NoteEntry> {
     entries
 }
 
+/// The vault's tag tree — frontmatter and inline `#tags` of every note,
+/// nested by `/` with counts. Computed, never stored.
+pub fn list_tags(root: &Path) -> Vec<crate::tags::TagNode> {
+    let notes = list_notes(root);
+    crate::tags::list_tags(notes.iter().map(|n| (n.path.as_str(), n.tags.as_slice())))
+}
+
 /// Resolve a reference the way the app resolves a `[[wiki link]]`: exact
-/// path, then exact title (case-insensitive), then a filename-stem match.
-/// `target` may be any written form — `Note`, `Note|alias`, `Note#Section`,
-/// `[[Note#Section|alias]]` — only the note part is matched.
+/// path, then exact title (case-insensitive), then exact filename stem
+/// (case-insensitive). `target` may be any written form — `Note`,
+/// `Note|alias`, `Note#Section`, `[[Note#Section|alias]]` — only the note
+/// part is matched. This is the one resolver: the app's click handler, the
+/// CLI, the MCP server, embeds and the publisher all go through it.
 pub fn resolve<'a>(notes: &'a [NoteEntry], target: &str) -> Option<&'a NoteEntry> {
     let target = crate::note::parse_wiki_link(target).target;
     if target.is_empty() {
@@ -361,15 +371,12 @@ pub fn resolve<'a>(notes: &'a [NoteEntry], target: &str) -> Option<&'a NoteEntry
         .iter()
         .find(|n| n.path == target || n.path == with_ext)
         .or_else(|| notes.iter().find(|n| n.title.to_lowercase() == lower))
-        .or_else(|| {
-            notes.iter().find(|n| {
-                Path::new(&n.path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_lowercase().contains(&lower))
-                    .unwrap_or(false)
-            })
-        })
+        .or_else(|| notes.iter().find(|n| stem(&n.path).to_lowercase() == lower))
+}
+
+/// The filename without directory or extension: `notes/a/plan.md` → `plan`.
+pub fn stem(path: &str) -> &str {
+    Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("")
 }
 
 #[cfg(test)]
@@ -394,5 +401,11 @@ mod tests {
         assert_eq!(path("notes/plan.md"), plan);
         assert_eq!(path("#Goals"), None);
         assert_eq!(path("Nope"), None);
+        // The stem step is an exact match: a fragment never lands on a longer filename.
+        assert_eq!(path("rapid-notes"), Some("notes/rapid-notes.md"));
+        assert_eq!(path("Rapid-Notes"), Some("notes/rapid-notes.md"));
+        assert_eq!(path("rapid"), Some("notes/rapid-notes.md")); // by title
+        assert_eq!(path("notes"), None);
+        assert_eq!(path("api"), None);
     }
 }

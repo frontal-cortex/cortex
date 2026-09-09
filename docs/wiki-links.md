@@ -35,9 +35,29 @@ section stripped) in order:
 
 1. Exact vault path (`notes/x.md`, with or without the extension)
 2. Exact title match (`title:` frontmatter field, case-insensitive)
-3. Path stem match (filename without extension)
+3. Exact filename stem match (filename without extension, case-insensitive)
 
 If no match is found, the click is a no-op (future: offer to create).
+
+There is one resolver, `vault::resolve` in cortex-core; the app's click
+handler, embeds, the CLI, the MCP server and the publisher all call it.
+
+## Rename and move
+
+Links name a note by title, stem or path, so changing any of those would
+orphan them. Every rename goes through `rename::rename_note` in cortex-core,
+which moves the file, sets the new title if asked, then uses the index's
+`links` table to find the referrers and rewrites their links — `[[old]]`,
+`[[old|alias]]`, `[[old#Section]]` and `![[old]]` each become the new target
+with the alias, section and embed bang intact. Only links that would break
+are touched (a pure move leaves `[[Title]]` links alone); if another note
+shares the old title or stem, that ambiguous form is left as it was. With
+`auto_commit` on, the rename and its relinks are one commit.
+
+Entry points: rename or drag-and-drop in the sidebar, editing the title in
+the editor (relinked once the edit is final — on blur — not per keystroke),
+`cortex mv <note> <dest> [--title t]`, `cortex set <note> title=…`, and the
+MCP `move_note` tool.
 
 ## Autocomplete
 

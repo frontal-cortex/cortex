@@ -3,10 +3,11 @@ import {
   KeyboardEvent as ReactKeyboardEvent, ReactNode, Fragment,
 } from "react";
 import { shortcutFor, SHORTCUTS, ShortcutId, isMac } from "../../lib/keymap";
-import { NoteEntry, SearchHit, VaultStatus, AgentBranch, CommitEntry, TrashEntry } from "../../lib/commands";
+import { NoteEntry, SearchHit, VaultStatus, AgentBranch, CommitEntry, TrashEntry, TagNode } from "../../lib/commands";
 import { commands } from "../../lib/commands";
 import { buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, relativeTime } from "../../lib/fileTree";
-import { FileTree, LeafRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
+import { FileTree, LeafRow, BranchRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
+import { flattenTags } from "../../lib/tags";
 import { CommitDiffModal } from "./CommitDiffModal";
 import { Snippet } from "./Snippet";
 import {
@@ -15,13 +16,17 @@ import {
 import { TreeRow, useRovingRows, useTypeAhead } from "./treeRows";
 import {
   CloseIcon, MinusIcon, StarFilledIcon, PlusIcon, SearchIcon, GraphIcon, GearIcon, ChevronRightIcon,
-  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon, SparkleIcon,
+  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon, SparkleIcon, TagIcon,
 } from "./icons";
 import styles from "./LeftPanel.module.css";
 
 interface Props {
   notes: NoteEntry[];
   dirs: string[];
+  /** The vault's tag tree (frontmatter + inline `#tags`, nested by `/`). */
+  tags: TagNode[];
+  /** Open the tag page — every note carrying the tag or one of its children. */
+  onOpenTag: (tag: string) => void;
   selectedPath: string | null;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
@@ -61,14 +66,14 @@ export interface LeftPanelHandle {
   focus(): void;
 }
 
-type SectionId = "favorites" | "notes" | "templates" | "trash";
+type SectionId = "favorites" | "notes" | "tags" | "templates" | "trash";
 
 const SECTION_DEFAULT_OPEN: Record<SectionId, boolean> = {
-  favorites: true, notes: true, templates: false, trash: false,
+  favorites: true, notes: true, tags: true, templates: false, trash: false,
 };
 
 export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
-  notes, dirs, selectedPath, status, agentBranches, commits, favorites,
+  notes, dirs, tags, onOpenTag, selectedPath, status, agentBranches, commits, favorites,
   onSelect, onNewNote, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite, onOpenGraph,
   onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings, onOpenMarketplace,
   onCommit, onApplyBranch, onDiscardBranch, onRefresh,
@@ -92,6 +97,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   // list has to be derived from the same state the renderer reads.
   const [sectionOpen, setSectionOpen] = useState<Record<SectionId, boolean>>(SECTION_DEFAULT_OPEN);
   const [dirOpen, setDirOpen] = useState<Record<string, boolean>>({});
+  // Nested tags fold like folders; every tag starts closed.
+  const [tagOpen, setTagOpen] = useState<Record<string, boolean>>({});
   const [gettingStartedDismissed, setGettingStartedDismissed] = useState(loadGettingStartedDismissed);
 
   const changedCount = (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
@@ -128,6 +135,12 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       const current = prev[path] ?? depth === 0;
       const next = open ?? !current;
       return next === current ? prev : { ...prev, [path]: next };
+    });
+  }, []);
+  const toggleTag = useCallback((path: string, open?: boolean) => {
+    setTagOpen((prev) => {
+      const next = open ?? !prev[path];
+      return next === !!prev[path] ? prev : { ...prev, [path]: next };
     });
   }, []);
   const toggleSection = useCallback((id: SectionId, open?: boolean) => {
@@ -171,7 +184,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     }
   }, [onRefresh, onSelect]);
 
-  // Rename the file (and set its title to match, so the displayed name updates).
+  // Rename the file and set its title to match; inbound links follow (one
+  // core call, one commit when auto-commit is on).
   const handleRenameFile = useCallback(async (path: string) => {
     const stem = path.split("/").pop()!.replace(/\.md$/, "");
     const current = notes.find((n) => n.path === path)?.title || stem.replace(/-/g, " ");
@@ -181,9 +195,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     const newPath = dir ? `${dir}/${slug}.md` : `${slug}.md`;
     try {
-      if (newPath !== path) await commands.renameNote(path, newPath);
-      const full = await commands.readNote(newPath);
-      await commands.writeNote(newPath, { ...full, frontmatter: { ...full.frontmatter, title: input } });
+      await commands.renameNote(path, newPath, input);
       onRefresh();
       if (selectedPath === path) onSelect(newPath);
     } catch (e) { window.alert(String(e)); }
@@ -281,6 +293,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   }), [treeActions]);
 
   const notesCount = useMemo(() => notes.filter((n) => n.path.startsWith("notes/")).length, [notes]);
+  const tagCount = useMemo(() => flattenTags(tags).length, [tags]);
 
   // ── Getting started ────────────────────────────────────────────────────
 
@@ -383,6 +396,23 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       }
     }
 
+    if (tagCount > 0) {
+      const pid = section("tags", "Tags");
+      const pushTags = (nodes: TagNode[], parentId: string, depth: number) => {
+        for (const t of nodes) {
+          const id = `tag:${t.path}`;
+          const nested = t.children.length > 0;
+          out.push({
+            id, kind: "tag", label: t.name, depth, parentId, path: t.path,
+            expanded: nested ? !!tagOpen[t.path] : undefined,
+            run: () => onOpenTag(t.path),
+          });
+          if (nested && tagOpen[t.path]) pushTags(t.children, id, depth + 1);
+        }
+      };
+      if (pid) pushTags(tags, pid, 1);
+    }
+
     {
       const pid = section("templates", "Templates", "templates/");
       if (pid) {
@@ -410,7 +440,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     return out;
   }, [searchResults, sectionOpen, isDirOpen, favorites, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
       notesTree, newFolderIn, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection, handleDeleteCollection,
-      onRestoreTrashed, onDeleteTrashed, onEmptyTrash]);
+      onRestoreTrashed, onDeleteTrashed, onEmptyTrash, tags, tagCount, tagOpen, onOpenTag]);
 
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const { containerRef, activeId, focusRow, rowA11y } = useRovingRows(rows, selectedPath);
@@ -441,8 +471,9 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
   const setExpanded = useCallback((row: TreeRow, open: boolean) => {
     if (row.kind === "section") toggleSection(row.id.slice("section:".length) as SectionId, open);
+    else if (row.kind === "tag" && row.expanded !== undefined) toggleTag(row.path!, open);
     else if (row.kind === "dir" || (row.kind === "collection" && row.expanded !== undefined)) toggleDir(row.path!, open);
-  }, [toggleSection, toggleDir]);
+  }, [toggleSection, toggleDir, toggleTag]);
 
   const handleTreeKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     // App-level chords belong to Shell; typing in an inline input is typing.
@@ -486,7 +517,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
         break;
       }
       case "Enter": if (row) activate(row); break;
-      case " ": if (row && row.expanded !== undefined) activate(row); break;
+      // Enter on a tag opens its page; Space folds it (a tag with children), like a folder.
+      case " ": if (row?.kind === "tag") { if (row.expanded !== undefined) setExpanded(row, !row.expanded); } else if (row && row.expanded !== undefined) activate(row); break;
       case "n": onNewNote(row?.folder); break;
       case "Delete": case "Backspace": if (row) removeRow(row); break;
       case "f": if (row?.kind === "note" && row.path) onToggleFavorite(row.path); break;
@@ -653,6 +685,12 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                     a11y={a11y}
                   />}
             </Section>
+
+            {tagCount > 0 && (
+              <Section {...sectionProps("tags")} label="Tags" count={tagCount}>
+                <TagTree nodes={tags} depth={0} tagOpen={tagOpen} onToggle={toggleTag} onOpen={onOpenTag} a11y={a11y} />
+              </Section>
+            )}
 
             <Section
               {...sectionProps("templates")}
@@ -845,6 +883,42 @@ function Section({
       </div>
       {open && <div className={styles.sectionBody} role="group">{children}</div>}
     </div>
+  );
+}
+
+// ── Tag tree ──────────────────────────────────────────────────────────────────
+// `project/alpha` nests under `project`; a parent's count includes its
+// children. Enter or a click opens the tag page; the chevron (or Space) folds.
+
+function TagTree({ nodes, depth, tagOpen, onToggle, onOpen, a11y }: {
+  nodes: TagNode[];
+  depth: number;
+  tagOpen: Record<string, boolean>;
+  onToggle: (path: string) => void;
+  onOpen: (path: string) => void;
+  a11y: A11yFor;
+}) {
+  return (
+    <>
+      {nodes.map((t) => (
+        <BranchRow
+          key={t.path}
+          id={`tag:${t.path}`}
+          a11y={a11y}
+          depth={depth}
+          open={!!tagOpen[t.path]}
+          hasChildren={t.children.length > 0}
+          icon={<TagIcon size={13} />}
+          label={t.name}
+          count={t.count}
+          title={`#${t.path} · ${t.count} note${t.count === 1 ? "" : "s"} · Enter opens`}
+          onToggle={() => onToggle(t.path)}
+          onActivate={() => onOpen(t.path)}
+        >
+          <TagTree nodes={t.children} depth={depth + 1} tagOpen={tagOpen} onToggle={onToggle} onOpen={onOpen} a11y={a11y} />
+        </BranchRow>
+      ))}
+    </>
   );
 }
 
