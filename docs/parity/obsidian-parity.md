@@ -16,10 +16,10 @@ at the end so they are not mistaken for gaps.
 |---|---|---|---|
 | `[[wiki links]]` stored as plain text | done | — | A ProseMirror decoration over the literal text (`src/lib/wikiLinkExtension.ts:37`); the file never holds a node type. |
 | Autocomplete on `[[` and `@` | done | — | `src/lib/wikiLinkSuggestion.ts:33`, inserted at `Editor.tsx:472`. |
-| Aliases `[[note\|alias]]` | partial | M | Only the static-site builder splits on `\|` (`publish.rs:268`). In the app the whole inner text is handed to navigation (`Shell.tsx:459`) so a click is a silent no-op, and the indexer stores `Note\|alias` verbatim (`note.rs:88`) so no backlink is recorded. |
-| Heading links `[[note#heading]]` | partial | M | Section slicing exists for embeds (`commands/notes.rs:44-74`) and publish; click-navigation never splits on `#` and the index stores the whole string. |
+| Aliases `[[note\|alias]]` | done | — | One parser, `note::parse_wiki_link`, feeds the indexer, `vault::resolve`, `resolve_ref`, publish, the CLI and the editor. The decoration shows only the alias (syntax reappears while the cursor is in the link); backlinks and the graph match on the target alone. |
+| Heading links `[[note#heading]]` | done | — | Same parser; a click opens the note and scrolls to the heading. Embeds still slice the section. |
 | Block references `^id` | missing | L | No block-id parsing or generation anywhere. |
-| Link resolution rules | partial | S | Three parallel resolvers that disagree: core (`vault.rs:342`) and the app (`Shell.tsx:459`) fall back to a *substring* stem match, the Tauri command (`commands/notes.rs:117`) to an exact one. `[[api]]` can land on `rapid-notes.md`. Duplicate titles resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
+| Link resolution rules | partial | S | `resolve_ref` now goes through core `vault::resolve`; the app's click handler (`Shell.tsx handleNavigate`) is a TS mirror of the same order (path, title, stem). The stem step is still a *substring* match, so `[[api]]` can land on `rapid-notes.md`. Duplicate titles resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
 | Automatic link update on rename / move | missing | M | `rename_note` and `move_note` (`commands/notes.rs:323`, `:410`) rename the file and reindex. Links resolve by title, so a *title* change orphans every inbound `[[Title]]`. |
 | Unlinked mentions | missing | M | No code. |
 | Backlinks panel | partial | S | Flat list of titles under the note (`BacklinksPanel.tsx`); `get_backlinks` (`db.rs:98`) returns no context snippet. Hidden when empty. |
@@ -198,7 +198,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 
 ## Notable gaps, ranked
 
-1. **Aliases and heading links break navigation and backlinks.** The parsing already exists in `publish.rs`; it is just not shared with the indexer and the app resolver. Best value for effort on this list.
+1. ~~**Aliases and heading links break navigation and backlinks.**~~ Closed: one parser in cortex-core, shared by every reader.
 2. **Rename / move never rewrites inbound links.** Table stakes for an Obsidian user.
 3. **Search has no operators and no snippets.** FTS5 can do it; the query builder throws the capability away.
 4. **No inline `#tags` and no tag pane.** For many Obsidian users tags are the organising layer.

@@ -86,7 +86,12 @@ pub struct TrackEvent {
 
 #[derive(Debug, Serialize)]
 pub struct Link {
+    /// The note the link names — `[[Note|alias]]` and `[[Note#Section]]` both give `Note`.
     pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     /// Resolved note path, if the link points at an existing note.
     pub path: Option<String>,
 }
@@ -466,7 +471,12 @@ impl Vault {
         let notes = self.notes();
         Ok(note::extract_wiki_links(&note.body)
             .into_iter()
-            .map(|t| Link { path: vault::resolve(&notes, &t).map(|n| n.path.clone()), target: t })
+            .map(|l| Link {
+                path: vault::resolve(&notes, &l.target).map(|n| n.path.clone()),
+                target: l.target,
+                alias: l.alias,
+                section: l.section,
+            })
             .collect())
     }
 

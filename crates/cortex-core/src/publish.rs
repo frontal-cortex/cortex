@@ -265,19 +265,12 @@ fn rewrite_wiki_links(body: &str, depth: usize, all: &[NoteEntry], by_path: &BTr
             out.push_str("]]");
             continue;
         }
-        let (target, alias) = match inner.split_once('|') {
-            Some((t, a)) => (t.trim(), a.trim()),
-            None => (inner.trim(), inner.trim()),
-        };
-        let (target, section) = match target.split_once('#') {
-            Some((t, s)) => (t.trim(), Some(s.trim())),
-            None => (target, None),
-        };
-        let label = if alias == inner.trim() { section.map_or(target.to_string(), |s| format!("{target} › {s}")) } else { alias.to_string() };
-        let resolved = vault::resolve(all, target).and_then(|e| by_path.get(e.path.as_str()));
+        let link = note::parse_wiki_link(inner);
+        let label = link.label();
+        let resolved = vault::resolve(all, &link.target).and_then(|e| by_path.get(e.path.as_str()));
         match resolved {
             Some(entry) => {
-                let anchor = section.map(|s| format!("#{}", slug(s))).unwrap_or_default();
+                let anchor = link.section.as_deref().map(|s| format!("#{}", slug(s))).unwrap_or_default();
                 out.push_str(&format!("[{}]({}{}{})", escape_md(&label), up(depth), entry.url, anchor));
             }
             None => out.push_str(&label),
