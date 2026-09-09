@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, SearchHit, commands } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
-import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon } from "./icons";
+import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, ClockIcon, KeyboardIcon, CommentIcon, DownloadIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 
 interface Action {
@@ -15,6 +15,8 @@ interface Action {
 
 interface Props {
   notes: NoteEntry[];
+  /** Recently opened note paths, most recent first — the empty-query list. */
+  recent: string[];
   /** Seed the input — ">" opens straight into command mode. */
   initialQuery?: string;
   onSelect: (path: string) => void;
@@ -23,12 +25,16 @@ interface Props {
   onNewNote: () => void;
   onToday: () => void;
   onOpenGraph: () => void;
+  /** Absent when no note is open. */
+  onOpenLocalGraph?: () => void;
   onNewFromTemplate: (tplName: string) => void;
   onNewCollection: () => void;
   onSync: () => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenMarketplace: () => void;
+  /** The `?` overlay listing every shortcut. */
+  onShortcutHelp: () => void;
   onLogToday: () => void;
   onQuickCapture: () => void;
   onToggleSidebar: () => void;
@@ -39,8 +45,13 @@ interface Props {
   /** Absent when no note is open. */
   onFindInNote?: () => void;
   onToggleOutline: () => void;
+  /** Absent when no note is open. */
+  onToggleComments?: () => void;
+  /** Absent when no note is open. */
+  onComment?: () => void;
   onPublish: () => void;
   onImport: () => void;
+  onCheckForUpdates: () => void;
   /** Absent when no note is open. */
   onTogglePublic?: () => void;
   isPublic: boolean;
@@ -50,11 +61,11 @@ interface Props {
 type Mode = "notes" | "actions";
 
 export function QuickSwitcher({
-  notes, initialQuery = "", onSelect, onClose,
-  onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
+  notes, recent, initialQuery = "", onSelect, onClose,
+  onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
+  onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onShortcutHelp, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
-  onPublish, onImport, onTogglePublic, isPublic, hasRemote,
+  onToggleComments, onComment, onPublish, onImport, onCheckForUpdates, onTogglePublic, isPublic, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -73,7 +84,8 @@ export function QuickSwitcher({
   // ── Note results ────────────────────────────────────────────────────────────
   // Substring over title / path / tags first — instant, and what you want for
   // a note you know by name. When that finds nothing, fall back to the
-  // full-text index so a note is reachable by a word in its body.
+  // full-text index so a note is reachable by a word in its body. With
+  // nothing typed: the notes you opened last, then the rest by modified.
   const substringResults: (NoteEntry & { snippet?: string })[] = isActionMode === "notes"
     ? (rawQuery
         ? notes.filter((n) =>
@@ -81,7 +93,7 @@ export function QuickSwitcher({
             n.path.toLowerCase().includes(rawQuery.toLowerCase()) ||
             n.tags.some((t) => t.toLowerCase().includes(rawQuery.toLowerCase())),
           )
-        : notes.slice(0, 12))
+        : recentFirst(notes, recent).slice(0, 12))
     : [];
   const needsFts = isActionMode === "notes" && !!rawQuery && substringResults.length === 0;
   const [ftsResults, setFtsResults] = useState<SearchHit[]>([]);
@@ -128,6 +140,13 @@ export function QuickSwitcher({
         icon: <GraphIcon size={14} />,
         run: () => { onOpenGraph(); onClose(); },
       },
+      ...(onOpenLocalGraph ? [{
+        id: "local-graph",
+        label: "Local graph",
+        description: `${shortcutFor("local-graph")} · this note and its neighbours`,
+        icon: <GraphIcon size={14} />,
+        run: () => { onOpenLocalGraph(); onClose(); },
+      }] : []),
       {
         id: "new-database",
         label: "New collection",
@@ -156,6 +175,13 @@ export function QuickSwitcher({
         icon: <SyncIcon size={14} />,
         run: () => { onSync(); onClose(); },
       }] : []),
+      {
+        id: "recent-notes",
+        label: "Recent notes",
+        description: `${shortcutFor("quick-switcher")} · the notes you opened last, most recent first`,
+        icon: <ClockIcon size={14} />,
+        run: () => setQuery(""),
+      },
       {
         id: "toggle-sidebar",
         label: "Toggle sidebar",
@@ -214,6 +240,20 @@ export function QuickSwitcher({
         icon: <TextLinesIcon size={14} />,
         run: () => { onToggleOutline(); onClose(); },
       },
+      ...(onToggleComments ? [{
+        id: "toggle-comments",
+        label: "Toggle comments",
+        description: `${shortcutFor("toggle-comments")} · the note's comment threads beside the page (stored in <note>.comments.yaml)`,
+        icon: <CommentIcon size={14} />,
+        run: () => { onToggleComments(); onClose(); },
+      }] : []),
+      ...(onComment ? [{
+        id: "comment",
+        label: "Comment on selection",
+        description: `${shortcutFor("comment")} · start a thread on the selected text, or on the whole note`,
+        icon: <CommentIcon size={14} />,
+        run: () => { onClose(); onComment(); },
+      }] : []),
       {
         id: "toggle-terminal",
         label: "Toggle terminal",
@@ -235,11 +275,25 @@ export function QuickSwitcher({
         run: () => { onToggleTheme(); onClose(); },
       },
       {
+        id: "shortcut-help",
+        label: "Keyboard shortcuts",
+        description: `${shortcutFor("shortcut-help")} or ? · every shortcut, grouped by area`,
+        icon: <KeyboardIcon size={14} />,
+        run: () => { onClose(); onShortcutHelp(); },
+      },
+      {
         id: "settings",
         label: "Settings",
         description: shortcutFor("settings"),
         icon: <GearIcon size={14} />,
         run: () => { onOpenSettings(); onClose(); },
+      },
+      {
+        id: "check-updates",
+        label: "Check for updates…",
+        description: "Ask the release channel for a newer Cortex; nothing is installed until you confirm",
+        icon: <DownloadIcon size={14} />,
+        run: () => { onCheckForUpdates(); onClose(); },
       },
     ];
     const tplActions: Action[] = templates.map((t) => ({
@@ -256,10 +310,10 @@ export function QuickSwitcher({
       run: () => { onOpenMarketplace(); onClose(); },
     }];
     return [...base, ...tplActions, ...more];
-  }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onNewFromTemplate,
-      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onLogToday, onQuickCapture,
-      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties,
-      onPublish, onTogglePublic, isPublic, onClose]);
+  }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
+      onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onShortcutHelp, onLogToday, onQuickCapture,
+      onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
+      onToggleComments, onComment, onPublish, onCheckForUpdates, onTogglePublic, isPublic, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>
@@ -364,4 +418,12 @@ export function QuickSwitcher({
       </div>
     </div>
   );
+}
+
+/** Recently opened notes (that still exist) first, then everything else in list order. */
+function recentFirst(notes: NoteEntry[], recent: string[]): NoteEntry[] {
+  const byPath = new Map(notes.map((n) => [n.path, n]));
+  const head = recent.map((p) => byPath.get(p)).filter((n): n is NoteEntry => !!n);
+  const seen = new Set(head.map((n) => n.path));
+  return [...head, ...notes.filter((n) => !seen.has(n.path))];
 }

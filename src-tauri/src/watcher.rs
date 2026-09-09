@@ -52,6 +52,8 @@ pub struct VaultChanged {
     pub notes: Vec<String>,
     /// Notes that no longer exist (already removed from the index).
     pub removed: Vec<String>,
+    /// Notes whose `.comments.yaml` sidecar changed (the note itself did not).
+    pub comments: Vec<String>,
     /// A directory appeared or disappeared.
     pub dirs: bool,
     /// Something under `.cortex/` changed (settings, schemas, members).
@@ -62,7 +64,7 @@ pub struct VaultChanged {
 
 impl VaultChanged {
     fn is_empty(&self) -> bool {
-        self.notes.is_empty() && self.removed.is_empty() && !self.dirs && !self.config && !self.git
+        self.notes.is_empty() && self.removed.is_empty() && self.comments.is_empty() && !self.dirs && !self.config && !self.git
     }
 }
 
@@ -180,6 +182,10 @@ fn classify(app: &AppHandle, root: &Path, paths: HashSet<PathBuf>) -> VaultChang
             _ => {}
         }
 
+        if let Some(note) = cortex_core::comments::note_for_sidecar(&rel) {
+            out.comments.push(note);
+            continue;
+        }
         let is_md = rel_path.extension().and_then(|e| e.to_str()) == Some("md");
         if !is_md {
             // A folder created/removed — or a path that vanished and could
@@ -211,6 +217,8 @@ fn classify(app: &AppHandle, root: &Path, paths: HashSet<PathBuf>) -> VaultChang
 
     out.notes.sort();
     out.removed.sort();
+    out.comments.sort();
+    out.comments.dedup();
     out
 }
 

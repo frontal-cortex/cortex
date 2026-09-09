@@ -37,6 +37,8 @@ way to log \"I ran today\". run_view runs any cortex-view spec (a table over a c
 Importing: import_csv turns a CSV file into a collection (dry_run shows the mapping and first rows first); \
 import_markdown copies a folder of Markdown (an Obsidian vault) under notes/ without touching the source; \
 import_notion turns a Notion export zip into pages, collections and assets in one go and writes an import report note. \
+Comments: list_comments / add_comment / resolve_comment discuss a note in its \
+<note>.comments.yaml sidecar (threads anchored to a quoted passage, replies, resolved) without touching the note. \
 Publishing: list_published shows which notes the user has marked public (publish: true or the `public` \
 tag); set that flag only when asked, and never build or push a site — that is the user's own act. When a change is meant for the user's review rather than applied directly, call \
 propose with the changed paths: it moves them onto an agent/<name> branch the user reviews \
@@ -81,6 +83,40 @@ pub struct SearchArgs {
 pub struct TargetArgs {
     /// A note: its vault-relative path, exact title, or filename stem
     pub target: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CommentsArgs {
+    /// A note: its vault-relative path, exact title, or filename stem
+    pub target: String,
+    /// Include resolved threads too (default false)
+    #[serde(default)]
+    pub include_resolved: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AddCommentArgs {
+    /// A note: path, exact title, or filename stem
+    pub target: String,
+    /// The comment
+    pub text: String,
+    /// Anchor the thread to this exact passage of the note's body (omit for a comment about the whole note)
+    pub quote: Option<String>,
+    /// Which occurrence of `quote` is meant when it appears more than once, counting from 0 (default 0)
+    #[serde(default)]
+    pub occurrence: usize,
+    /// Reply inside this existing thread instead of opening a new one (then `quote` is ignored)
+    pub reply_to: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ResolveCommentArgs {
+    /// A note: path, exact title, or filename stem
+    pub target: String,
+    /// The thread id (see list_comments)
+    pub id: String,
+    /// false reopens the thread (default true)
+    pub resolved: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -346,6 +382,32 @@ with the match wrapped in <mark>.")]
         json(&self.vault.backlinks(&a.target).map_err(err)?)
     }
 
+    #[tool(description = "Comment threads on a note — stored beside it in <note>.comments.yaml, never in the note. Each thread has an id, an optional anchor (a quoted passage plus which occurrence; `anchored` says whether that passage is still in the body), author, created, resolved, text and replies. Open threads only unless include_resolved.")]
+    fn list_comments(&self, Parameters(a): Parameters<CommentsArgs>) -> Result<CallToolResult, McpError> {
+        let (note, threads) = self.vault.comments(&a.target).map_err(err)?;
+        let unresolved = cortex_core::comments::unresolved(&threads);
+        let threads: Vec<serde_json::Value> = threads.into_iter().filter(|t| a.include_resolved || !t.resolved).map(|t| {
+            let anchored = t.anchor.as_ref().map(|an| cortex_core::comments::locate(&note.body, an).is_some());
+            let mut v = serde_json::to_value(&t).unwrap_or_default();
+            if let (Some(obj), Some(anchored)) = (v.as_object_mut(), anchored) { obj.insert("anchored".into(), anchored.into()); }
+            v
+        }).collect();
+        json(&serde_json::json!({ "path": note.path, "unresolved": unresolved, "threads": threads }))
+    }
+
+    #[tool(description = "Comment on a note as the current git identity: open a thread anchored to a quoted passage of the body (the quote must appear in it; occurrence picks which one) or about the whole note, or reply inside an existing thread with reply_to. Writes only the note's comments sidecar. Returns the thread.")]
+    fn add_comment(&self, Parameters(a): Parameters<AddCommentArgs>) -> Result<CallToolResult, McpError> {
+        match a.reply_to {
+            Some(id) => json(&self.vault.reply_comment(&a.target, &id, &a.text).map_err(err)?),
+            None => json(&self.vault.comment(&a.target, &a.text, a.quote.as_deref(), a.occurrence).map_err(err)?),
+        }
+    }
+
+    #[tool(description = "Mark a comment thread resolved (or open again with resolved: false). Returns the thread.")]
+    fn resolve_comment(&self, Parameters(a): Parameters<ResolveCommentArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.resolve_comment(&a.target, &a.id, a.resolved.unwrap_or(true)).map_err(err)?)
+    }
+
     #[tool(description = "Rename or move a note (new path, or a folder to move into; optionally a new title) and rewrite every inbound [[link]] — aliases, sections and embeds kept — so nothing is orphaned. Returns old/new path and title, the notes relinked, and whether it was committed (auto_commit).")]
     fn move_note(&self, Parameters(a): Parameters<MoveArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.mv(&a.target, &a.dest, a.title.as_deref()).map_err(err)?)
@@ -377,7 +439,7 @@ with the match wrapped in <mark>.")]
         json(&self.vault.track(&a.collection, &a.item, a.date.as_deref(), a.done).map_err(err)?)
     }
 
-    #[tool(description = "The property schema for a collection or note type: typed properties and their options.")]
+    #[tool(description = "The property schema for a collection or note type: typed properties and their options. Types: text, number, date, date_range ({start, end} under one key), checkbox, select, multi_select, status, url, person, files (assets/ paths), relation, rollup, formula, and the git-derived created_time / created_by / edited_time / edited_by (computed on read, never written).")]
     fn get_schema(&self, Parameters(a): Parameters<SchemaArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.schema(&a.key).map_err(err)?)
     }

@@ -83,12 +83,41 @@ pub struct Settings {
     /// Trust tiers shown: any of official, verified, community. Empty = all.
     #[serde(default)]
     pub marketplace_tiers: String,
+    /// How the sidebar's file tree orders notes: `<field>-<dir>` where field is
+    /// name | modified | created | type and dir is asc | desc (default
+    /// `name-asc`). Folders stay alphabetical. Lives here so the order
+    /// travels with the vault.
+    #[serde(default = "default_explorer_sort")]
+    pub explorer_sort: String,
 }
 
 fn default_note_type() -> String { "note".into() }
 fn default_journal_template() -> String { "daily.md".into() }
 fn default_theme() -> String { "system".into() }
 fn default_trash_retention() -> u32 { 30 }
+fn default_explorer_sort() -> String { "name-asc".into() }
+
+/// The explorer's sort fields and directions, in the order a menu lists them.
+pub const EXPLORER_SORT_FIELDS: [&str; 4] = ["name", "modified", "created", "type"];
+pub const EXPLORER_SORT_DIRS: [&str; 2] = ["asc", "desc"];
+
+/// Canonical `<field>-<dir>` for an explorer sort as the user typed it: a bare
+/// field means ascending, so `modified` → `modified-asc`. Anything else is an
+/// error naming the valid values.
+pub fn parse_explorer_sort(raw: &str) -> Result<String> {
+    let v = raw.trim().to_lowercase();
+    let (field, dir) = match v.rsplit_once('-') {
+        Some((f, d)) if EXPLORER_SORT_DIRS.contains(&d) => (f, d),
+        _ => (v.as_str(), "asc"),
+    };
+    if !EXPLORER_SORT_FIELDS.contains(&field) {
+        return Err(AppError::Other(format!(
+            "explorer_sort must be one of {} with an optional -asc / -desc, got '{raw}'",
+            EXPLORER_SORT_FIELDS.join(", ")
+        )));
+    }
+    Ok(format!("{field}-{dir}"))
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -111,6 +140,7 @@ impl Default for Settings {
             marketplace_url: String::new(),
             marketplace_extra: String::new(),
             marketplace_tiers: String::new(),
+            explorer_sort: default_explorer_sort(),
         }
     }
 }
@@ -138,6 +168,7 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
         ("marketplace_url", "Template marketplace index URL; empty = the official one. Point it at a company registry to use your own packs (default empty)."),
         ("marketplace_extra", "Additional marketplace index URLs, comma-separated, merged with the first (default empty)."),
         ("marketplace_tiers", "Trust tiers shown in the marketplace: official, verified, community (comma-separated); empty = all (default empty)."),
+        ("explorer_sort", "Order of notes in the sidebar tree: name | modified | created | type, with -asc or -desc (default name-asc). Folders stay alphabetical."),
     ]
 }
 
@@ -221,6 +252,7 @@ pub fn set_field(settings: &mut Settings, key: &str, raw: &str) -> Result<()> {
         "marketplace_url" => settings.marketplace_url = parse_string(raw),
         "marketplace_extra" => settings.marketplace_extra = parse_string(raw),
         "marketplace_tiers" => settings.marketplace_tiers = parse_string(raw),
+        "explorer_sort" => settings.explorer_sort = parse_explorer_sort(&parse_string(raw))?,
         _ => return Err(unknown_key(key)),
     }
     Ok(())
@@ -341,6 +373,14 @@ mod tests {
         assert_eq!(s.keybindings.len(), 2);
         set_field(&mut s, "keybindings", "").unwrap();
         assert!(s.keybindings.is_empty());
+
+        set_field(&mut s, "explorer_sort", "modified-desc").unwrap();
+        assert_eq!(s.explorer_sort, "modified-desc");
+        set_field(&mut s, "explorer_sort", "Created").unwrap();
+        assert_eq!(s.explorer_sort, "created-asc", "a bare field is ascending");
+        assert!(set_field(&mut s, "explorer_sort", "size").is_err());
+        assert!(set_field(&mut s, "explorer_sort", "name-up").is_err());
+        assert_eq!(Settings::default().explorer_sort, "name-asc");
 
         assert!(set_field(&mut s, "theme", "sepia").is_err());
         assert!(set_field(&mut s, "auto_commit", "maybe").is_err());

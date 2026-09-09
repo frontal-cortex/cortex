@@ -21,6 +21,9 @@ pub struct NoteEntry {
     pub note_type: Option<String>,
     pub tags: Vec<String>,
     pub modified: u64,
+    /// Frontmatter `created:` as written (`YYYY-MM-DD`), for sorting; the
+    /// index does not carry it, so entries from a search are `None`.
+    pub created: Option<String>,
     pub icon: Option<String>,
     /// Frontmatter `parent:` — a collection name or a `notes/<folder>` path.
     /// A collection's page nests under it in the sidebar, the way a child

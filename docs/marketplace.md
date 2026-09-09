@@ -426,9 +426,12 @@ match the index, not that the index is honest — see *Sources*.
 **Interpretation.** Formulas, filters, view specs and placeholders are parsed
 into small ASTs and interpreted; there is no `eval`, no shell. Markdown is
 converted to editor blocks, never rendered as HTML. The window carries a
-Content-Security-Policy (`script-src 'self'`, no frames, no objects) and a
-navigation guard, so even a future rendering bug has no path to the IPC
-layer — which matters because the app can open a real terminal.
+Content-Security-Policy (`script-src 'self'`, no objects, frames only over
+`https`) and a navigation guard, so even a future rendering bug has no path
+to the IPC layer — which matters because the app can open a real terminal.
+The only frames are web-embed blocks: the guard admits the player URLs
+`cortex-core`'s embed table derives (YouTube, Vimeo, CodePen, Figma, Maps)
+and hosts the reader loaded through an embed's click-to-load shield.
 
 **Links and images.** A link in a note or a README opens outside the app only
 if it is `http`, `https` or `mailto`; `file:` and custom schemes are refused.

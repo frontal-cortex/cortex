@@ -39,7 +39,8 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
     // Frontmatter `tags:` merged with inline `#tags` from the body.
     let tags = crate::tags::note_tags(&note);
 
-    let ne = NoteEntry { path: rel.clone(), title, note_type, icon, parent, tags, modified };
+    let created = note.frontmatter.get("created").and_then(|v| v.as_str()).map(str::to_string);
+    let ne = NoteEntry { path: rel.clone(), title, note_type, icon, parent, tags, modified, created };
     db.upsert_note(&ne, &note.body)?;
 
     // Only the target names a note: `[[Note|alias]]` and `[[Note#Section]]`

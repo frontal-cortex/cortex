@@ -255,15 +255,30 @@ export function flattenMath(blocks: AnyBlock[]): AnyBlock[] {
       const latex = String(item.props?.latex ?? "");
       return { type: "text", text: item.props?.display ? `$$${latex}$$` : `$${latex}$`, styles: {} };
     });
-  return walkBlocks(blocks, (b) => {
+  const flat = walkBlocks(blocks, (b) => {
     if (b?.type === "mathBlock") {
       return {
         type: "codeBlock",
         props: { language: MATH_FENCE },
         content: [{ type: "text", text: String(b.props?.latex ?? ""), styles: {} }],
+        children: b.children,
       };
     }
     return mapInlineContent(b, collapse);
+  });
+  return hoistFenceChildren(flat);
+}
+
+/** A fence cannot hold children: blocks nested under a math block (Tab in the
+ *  editor) are hoisted after it rather than lost on save. */
+function hoistFenceChildren(blocks: AnyBlock[]): AnyBlock[] {
+  return blocks.flatMap((b) => {
+    const kids = Array.isArray(b?.children) && b.children.length ? hoistFenceChildren(b.children) : [];
+    if (b?.type === "codeBlock" && b?.props?.language === MATH_FENCE) {
+      const { children: _drop, ...fence } = b;
+      return [fence, ...kids];
+    }
+    return [kids.length ? { ...b, children: kids } : b];
   });
 }
 

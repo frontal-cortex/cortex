@@ -7,13 +7,14 @@
 // frontmatter keys appear as inferred-type rows.
 
 import { useState, useEffect, useRef, ReactNode } from "react";
-import { commands, CommitEntry, PropertyDef, PropType, SelectOption, TypeSchema } from "../../lib/commands";
+import { commands, Authorship, CommitEntry, PropertyDef, PropType, SelectOption, TypeSchema } from "../../lib/commands";
 import { tagStyle, autoColor } from "../../lib/colors";
 import { relativeTime } from "../../lib/fileTree";
 import { shortcutFor } from "../../lib/keymap";
 import { SelectCell } from "./SelectCell";
 import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
+import { DateRangeInput, FilesInput, filesOf, formatRange, rangeOf } from "./PropertyInputs";
 import {
   CalendarIcon, CheckSquareIcon, SelectDotIcon, TagsListIcon, PersonIcon,
   LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon, GlobeIcon, MoreIcon,
@@ -61,7 +62,38 @@ const ADD_TYPES: { value: PropType; label: string }[] = [
   { value: "multi_select", label: "Multi-select" },
   { value: "person", label: "Person" },
   { value: "url", label: "URL" },
+  { value: "date_range", label: "Date range" },
+  { value: "files", label: "Files" },
+  { value: "created_time", label: "Created time" },
+  { value: "created_by", label: "Created by" },
+  { value: "edited_time", label: "Last edited time" },
+  { value: "edited_by", label: "Last edited by" },
 ];
+
+/** The git-derived types: read-only, computed per note (`note_authorship`). */
+function isAuthorshipType(t: PropType): boolean {
+  return t === "created_time" || t === "created_by" || t === "edited_time" || t === "edited_by";
+}
+
+function authorshipValue(a: Authorship | null, t: PropType): string {
+  if (!a) return "";
+  switch (t) {
+    case "created_time": return a.created_at;
+    case "created_by": return a.created_by;
+    case "edited_time": return a.edited_at;
+    case "edited_by": return a.edited_by;
+    default: return "";
+  }
+}
+
+/** "7 Sep 2026, 14:03" from a `YYYY-MM-DDTHH:MM` authorship time. */
+function formatDateTime(v: string): string {
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+  if (!m) return v;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0));
+  const day = d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return m[4] ? `${day}, ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : day;
+}
 
 function schemaKeyFor(path: string, type: string | null): string | null {
   const m = path.match(/^collections\/([^/]+)/);
@@ -75,6 +107,7 @@ function isSelectType(t: PropType): boolean {
 
 function inferType(v: unknown): PropType {
   if (Array.isArray(v)) return "multi_select";
+  if (rangeOf(v) && typeof v === "object") return "date_range";
   if (typeof v === "boolean") return "checkbox";
   if (typeof v === "number") return "number";
   if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return "date";
@@ -83,7 +116,13 @@ function inferType(v: unknown): PropType {
 
 function PropIcon({ type }: { type: PropType }) {
   switch (type) {
-    case "date": return <CalendarIcon size={15} />;
+    case "date":
+    case "date_range": return <CalendarIcon size={15} />;
+    case "created_time":
+    case "edited_time": return <span className={styles.glyph}>⏱</span>;
+    case "created_by":
+    case "edited_by": return <PersonIcon size={15} />;
+    case "files": return <span className={styles.glyph}>📎</span>;
     case "checkbox": return <CheckSquareIcon size={15} />;
     case "select":
     case "status": return <SelectDotIcon size={15} />;
@@ -108,6 +147,7 @@ interface Item {
 export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onToggle, onChange }: Props) {
   const [schema, setSchema] = useState<TypeSchema | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authorship, setAuthorship] = useState<Authorship | null>(null);
 
   const noteType = typeof frontmatter["type"] === "string" ? (frontmatter["type"] as string) : null;
   const schemaKey = schemaKeyFor(notePath, noteType);
@@ -171,13 +211,24 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
   // Build the ordered property list: schema properties first, then any other
   // frontmatter keys. Computed properties — rollups, formulas, the reverse side
   // of a relation — are never in the frontmatter and only exist in data views,
-  // so they are left out rather than shown as empty inputs.
+  // so they are left out rather than shown as empty inputs. The git-derived
+  // ones (created / edited time and by) are shown read-only, from the note's
+  // own history.
   // A collection's own page is not one of its rows: its frontmatter is the
   // page's bookkeeping (views, icon, parent), so the row schema does not apply.
   const isCollectionPage = frontmatter["type"] === "database";
   const schemaProps = (isCollectionPage ? [] : schema?.properties ?? []).filter(
     (p) => p.type !== "rollup" && p.type !== "formula" && !(p.type === "relation" && p.from),
   );
+  const wantsAuthorship = expanded && schemaProps.some((p) => isAuthorshipType(p.type));
+  useEffect(() => {
+    if (!wantsAuthorship) { setAuthorship(null); return; }
+    let alive = true;
+    commands.noteAuthorship(notePath)
+      .then((a) => { if (alive) setAuthorship(a); })
+      .catch(() => { if (alive) setAuthorship(null); });
+    return () => { alive = false; };
+  }, [wantsAuthorship, notePath, lastEdit]);
   const schemaNames = new Set(schemaProps.map((p) => p.name));
   const items: Item[] = [
     ...schemaProps.map((p) => ({ name: p.name, type: p.type, options: p.options ?? [], def: p })),
@@ -210,8 +261,13 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
       chips.push(<span key={item.name} className={styles.chip} style={tagStyle(colorFor(name))} title={item.name}>{name}</span>);
     } else if (item.type === "checkbox") {
       chips.push(<span key={item.name} className={`${styles.chip} ${styles.chipKV}`}>✓ {item.name}</span>);
+    } else if (isAuthorshipType(item.type)) {
+      continue; // computed: the quiet line already says who edited and when
     } else {
-      const text = item.type === "date" ? formatDate(v) ?? String(v) : String(v);
+      const text = item.type === "date" ? formatDate(v) ?? String(v)
+        : item.type === "date_range" || (typeof v === "object" && v !== null) ? formatRange(v) || String(v)
+        : item.type === "files" ? `${filesOf(v).length} file${filesOf(v).length === 1 ? "" : "s"}`
+        : String(v);
       chips.push(
         <span key={item.name} className={`${styles.chip} ${styles.chipKV}`} title={`${item.name}: ${text}`}>
           <span className={styles.chipName}>{item.name}</span>{text}
@@ -281,6 +337,22 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
                   inputClassName={styles.valueInput}
                   onChange={(v) => set(item.name, v || undefined)}
                 />
+              ) : item.type === "date_range" ? (
+                <DateRangeInput
+                  value={frontmatter[item.name]}
+                  inputClassName={styles.valueInput}
+                  onChange={(r) => set(item.name, r ?? undefined)}
+                />
+              ) : item.type === "files" ? (
+                <FilesInput
+                  value={frontmatter[item.name]}
+                  editable
+                  onChange={(next) => set(item.name, next)}
+                />
+              ) : isAuthorshipType(item.type) ? (
+                <span className={styles.readonly} title="Computed from git history; never written to the note">
+                  {(() => { const v = authorshipValue(authorship, item.type); return v ? (item.type.endsWith("_time") ? formatDateTime(v) : v) : "—"; })()}
+                </span>
               ) : (
                 <ValueInput
                   value={frontmatter[item.name]}

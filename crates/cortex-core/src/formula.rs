@@ -44,6 +44,8 @@ impl Value {
             CellValue::Text(t) | CellValue::Date(t) => Value::Text(t.clone()),
             CellValue::Bool(b) => Value::Bool(*b),
             CellValue::List(l) => Value::List(l.clone()),
+            // A range enters a formula as its start day (`days_until(trip)`).
+            CellValue::Range(start, _) => Value::Text(start.clone()),
         }
     }
     pub fn to_cell(&self) -> CellValue {

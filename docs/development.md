@@ -34,6 +34,7 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── vault-template/   # The starter vault, compiled in (template.rs) — no network clone
 │   │   ├── src/settings.rs   # `.cortex/settings.yaml`: every key described, typed `set_field`, `ensure_complete`
 │   │   ├── src/vault.rs      # Vault discovery + the VAULT.md / AGENTS.md text written on first open
+│   │   ├── src/remote.rs     # `RemoteOps`: sync/merge/conflicts — `ShellRemote` (desktop) or `Git2Remote` (mobile)
 │   │   ├── src/publish.rs    # Static site from notes marked publish: true — build, gh-pages push, Action template
 │   │   └── src/agents.rs     # Which agent CLIs (claude, hermes, …) are on $PATH, for `terminal_command`
 │   └── cortex-cli/           # `cortex` binary: CLI (main.rs) + MCP server (mcp.rs) over shared ops.rs
@@ -64,6 +65,7 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │       ├── terminal.rs       # PTY sessions for the terminal pane
 │       ├── agents.rs         # `detect_agents` command (thin wrapper over cortex_core::agents)
 │       └── lib.rs            # App entry, command registration
+├── .github/workflows/        # CI on every PR (ci.yml); tagged releases + updater manifest (release.yml)
 ├── docs/                     # Project documentation (this directory)
 ├── ARCHITECTURE.md           # System design overview
 └── README.md                 # Getting started
@@ -78,9 +80,12 @@ identical YAML output — critical for clean git diffs.
 **SQLite index is a cache**: deleting `.brain/index.db` and restarting
 rebuilds it. The `.md` files are always the source of truth.
 
-**Sync shells out to git**: push/pull use the system `git` binary so SSH
-agents and OS credential helpers work. Internal ops (status, commit,
-branch management) use `git2` (libgit2) for cross-platform reliability.
+**Sync shells out to git on desktop**: push/pull use the system `git` binary
+so SSH agents and OS credential helpers work. Those operations sit behind the
+`remote::RemoteOps` trait (`remote.rs`): `ShellRemote` on desktop, `Git2Remote`
+(in-process libgit2, HTTPS + token) on iOS/Android or with
+`CORTEX_GIT_TRANSPORT=git2` — see `docs/MOBILE.md`. Internal ops (status,
+commit, branch management) use `git2` (libgit2) for cross-platform reliability.
 Commits use the configured git identity; on a machine without one,
 `git::signature()` falls back to `<login> <login@hostname>` so auto-commit
 (on by default) and the initial commit of a new vault still happen.
@@ -181,7 +186,75 @@ modifying the document structure.
 npm run tauri build
 ```
 
-Output is in `src-tauri/target/release/bundle/`.
+Output is in `target/release/bundle/` (the workspace target dir). A local
+build is unsigned and never needs the updater key below.
+
+## Releases and auto-update
+
+`.github/workflows/release.yml` builds Cortex for Linux (`ubuntu-22.04`),
+macOS (Apple silicon and Intel) and Windows with
+[tauri-action](https://github.com/tauri-apps/tauri-action) and publishes a
+**draft** GitHub release carrying the installers, one `.sig` per bundle and
+`latest.json`, the manifest the in-app updater reads. `.github/workflows/ci.yml`
+runs `cargo test --workspace`, `npx tsc --noEmit`, `npx vite build` and clippy
+on every PR and push to `main`.
+
+The updater is `tauri-plugin-updater`, registered in `src-tauri/src/lib.rs`
+(desktop only) and configured by `plugins.updater` in `src-tauri/tauri.conf.json`:
+the endpoint is the latest release's `latest.json`, the `pubkey` is the public
+half of the signing key. **The committed `pubkey` is an empty placeholder**: the
+app reports "this build has no update channel" (`update_config` in
+`src-tauri/src/commands/updates.rs`) and never touches the network until a real
+key is pasted in. Everything else about the desktop app is unchanged.
+
+**Check for updates** lives in the command palette and in Settings → Updates
+(`src/lib/updater.ts`, `UpdateModal.tsx`). It only runs when asked, shows what
+it found, and downloads + installs only after the user confirms; then the app
+relaunches. Updates are verified against `pubkey` before anything is installed.
+
+### One-time setup: the signing keypair
+
+Do this on a maintainer's machine. **Never commit the private key.**
+
+```bash
+# Writes ~/.tauri/cortex.key (private) and ~/.tauri/cortex.key.pub (public)
+npx tauri signer generate -w ~/.tauri/cortex.key
+```
+
+1. Paste the contents of `cortex.key.pub` into `plugins.updater.pubkey` in
+   `src-tauri/tauri.conf.json` and commit that (it is public).
+2. In the GitHub repo, Settings → Secrets and variables → Actions, add:
+   - `TAURI_SIGNING_PRIVATE_KEY` — the contents of `cortex.key`
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — the password you chose
+3. Keep the private key somewhere safe: an app signed with a lost key can
+   never update itself again, only be reinstalled.
+
+`src-tauri/tauri.release.conf.json` (passed by the workflow as `--config`) is
+what turns on `bundle.createUpdaterArtifacts`; that is why a plain
+`npm run tauri build` keeps working without the key.
+
+### Cutting a release
+
+1. Bump `version` in `src-tauri/tauri.conf.json` **and** `[workspace.package]
+   version` in `Cargo.toml` (they must agree — `latest.json` reports the
+   config's version, and the app only offers an update when it is newer).
+2. Commit, then tag and push:
+
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+3. Wait for the four matrix jobs, then open the draft release on GitHub,
+   write the notes (they become the update's description in the app) and
+   **Publish**. `releases/latest/download/latest.json` only resolves once the
+   draft is published, so nobody is offered a half-built release.
+4. Running installs now find the new version under Check for updates.
+
+Platform notes: Linux updates apply to the AppImage only (the `.deb` / `.rpm`
+go through the distro's package manager); macOS and Windows bundles are not
+code-signed or notarized by this workflow — that is a separate certificate
+per platform, and a later step.
 
 ## Running tests
 

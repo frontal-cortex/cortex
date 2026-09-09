@@ -462,6 +462,12 @@
   background: color-mix(in srgb, var(--git-dirty) 60%, transparent);
   outline: 1px solid var(--git-dirty);
 }
+/* The passage a selected comment thread quotes. */
+:global(.cortex-comment-anchor) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  border-radius: 2px;
+}
 
 /* ── Phone ──────────────────────────────────────────────────────────────────
    Full-bleed page: a smaller title, less air above it, a shorter cover, and

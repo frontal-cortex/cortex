@@ -38,3 +38,7 @@ notify = "8"
 toml = "1"
 # Embedded terminal pane (real PTY for interactive CLI tools)
 portable-pty = "0.9"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"

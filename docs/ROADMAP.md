@@ -172,7 +172,7 @@ Git already stores every version; surface it.
 - **@-mentions**: reuse wiki-link suggestion infra; `@page` → `[[…]]`,
   `@today` → ISO date. · S
 - **Comments**: sidecar `notes/foo.comments.yaml` (committed, text-quote
-  anchors) keeps note bodies clean; render as margin notes. · M
+  anchors) keeps note bodies clean; render as margin notes. · M · `[x]`
 - **Export / Publish**: export to PDF/HTML; "Publish" = a static site built
   from the vault (see Publishing below). · S–M
 - **Theme toggle**: explicit light/dark/system in `.cortex/settings.yaml`. · S

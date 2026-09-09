@@ -28,6 +28,7 @@ export const VIEW_TYPES: { type: ViewType; label: string }[] = [
   { type: "board", label: "Board" },
   { type: "calendar", label: "Calendar" },
   { type: "gallery", label: "Gallery" },
+  { type: "list", label: "List" },
   { type: "chart", label: "Chart" },
   { type: "tracker", label: "Tracker" },
   { type: "timeline", label: "Timeline" },
@@ -102,7 +103,7 @@ function objectToFlowMap(v: unknown): string | undefined {
 
 /** Keys with a fixed place in a spec; every other option follows alphabetically. */
 const LIST_KEYS = ["sort", "columns"] as const;
-const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "limit", "summary", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range", "start", "end"];
+const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "mode", "limit", "summary", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range", "start", "end"];
 const orderOf = (k: string) => { const i = KEY_ORDER.indexOf(k); return i < 0 ? KEY_ORDER.length : i; };
 const optionKeys = (v: ViewDef) =>
   Object.keys(v).filter((k) => k !== "name" && k !== "type").sort((p, q) => orderOf(p) - orderOf(q) || p.localeCompare(q));

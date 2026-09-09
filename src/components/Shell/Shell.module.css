@@ -21,6 +21,25 @@
   display: contents;
 }
 
+/* The sidebar's draggable edge: a 6px strip straddling the border, invisible
+   until hovered or dragged. Width is set by Shell as --left-panel-width. */
+.resizeHandle {
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0 -3px;
+  position: relative;
+  z-index: 5;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.1s;
+}
+.resizeHandle:hover,
+.resizeHandle:focus-visible,
+.resizeHandle:active {
+  background: var(--accent);
+  outline: none;
+}
+
 .rightPane {
   width: var(--right-panel-width);
   min-width: 280px;
