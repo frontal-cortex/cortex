@@ -9,7 +9,7 @@
 //! the template — the app (and `cortex init`) write the current versions on
 //! first open, so a scaffolded vault never carries stale docs.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 
@@ -19,22 +19,73 @@ pub const FILES: &[(&str, &str)] = &[
     (".gitignore", include_str!("../vault-template/.gitignore")),
     ("notes/welcome.md", include_str!("../vault-template/notes/welcome.md")),
     ("notes/ideas/second-brain.md", include_str!("../vault-template/notes/ideas/second-brain.md")),
+    // The tour: one note per feature, each doing the thing it describes.
+    ("notes/tour/writing.md", include_str!("../vault-template/notes/tour/writing.md")),
+    ("notes/tour/linking.md", include_str!("../vault-template/notes/tour/linking.md")),
+    ("notes/tour/daily-notes.md", include_str!("../vault-template/notes/tour/daily-notes.md")),
+    ("notes/tour/collections.md", include_str!("../vault-template/notes/tour/collections.md")),
+    ("notes/tour/templates-and-packs.md", include_str!("../vault-template/notes/tour/templates-and-packs.md")),
+    ("notes/tour/agents-and-cli.md", include_str!("../vault-template/notes/tour/agents-and-cli.md")),
+    ("notes/tour/sync-publishing-and-looks.md", include_str!("../vault-template/notes/tour/sync-publishing-and-looks.md")),
     ("notes/journal/.gitkeep", ""),
     ("notes/work/.gitkeep", ""),
+    // A three-row collection for the tour to show, with its schema and row template.
+    (".cortex/schemas/books.yaml", include_str!("../vault-template/.cortex/schemas/books.yaml")),
+    ("collections/books/_index.md", include_str!("../vault-template/collections/books/_index.md")),
+    ("collections/books/_template-books.md", include_str!("../vault-template/collections/books/_template-books.md")),
+    ("collections/books/how-to-take-smart-notes.md", include_str!("../vault-template/collections/books/how-to-take-smart-notes.md")),
+    ("collections/books/piranesi.md", include_str!("../vault-template/collections/books/piranesi.md")),
+    ("collections/books/thinking-in-systems.md", include_str!("../vault-template/collections/books/thinking-in-systems.md")),
     ("templates/daily.md", include_str!("../vault-template/templates/daily.md")),
     ("templates/note.md", include_str!("../vault-template/templates/note.md")),
+    ("templates/meeting.md", include_str!("../vault-template/templates/meeting.md")),
 ];
 
-/// Placeholder in the bundled notes' `created:` fields, replaced with the
-/// scaffold date. Deliberately not `{{date}}`, which the note templates use
-/// and must keep verbatim.
+/// Placeholder in the bundled notes' dates, replaced with the scaffold date —
+/// `{{today}}`, or with an offset, `{{today-40}}`, so the tour's rows have a
+/// believable past. Deliberately not `{{date}}`, which the note templates use
+/// and must keep verbatim (only names beginning `today` are touched).
 const TODAY: &str = "{{today}}";
+
+/// Fill every `{{today…}}` in `text` relative to `base`; leave every other
+/// placeholder as it is.
+fn stamp(text: &str, base: chrono::NaiveDate) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("{{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let Some(end) = after.find("}}") else { out.push_str(&rest[start..]); return out; };
+        let name = after[..end].trim();
+        match if name.starts_with("today") { crate::placeholders::resolve(name, base) } else { None } {
+            Some(v) => out.push_str(&v),
+            None => { out.push_str(&rest[start..start + 2 + end + 2]); }
+        }
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
 
 /// Write the starter vault into `root`, which must be empty or absent.
 ///
 /// Only files are written — no git. Callers decide whether to `init` and
 /// make an initial commit (the app and `cortex init` both do).
 pub fn scaffold(root: &Path) -> Result<()> {
+    check_target(root)?;
+    let today = chrono::Local::now().date_naive();
+    for (rel, content) in FILES {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, stamp(content, today))?;
+    }
+    Ok(())
+}
+
+/// `root` must be an empty directory, or absent (then it is created).
+fn check_target(root: &Path) -> Result<()> {
     if root.exists() {
         if !root.is_dir() {
             return Err(AppError::Other(format!("not a directory: {}", root.display())));
@@ -45,14 +96,107 @@ pub fn scaffold(root: &Path) -> Result<()> {
     } else {
         std::fs::create_dir_all(root)?;
     }
+    Ok(())
+}
 
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    for (rel, content) in FILES {
-        let path = root.join(rel);
-        if let Some(parent) = path.parent() {
+/// Where a new vault's files come from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateSource {
+    /// The starter compiled into the binary.
+    Bundled,
+    /// A folder on disk — a vault, or a checkout of a template repository.
+    Dir(PathBuf),
+    /// A git repository: cloned shallowly, its history dropped, its files used.
+    Repo(String),
+}
+
+/// Read a `--template` argument: an existing path is a folder; `owner/repo`
+/// is that repository on GitHub; anything with a scheme, a `git@` prefix or a
+/// `.git` suffix is a URL git understands. Empty means the bundled starter.
+pub fn parse_source(spec: &str) -> Result<TemplateSource> {
+    let s = spec.trim();
+    if s.is_empty() {
+        return Ok(TemplateSource::Bundled);
+    }
+    let p = Path::new(s);
+    if p.is_dir() {
+        return Ok(TemplateSource::Dir(p.to_path_buf()));
+    }
+    if s.contains("://") || s.starts_with("git@") || s.ends_with(".git") {
+        return Ok(TemplateSource::Repo(s.to_string()));
+    }
+    let parts: Vec<&str> = s.split('/').collect();
+    let word = |w: &str| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
+    if parts.len() == 2 && word(parts[0]) && word(parts[1]) {
+        return Ok(TemplateSource::Repo(format!("https://github.com/{}/{}.git", parts[0], parts[1])));
+    }
+    Err(AppError::Other(format!("template `{s}` is not a folder, an owner/repo on GitHub, or a git URL")))
+}
+
+/// Write a new vault into `root` (empty or absent) from `source`. A template's
+/// own `.git` and `.brain` are never copied: the new vault starts its own
+/// history, like GitHub's "Use this template". `{{today}}` in notes becomes
+/// the scaffold date, as in the bundled starter; note templates are left alone.
+pub fn scaffold_from(source: &TemplateSource, root: &Path) -> Result<()> {
+    match source {
+        TemplateSource::Bundled => scaffold(root),
+        TemplateSource::Dir(dir) => {
+            check_target(root)?;
+            copy_template(dir, root)
+        }
+        TemplateSource::Repo(url) => {
+            check_target(root)?;
+            let tmp = std::env::temp_dir().join(format!("cortex-template-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&tmp);
+            let out = std::process::Command::new("git")
+                .args(["clone", "--depth", "1", "--quiet", url])
+                .arg(&tmp)
+                .output()
+                .map_err(|e| AppError::Other(format!("git is needed to fetch a template repository: {e}")))?;
+            if !out.status.success() {
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err(AppError::Other(format!("could not clone {url}: {}", String::from_utf8_lossy(&out.stderr).trim())));
+            }
+            let copied = copy_template(&tmp, root);
+            let _ = std::fs::remove_dir_all(&tmp);
+            copied
+        }
+    }
+}
+
+/// Text files whose `{{today}}` is stamped on copy.
+const STAMPED_EXT: [&str; 4] = ["md", "yaml", "yml", "txt"];
+
+fn copy_template(src: &Path, root: &Path) -> Result<()> {
+    let src = src.canonicalize()?;
+    let today = chrono::Local::now().date_naive();
+    let mut files = 0usize;
+    let walker = walkdir::WalkDir::new(&src).into_iter().filter_entry(|e| {
+        let name = e.file_name().to_string_lossy();
+        !(e.depth() == 1 && (name == ".git" || name == ".brain"))
+    });
+    for entry in walker {
+        let entry = entry.map_err(|e| AppError::Other(format!("reading template: {e}")))?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let rel = entry.path().strip_prefix(&src).unwrap_or(entry.path());
+        let dest = root.join(rel);
+        if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, content.replace(TODAY, &today))?;
+        let ext = rel.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let under_templates = rel.starts_with("templates");
+        if STAMPED_EXT.contains(&ext) && !under_templates {
+            let text = std::fs::read_to_string(entry.path())?;
+            std::fs::write(&dest, stamp(&text, today))?;
+        } else {
+            std::fs::copy(entry.path(), &dest)?;
+        }
+        files += 1;
+    }
+    if files == 0 {
+        return Err(AppError::Other(format!("template has no files: {}", src.display())));
     }
     Ok(())
 }
@@ -60,6 +204,41 @@ pub fn scaffold(root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_sources_are_recognised() {
+        assert_eq!(parse_source("").unwrap(), TemplateSource::Bundled);
+        assert_eq!(parse_source("frontal-cortex/vault-template").unwrap(),
+            TemplateSource::Repo("https://github.com/frontal-cortex/vault-template.git".into()));
+        assert_eq!(parse_source("git@github.com:me/v.git").unwrap(), TemplateSource::Repo("git@github.com:me/v.git".into()));
+        assert_eq!(parse_source("https://example.com/v").unwrap(), TemplateSource::Repo("https://example.com/v".into()));
+        let here = std::env::temp_dir();
+        assert_eq!(parse_source(here.to_str().unwrap()).unwrap(), TemplateSource::Dir(here.clone()));
+        assert!(parse_source("not a repo").is_err());
+    }
+
+    #[test]
+    fn scaffold_from_a_folder_copies_files_stamps_dates_and_drops_git() {
+        let src = temp("src");
+        std::fs::create_dir_all(src.join("notes/ideas")).unwrap();
+        std::fs::create_dir_all(src.join(".git")).unwrap();
+        std::fs::create_dir_all(src.join("templates")).unwrap();
+        std::fs::write(src.join(".git/HEAD"), "ref: refs/heads/main").unwrap();
+        std::fs::write(src.join("notes/hello.md"), "---\ntitle: Hello\ncreated: {{today}}\n---\nhi\n").unwrap();
+        std::fs::write(src.join("templates/daily.md"), "---\ntitle: \"{{date}}\"\n---\n{{today}} stays\n").unwrap();
+        std::fs::write(src.join(".gitignore"), ".brain/\n").unwrap();
+        let dst = temp("dst");
+        scaffold_from(&TemplateSource::Dir(src.clone()), &dst).unwrap();
+        assert!(!dst.join(".git").exists(), "template history is not copied");
+        let hello = std::fs::read_to_string(dst.join("notes/hello.md")).unwrap();
+        assert!(!hello.contains(TODAY) && hello.contains("created: 20"), "{hello}");
+        let daily = std::fs::read_to_string(dst.join("templates/daily.md")).unwrap();
+        assert!(daily.contains("{{today}} stays"), "note templates are copied verbatim");
+        assert!(dst.join(".gitignore").exists());
+        assert!(scaffold_from(&TemplateSource::Dir(src.clone()), &dst).is_err(), "target must be empty");
+        let _ = std::fs::remove_dir_all(&src);
+        let _ = std::fs::remove_dir_all(&dst);
+    }
 
     fn temp(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("cortex-template-{name}-{}", std::process::id()));
@@ -97,13 +276,35 @@ mod tests {
 
     #[test]
     fn bundled_notes_parse_as_notes() {
+        let base = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
         for (rel, content) in FILES {
-            if rel.starts_with("notes/") && rel.ends_with(".md") {
-                let note = crate::note::parse_note(rel, &content.replace(TODAY, "2026-01-01"))
-                    .unwrap_or_else(|e| panic!("{rel}: {e}"));
+            let is_row_template = rel.contains("/_template-");
+            if (rel.starts_with("notes/") || rel.starts_with("collections/")) && rel.ends_with(".md") && !is_row_template {
+                let text = stamp(content, base);
+                assert!(!text.contains("{{today"), "{rel} still has a date placeholder");
+                let note = crate::note::parse_note(rel, &text).unwrap_or_else(|e| panic!("{rel}: {e}"));
                 assert!(note.frontmatter.contains_key("title"), "{rel} has a title");
-                assert_eq!(note.frontmatter["created"], "2026-01-01", "{rel} created date");
+                let created = note.frontmatter["created"].as_str().unwrap_or_default();
+                assert!(created.starts_with("2026-") || created.starts_with("2025-"), "{rel} created date: {created}");
             }
         }
+        // Offsets go back in time; note templates keep their own placeholders.
+        assert_eq!(stamp("{{today-40}} {{today}} {{date}} {{title}}", base), "2025-12-22 2026-01-31 {{date}} {{title}}");
+    }
+
+    #[test]
+    fn the_tour_links_resolve_and_the_books_schema_parses() {
+        let titles: Vec<String> = FILES.iter().filter(|(rel, _)| rel.ends_with(".md") && !rel.contains("/_template-"))
+            .filter_map(|(rel, content)| crate::note::parse_note(rel, &stamp(content, chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap())).ok())
+            .filter_map(|n| n.frontmatter.get("title").and_then(|t| t.as_str().map(String::from)))
+            .collect();
+        for (rel, content) in FILES {
+            for cap in regex::Regex::new(r"!?\[\[([^\[\]|#]+)(?:[#|][^\]]*)?\]\]").unwrap().captures_iter(content) {
+                let target = cap[1].trim();
+                assert!(titles.iter().any(|t| t == target), "{rel} links to [[{target}]], which no starter note is titled");
+            }
+        }
+        let schema: serde_yaml::Value = serde_yaml::from_str(FILES.iter().find(|(r, _)| r.ends_with("books.yaml")).unwrap().1).unwrap();
+        assert!(schema["properties"].as_sequence().map(|s| s.len() >= 8).unwrap_or(false));
     }
 }

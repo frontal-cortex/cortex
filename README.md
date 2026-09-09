@@ -45,7 +45,7 @@ cargo install --path crates/cortex-cli
 
 ```
 my-vault/
-├── notes/           # Your notes, in any folders you like (starter: welcome.md, ideas/, journal/, work/)
+├── notes/           # Your notes, in any folders you like (starter: welcome.md, a tour/ of the features, ideas/, journal/, work/)
 ├── templates/       # Note templates; daily.md seeds the Today note
 ├── .cortex/         # Settings, favourites — committed YAML, so config travels with the vault
 ├── .brain/          # Cache (gitignored, always safe to delete): the SQLite index
@@ -72,6 +72,7 @@ Your content here. [[Wiki links]] supported.
 
 ```bash
 cortex init ~/my-vault                       # a new vault, offline — the same one the app's "New vault" makes
+cortex init ~/my-vault --template frontal-cortex/vault-template   # …or from a template: owner/repo, git URL, or folder
 cortex search "weekly review"                # same search the app has
 cortex new "Week 36" --tag summary --body -  # same naming, sorted frontmatter
 cortex propose "Summarise week 36" notes/summaries/week-36-2026-09-07.md
