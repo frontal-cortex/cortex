@@ -8,7 +8,7 @@ views:
 - name: Reach out
   type: table
   columns: [title, cadence, last_seen, quiet_days, due_in, relationship]
-  filter: due_in <= 0 or quiet_days == '' and archived != true and cadence != 'as needed'
+  filter: (due_in <= 0 or quiet_days == '') and archived != true and cadence != 'as needed'
   sort: [due_in]
 - name: Follow-ups due
   type: table

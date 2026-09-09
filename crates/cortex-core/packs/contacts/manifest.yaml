@@ -1,7 +1,7 @@
 format: 1
 id: contacts
 name: "Contacts"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "People with a keep-in-touch cadence and a log of every conversation: who is overdue, follow-ups, history."
 description: |
