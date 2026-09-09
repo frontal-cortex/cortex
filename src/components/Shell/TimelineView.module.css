@@ -1,0 +1,148 @@
+/* Timeline view — rows of bars on a week axis. A bar takes --bar-bg / --bar-fg
+   from the row's select colour (tag palette tokens) and otherwise falls back to
+   the accent wash with an accent border. */
+
+.root {
+  --label-w: 180px;
+  --row-h: 30px;
+  outline: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+.root:focus-visible { box-shadow: 0 0 0 2px var(--accent-light); }
+
+.scroll { overflow-x: auto; overflow-y: hidden; }
+.body { position: relative; min-width: 100%; }
+
+/* ── Header: one label per Monday ─────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  height: 26px;
+  border-bottom: 1px solid var(--border);
+}
+.headerLabel {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+.week {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  box-sizing: border-box;
+  border-left: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────── */
+
+.row {
+  display: flex;
+  height: var(--row-h);
+  border-bottom: 1px solid var(--border);
+}
+.row:last-child { border-bottom: none; }
+.rowFocus { background: var(--bg-hover); }
+
+.label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: 0 0 var(--label-w);
+  width: var(--label-w);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+.rowFocus .label { background: var(--bg-hover); }
+.labelOpen { cursor: pointer; }
+.labelOpen:hover { color: var(--accent); }
+
+.lane {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  /* Faint week grid behind the bars: one line per 7 × DAY_PX (18px). */
+  background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+  background-size: 126px 100%;
+}
+
+.bar {
+  position: absolute;
+  top: 5px;
+  height: calc(var(--row-h) - 10px);
+  box-sizing: border-box;
+  border: 1px solid var(--bar-fg, var(--accent));
+  border-radius: var(--radius-sm);
+  background: var(--bar-bg, var(--accent-light));
+  color: var(--bar-fg, var(--accent));
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 0 6px;
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+}
+.bar:hover { filter: brightness(0.96); }
+.bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.barDay { border-radius: 10px; padding: 0; }
+.barDay .barText { display: none; }
+.barText { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid var(--accent);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.section {
+  display: flex;
+  height: 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-app);
+}
+.sectionLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  border-right: none;
+  background: transparent;
+}
+
+.stub { font-size: var(--text-sm); color: var(--text-tertiary); font-style: italic; padding: var(--space-2) 0; }
+
+/* ── Setup ────────────────────────────────────────────────────────────────── */
+
+.setup {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+  padding: var(--space-5) var(--space-3); text-align: center; color: var(--text-secondary);
+}
+.setupTitle { font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
+.setupHint { font-size: var(--text-sm); max-width: 46ch; line-height: 1.45; }
+.setupHint code { font-family: var(--font-mono); font-size: 12px; }
+.setupChips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: var(--space-1); }
+.setupChip {
+  font: inherit; font-size: var(--text-sm); padding: 4px 10px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--bg-app); color: var(--text-primary);
+}
+.setupChip:hover { border-color: var(--accent); color: var(--accent); }

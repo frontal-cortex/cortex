@@ -11,5 +11,6 @@ created: "{{today}}"
 
 ## How it went
 
-An example meal on today's date. Tick `cooked` after dinner and it moves from
-Upcoming into the Cooked per week chart and the recipe's cook log.
+An example meal on today's date, not yet cooked. It is the pasta recipe's
+`next_planned`; tick `cooked` after dinner and it joins the Cooked per week
+chart and moves the recipe's `last_cooked` to today.

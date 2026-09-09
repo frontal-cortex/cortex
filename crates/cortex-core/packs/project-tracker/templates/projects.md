@@ -8,7 +8,6 @@ area:
 start: "{{date}}"
 deadline:
 completed:
-progress: 0
 next_action:
 created: "{{date}}"
 ---
@@ -27,7 +26,7 @@ Why this, why now, and what happens if it waits.
 ```cortex-view
 source: collections/milestones
 type: table
-columns: [title, due, done]
+columns: [title, due, days_left, done]
 sort: [due asc]
 filter: project == '{{title}}'
 ```

@@ -23,12 +23,15 @@ filter: campaign contains '{{title}}'
 
 ## Schedule
 
+Each piece as a bar from its draft deadline (`due`) to the day it goes out
+(`publish`); a piece with only one of the two is a dot.
+
 ```cortex-view
 source: collections/content
-type: table
-columns: [title, channel, format, status, due, publish]
+type: timeline
+start: due
+end: publish
 filter: campaign contains '{{title}}'
-sort: [publish]
 ```
 
 ## Retro

@@ -9,6 +9,8 @@ pillar: []
 priority: medium
 due:
 publish:
+published_on:
+repeat:
 owner:
 campaign: []
 link:

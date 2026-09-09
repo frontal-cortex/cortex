@@ -16,8 +16,12 @@ properties:
         color: red
   - name: energy
     type: number
+    format: stars
+    max: 5
   - name: sleep
     type: number
+    format: decimal
+    unit: "h"
   - name: areas
     type: multi_select
     options:
@@ -39,3 +43,10 @@ properties:
         color: gray
   - name: highlight
     type: text
+  # The week this day belongs to: the row in Weekly Review (collections/weeks),
+  # by title. The row template fills it with "Week of <this Monday>"; Weekly
+  # Review counts and averages days through it. Harmless when that pack is not
+  # installed.
+  - name: week
+    type: relation
+    collection: weeks

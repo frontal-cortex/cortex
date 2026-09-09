@@ -2,16 +2,17 @@
 title: Sam — onboarding sync (example)
 type: note
 tags: [one-on-one]
-date: "{{today}}"
+date: "{{tomorrow}}"
 person: [Sam (example)]
 kind: regular
 status: planned
 mood: ""
 summary: ""
+repeat: biweekly
 created: "{{today}}"
 ---
 
-**When:** {{today}} 14:00
+**When:** {{tomorrow}} 14:00
 
 ## Their topics
 
@@ -52,7 +53,7 @@ Peer 1:1; skip unless it comes up.
 source: collections/follow-ups
 type: table
 filter: one_on_one contains 'Sam — onboarding sync (example)'
-columns: [title, owner, due, status]
+columns: [title, owner, due, days_left, status]
 sort: [due asc]
 ```
 

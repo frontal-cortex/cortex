@@ -21,12 +21,17 @@ properties:
         color: yellow
       - name: p3
         color: gray
-  - name: today
-    type: checkbox
   - name: due
     type: date
+  - name: days_left
+    type: formula
+    expr: days_until(due)
+    format: integer
   - name: completed
     type: date
+    auto: status == done
+  - name: repeat
+    type: text
   - name: area
     type: select
     options:

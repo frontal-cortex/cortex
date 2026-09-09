@@ -4,9 +4,9 @@ type: note
 tags: []
 status: done
 priority: p2
-today: false
 due: "{{today}}"
 completed: "{{today}}"
+repeat:
 area: admin
 project:
 created: "{{today}}"
@@ -24,6 +24,7 @@ The pack is installed and you know where a new task goes.
 
 ## Notes
 
-Your first finished task. `status` is `done` and `completed` has a date, so
-it is the first bar in Done per week. Delete these three rows once you have
-added your own.
+Your first finished task. `status` is `done`, so `completed` carries today's
+date and this row counts in Done per week. When you finish your own tasks
+the date is stamped for you. Delete the seed rows once you have added your
+own.

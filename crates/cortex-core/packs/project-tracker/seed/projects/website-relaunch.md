@@ -6,12 +6,11 @@ icon: 🌐
 status: active
 priority: p1
 area: work
-start: "{{today}}"
-deadline: "{{today}}"
+start: "{{today-21}}"
+deadline: "{{today+28}}"
 completed:
-progress: 40
 next_action: Write the project brief
-created: "{{today}}"
+created: "{{today-21}}"
 ---
 
 ## Outcome
@@ -29,7 +28,7 @@ is leaving in the autumn.
 ```cortex-view
 source: collections/milestones
 type: table
-columns: [title, due, done]
+columns: [title, due, days_left, done]
 sort: [due asc]
 filter: project == 'Website relaunch'
 ```
@@ -48,7 +47,11 @@ filter: project == 'Website relaunch'
 
 ## Log
 
-### {{today}}
+### {{today-7}}
 
-- Seeded with the pack. Two milestones: the brief is signed off, the design
-  is not yet approved.
+- Brief signed off. One of three milestones ticked, so `progress` reads 33.
+
+### {{today-21}}
+
+- Started. Three milestones: the brief, the design, the content. Deadline
+  in seven weeks, so it is in Due in 30 days once three of them have passed.

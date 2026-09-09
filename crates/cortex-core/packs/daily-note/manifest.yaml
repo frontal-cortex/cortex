@@ -1,11 +1,11 @@
 format: 1
 id: daily-note
 name: "Daily Note"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "One page per day with mood, energy and sleep: a calendar of the days you wrote, weekly trend charts, a running log."
+summary: "One page per day with mood, energy and sleep: this week's days, a calendar of the days you wrote, weekly trend charts."
 description: |
-  A journal as a database: every day is one row with a `mood`, an `energy` and `sleep` number, the areas it touched and a one-line highlight, plus a page whose body is the day — an intention and three priorities in the morning, a timestamped log as you go, a short evening reflection. The calendar shows the days you wrote (and the gaps); the Energy and Sleep charts average each week so a bad month is visible before you feel it; the Moods chart counts how the year has felt. New row gives you today in one keystroke, already titled with the date. Pairs with Weekly Review (read the week's pages before you review it) and Habit Tracker (habits stay in their own log).
+  A journal as a database: every day is one row with a `mood`, an `energy` (stars out of five) and `sleep` (hours), the areas it touched and a one-line highlight, plus a page whose body is the day — an intention and three priorities in the morning, a timestamped log as you go, a short evening reflection. This week lists the days since Monday in order, ready to read before a weekly review; the calendar shows the days you wrote (and the gaps); the Energy and Sleep charts average each week so a bad month is visible before you feel it; the Moods chart stacks each month's days by mood. New row gives you today in one keystroke, already titled with the date and linked to its week. Pairs with Weekly Review (which counts and averages the week's days from here) and Habit Tracker (habits stay in their own log).
 tags: [productivity, journal, daily, database]
 author:
   name: "Cortex team"

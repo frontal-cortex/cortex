@@ -4,8 +4,9 @@ type: note
 tags: [action-item]
 meeting: [Client kickoff (example)]
 owner: ""
-due: "{{today}}"
+due: "{{tomorrow}}"
 status: open
+completed: ""
 created: "{{today}}"
 ---
 

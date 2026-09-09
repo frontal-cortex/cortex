@@ -8,7 +8,7 @@ status: active
 area: [Career]
 project: []
 url: https://fortelabs.com/blog/para/
-created: "{{today}}"
+created: "{{today-40}}"
 ---
 
 ## Why I kept this

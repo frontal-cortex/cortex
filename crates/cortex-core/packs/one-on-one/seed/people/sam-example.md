@@ -8,9 +8,9 @@ role: "Design lead"
 team: "Product"
 cadence: biweekly
 focus: "The onboarding redesign"
-start: "{{today}}"
+start: "{{today-30}}"
 archived: false
-created: "{{today}}"
+created: "{{today-30}}"
 ---
 
 ## About
@@ -42,7 +42,7 @@ Not something we discuss; peer, not report.
 source: collections/follow-ups
 type: table
 filter: person contains 'Sam (example)' and status == 'open'
-columns: [title, owner, due, one_on_one]
+columns: [title, owner, due, days_left, one_on_one]
 sort: [due asc]
 ```
 
@@ -52,6 +52,6 @@ sort: [due asc]
 source: collections/one-on-ones
 type: table
 filter: person contains 'Sam (example)'
-columns: [title, date, mood, kind, summary]
+columns: [title, date, status, mood, kind, summary]
 sort: [date desc]
 ```

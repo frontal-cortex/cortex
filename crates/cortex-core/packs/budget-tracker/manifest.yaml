@@ -1,17 +1,17 @@
 format: 1
 id: budget-tracker
 name: "Budget Tracker"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "A row per transaction, a monthly limit per category, a calendar of bills; month-by-month charts summed from the rows."
+summary: "A ledger of transactions, limits per category with spent and remaining computed, bills that advance when you tick paid."
 description: |
-  Three small databases that stay filled in. `budget` is the ledger: one row per transaction with a date, an amount, a kind (expense, income, transfer), a category and an account. `budget-limits` holds one row per category with the monthly amount you mean to spend; open a limit and its page charts what you actually spent, month by month, under it. `budget-bills` is every recurring charge with its cycle and next due date, on a calendar, and each bill's page lists the payments you logged against it. The ledger's own views chart income against spending per month and each category over time — all summed from the rows when you open them, nothing to update by hand.
+  Three small databases that stay filled in. `budget` is the ledger: one row per transaction with a date, an amount, a kind (expense, income, transfer), a category and an account; This month and This month by category roll over on the 1st by themselves. `budget-limits` holds one row per category with the monthly amount you mean to spend; the table shows what this month's ledger rows add up to, what is left, the share used as a bar, and last month's figure, and each limit's page charts the category month by month. `budget-bills` is every recurring charge with its cycle and next due date: tick paid and the date moves forward one cycle in the same row; Upcoming, Overdue and a per-month cost list answer what is about to land, what you missed, and what everything costs. Link a transaction to its bill and the bill knows when it was last paid and what it has cost in total. Everything is computed from the rows when you open the page, nothing to update by hand.
 tags: [finance, budget, money, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The transactions / limits / bills split and the budget-versus-actual page follow the budget trackers in Notion's gallery (Easlo, Thomas Frank, Matthias Frank) and the envelope spreadsheets they copy; the charts-on-read design is our own."
+credits: "The transactions / limits / bills split and the budget-versus-actual page follow the budget trackers in Notion's gallery (Easlo, Thomas Frank, Matthias Frank) and the envelope spreadsheets they copy; the computed-on-read design is our own."
 min_cortex: 0.1.0
 collection: budget
 collections: [budget-limits, budget-bills]
@@ -26,8 +26,12 @@ files:
   - templates/budget-limits.md
   - templates/budget-bills.md
   - seed/budget/weekly-shop.md
+  - seed/budget/weekly-shop-last-week.md
+  - seed/budget/coffee.md
   - seed/budget/salary.md
+  - seed/budget/salary-last-month.md
   - seed/budget/rent.md
+  - seed/budget/rent-last-month.md
   - seed/budget-limits/groceries.md
   - seed/budget-limits/dining.md
   - seed/budget-limits/subscriptions.md

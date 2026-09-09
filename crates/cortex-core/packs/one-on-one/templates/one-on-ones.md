@@ -8,6 +8,7 @@ kind: regular
 status: planned
 mood: ""
 summary: ""
+repeat: ""
 created: "{{date}}"
 ---
 
@@ -61,7 +62,7 @@ One line each, with who and when. Then give each a row in Follow-ups
 source: collections/follow-ups
 type: table
 filter: one_on_one contains '{{title}}'
-columns: [title, owner, due, status]
+columns: [title, owner, due, days_left, status]
 sort: [due asc]
 ```
 

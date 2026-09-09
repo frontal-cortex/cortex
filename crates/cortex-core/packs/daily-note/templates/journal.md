@@ -8,6 +8,7 @@ energy:
 sleep:
 areas: []
 highlight:
+week: ["Week of {{monday}}"]
 created: "{{date}}"
 ---
 

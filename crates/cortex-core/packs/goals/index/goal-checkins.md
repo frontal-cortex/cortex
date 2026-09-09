@@ -34,5 +34,5 @@ visible here long before its target date.
 The Progress chart draws one line per goal, one point per week (the highest
 number logged that week, so two check-ins in one week do not fight). Each
 goal's page shows the same chart filtered to itself. The Calendar shows the
-weeks you skipped. Copy the latest number into the goal's own `progress`
-when you check in, so the Goals table sorts by it.
+weeks you skipped. The goal's own `progress` and `last_checkin` columns are
+read from these rows, so there is nothing to copy across.

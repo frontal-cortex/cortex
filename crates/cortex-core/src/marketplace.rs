@@ -30,7 +30,6 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The official index, unless `marketplace_url` says otherwise.
 pub const OFFICIAL_INDEX: &str = "https://frontal-cortex.github.io/marketplace/index.json";
 /// Placeholder in seeds and `index.md`, expanded once at install.
-const TODAY: &str = "{{today}}";
 
 // ── Manifest ────────────────────────────────────────────────────────────────
 
@@ -176,14 +175,14 @@ pub fn excerpt(pack: &Pack) -> Excerpt {
         for f in &pack.files {
             if f.path.starts_with("seed/") && f.path.ends_with(".md") {
                 let text = String::from_utf8_lossy(&f.contents);
-                if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
+                if let Some(fm) = frontmatter_yaml(&lint_dates(&text)) {
                     if let Some(t) = fm.get("title").and_then(|v| v.as_str()) { e.seeds.push(t.to_string()); }
                     if e.icon.is_none() { e.icon = fm.get("icon").and_then(|v| v.as_str()).map(String::from); }
                 }
             }
         }
         if let Some(text) = pack.text("index.md") {
-            if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
+            if let Some(fm) = frontmatter_yaml(&lint_dates(&text)) {
                 if let Some(i) = fm.get("icon").and_then(|v| v.as_str()) { e.icon = Some(i.to_string()); }
                 for v in fm.get("views").and_then(|v| v.as_sequence()).cloned().unwrap_or_default() {
                     let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -327,7 +326,39 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                 None => { err(&mut out, Some(&schema_path), format!("collection packs ship a schema named after each collection ({c})")); BTreeMap::new() }
                 Some(text) => match serde_yaml::from_str::<schema::TypeSchema>(&text) {
                     Err(e) => { err(&mut out, Some(&schema_path), format!("schema does not parse: {e}")); BTreeMap::new() }
-                    Ok(s) => s.properties.iter().map(|p| (p.name.clone(), format!("{:?}", p.ty).to_lowercase())).collect(),
+                    Ok(s) => {
+                        for p in &s.properties {
+                            if ["type", "title", "tags", "created", "id", "path", "icon", "cover"].contains(&p.name.as_str()) {
+                                err(&mut out, Some(&schema_path), format!("a property may not be named `{}` — it is a note's own key; use kind, name, …", p.name));
+                            }
+                            if p.ty == schema::PropType::Formula {
+                                match p.expr.as_deref().map(crate::formula::Formula::parse) {
+                                    None => err(&mut out, Some(&schema_path), format!("formula `{}` needs `expr:`", p.name)),
+                                    Some(Err(e)) => err(&mut out, Some(&schema_path), format!("formula `{}` does not parse: {e}", p.name)),
+                                    Some(Ok(_)) => {}
+                                }
+                            }
+                            if p.ty == schema::PropType::Rollup && p.relation.is_none() {
+                                err(&mut out, Some(&schema_path), format!("rollup `{}` needs `relation:` (and `from:` for the reverse side)", p.name));
+                            }
+                            if let Some(f) = p.format.as_deref() {
+                                if !["percent", "progress", "currency", "stars", "integer", "decimal"].contains(&f) {
+                                    err(&mut out, Some(&schema_path), format!("`{}`: unknown format `{f}` (percent, progress, currency, stars, integer, decimal)", p.name));
+                                }
+                            }
+                            if let Some(a) = p.auto.as_deref() {
+                                if let Err(e) = crate::data::parse_filter(a) { err(&mut out, Some(&schema_path), format!("`{}`: auto condition does not parse: {e}", p.name)); }
+                            }
+                            if p.ty == schema::PropType::Relation {
+                                if let Some(target) = p.collection.as_deref() {
+                                    if !colls.iter().any(|x| x == target) {
+                                        warn(&mut out, Some(&schema_path), format!("`{}` relates to `{target}`, which this pack does not install — fine when that pack is present", p.name));
+                                    }
+                                }
+                            }
+                        }
+                        s.properties.iter().map(|p| (p.name.clone(), format!("{:?}", p.ty).to_lowercase())).collect()
+                    }
                 },
             };
             all_props.insert(c.clone(), props);
@@ -338,7 +369,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
             match pack.text(&index_path) {
                 None => err(&mut out, Some(&index_path), format!("collection packs ship {index_path} with the views for {c}")),
                 Some(text) => {
-                    if let Some(fm) = frontmatter_yaml(&text.replace(TODAY, "2000-01-01")) {
+                    if let Some(fm) = frontmatter_yaml(&lint_dates(&text)) {
                         let views = fm.get("views").and_then(|v| v.as_sequence()).cloned().unwrap_or_default();
                         if views.is_empty() { err(&mut out, Some(&index_path), "no views".into()); }
                         for v in views {
@@ -391,7 +422,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
             } else { None };
             let Some(owner) = owner else { continue };
             let Some(props) = all_props.get(&owner) else { continue };
-            let text = String::from_utf8_lossy(&f.contents).replace(TODAY, "2000-01-01");
+            let text = lint_dates(&String::from_utf8_lossy(&f.contents));
             let text = strip_template_vars(&text);
             if let Some(fm) = frontmatter_yaml(&text) {
                 for key in fm.keys().filter_map(|k| k.as_str()) {
@@ -416,7 +447,7 @@ fn lint_markdown(path: &str, text: &str, out: &mut Vec<Finding>) {
                 }
             }
         }
-        let probe = strip_template_vars(&text.replace(TODAY, "2000-01-01"));
+        let probe = strip_template_vars(&lint_dates(&text));
         if frontmatter_yaml(&probe).is_none() {
             err(out, "frontmatter does not parse as YAML".into());
         }
@@ -427,9 +458,9 @@ fn lint_markdown(path: &str, text: &str, out: &mut Vec<Finding>) {
         let start = i + s + 2;
         let Some(e) = text[start..].find("}}") else { break };
         let name = text[start..start + e].trim();
-        let ok = TEMPLATE_VARS.contains(&name) || (name == "today" && (path.starts_with("seed/") || is_index(path)));
+        let ok = TEMPLATE_VARS.contains(&name) || crate::placeholders::is_date_word(name);
         if !ok {
-            err(out, format!("unknown placeholder {{{{{name}}}}} (templates: date, time, title, uuid; seeds and index.md: today)"));
+            err(out, format!("unknown placeholder {{{{{name}}}}} (date, time, title, uuid; date words today, monday, sunday, month, year, week, with offsets like today+7)"));
         }
         i = start + e + 2;
     }
@@ -442,6 +473,11 @@ fn lint_markdown(path: &str, text: &str, out: &mut Vec<Finding>) {
             break;
         }
     }
+}
+
+/// Placeholders resolved against a fixed day so lint can parse frontmatter.
+fn lint_dates(text: &str) -> String {
+    crate::placeholders::expand(text, chrono::NaiveDate::from_ymd_opt(2000, 1, 3).unwrap())
 }
 
 fn strip_template_vars(text: &str) -> String {
@@ -545,7 +581,7 @@ fn today() -> String {
 /// and index.md); templates are written verbatim.
 fn rendered(m: &Manifest, pack_path: &str, contents: &[u8]) -> Vec<u8> {
     if pack_path.starts_with("seed/") || is_index(pack_path) {
-        let mut text = String::from_utf8_lossy(contents).replace(TODAY, &today());
+        let mut text = crate::placeholders::expand(&String::from_utf8_lossy(contents), crate::placeholders::today());
         // A pack's extra collections (a habit tracker's daily log) nest under the
         // primary one in the sidebar, as a child database sits inside its page —
         // unless the pack's own index.md places them elsewhere with `parent:`.

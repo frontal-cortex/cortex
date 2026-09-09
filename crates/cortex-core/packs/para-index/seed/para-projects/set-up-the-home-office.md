@@ -7,9 +7,10 @@ status: done
 area: [Career]
 priority: low
 outcome: "A desk, a chair and a monitor I can work at for a full day."
-deadline: "{{today}}"
-completed: "{{today}}"
-created: "{{today}}"
+start: "{{today-45}}"
+deadline: "{{today-14}}"
+completed: "{{today-9}}"
+created: "{{today-45}}"
 ---
 
 ## Outcome
@@ -34,7 +35,8 @@ sort: [created desc]
 
 ## Log
 
-- {{today}} — Done. Kept as an example so the Archive view and the month chart have a row.
+- {{today-45}} — Started. Desk and chair ordered.
+- {{today-9}} — Done, five days past the deadline. Kept as an example so the Archive view, the Timeline and the month chart have a row.
 
 ## Retrospective
 

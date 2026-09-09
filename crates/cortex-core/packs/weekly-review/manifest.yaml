@@ -1,11 +1,11 @@
 format: 1
 id: weekly-review
 name: "Weekly Review"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "One row per week: Monday plan, Friday review with the get-clear / get-current checklist; rating and carry-over charted."
+summary: "One row per week: a plan, then the get-clear / get-current review; reviews due, rating and carry-over charted."
 description: |
-  A weekly review as a database. Each week is a row with a `status` (planned, reviewed, skipped), a `rating` out of ten, a one-line `focus`, the `areas` it touched and a `carried_over` count of what slipped. The page has two halves: a Monday plan (focus and Top 3) and a review — the Getting Things Done checklist (get clear, get current), then wins, what slipped, lessons, what gave and drained energy, the carried-over list, and next week's three. A board shows which weeks are still unreviewed, a calendar puts each review on its Monday, and two charts plot the rating and the carry-over count week by week, so a slow decline or a growing backlog is visible. Pairs with Daily Note (read the week's pages first).
+  A weekly review as a database. Each week is a row with a `status` (planned, reviewed, skipped), a `rating` out of ten, a one-line `focus`, the `areas` it touched, a `carried_over` count of what slipped, and a `reviewed_on` date that stamps itself when you mark the week reviewed. The page has two halves: a plan (focus and Top 3) and a review — the Getting Things Done checklist (get clear, get current), then wins, what slipped, lessons, what gave and drained energy, the carried-over list, and next week's three. To review lists every planned week whose Friday has come; a board shows the weeks by status, a calendar puts each on its Monday, and two charts plot the rating and the carry-over count week by week, so a slow decline or a growing backlog is visible. With Daily Note installed, each week also counts the days you wrote and averages their energy and sleep — computed, not copied.
 tags: [productivity, review, journal, database]
 author:
   name: "Cortex team"

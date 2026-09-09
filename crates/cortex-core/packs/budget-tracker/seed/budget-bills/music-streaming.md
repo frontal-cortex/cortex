@@ -4,19 +4,23 @@ type: note
 tags: []
 icon: 🎧
 amount: 10.99
-cycle: monthly
-next_due: "{{today}}"
+repeat: monthly
+repeat_mode: advance
+next_due: "{{today-3}}"
+paid: false
 category: subscriptions
 account: credit
-active: true
 url:
+active: true
 created: "{{today}}"
 ---
 
 ## Details
 
-An example subscription. Replace it with your own, or untick `active` — a
-cancelled bill keeps its payment history.
+An example subscription that is three days past its date, so it shows in
+Overdue and `due_in` is negative. Tick `paid` to see `next_due` jump a month
+ahead and the row leave Overdue. Replace it with your own, or untick
+`active` — a cancelled bill keeps its payment history.
 
 ## Payments
 

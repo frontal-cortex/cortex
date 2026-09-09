@@ -11,7 +11,7 @@ difficulty: easy
 prep_minutes: 5
 cook_minutes: 20
 servings: 4
-rating: "★★★★"
+rating: 4
 status: keeper
 source:
 freezes: true
@@ -40,6 +40,10 @@ created: "{{today}}"
 
 Doubles well; the sauce freezes for three months. A tin of anchovies melted in
 with the garlic makes it a different dish.
+
+An example keeper: 25 minutes start to finish, so it is in Quick dinners with
+two grocery items still to buy; cooked last week and planned again tonight,
+so Rotation shows both dates.
 
 ## Cook log
 

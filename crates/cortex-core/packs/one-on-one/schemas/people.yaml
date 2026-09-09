@@ -35,3 +35,38 @@ properties:
     type: text
   - name: archived
     type: checkbox
+  - name: last_met
+    type: rollup
+    from: one-on-ones
+    relation: person
+    function: max
+    property: date
+    where: status == 'held'
+  - name: next_planned
+    type: rollup
+    from: one-on-ones
+    relation: person
+    function: min
+    property: date
+    where: status == 'planned' and date >= @today
+  - name: held_90d
+    type: rollup
+    from: one-on-ones
+    relation: person
+    function: count
+    where: status == 'held' and date >= @today-90
+    format: integer
+  - name: open_follow_ups
+    type: rollup
+    from: follow-ups
+    relation: person
+    function: count
+    where: status == 'open'
+    format: integer
+  - name: days_since_met
+    type: formula
+    expr: days_since(last_met)
+    format: integer
+  - name: due
+    type: formula
+    expr: if(cadence == 'ad-hoc', false, if(empty(last_met), true, days_since(last_met) >= if(cadence == 'weekly', 7, if(cadence == 'biweekly', 14, 30))))

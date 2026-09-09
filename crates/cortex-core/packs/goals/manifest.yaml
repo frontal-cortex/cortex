@@ -1,17 +1,17 @@
 format: 1
 id: goals
 name: "Goals"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "Goals with milestones and dated check-ins; each goal's page charts its own progress, the board shows which are drifting."
+summary: "Goals with milestones and dated check-ins; progress and days left computed per goal, a weekly review list, a timeline."
 description: |
-  Three databases. `goals` is one row per goal with its life area, timeframe (year, quarter, month), priority, start and target dates, a one-line measure of done, and a status that says planned, on track, at risk, off track, done or dropped. `goal-milestones` breaks a goal into dated steps with their own status board and calendar. `goal-checkins` is the review log: one short row per check-in with the date, the progress number and your confidence, so progress is a line over time instead of a number you overwrite. Open a goal and its page lists its milestones, charts its check-ins and keeps the why, the plan and the obstacles under them.
+  Three databases. `goals` is one row per goal with its life area, timeframe (year, quarter, month), priority, start and target dates, a one-line measure of done, and a status that says planned, on track, at risk, off track, done or dropped; its progress bar, last check-in date, share of milestones done, next milestone date and days left are computed from the other two databases every time you look, and the day you mark it done is stamped for you. `goal-milestones` breaks a goal into dated steps with a status board, an overdue list and a calendar. `goal-checkins` is the review log: one short row per check-in with the date, the progress number and your confidence, so progress is a line over time instead of a number you overwrite. Due for review lists the open goals with no check-in in a week; the Timeline lays them out from start to target. Open a goal and its page lists its milestones, charts its check-ins and keeps the why, the plan and the obstacles under them.
 tags: [productivity, goals, planning, okr, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "Goals / milestones / check-ins follows the goal trackers in Notion's gallery (Benny Builds It, Jithin Rajiv, Easlo, Thomas Frank's Ultimate Brain) and the OKR check-in habit; the per-goal progress chart is our own."
+credits: "Goals / milestones / check-ins follows the goal trackers in Notion's gallery (Benny Builds It, Jithin Rajiv, Easlo, Thomas Frank's Ultimate Brain) and the OKR check-in habit; the per-goal progress chart and the computed-on-read columns are our own."
 min_cortex: 0.1.0
 collection: goals
 collections: [goal-milestones, goal-checkins]
@@ -28,8 +28,12 @@ files:
   - seed/goals/run-a-half-marathon.md
   - seed/goals/three-months-saved.md
   - seed/goals/read-24-books.md
+  - seed/goals/clear-the-credit-card.md
   - seed/goal-milestones/run-10-km.md
   - seed/goal-milestones/run-15-km.md
   - seed/goal-milestones/register-for-the-race.md
+  - seed/goal-milestones/work-out-the-monthly-number.md
   - seed/goal-checkins/half-marathon-check-in-1.md
   - seed/goal-checkins/half-marathon-check-in-2.md
+  - seed/goal-checkins/three-months-saved-check-in-1.md
+  - seed/goal-checkins/read-24-books-check-in-1.md

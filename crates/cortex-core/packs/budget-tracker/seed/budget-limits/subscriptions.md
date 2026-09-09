@@ -13,12 +13,13 @@ created: "{{today}}"
 
 Streaming, software, memberships — anything in `budget-bills` filed under
 `subscriptions`. A yearly charge lands as one tall month; that is fine, the
-limit is a monthly average.
+limit is a monthly average. Nothing is logged against it yet, so `spent` is
+empty and `remaining` is the whole limit.
 
 ## Spent per month
 
-One bar per month. Compare the current month's bar with `monthly_limit`
-above: that is the budget check.
+One bar per month; the current month's bar is the `spent` figure in the
+table, and `monthly_limit` above is the line it should stay under.
 
 ```cortex-view
 source: collections/budget

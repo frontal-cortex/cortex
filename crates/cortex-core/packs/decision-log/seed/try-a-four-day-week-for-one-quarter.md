@@ -6,6 +6,7 @@ icon: 📅
 status: proposed
 decided:
 review:
+reviewed:
 area: team
 impact: medium
 reversible: true
@@ -63,11 +64,3 @@ of calendar time, which we do not believe is ten percent of output.
 Not yet decided, so no `review` date. If accepted, set one for the end of the
 quarter and judge it against the same three numbers named above.
 
-### Superseded by
-
-```cortex-view
-source: collections/decisions
-type: table
-columns: [title, status, decided]
-filter: supersedes contains 'Try a four-day week for one quarter'
-```

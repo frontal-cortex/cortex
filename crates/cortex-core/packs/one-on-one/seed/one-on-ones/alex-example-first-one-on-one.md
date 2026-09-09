@@ -2,16 +2,17 @@
 title: Alex — first 1:1 (example)
 type: note
 tags: [one-on-one]
-date: "{{today}}"
+date: "{{today-14}}"
 person: [Alex (example)]
 kind: first
 status: held
 mood: great
 summary: "Ramping up well on the pipeline; wants to lead a small project next year; on-call noise is the main drag."
-created: "{{today}}"
+repeat: ""
+created: "{{today-14}}"
 ---
 
-**When:** {{today}} 11:00
+**When:** {{today-14}} 11:00
 
 ## Their topics
 
@@ -49,14 +50,14 @@ piece of work by the end of the quarter. Copied to their page.
 
 ## Follow-ups
 
-- [ ] me — move them to secondary on-call for a month, by Friday
+- [x] me — move them to secondary on-call for a month, by Friday
 - [ ] them — write up the conference talk idea in a paragraph
 
 ```cortex-view
 source: collections/follow-ups
 type: table
 filter: one_on_one contains 'Alex — first 1:1 (example)'
-columns: [title, owner, due, status]
+columns: [title, owner, due, days_left, status]
 sort: [due asc]
 ```
 

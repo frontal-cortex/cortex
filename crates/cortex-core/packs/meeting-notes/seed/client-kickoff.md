@@ -3,9 +3,10 @@ title: Client kickoff (example)
 type: note
 tags: [meeting]
 icon: 🤝
-date: "{{today}}"
+date: "{{today+3}}"
 kind: client
 status: scheduled
+repeat: ""
 attendees: []
 project: "Website rebuild"
 summary: ""
@@ -13,7 +14,7 @@ link: "https://example.com/call"
 created: "{{today}}"
 ---
 
-**When:** {{today}} 15:00
+**When:** {{today+3}} 15:00
 **Where:** video call (link above)
 
 ## Attendees
@@ -35,13 +36,13 @@ created: "{{today}}"
 
 ## Action items
 
-- [ ] Draft the kickoff agenda and send it before the call — owner: me — due: today
+- [ ] Draft the kickoff agenda and send it before the call — owner: me — due: tomorrow
 
 ```cortex-view
 source: collections/action-items
 type: table
 filter: meeting contains 'Client kickoff (example)'
-columns: [title, owner, due, status]
+columns: [title, owner, due, days_left, status]
 sort: [due asc]
 ```
 

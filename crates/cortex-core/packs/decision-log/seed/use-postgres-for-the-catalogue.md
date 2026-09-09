@@ -4,8 +4,9 @@ type: note
 tags: [decision]
 icon: 🐘
 status: accepted
-decided: "{{today}}"
-review: "{{today}}"
+decided: "{{today-21}}"
+review: "{{today+9}}"
+reviewed:
 area: engineering
 impact: high
 reversible: false
@@ -66,11 +67,3 @@ item shape needs a migration. Given up: the ability to store anything.
 On the review date, compare reporting lead time before and after the
 migration, and whether any category refused to fit the four fields.
 
-### Superseded by
-
-```cortex-view
-source: collections/decisions
-type: table
-columns: [title, status, decided]
-filter: supersedes contains 'Use Postgres for the catalogue'
-```

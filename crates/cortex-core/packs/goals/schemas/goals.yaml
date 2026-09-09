@@ -57,7 +57,41 @@ properties:
     type: date
   - name: target
     type: date
-  - name: progress
-    type: number
+  - name: completed
+    type: date
+    auto: status == done
   - name: measure
     type: text
+  # Computed on read from the check-ins and milestones that point at this
+  # goal. None of these is written to a file.
+  - name: progress
+    type: rollup
+    from: goal-checkins
+    relation: goal
+    function: max
+    property: progress
+    format: progress
+  - name: last_checkin
+    type: rollup
+    from: goal-checkins
+    relation: goal
+    function: max
+    property: date
+  - name: milestones_done
+    type: rollup
+    from: goal-milestones
+    relation: goal
+    function: percent
+    where: status == 'done'
+    format: percent
+  - name: next_milestone
+    type: rollup
+    from: goal-milestones
+    relation: goal
+    function: min
+    property: due
+    where: status != 'done'
+  - name: days_left
+    type: formula
+    expr: days_until(target)
+    format: integer

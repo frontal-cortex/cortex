@@ -8,7 +8,9 @@ format: email
 pillar: [promote, story]
 priority: medium
 due: "{{today}}"
-publish: "{{today}}"
+publish: "{{today+4}}"
+published_on:
+repeat:
 owner:
 campaign: [Launch week]
 link:
@@ -42,5 +44,6 @@ created: "{{today}}"
 
 ## Notes
 
-An example row: a piece repurposed from the article, already scheduled. It
-sits on today's date in the Calendar and in the Queue.
+An example row: a piece repurposed from the article, already scheduled for
+four days from now. It sits on that day in the Calendar and in the Queue with
+its days left counting down.

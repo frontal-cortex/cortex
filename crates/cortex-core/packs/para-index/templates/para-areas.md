@@ -6,7 +6,7 @@ category: personal
 status: active
 standard:
 review: monthly
-next_review: "{{date}}"
+next_review: "{{date+30}}"
 created: "{{date}}"
 ---
 
@@ -20,9 +20,9 @@ review checks against.
 ```cortex-view
 source: collections/para-projects
 type: table
-columns: [title, status, priority, deadline]
+columns: [title, status, priority, deadline, days_left]
 filter: area contains '{{title}}' and status != 'done' and status != 'dropped'
-sort: [deadline]
+sort: [priority desc, deadline]
 ```
 
 ## Resources

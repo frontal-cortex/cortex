@@ -8,7 +8,6 @@ timeframe: quarter
 priority: medium
 start: "{{date}}"
 target:
-progress: 0
 measure:
 created: "{{date}}"
 ---

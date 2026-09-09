@@ -16,14 +16,15 @@ views:
   filter: status != 'archived'
 - name: Inbox
   type: table
-  columns: [title, kind, url, created]
+  columns: [title, kind, url, created, age]
   filter: status == 'inbox'
-  sort: [created desc]
+  sort: [created]
 - name: Added per month
   type: chart
   chartType: bar
   x: created
   bucket: month
+  series: kind
   agg: count
 - name: Archive
   type: table
@@ -43,4 +44,7 @@ points you want to remember, why it mattered. A resource with no notes is a
 bookmark; the notes are what make it yours.
 
 When a resource stops being useful, set `archived` rather than deleting it.
-The Inbox view is the one to empty during a weekly review.
+The Inbox view is the one to empty during a weekly review: it lists the
+oldest first, and `age` is how many days each has been waiting. The month
+chart is split by `kind`, so you can see whether you are collecting articles
+you never read.

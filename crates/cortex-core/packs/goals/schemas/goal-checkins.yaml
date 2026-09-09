@@ -6,6 +6,7 @@ properties:
     type: date
   - name: progress
     type: number
+    format: percent
   - name: confidence
     type: select
     options:

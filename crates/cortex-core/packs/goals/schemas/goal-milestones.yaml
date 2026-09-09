@@ -13,3 +13,6 @@ properties:
         color: green
   - name: due
     type: date
+  - name: completed
+    type: date
+    auto: status == done

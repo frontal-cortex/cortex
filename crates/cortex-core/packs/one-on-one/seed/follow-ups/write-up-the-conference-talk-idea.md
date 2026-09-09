@@ -5,9 +5,10 @@ tags: [follow-up]
 person: [Alex (example)]
 one_on_one: [Alex — first 1:1 (example)]
 owner: them
-due: "{{today}}"
+due: "{{today-3}}"
 status: open
-created: "{{today}}"
+completed: ""
+created: "{{today-14}}"
 ---
 
 ## Context
@@ -17,3 +18,5 @@ which conference. Enough to decide whether to pitch it.
 
 ## Outcome
 
+Asked for another week at the last 1:1; past its date, so it sits in Overdue
+and Theirs until it lands or we drop it.

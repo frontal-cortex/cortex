@@ -233,7 +233,7 @@ impl Habit {
 
 /// `date → (row id, titles done)` for a log table.
 fn log_map(table: &data::Table, date_field: &str, done_field: &str) -> BTreeMap<NaiveDate, (String, BTreeSet<String>)> {
-    let mut out = BTreeMap::new();
+    let mut out: BTreeMap<NaiveDate, (String, BTreeSet<String>)> = BTreeMap::new();
     for row in &table.rows {
         let date = row.cells.get(date_field).and_then(|c| parse_date(&c.as_text())).or_else(|| parse_date(&row.id));
         let Some(date) = date else { continue };
@@ -242,7 +242,12 @@ fn log_map(table: &data::Table, date_field: &str, done_field: &str) -> BTreeMap<
             Some(CellValue::Text(t)) if !t.trim().is_empty() => t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
             _ => BTreeSet::new(),
         };
-        out.insert(date, (row.id.clone(), done));
+        // Two rows on one day (two 1:1s, a morning and an evening entry) are
+        // one day: their lists merge and the first row stands for the day.
+        match out.get_mut(&date) {
+            Some((_, set)) => set.extend(done),
+            None => { out.insert(date, (row.id.clone(), done)); }
+        }
     }
     out
 }
@@ -330,6 +335,7 @@ pub fn run_tracker(root: &Path, spec_yaml: &str, anchor: Option<&str>) -> Result
         sort: spec.sort.clone().unwrap_or_default().iter().map(|s| data::parse_sort(s)).collect(),
         columns: None,
         limit: spec.limit,
+        option_order: data::option_order(data::schema_for_source(root, &spec.source).as_ref()),
     };
     let items_table = query.apply(&items_table);
     let schema = spec.source.strip_prefix("collections/")

@@ -414,3 +414,13 @@ export function TrackerIcon({ size = 15 }: IconProps) {
     </svg>
   );
 }
+
+export function TimelineIcon({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="10" height="4" rx="1.5" fill="currentColor" />
+      <rect x="8" y="11" width="13" height="4" rx="1.5" />
+      <rect x="5" y="17" width="8" height="4" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}

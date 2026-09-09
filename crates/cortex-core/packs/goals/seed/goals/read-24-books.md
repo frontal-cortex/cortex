@@ -7,16 +7,15 @@ status: at_risk
 area: learning
 timeframe: year
 priority: low
-start: "{{today}}"
-target: "{{today}}"
-progress: 40
+start: "{{today-250}}"
+target: "{{today+115}}"
 measure: "24 books finished and logged in the reading list."
 created: "{{today}}"
 ---
 
-An example goal that is drifting — it sits in the yellow column of the Board
-so you can see what that looks like. The Reading List pack is where the
-individual books live.
+An example goal that is drifting — it sits in the yellow column of the Board,
+its only check-in is three weeks old, so it is in Due for review too. The
+Reading List pack is where the individual books live.
 
 ## Why
 

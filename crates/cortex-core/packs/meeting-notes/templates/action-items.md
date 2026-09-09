@@ -6,6 +6,7 @@ meeting: []
 owner: ""
 due: ""
 status: open
+completed: ""
 created: "{{date}}"
 ---
 

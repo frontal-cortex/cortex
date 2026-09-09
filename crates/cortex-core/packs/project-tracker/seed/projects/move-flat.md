@@ -6,12 +6,11 @@ icon: 📦
 status: done
 priority: p2
 area: personal
-start: "{{today}}"
-deadline: "{{today}}"
-completed: "{{today}}"
-progress: 100
+start: "{{today-75}}"
+deadline: "{{today-30}}"
+completed: "{{today-33}}"
 next_action:
-created: "{{today}}"
+created: "{{today-75}}"
 ---
 
 ## Outcome
@@ -27,14 +26,19 @@ The lease ended.
 ```cortex-view
 source: collections/milestones
 type: table
-columns: [title, due, done]
+columns: [title, due, days_left, done]
 sort: [due asc]
 filter: project == 'Move flat'
 ```
 
 ## Log
 
-### {{today}}
+### {{today-33}}
 
-- Seeded with the pack as a finished project: `status: done` and a
-  `completed` date, so it is the first bar in Finished per month.
+- Deposit back. Both milestones ticked, `progress` reads 100, `status` is
+  `done` and `completed` carries this date — last month's bar in Finished
+  per month.
+
+### {{today-75}}
+
+- Started. Two milestones: keys handed over, deposit returned.

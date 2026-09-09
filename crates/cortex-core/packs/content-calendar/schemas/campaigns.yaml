@@ -14,3 +14,22 @@ properties:
     type: date
   - name: goal
     type: text
+  # The content rows whose `campaign` names this one. Computed on read, never
+  # written; edit the piece's `campaign` property to change it.
+  - name: pieces
+    type: relation
+    from: content
+    relation: campaign
+  - name: shipped
+    type: rollup
+    from: content
+    relation: campaign
+    function: count
+    where: status == 'published'
+  - name: progress
+    type: rollup
+    from: content
+    relation: campaign
+    function: percent
+    where: status == 'published'
+    format: progress

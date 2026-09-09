@@ -3,8 +3,9 @@ title: "{{title}}"
 type: note
 tags: [decision]
 status: proposed
-decided: "{{date}}"
+decided:
 review:
+reviewed:
 area: engineering
 impact: medium
 reversible: true
@@ -44,7 +45,8 @@ when you read this back.
 
 ## Decision
 
-What was chosen, and the one reason that carried it.
+What was chosen, and the one reason that carried it. Set `status` to
+`accepted` when it is made; `decided` is stamped with the day.
 
 ## Expected outcome
 
@@ -59,14 +61,6 @@ and at what cost?
 ## Review
 
 Fill in on the `review` date. What actually happened; where the gap between
-that and Expected outcome came from; then set `outcome` and, if the answer
-changed, write the new decision and point its `supersedes` here.
-
-### Superseded by
-
-```cortex-view
-source: collections/decisions
-type: table
-columns: [title, status, decided]
-filter: supersedes contains '{{title}}'
-```
+that and Expected outcome came from; then set `outcome` (that stamps
+`reviewed`) and, if the answer changed, write the new decision and point its
+`supersedes` here — this row's `superseded_by` will show it.

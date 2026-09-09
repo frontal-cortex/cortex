@@ -7,8 +7,10 @@ channel: blog
 format: article
 pillar: [teach, opinion]
 priority: high
-due: "{{today}}"
-publish: "{{today}}"
+due: "{{today-1}}"
+publish: "{{today+2}}"
+published_on:
+repeat:
 owner:
 campaign: [Launch week]
 link:
@@ -57,6 +59,7 @@ sort: [publish desc]
 
 ## Notes
 
-An example row: a piece mid-draft, tied to the Launch week campaign, with the
-newsletter cut from it — it shows up in the table above. Edit it into a real
-piece or delete it.
+An example row: a piece mid-draft whose `due` was yesterday, so it is in the
+Overdue view, with `publish` the day after tomorrow and two days left. It is
+part of the Launch week campaign, and the newsletter cut from it shows up in
+the table above. Edit it into a real piece or delete it.

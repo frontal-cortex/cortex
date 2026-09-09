@@ -3,9 +3,9 @@ title: Design approved
 type: note
 tags: []
 project: [Website relaunch]
-due: "{{today}}"
+due: "{{today+7}}"
 done: false
-created: "{{today}}"
+created: "{{today-21}}"
 ---
 
 ## Definition

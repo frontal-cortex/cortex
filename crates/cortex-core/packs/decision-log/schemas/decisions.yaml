@@ -14,8 +14,16 @@ properties:
         color: purple
   - name: decided
     type: date
+    auto: status == accepted or status == rejected
   - name: review
     type: date
+  - name: days_to_review
+    type: formula
+    expr: days_until(review)
+    format: integer
+  - name: reviewed
+    type: date
+    auto: outcome == as_expected or outcome == better or outcome == worse or outcome == unclear
   - name: area
     type: select
     options:
@@ -44,6 +52,11 @@ properties:
     type: checkbox
   - name: confidence
     type: number
+    format: percent
+  - name: confidence_band
+    type: formula
+    expr: round(confidence / 10, 0) * 10
+    format: percent
   - name: owner
     type: person
   - name: outcome
@@ -62,5 +75,9 @@ properties:
   - name: supersedes
     type: relation
     collection: decisions
+  - name: superseded_by
+    type: relation
+    from: decisions
+    relation: supersedes
   - name: link
     type: url

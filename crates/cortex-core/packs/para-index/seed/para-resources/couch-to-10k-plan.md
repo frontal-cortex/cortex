@@ -8,7 +8,7 @@ status: active
 area: [Health]
 project: [Run a 10k]
 url: https://example.com/couch-to-10k
-created: "{{today}}"
+created: "{{today-14}}"
 ---
 
 ## Why I kept this

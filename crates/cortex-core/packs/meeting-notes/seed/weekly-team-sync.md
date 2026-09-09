@@ -3,17 +3,18 @@ title: Weekly team sync (example)
 type: note
 tags: [meeting]
 icon: 🗓️
-date: "{{today}}"
+date: "{{today-7}}"
 kind: team
-status: held
+status: followed-up
+repeat: weekly
 attendees: []
 project: "Onboarding flow"
 summary: "Agreed to ship the new sign-up form behind a flag; support hand-off moves to Thursday."
 link: ""
-created: "{{today}}"
+created: "{{today-7}}"
 ---
 
-**When:** {{today}} 10:00
+**When:** {{today-7}} 10:00
 **Where:** the usual room
 
 ## Attendees
@@ -39,13 +40,14 @@ hand-off suits support better than Monday, which lands on their busiest day.
 
 ## Action items
 
-- [x] Send the summary — owner: me — due: today
+- [x] Send the summary — owner: me — due: the next day
+- [ ] Flip the sign-up form flag once copy signs off — owner: me — due: two days ago
 
 ```cortex-view
 source: collections/action-items
 type: table
 filter: meeting contains 'Weekly team sync (example)'
-columns: [title, owner, due, status]
+columns: [title, owner, due, days_left, status]
 sort: [due asc]
 ```
 
@@ -55,5 +57,6 @@ sort: [due asc]
 
 ## Next meeting
 
-**When:** same time next week
+**When:** same time next week — this row has `repeat: weekly`, so each sync's
+successor is written as a new row the moment the sync is marked `followed-up`.
 **Bring:** the flag flip date, first support numbers from the Thursday hand-off

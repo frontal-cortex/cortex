@@ -7,15 +7,17 @@ status: planned
 area: [Finances]
 priority: medium
 outcome: "Return submitted and the confirmation saved to the Finances area."
-deadline: "{{today}}"
+start:
+deadline: "{{today+10}}"
 completed:
-created: "{{today}}"
+created: "{{today-5}}"
 ---
 
 ## Outcome
 
 Return submitted and the confirmation saved. A project because it ends; the
-Finances area is what it serves.
+Finances area is what it serves. Ten days out and not yet started — that is
+why it is in Due soon.
 
 ## Next actions
 
@@ -35,7 +37,7 @@ sort: [created desc]
 
 ## Log
 
-- {{today}} — Planned. Starts once the year's statements are in.
+- {{today-5}} — Planned. Starts once the year's statements are in; `start` fills in the day it goes active.
 
 ## Retrospective
 

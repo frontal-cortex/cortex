@@ -39,8 +39,13 @@ pub enum PropType {
     /// query time from the target collection.
     Relation,
     /// A read-only value computed by following a `relation` to its target rows
-    /// and aggregating one of their `property` values with `function`.
+    /// and aggregating one of their `property` values with `function` — or,
+    /// with `from`, by collecting the rows of another collection whose
+    /// `relation` points at this row (the reverse side).
     Rollup,
+    /// A read-only value computed from this row's own properties by `expr`
+    /// (see `formula.rs`).
+    Formula,
 }
 
 /// One named choice for a select/multi-select/status property. `color` is a
@@ -75,9 +80,35 @@ pub struct PropertyDef {
     /// Rollup: the target property to aggregate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub property: Option<String>,
-    /// Rollup: count | values | sum | avg | min | max.
+    /// Rollup: count | values | sum | avg | min | max | percent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub function: Option<String>,
+    /// Reverse rollup or reverse relation: the collection whose rows point at
+    /// this row through their `relation` property (`from: milestones`,
+    /// `relation: project`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// Reverse rollup: only rows matching this filter count (`done == true`);
+    /// `function: percent` reports them as a share of all pointing rows.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "where")]
+    pub where_: Option<String>,
+    /// Formula: the expression over this row's properties.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
+    /// Number display: percent | progress | currency | stars | integer | decimal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+    /// Currency symbol or unit shown with a number (`€`, `kg`, `h`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// Date: stamped with today when this condition on the row holds and the
+    /// date is empty (`status == done` → a completed date).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto: Option<String>,
 }
 
 /// A database/type's full property schema. `properties` is ordered.

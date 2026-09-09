@@ -1,11 +1,11 @@
 format: 1
 id: meeting-notes
 name: "Meeting Notes"
-version: 2.0.0
+version: 2.1.0
 kind: collection
 summary: "Meetings as rows with date, kind, status and attendees; action items in their own list, linked to the meeting."
 description: |
-  One row per meeting in `collections/meetings/`: when, what kind, who was there, a one-line summary, and a status that moves from scheduled to held to followed-up. Open a meeting and the page has the shape a note needs a month later — agenda, notes, decisions, action items, open questions — with a live table of that meeting's action items at the bottom. Action items are rows of their own in `collections/action-items/` with an owner, a due date and a status, so "what is still open from last week's meetings" is a view, not a search. Views: All (newest first), Upcoming, Calendar, a board by status for follow-up, and a chart of meetings per week by kind.
+  One row per meeting in `collections/meetings/`: when, what kind, who was there, a one-line summary, a status that moves from scheduled to held to followed-up, and an optional `repeat` that brings a standing meeting back on its own. Open a meeting and the page has the shape a note needs a month later — agenda, notes, decisions, action items, open questions — with a live table of that meeting's action items at the bottom. Action items are rows of their own in `collections/action-items/` with an owner, a due date and a status; the engine counts each meeting's open items and its share closed, stamps `completed` when an item is done, and shows the days left on each. Views: All, This week, Upcoming, To write up, Calendar, a board by status for follow-up, and a chart of meetings per week by kind; on the action items, Open, Overdue, This week, Mine, Board, Due and By week.
 tags: [work, meetings, database, tasks]
 author:
   name: "Cortex team"
@@ -23,6 +23,8 @@ files:
   - templates/meetings.md
   - templates/action-items.md
   - seed/weekly-team-sync.md
+  - seed/design-review.md
   - seed/client-kickoff.md
   - seed/action-items/send-the-sync-summary.md
+  - seed/action-items/flip-the-sign-up-form-flag.md
   - seed/action-items/draft-the-kickoff-agenda.md

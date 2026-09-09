@@ -8,9 +8,9 @@ role: "Engineer"
 team: "Platform"
 cadence: weekly
 focus: "Owning the deploy pipeline end to end"
-start: "{{today}}"
+start: "{{today-60}}"
 archived: false
-created: "{{today}}"
+created: "{{today-60}}"
 ---
 
 ## About
@@ -30,12 +30,12 @@ agreed to find a two-person piece of work by the end of the quarter.
 
 ## Topics for next time
 
-- [ ] Candidates for the two-person project
+- [ ] Pick between the two candidates for the two-person project
 - [ ] The conference talk write-up
 
 ## Feedback given
 
-- {{today}} — The pipeline doc was the clearest thing anyone has written about it. Said so; keep the habit.
+- {{today-14}} — The pipeline doc was the clearest thing anyone has written about it. Said so; keep the habit.
 
 ## Open follow-ups
 
@@ -43,7 +43,7 @@ agreed to find a two-person piece of work by the end of the quarter.
 source: collections/follow-ups
 type: table
 filter: person contains 'Alex (example)' and status == 'open'
-columns: [title, owner, due, one_on_one]
+columns: [title, owner, due, days_left, one_on_one]
 sort: [due asc]
 ```
 
@@ -53,6 +53,6 @@ sort: [due asc]
 source: collections/one-on-ones
 type: table
 filter: person contains 'Alex (example)'
-columns: [title, date, mood, kind, summary]
+columns: [title, date, status, mood, kind, summary]
 sort: [date desc]
 ```

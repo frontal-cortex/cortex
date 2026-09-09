@@ -1,11 +1,11 @@
 format: 1
 id: project-tracker
 name: "Project Tracker"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "Projects with status, priority, area, deadline, progress and one next action; milestones on a calendar; a page each."
+summary: "Projects with status, priority, deadline, computed progress and one next action; milestones; a timeline; a page each."
 description: |
-  One row per project, and a second small collection of milestones — the dated steps a project is made of. A project has a status (planned / active / on_hold / done / dropped), a priority, an `area`, `start` and `deadline` dates, a `completed` date, a `progress` percentage you set, and one `next_action` so a stalled project is obvious. Views: Open (what is live, p1 first), Board by status, Deadlines on a calendar, Stalled (active projects with no next action) and Finished per month. Each project's page states the outcome, embeds its own milestones, and — if the Tasks pack is installed — a board of the tasks that name it. Milestones have their own calendar, so every key date across every project is on one page.
+  One row per project, and a second small collection of milestones — the dated steps a project is made of. A project has a status (planned / active / on_hold / done / dropped), a priority, an `area`, `start` and `deadline` dates and one `next_action` so a stalled project is obvious. The rest is computed: `progress` is the share of its milestones ticked done, `next_milestone` the soonest still open, `days_left` a countdown to the deadline, `open_tasks` a count from the Tasks pack when it is installed, and `completed` is stamped the day status becomes done. Views: Open (what is live, p1 first), Board by status, a Timeline from start to deadline, Due in 30 days, Stalled (active projects with no next action) and Finished per month. Each project's page states the outcome, embeds its own milestones, and — if the Tasks pack is installed — a board of the tasks that name it. Milestones have their own calendar, so every key date across every project is on one page.
 tags: [work, projects, database, planning]
 author:
   name: "Cortex team"
@@ -25,5 +25,9 @@ files:
   - seed/projects/website-relaunch.md
   - seed/projects/learn-to-cook-ten-dishes.md
   - seed/projects/move-flat.md
+  - seed/projects/file-the-tax-return.md
   - seed/milestones/brief-signed-off.md
   - seed/milestones/design-approved.md
+  - seed/milestones/content-migrated.md
+  - seed/milestones/keys-handed-over.md
+  - seed/milestones/deposit-returned.md

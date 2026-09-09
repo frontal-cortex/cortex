@@ -76,6 +76,28 @@ properties:
     type: date
   - name: publish
     type: date
+  # Stamped with the day the row is set to published. `publish` is the plan;
+  # this is what happened.
+  - name: published_on
+    type: date
+    auto: status == 'published'
+  # Days from today to `publish`, negative once it is past. Computed on read,
+  # never written to the file.
+  - name: days_left
+    type: formula
+    expr: days_until(publish)
+    format: integer
+  # A piece that comes back. Mark it published and the next one appears as a
+  # new row with every date moved on by the interval.
+  - name: repeat
+    type: select
+    options:
+      - name: weekly
+        color: blue
+      - name: biweekly
+        color: purple
+      - name: monthly
+        color: green
   - name: owner
     type: person
   - name: campaign

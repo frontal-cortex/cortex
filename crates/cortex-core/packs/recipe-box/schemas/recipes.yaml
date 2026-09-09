@@ -90,23 +90,24 @@ properties:
         color: red
   - name: prep_minutes
     type: number
+    format: integer
   - name: cook_minutes
     type: number
+    format: integer
+  # prep + cook. Empty when either is missing, so a recipe without its minutes
+  # never counts as quick. Computed on read, never written.
+  - name: total_minutes
+    type: formula
+    expr: prep_minutes + cook_minutes
+    format: integer
   - name: servings
     type: number
+    format: integer
+  # 1 to 5, drawn as stars.
   - name: rating
-    type: select
-    options:
-      - name: "★"
-        color: gray
-      - name: "★★"
-        color: gray
-      - name: "★★★"
-        color: yellow
-      - name: "★★★★"
-        color: yellow
-      - name: "★★★★★"
-        color: yellow
+    type: number
+    format: stars
+    max: 5
   - name: status
     type: status
     options:
@@ -122,3 +123,31 @@ properties:
     type: url
   - name: freezes
     type: checkbox
+  # From the meals that point at this recipe.
+  - name: times_cooked
+    type: rollup
+    from: meals
+    relation: recipe
+    function: count
+    where: cooked == true
+  - name: last_cooked
+    type: rollup
+    from: meals
+    relation: recipe
+    function: max
+    property: date
+    where: cooked == true
+  - name: next_planned
+    type: rollup
+    from: meals
+    relation: recipe
+    function: min
+    property: date
+    where: cooked == false and date >= @today
+  # Grocery items for this recipe still to buy.
+  - name: to_buy
+    type: rollup
+    from: groceries
+    relation: recipe
+    function: count
+    where: bought == false

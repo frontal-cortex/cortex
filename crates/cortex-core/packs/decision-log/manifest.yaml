@@ -1,11 +1,11 @@
 format: 1
 id: decision-log
 name: "Decision Log"
-version: 2.0.0
+version: 2.1.0
 kind: collection
-summary: "One row per decision: context, options, what was chosen and why, a review date, and later the outcome you got."
+summary: "One row per decision: context, options, what was chosen and why, a review date that comes due by itself, the outcome."
 description: |
-  A decisions database rather than a loose note. Each row carries `status` (proposed, accepted, rejected, deprecated, superseded), the date it was `decided`, a `review` date, an `area`, its `impact` and whether it is `reversible`, your `confidence` at the time and, once you have looked back, the `outcome`. The row's page is the record: context and state of mind, the options with their good and bad points, the decision and the one reason that carried it, what you expect to happen, the consequences, and a review section you fill in on the review date. A `supersedes` relation links a new decision to the one it replaces, and the old page shows what superseded it. Views: Log, Board by status, Due for review, a calendar of review dates and a chart of outcomes by month. Works for a team's architecture decisions and for one person's life ones.
+  A decisions database rather than a loose note. Each row carries `status` (proposed, accepted, rejected, deprecated, superseded), an `area`, its `impact` and whether it is `reversible`, your `confidence` at the time and, once you have looked back, the `outcome`. The dates take care of themselves: `decided` is stamped the day a row is accepted, `reviewed` the day you set an outcome, and `days_to_review` counts down to the `review` date you chose. The row's page is the record: context and state of mind, the options with their good and bad points, the decision and the one reason that carried it, what you expect to happen, the consequences, and a review section you fill in on the review date. A `supersedes` relation links a new decision to the one it replaces, and the old row's `superseded_by` fills in on its own. Views: Log, Board by status, Due for review (the next thirty days and anything overdue), a Timeline from decided to review, Outcomes by month and a Calibration chart of outcomes by the confidence you wrote down. Works for a team's architecture decisions and for one person's life ones.
 tags: [work, decisions, thinking, database]
 author:
   name: "Cortex team"
@@ -20,4 +20,5 @@ files:
   - templates/decisions.md
   - seed/use-a-document-store-for-the-catalogue.md
   - seed/use-postgres-for-the-catalogue.md
+  - seed/replace-the-daily-standup-with-a-written-update.md
   - seed/try-a-four-day-week-for-one-quarter.md

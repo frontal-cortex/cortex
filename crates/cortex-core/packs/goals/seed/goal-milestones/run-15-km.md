@@ -4,7 +4,7 @@ type: note
 tags: []
 goal: ["Run a half marathon"]
 status: doing
-due: "{{today}}"
+due: "{{today+7}}"
 created: "{{today}}"
 ---
 

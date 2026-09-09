@@ -3,9 +3,9 @@ title: Brief signed off
 type: note
 tags: []
 project: [Website relaunch]
-due: "{{today}}"
+due: "{{today-7}}"
 done: true
-created: "{{today}}"
+created: "{{today-21}}"
 ---
 
 ## Definition

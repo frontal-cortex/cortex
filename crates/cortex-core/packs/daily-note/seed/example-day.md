@@ -3,13 +3,14 @@ title: "Example day — delete me"
 type: note
 tags: []
 icon: ☀️
-date: "{{today}}"
+date: "{{sunday-1}}"
 mood: good
 energy: 4
 sleep: 7.5
 areas: [work, health]
 highlight: "Shipped the draft; ran before work for the first time in a month."
-created: "{{today}}"
+week: ["Example week — delete me"]
+created: "{{sunday-1}}"
 ---
 
 ## Morning

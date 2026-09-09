@@ -7,20 +7,22 @@ status: active
 area: [Health]
 priority: high
 outcome: "Cross the finish line of a 10k race without walking."
-deadline: "{{today}}"
+start: "{{today-14}}"
+deadline: "{{today+70}}"
 completed:
-created: "{{today}}"
+created: "{{today-14}}"
 ---
 
 ## Outcome
 
-Cross the finish line of a 10k race without walking. The date is the race day;
-set it to a real one.
+Cross the finish line of a 10k race without walking. The deadline is race
+day, twelve weeks after the first run; set it to a real race.
 
 ## Next actions
 
-- [ ] Pick a race and register
-- [ ] Follow week 1 of the plan (three runs)
+- [x] Pick a race and register
+- [x] Follow week 1 of the plan (three runs)
+- [ ] Follow week 2 of the plan
 - [ ] Buy shoes that fit
 
 ## Resources
@@ -35,7 +37,8 @@ sort: [created desc]
 
 ## Log
 
-- {{today}} — Started. No race picked yet; the deadline is a placeholder until there is one.
+- {{today-14}} — Started. Registered for a race in twelve weeks.
+- {{today-7}} — Week 1 done, three runs. Shoes are the problem.
 
 ## Retrospective
 

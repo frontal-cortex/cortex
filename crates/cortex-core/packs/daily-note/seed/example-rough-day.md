@@ -3,13 +3,14 @@ title: "Example rough day — delete me"
 type: note
 tags: []
 icon: 🌧️
-date: "{{today}}"
+date: "{{monday}}"
 mood: rough
 energy: 2
 sleep: 5
 areas: [work, family]
 highlight: "A ten-minute call that fixed the whole afternoon."
-created: "{{today}}"
+week: ["Example planned week — delete me"]
+created: "{{monday}}"
 ---
 
 ## Morning

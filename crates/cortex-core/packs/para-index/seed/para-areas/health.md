@@ -8,7 +8,7 @@ status: active
 standard: "Move three times a week, sleep seven hours, see the dentist twice a year."
 review: monthly
 next_review: "{{today}}"
-created: "{{today}}"
+created: "{{today-30}}"
 ---
 
 ## Standard
@@ -21,9 +21,9 @@ a goal to hit once — a level to hold.
 ```cortex-view
 source: collections/para-projects
 type: table
-columns: [title, status, priority, deadline]
+columns: [title, status, priority, deadline, days_left]
 filter: area contains 'Health' and status != 'done' and status != 'dropped'
-sort: [deadline]
+sort: [priority desc, deadline]
 ```
 
 ## Resources
@@ -38,4 +38,4 @@ sort: [created desc]
 
 ## Reviews
 
-- {{today}} — Standard written. One active project, Run a 10k; its training plan is filed under Resources.
+- {{today-30}} — Standard written. One active project, Run a 10k; its training plan is filed under Resources.

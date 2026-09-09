@@ -45,7 +45,7 @@ Dated one-liners. What you said, and what changed.
 source: collections/follow-ups
 type: table
 filter: person contains '{{title}}' and status == 'open'
-columns: [title, owner, due, one_on_one]
+columns: [title, owner, due, days_left, one_on_one]
 sort: [due asc]
 ```
 
@@ -55,6 +55,6 @@ sort: [due asc]
 source: collections/one-on-ones
 type: table
 filter: person contains '{{title}}'
-columns: [title, date, mood, kind, summary]
+columns: [title, date, status, mood, kind, summary]
 sort: [date desc]
 ```

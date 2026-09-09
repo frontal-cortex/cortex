@@ -308,6 +308,29 @@ pub struct Query {
     pub sort: Vec<Sort>,
     pub columns: Option<Vec<String>>,
     pub limit: Option<usize>,
+    /// Select/status properties sort by their option order, not alphabetically:
+    /// `priority: [p1, p2, p3]` puts p1 first whatever the words are.
+    pub option_order: BTreeMap<String, Vec<String>>,
+}
+
+/// The option order of every select/status property in a schema — what
+/// `Query::option_order` wants. Empty without a schema.
+pub fn option_order(schema: Option<&crate::schema::TypeSchema>) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    if let Some(s) = schema {
+        for p in &s.properties {
+            if !p.options.is_empty() {
+                out.insert(p.name.clone(), p.options.iter().map(|o| o.name.clone()).collect());
+            }
+        }
+    }
+    out
+}
+
+/// The schema a `collections/<name>` source resolves to; None for CSV or when none is saved.
+pub fn schema_for_source(root: &Path, source: &str) -> Option<crate::schema::TypeSchema> {
+    let name = source.strip_prefix("collections/")?.trim_end_matches('/');
+    crate::schema::load(root, name).ok().flatten()
 }
 
 impl Condition {
@@ -324,6 +347,13 @@ impl Condition {
 }
 
 fn eval_cmp(cell: &CellValue, op: Op, literal: &str) -> bool {
+    // An empty cell equals '' and nothing else: it is neither before nor after
+    // a date, neither above nor below a number — `due <= @today` must not
+    // sweep in undated rows.
+    let empty = matches!(cell, CellValue::Null) || matches!(cell, CellValue::Text(t) if t.is_empty());
+    if empty {
+        return match op { Op::Eq => literal.is_empty(), Op::Ne => !literal.is_empty(), _ => false };
+    }
     // Numeric comparison when both sides look numeric, else string comparison.
     if let (Some(a), Ok(b)) = (cell.as_num(), literal.parse::<f64>()) {
         return match op {
@@ -363,13 +393,29 @@ impl Query {
             .collect();
 
         // Multi-key stable sort (apply keys in reverse so the first key wins).
+        // Empty cells go last in either direction — an undated task belongs at
+        // the bottom of Upcoming, not the top — and select values follow their
+        // option order when the schema declares one.
         for key in self.sort.iter().rev() {
+            let order = self.option_order.get(&key.field);
             rows.sort_by(|a, b| {
                 let av = a.cells.get(&key.field).cloned().unwrap_or(CellValue::Null);
                 let bv = b.cells.get(&key.field).cloned().unwrap_or(CellValue::Null);
-                let ord = match (av.as_num(), bv.as_num()) {
-                    (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
-                    _ => av.as_text().cmp(&bv.as_text()),
+                let empty = |v: &CellValue| matches!(v, CellValue::Null) || v.as_text().is_empty();
+                match (empty(&av), empty(&bv)) {
+                    (true, true) => return std::cmp::Ordering::Equal,
+                    (true, false) => return std::cmp::Ordering::Greater,
+                    (false, true) => return std::cmp::Ordering::Less,
+                    _ => {}
+                }
+                let ord = if let Some(opts) = order {
+                    let rank = |v: &CellValue| opts.iter().position(|o| *o == v.as_text()).unwrap_or(opts.len());
+                    rank(&av).cmp(&rank(&bv))
+                } else {
+                    match (av.as_num(), bv.as_num()) {
+                        (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
+                        _ => av.as_text().cmp(&bv.as_text()),
+                    }
                 };
                 if key.desc { ord.reverse() } else { ord }
             });
@@ -473,6 +519,12 @@ fn parse_cmp(tokens: &[String], pos: &mut usize) -> Result<Condition> {
     };
     // strip the \u1 string-literal marker if present
     let value = val_tok.strip_prefix('\u{1}').unwrap_or(val_tok).to_string();
+    // `@today`, `@today-7`, `@monday`, `@month` … resolve to ISO dates; `@me`
+    // is resolved earlier by the caller, anything else stays literal.
+    let value = match value.strip_prefix('@').and_then(|w| crate::placeholders::resolve(w, crate::placeholders::today())) {
+        Some(d) => d,
+        None => value,
+    };
     Ok(Condition::Cmp { field, op, value })
 }
 
@@ -621,24 +673,38 @@ fn prop_ty(ty: crate::schema::PropType) -> &'static str {
 /// empty columns, `$body` hidden. The app's table, the CLI and MCP all go
 /// through here, so they cannot drift.
 pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
-    let spec = crate::members::resolve_me(spec_yaml, root);
-    let mut table = run_view(root, &spec)?;
-    let parsed = parse_view_spec(&spec).ok();
-    let all_columns = parsed.as_ref()
-        .and_then(|s| source_columns(root, &s.source).ok())
-        .unwrap_or_else(|| table.columns.iter().map(|c| c.key.clone()).collect());
+    let spec_text = crate::members::resolve_me(spec_yaml, root);
+    let spec: ViewSpec = serde_yaml::from_str(&spec_text)?;
+    let all_columns = source_columns(root, &spec.source).ok().unwrap_or_default();
     let members = crate::members::load(root);
-    let schema = parsed
-        .and_then(|s| crate::schema::schema_key(&format!("{}/_.md", s.source.trim_end_matches('/')), None))
+    let schema = crate::schema::schema_key(&format!("{}/_.md", spec.source.trim_end_matches('/')), None)
         .and_then(|key| crate::schema::load(root, &key).ok().flatten())
         .map(|mut s| {
             crate::members::fill_person_options(&mut s, &members);
             fill_relation_options(root, &mut s);
             s
         });
+    // Computed columns first, then the query — so a view may filter or sort
+    // on a rollup or a formula (`progress < 100`, `sort: [days_left]`).
+    let mut table = resolve_source(root, &spec.source)?;
     if let Some(s) = &schema {
         apply_rollups(root, &mut table, s);
+        apply_formulas(&mut table, s);
     }
+    let query = Query {
+        filter: match &spec.filter { Some(f) if !f.trim().is_empty() => Some(parse_filter(f)?), _ => None },
+        sort: spec.sort.clone().unwrap_or_default().iter().map(|s| parse_sort(s)).collect(),
+        columns: spec.columns.clone(),
+        limit: spec.limit,
+        option_order: option_order(schema.as_ref()),
+    };
+    let table = query.apply(&table);
+    let all_columns = if all_columns.is_empty() { table.columns.iter().map(|c| c.key.clone()).collect() } else {
+        // Computed properties are fields too, for the toolbar's pickers.
+        let mut all = all_columns;
+        if let Some(s) = &schema { for p in &s.properties { if !all.contains(&p.name) { all.push(p.name.clone()); } } }
+        all
+    };
     let mut columns: Vec<ResolvedColumn> = table.columns.into_iter()
         .filter(|c| c.key != "$body")
         .map(|c| ResolvedColumn { schema: schema.as_ref().and_then(|s| s.property(&c.key)).cloned(), key: c.key, ty: c.ty.as_str().to_string() })
@@ -670,6 +736,7 @@ pub fn source_columns(root: &Path, source: &str) -> Result<Vec<String>> {
 pub fn run_view(root: &Path, spec_yaml: &str) -> Result<Table> {
     let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
     let table = resolve_source(root, &spec.source)?;
+    let schema = schema_for_source(root, &spec.source);
 
     let query = Query {
         filter: match spec.filter {
@@ -679,6 +746,7 @@ pub fn run_view(root: &Path, spec_yaml: &str) -> Result<Table> {
         sort: spec.sort.unwrap_or_default().iter().map(|s| parse_sort(s)).collect(),
         columns: spec.columns,
         limit: spec.limit,
+        option_order: option_order(schema.as_ref()),
     };
 
     Ok(query.apply(&table))
@@ -948,6 +1016,13 @@ fn write_csv_raw(path: &Path, header: &[String], mut records: Vec<Vec<String>>, 
 /// Write one edited cell back to its source file. Returns the path of a written
 /// collection note (so the caller can re-index it) or `None` for CSV.
 pub fn set_cell(root: &Path, source: &str, row_id: &str, field: &str, value: &str, ty: &str) -> Result<Option<std::path::PathBuf>> {
+    Ok(set_cell_effects(root, source, row_id, field, value, ty)?.into_iter().next())
+}
+
+/// `set_cell`, returning every file it touched: the row, and — when a date
+/// property is auto-stamped or the row repeats — the same row again or the
+/// next occurrence. Callers re-index all of them.
+pub fn set_cell_effects(root: &Path, source: &str, row_id: &str, field: &str, value: &str, ty: &str) -> Result<Vec<std::path::PathBuf>> {
     if field == "id" || field == "$body" {
         return Err(AppError::Other(format!("Field '{field}' is not editable")));
     }
@@ -957,13 +1032,21 @@ pub fn set_cell(root: &Path, source: &str, row_id: &str, field: &str, value: &st
 
     if let Some(name) = source.strip_prefix("collections/") {
         let name = name.trim_end_matches('/');
-        let path = root.join("collections").join(name).join(format!("{row_id}.md"));
+        let dir = root.join("collections").join(name);
+        let path = dir.join(format!("{row_id}.md"));
         let content = std::fs::read_to_string(&path)
             .map_err(|_| AppError::Other(format!("Row not found: {row_id}")))?;
         let mut note = crate::note::parse_note(row_id, &content)?;
         note.frontmatter.insert(field.to_string(), coerce(value, ty));
+        let schema = crate::schema::load(root, name).ok().flatten();
+        let mut written = vec![path.clone()];
+        stamp_auto_dates(&mut note, schema.as_ref());
+        let finished = is_finishing_edit(&note, field, schema.as_ref());
+        if finished {
+            if let Some(extra) = recur(&dir, row_id, &mut note, schema.as_ref(), field)? { written.push(extra); }
+        }
         std::fs::write(&path, crate::note::serialize_note(&note)?)?;
-        Ok(Some(path))
+        Ok(written)
     } else if let Some(rest) = source.strip_prefix("data/") {
         let name = rest.trim_end_matches(".csv");
         let path = root.join("data").join(format!("{name}.csv"));
@@ -984,10 +1067,136 @@ pub fn set_cell(root: &Path, source: &str, row_id: &str, field: &str, value: &st
         rec[field_idx] = value.to_string();
 
         write_csv_raw(&path, &header, records, id_idx)?;
-        Ok(None)
+        Ok(vec![])
     } else {
         Err(AppError::Other(format!("Unknown source '{source}'")))
     }
+}
+
+/// What follows any edit to a collection row, however it was made — the
+/// app's cell editor, `cortex set`, an MCP `set_properties`: auto-stamped
+/// dates, and the next occurrence of a repeating row. `changed` names the
+/// frontmatter keys the edit touched. Returns every file written.
+pub fn apply_row_effects(root: &Path, rel_path: &str, changed: &[String]) -> Result<Vec<std::path::PathBuf>> {
+    let rel = rel_path.trim_start_matches("./");
+    let Some(rest) = rel.strip_prefix("collections/") else { return Ok(vec![]) };
+    let Some((name, file)) = rest.split_once('/') else { return Ok(vec![]) };
+    let row_id = file.trim_end_matches(".md");
+    if row_id.starts_with('_') || row_id.contains('/') { return Ok(vec![]); }
+    let dir = root.join("collections").join(name);
+    let path = dir.join(format!("{row_id}.md"));
+    let content = std::fs::read_to_string(&path)?;
+    let mut note = crate::note::parse_note(row_id, &content)?;
+    let schema = crate::schema::load(root, name).ok().flatten();
+    let before = note.frontmatter.clone();
+    stamp_auto_dates(&mut note, schema.as_ref());
+    let mut written = Vec::new();
+    if let Some(trigger) = changed.iter().find(|f| is_finishing_edit(&note, f, schema.as_ref())) {
+        if let Some(extra) = recur(&dir, row_id, &mut note, schema.as_ref(), trigger)? { written.push(extra); }
+    }
+    if note.frontmatter != before {
+        std::fs::write(&path, crate::note::serialize_note(&note)?)?;
+        written.insert(0, path);
+    }
+    Ok(written)
+}
+
+/// A note's frontmatter as a row, for evaluating filters against it.
+fn note_as_row(note: &crate::note::Note) -> Row {
+    Row { id: note.path.trim_end_matches(".md").rsplit('/').next().unwrap_or("").to_string(), cells: note.frontmatter.iter().map(|(k, v)| (k.clone(), json_to_cell(v))).collect() }
+}
+
+/// Date properties with `auto: <condition>` get today's date when the
+/// condition holds and they are empty — `completed` when status becomes done.
+fn stamp_auto_dates(note: &mut crate::note::Note, schema: Option<&crate::schema::TypeSchema>) {
+    let Some(s) = schema else { return };
+    let today = crate::placeholders::today().format("%Y-%m-%d").to_string();
+    for p in &s.properties {
+        if p.ty != crate::schema::PropType::Date { continue; }
+        let Some(cond) = p.auto.as_deref().filter(|c| !c.trim().is_empty()) else { continue };
+        let Ok(c) = parse_filter(cond) else { continue };
+        let holds = c.eval(&note_as_row(note));
+        let empty = note.frontmatter.get(&p.name).map(|v| v.is_null() || v.as_str().map(|s| s.is_empty()).unwrap_or(false)).unwrap_or(true);
+        if holds && empty {
+            note.frontmatter.insert(p.name.clone(), serde_json::Value::String(today.clone()));
+        }
+    }
+}
+
+/// Did this edit finish the row? A checkbox now true, or a status/select set
+/// to its schema's last option or to a word that means done.
+fn is_finishing_edit(note: &crate::note::Note, field: &str, schema: Option<&crate::schema::TypeSchema>) -> bool {
+    match note.frontmatter.get(field) {
+        Some(serde_json::Value::Bool(b)) => *b && (crate::recurrence::is_done_word(field) || field == "done"),
+        Some(serde_json::Value::String(v)) => {
+            let last = schema.and_then(|s| s.property(field)).filter(|p| matches!(p.ty, crate::schema::PropType::Status | crate::schema::PropType::Select))
+                .and_then(|p| p.options.last().map(|o| o.name.clone()));
+            last.as_deref() == Some(v.as_str()) || crate::recurrence::is_done_word(v)
+        }
+        _ => false,
+    }
+}
+
+/// A finished row that `repeat`s: advance every date by the interval and
+/// either write the next occurrence as a new row (default) or move this row
+/// forward (`repeat_mode: advance`). The trigger and auto-stamped dates are
+/// reset on the occurrence that continues. Returns the new row's path.
+fn recur(dir: &Path, row_id: &str, note: &mut crate::note::Note, schema: Option<&crate::schema::TypeSchema>, trigger: &str) -> Result<Option<std::path::PathBuf>> {
+    let Some(rule) = note.frontmatter.get("repeat").and_then(|v| v.as_str()) else { return Ok(None) };
+    let Some(interval) = crate::recurrence::parse(rule) else { return Ok(None) };
+    let advance_in_place = note.frontmatter.get("repeat_mode").and_then(|v| v.as_str()) == Some("advance");
+    let auto_dates: Vec<String> = schema.map(|s| s.properties.iter().filter(|p| p.auto.is_some()).map(|p| p.name.clone()).collect()).unwrap_or_default();
+
+    let mut next = note.frontmatter.clone();
+    let mut primary: Option<String> = None;
+    for (k, v) in note.frontmatter.iter() {
+        if k == "created" || auto_dates.contains(k) { continue; }
+        if let Some(s) = v.as_str() {
+            if looks_like_date(s) {
+                let shifted = crate::recurrence::shift_text(s, interval);
+                // The date that names the next occurrence: due/date/next_due/scheduled when present, else the first date seen.
+                let preferred = ["due", "date", "next_due", "scheduled"].contains(&k.as_str());
+                if primary.is_none() || preferred { primary = Some(shifted.clone()); }
+                next.insert(k.clone(), serde_json::Value::String(shifted));
+            }
+        }
+    }
+    // Reset the trigger only — the field whose edit finished the row: a
+    // checkbox → false, a status → its first option (or `todo`). Every other
+    // select keeps its value; an `area: admin` must not become `area: work`
+    // because admin happens to be last in its list.
+    match note.frontmatter.get(trigger) {
+        Some(serde_json::Value::Bool(true)) => { next.insert(trigger.to_string(), serde_json::Value::Bool(false)); }
+        Some(serde_json::Value::String(_)) => {
+            let first = schema.and_then(|sc| sc.property(trigger)).and_then(|p| p.options.first().map(|o| o.name.clone())).unwrap_or_else(|| "todo".into());
+            next.insert(trigger.to_string(), serde_json::Value::String(first));
+        }
+        _ => {}
+    }
+    for k in &auto_dates { next.remove(k); }
+
+    if advance_in_place {
+        note.frontmatter = next;
+        return Ok(None);
+    }
+    let today = crate::placeholders::today().format("%Y-%m-%d").to_string();
+    next.insert("created".into(), serde_json::Value::String(today));
+    let stem = regex_strip_date(row_id);
+    let mut id = format!("{stem}-{}", primary.as_deref().unwrap_or("next"));
+    let mut n = 2;
+    while dir.join(format!("{id}.md")).exists() { id = format!("{stem}-{}-{n}", primary.as_deref().unwrap_or("next")); n += 1; }
+    let path = dir.join(format!("{id}.md"));
+    let new_note = crate::note::Note { path: format!("{id}.md"), frontmatter: next, body: note.body.clone() };
+    std::fs::write(&path, crate::note::serialize_note(&new_note)?)?;
+    Ok(Some(path))
+}
+
+/// `pay-rent-2026-09-01` → `pay-rent`; `row-abc` → `row-abc`.
+fn regex_strip_date(id: &str) -> String {
+    let b = id.as_bytes();
+    if b.len() > 11 && b[b.len() - 11] == b'-' && looks_like_date(&id[b.len() - 10..]) { id[..b.len() - 11].to_string() }
+    else if looks_like_date(id) { "row".to_string() }
+    else { id.to_string() }
 }
 
 /// Seeds arrive as strings from the UI. Keep booleans, numbers and lists typed
@@ -1172,7 +1381,9 @@ pub fn add_row_from_template(
     let tpl_path = dir.join(format!("_template-{template}.md"));
     let content = std::fs::read_to_string(&tpl_path)
         .map_err(|_| AppError::Other(format!("Template not found: {template}")))?;
-    let content = expand_placeholders(&content, &row_vars(fields));
+    let vars = row_vars(fields);
+    let base = chrono::NaiveDate::parse_from_str(&vars["date"], "%Y-%m-%d").unwrap_or_else(|_| crate::placeholders::today());
+    let content = crate::placeholders::expand(&expand_placeholders(&content, &vars), base);
     let tpl = crate::note::parse_note(&format!("_template-{template}.md"), &content)?;
 
     let path = dir.join(format!("{id}.md"));
@@ -1275,6 +1486,15 @@ fn rollup_value(rows: &[&Row], prop: &str, func: &str) -> CellValue {
         "sum" | "avg" | "min" | "max" => {
             let nums: Vec<f64> = rows.iter().filter_map(|r| r.cells.get(prop).and_then(CellValue::as_num)).collect();
             if nums.is_empty() {
+                // Dates and other text still have a min and a max (ISO dates sort as text).
+                if matches!(func, "min" | "max") {
+                    let mut texts: Vec<String> = rows.iter().filter_map(|r| r.cells.get(prop).map(CellValue::as_text)).filter(|s| !s.is_empty()).collect();
+                    texts.sort();
+                    return match if func == "min" { texts.first() } else { texts.last() } {
+                        Some(t) => if looks_like_date(t) { CellValue::Date(t.clone()) } else { CellValue::Text(t.clone()) },
+                        None => CellValue::Null,
+                    };
+                }
                 return CellValue::Null;
             }
             let v = match func {
@@ -1292,8 +1512,36 @@ fn rollup_value(rows: &[&Row], prop: &str, func: &str) -> CellValue {
 /// Compute each `rollup` property: follow its relation to the target collection,
 /// aggregate the chosen target property, and inject the result into every row.
 pub fn apply_rollups(root: &Path, table: &mut Table, schema: &crate::schema::TypeSchema) {
+    use crate::schema::PropType;
+    // Reverse side first: rows of `from` whose `relation` names this row.
     for p in &schema.properties {
-        if p.ty != crate::schema::PropType::Rollup {
+        let (Some(from), Some(rel_name)) = (p.from.clone(), p.relation.clone()) else { continue };
+        if !matches!(p.ty, PropType::Rollup | PropType::Relation) { continue; }
+        let Ok(children) = read_collection(root, &from) else { continue };
+        let filter = p.where_.as_deref().filter(|w| !w.trim().is_empty()).and_then(|w| parse_filter(w).ok());
+        let func = p.function.clone().unwrap_or_else(|| "count".into());
+        let target_prop = p.property.clone().unwrap_or_default();
+        for row in &mut table.rows {
+            let title = row.cells.get("title").map(CellValue::as_text).unwrap_or_default();
+            let mine: Vec<&Row> = children.rows.iter().filter(|c| match c.cells.get(&rel_name) {
+                Some(CellValue::List(items)) => items.iter().any(|i| *i == title || *i == row.id),
+                Some(other) => { let t = other.as_text(); t == title || t == row.id }
+                None => false,
+            }).collect();
+            let value = if p.ty == PropType::Relation {
+                CellValue::List(mine.iter().filter_map(|c| c.cells.get("title").map(CellValue::as_text)).filter(|s| !s.is_empty()).collect())
+            } else if func == "percent" {
+                let matching = mine.iter().filter(|c| filter.as_ref().map(|f| f.eval(c)).unwrap_or(true)).count();
+                if mine.is_empty() { CellValue::Null } else { CellValue::Num((100.0 * matching as f64 / mine.len() as f64).round()) }
+            } else {
+                let kept: Vec<&Row> = mine.into_iter().filter(|c| filter.as_ref().map(|f| f.eval(c)).unwrap_or(true)).collect();
+                rollup_value(&kept, &target_prop, &func)
+            };
+            row.cells.insert(p.name.clone(), value);
+        }
+    }
+    for p in &schema.properties {
+        if p.ty != PropType::Rollup || p.from.is_some() {
             continue;
         }
         let (Some(rel_name), Some(func)) = (p.relation.clone(), p.function.clone()) else { continue };
@@ -1319,6 +1567,31 @@ pub fn apply_rollups(root: &Path, table: &mut Table, schema: &crate::schema::Typ
             };
             let related: Vec<&Row> = titles.iter().filter_map(|t| by_title.get(t).copied()).collect();
             row.cells.insert(p.name.clone(), rollup_value(&related, &target_prop, &func));
+        }
+    }
+}
+
+/// Compute every formula property from the row's own cells — after rollups,
+/// so a formula may use a rollup. A formula that does not parse yields nothing
+/// rather than failing the view; `cortex packs lint` reports it.
+pub fn apply_formulas(table: &mut Table, schema: &crate::schema::TypeSchema) {
+    let today = crate::placeholders::today();
+    let formulas: Vec<(String, crate::formula::Formula)> = schema.properties.iter()
+        .filter(|p| p.ty == crate::schema::PropType::Formula)
+        .filter_map(|p| p.expr.as_deref().and_then(|e| crate::formula::Formula::parse(e).ok()).map(|f| (p.name.clone(), f)))
+        .collect();
+    if formulas.is_empty() { return; }
+    for row in &mut table.rows {
+        for (name, f) in &formulas {
+            let v = f.eval(&row.cells, today).to_cell();
+            row.cells.insert(name.clone(), v);
+        }
+    }
+    // A computed column that no row had before now needs a type.
+    for (name, _) in &formulas {
+        if !table.columns.iter().any(|c| &c.key == name) {
+            let ty = table.rows.iter().find_map(|r| r.cells.get(name)).map(col_type).unwrap_or(ColumnType::Text);
+            table.columns.push(Column { key: name.clone(), ty });
         }
     }
 }
@@ -1493,6 +1766,8 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let series_field = spec.option("series");
 
     // Apply filter (and any sort) first.
+    let schema = schema_for_source(root, &spec.source);
+    let orders = option_order(schema.as_ref());
     let query = Query {
         filter: match &spec.filter {
             Some(f) if !f.trim().is_empty() => Some(parse_filter(f)?),
@@ -1501,8 +1776,10 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
         sort: spec.sort.clone().unwrap_or_default().iter().map(|s| parse_sort(s)).collect(),
         columns: None,
         limit: None,
+        option_order: orders.clone(),
     };
     let filtered = query.apply(&table);
+    let x_order = orders.get(&x).cloned();
 
     let series_of = |t: &Table| -> Result<Vec<ChartPoint>> {
         let mut points = match &agg {
@@ -1513,10 +1790,17 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
                 Some(ChartPoint { x: match bucket { Some(b) => bucket_key(&raw, b), None => raw }, y: yv })
             }).collect(),
         };
-        // Order points along x (numeric when possible, else lexical).
-        points.sort_by(|a, b| match (a.x.parse::<f64>(), b.x.parse::<f64>()) {
-            (Ok(p), Ok(q)) => p.partial_cmp(&q).unwrap_or(std::cmp::Ordering::Equal),
-            _ => a.x.cmp(&b.x),
+        // Order points along x: a select's option order when it has one, else
+        // numeric when possible, else lexical.
+        points.sort_by(|a, b| match &x_order {
+            Some(opts) => {
+                let rank = |v: &str| opts.iter().position(|o| o == v).unwrap_or(opts.len());
+                rank(&a.x).cmp(&rank(&b.x)).then_with(|| a.x.cmp(&b.x))
+            }
+            None => match (a.x.parse::<f64>(), b.x.parse::<f64>()) {
+                (Ok(p), Ok(q)) => p.partial_cmp(&q).unwrap_or(std::cmp::Ordering::Equal),
+                _ => a.x.cmp(&b.x),
+            },
         });
         Ok(points)
     };
@@ -1553,6 +1837,149 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
 mod tests {
     use super::*;
 
+    fn gap_root(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("cortex-engine-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".cortex/schemas")).unwrap();
+        root
+    }
+    fn put(root: &Path, rel: &str, text: &str) {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    fn iso(d: chrono::NaiveDate) -> String { d.format("%Y-%m-%d").to_string() }
+
+    #[test]
+    fn relative_dates_in_filters() {
+        let root = gap_root("reldates");
+        let t = crate::placeholders::today();
+        put(&root, "collections/tasks/a.md", &format!("---\ntitle: A\ndue: {}\n---\n", iso(t - chrono::Duration::days(1))));
+        put(&root, "collections/tasks/b.md", &format!("---\ntitle: B\ndue: {}\n---\n", iso(t)));
+        put(&root, "collections/tasks/c.md", &format!("---\ntitle: C\ndue: {}\n---\n", iso(t + chrono::Duration::days(10))));
+        put(&root, "collections/tasks/d.md", "---\ntitle: D\n---\n");
+        let names = |spec: &str| -> Vec<String> { run_view(&root, spec).unwrap().rows.iter().map(|r| r.cells["title"].as_text()).collect() };
+        assert_eq!(names("source: collections/tasks\nfilter: due <= @today\nsort: [due]\n"), vec!["A", "B"]);
+        assert_eq!(names("source: collections/tasks\nfilter: due > @today and due <= @today+14\n"), vec!["C"]);
+        assert_eq!(names("source: collections/tasks\nfilter: due < @today\n"), vec!["A"]);
+        // Empties sort last in either direction.
+        assert_eq!(names("source: collections/tasks\nsort: [due]\n"), vec!["A", "B", "C", "D"]);
+        assert_eq!(names("source: collections/tasks\nsort: [due desc]\n"), vec!["C", "B", "A", "D"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn selects_sort_by_option_order() {
+        let root = gap_root("optorder");
+        put(&root, ".cortex/schemas/tasks.yaml", "properties:\n  - name: priority\n    type: select\n    options:\n      - name: high\n      - name: medium\n      - name: low\n");
+        put(&root, "collections/tasks/a.md", "---\ntitle: A\npriority: low\n---\n");
+        put(&root, "collections/tasks/b.md", "---\ntitle: B\npriority: high\n---\n");
+        put(&root, "collections/tasks/c.md", "---\ntitle: C\npriority: medium\n---\n");
+        let t = run_view(&root, "source: collections/tasks\nsort: [priority]\n").unwrap();
+        let names: Vec<String> = t.rows.iter().map(|r| r.cells["title"].as_text()).collect();
+        assert_eq!(names, vec!["B", "C", "A"]);
+        // A chart over the select follows the same order.
+        let c = run_chart(&root, "source: collections/tasks\ntype: chart\nx: priority\ny: title\nagg: count\n").unwrap();
+        assert_eq!(c.points.iter().map(|p| p.x.as_str()).collect::<Vec<_>>(), vec!["high", "medium", "low"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reverse_rollups_relations_and_formulas() {
+        let root = gap_root("reverse");
+        put(&root, ".cortex/schemas/projects.yaml", "properties:\n  - name: milestones\n    type: relation\n    from: milestones\n    relation: project\n  - name: done_count\n    type: rollup\n    from: milestones\n    relation: project\n    function: count\n    where: done == true\n  - name: progress\n    type: rollup\n    from: milestones\n    relation: project\n    function: percent\n    where: done == true\n  - name: latest\n    type: rollup\n    from: milestones\n    relation: project\n    property: due\n    function: max\n  - name: budget\n    type: number\n  - name: spent\n    type: number\n  - name: remaining\n    type: formula\n    expr: budget - spent\n  - name: label\n    type: formula\n    expr: concat(progress, '% · ', remaining, ' left')\n");
+        put(&root, "collections/projects/site.md", "---\ntitle: Site\nbudget: 1000\nspent: 250\n---\n");
+        put(&root, "collections/projects/idle.md", "---\ntitle: Idle\n---\n");
+        put(&root, "collections/milestones/m1.md", "---\ntitle: Brief\nproject: [Site]\ndone: true\ndue: 2026-09-01\n---\n");
+        put(&root, "collections/milestones/m2.md", "---\ntitle: Design\nproject: [Site]\ndone: false\ndue: 2026-10-01\n---\n");
+        put(&root, "collections/milestones/m3.md", "---\ntitle: Launch\nproject: Site\ndone: true\ndue: 2026-11-01\n---\n");
+        let t = resolve_view(&root, "source: collections/projects\n").unwrap();
+        let site = t.rows.iter().find(|r| r.id == "site").unwrap();
+        assert_eq!(site.cells["milestones"], serde_json::json!(["Brief", "Design", "Launch"]));
+        assert_eq!(site.cells["done_count"], serde_json::json!(2.0));
+        assert_eq!(site.cells["progress"], serde_json::json!(67.0));
+        assert_eq!(site.cells["latest"], serde_json::json!("2026-11-01"));
+        assert_eq!(site.cells["remaining"], serde_json::json!(750.0));
+        assert_eq!(site.cells["label"], serde_json::json!("67% · 750 left"));
+        let idle = t.rows.iter().find(|r| r.id == "idle").unwrap();
+        assert_eq!(idle.cells["done_count"], serde_json::json!(0.0));
+        assert!(idle.cells["progress"].is_null());
+        assert!(idle.cells["remaining"].is_null());
+        assert!(t.columns.iter().any(|c| c.key == "remaining"), "formula columns exist even when no row stored them");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn auto_stamped_dates_and_recurrence() {
+        let root = gap_root("recur");
+        put(&root, ".cortex/schemas/tasks.yaml", "properties:\n  - name: status\n    type: status\n    options:\n      - name: todo\n      - name: doing\n      - name: done\n  - name: area\n    type: select\n    options:\n      - name: work\n      - name: admin\n  - name: due\n    type: date\n  - name: completed\n    type: date\n    auto: status == done\n");
+        // A weekly task: finishing it stamps `completed` and creates next week's row.
+        put(&root, "collections/tasks/water-plants-2026-09-07.md", "---\ntitle: Water plants\nstatus: todo\narea: admin\ndue: 2026-09-07\nrepeat: weekly\ncreated: 2026-09-01\n---\nRemember the balcony.\n");
+        let written = set_cell_effects(&root, "collections/tasks", "water-plants-2026-09-07", "status", "done", "text").unwrap();
+        assert_eq!(written.len(), 2, "{written:?}");
+        let done = std::fs::read_to_string(root.join("collections/tasks/water-plants-2026-09-07.md")).unwrap();
+        assert!(done.contains("status: done"), "{done}");
+        assert!(done.contains(&format!("completed: {}", iso(crate::placeholders::today()))) || done.contains(&format!("completed: '{}'", iso(crate::placeholders::today()))), "{done}");
+        let next = std::fs::read_to_string(root.join("collections/tasks/water-plants-2026-09-14.md")).unwrap();
+        assert!(next.contains("due: 2026-09-14") && next.contains("status: todo") && !next.contains("completed") && next.contains("balcony"), "{next}");
+        assert!(next.contains("area: admin"), "only the trigger is reset, other selects keep their value: {next}");
+        // A bill that advances in place: paid → unpaid, next_due one month on, same file.
+        put(&root, ".cortex/schemas/bills.yaml", "properties:\n  - name: paid\n    type: checkbox\n  - name: next_due\n    type: date\n");
+        put(&root, "collections/bills/rent.md", "---\ntitle: Rent\npaid: false\nnext_due: 2026-09-30\nrepeat: monthly\nrepeat_mode: advance\n---\n");
+        let written = set_cell_effects(&root, "collections/bills", "rent", "paid", "true", "bool").unwrap();
+        assert_eq!(written.len(), 1);
+        let rent = std::fs::read_to_string(root.join("collections/bills/rent.md")).unwrap();
+        assert!(rent.contains("next_due: 2026-10-30") && rent.contains("paid: false"), "{rent}");
+        // No repeat: nothing extra happens.
+        put(&root, "collections/tasks/once.md", "---\ntitle: Once\nstatus: todo\n---\n");
+        assert_eq!(set_cell_effects(&root, "collections/tasks", "once", "status", "done", "text").unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn views_filter_and_sort_on_computed_columns() {
+        let root = gap_root("computed");
+        put(&root, ".cortex/schemas/goals.yaml", "properties:\n  - name: target\n    type: number\n  - name: current\n    type: number\n  - name: pct\n    type: formula\n    expr: round(current / target * 100)\n");
+        put(&root, "collections/goals/a.md", "---\ntitle: A\ntarget: 10\ncurrent: 10\n---\n");
+        put(&root, "collections/goals/b.md", "---\ntitle: B\ntarget: 10\ncurrent: 3\n---\n");
+        put(&root, "collections/goals/c.md", "---\ntitle: C\ntarget: 10\ncurrent: 7\n---\n");
+        let t = resolve_view(&root, "source: collections/goals\nfilter: pct < 100\nsort: [pct desc]\n").unwrap();
+        let names: Vec<&str> = t.rows.iter().map(|r| r.cells["title"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["C", "B"]);
+        assert!(t.all_columns.contains(&"pct".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn row_effects_apply_to_direct_frontmatter_writes() {
+        let root = gap_root("effects");
+        put(&root, ".cortex/schemas/tasks.yaml", "properties:\n  - name: status\n    type: status\n    options:\n      - name: todo\n      - name: done\n  - name: completed\n    type: date\n    auto: status == done\n");
+        put(&root, "collections/tasks/gym-2026-09-08.md", "---\ntitle: Gym\nstatus: done\ndue: 2026-09-08\nrepeat: every 2 days\n---\n");
+        let written = apply_row_effects(&root, "collections/tasks/gym-2026-09-08.md", &["status".into()]).unwrap();
+        assert_eq!(written.len(), 2, "{written:?}");
+        assert!(root.join("collections/tasks/gym-2026-09-10.md").exists());
+        assert!(std::fs::read_to_string(root.join("collections/tasks/gym-2026-09-08.md")).unwrap().contains("completed:"));
+        // Not a collection row: nothing happens.
+        put(&root, "notes/a.md", "---\ntitle: A\n---\n");
+        assert!(apply_row_effects(&root, "notes/a.md", &["status".into()]).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn row_templates_expand_date_words() {
+        let root = gap_root("datewords");
+        put(&root, "collections/weeks/_template-weeks.md", "---\ntitle: \"Week of {{monday}}\"\nweek: \"{{monday}}\"\nreview: \"{{date+5}}\"\n---\n");
+        let mut fields = BTreeMap::new();
+        fields.insert("title".to_string(), "Untitled".to_string());
+        fields.insert("created".to_string(), "2026-09-09".to_string()); // a Wednesday
+        let path = add_row_from_template(&root, "collections/weeks", "w37", "weeks", &fields).unwrap().unwrap();
+        let text = std::fs::read_to_string(path).unwrap();
+        assert!(text.contains("week: 2026-09-07") || text.contains("week: '2026-09-07'"), "{text}");
+        assert!(text.contains("review: 2026-09-14") || text.contains("review: '2026-09-14'"), "{text}");
+        assert!(text.contains("title: Week of 2026-09-07"), "{text}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn scratch(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("cortex-data-{}-{}", tag, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -1582,6 +2009,7 @@ mod tests {
         let q = Query {
             filter: Some(parse_filter("status == 'reading'").unwrap()),
             sort: vec![Sort { field: "rating".into(), desc: true }],
+            option_order: Default::default(),
             columns: Some(vec!["title".into(), "rating".into()]),
             limit: None,
         };
@@ -1635,6 +2063,7 @@ mod tests {
         let q = Query {
             filter: Some(parse_filter("weight > 80").unwrap()),
             sort: vec![Sort { field: "weight".into(), desc: false }],
+            option_order: Default::default(),
             columns: None,
             limit: None,
         };

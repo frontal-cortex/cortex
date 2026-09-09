@@ -26,7 +26,15 @@ properties:
         color: red
   - name: outcome
     type: text
+  - name: start
+    type: date
+    auto: status == active
   - name: deadline
     type: date
+  - name: days_left
+    type: formula
+    expr: if(status == 'done' or status == 'dropped', empty, days_until(deadline))
+    format: integer
   - name: completed
     type: date
+    auto: status == done

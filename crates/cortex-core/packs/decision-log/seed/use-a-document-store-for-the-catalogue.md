@@ -4,8 +4,9 @@ type: note
 tags: [decision]
 icon: 🗄️
 status: superseded
-decided: "{{today}}"
-review: "{{today}}"
+decided: "{{today-120}}"
+review: "{{today-30}}"
+reviewed: "{{today-28}}"
 area: engineering
 impact: high
 reversible: false
@@ -59,13 +60,6 @@ Faster start; reporting and integrity checks pushed to application code.
 
 Reporting was the bottleneck within two months, and the "flexible" shapes
 had converged on four fields anyway. The gap: we optimised for the first six
-weeks and not for the next two years. Superseded — see below.
+weeks and not for the next two years. Superseded; `superseded_by` names
+the replacement.
 
-### Superseded by
-
-```cortex-view
-source: collections/decisions
-type: table
-columns: [title, status, decided]
-filter: supersedes contains 'Use a document store for the catalogue'
-```

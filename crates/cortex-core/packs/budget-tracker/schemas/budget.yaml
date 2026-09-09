@@ -3,6 +3,7 @@ properties:
     type: date
   - name: amount
     type: number
+    format: currency
   - name: kind
     type: select
     options:

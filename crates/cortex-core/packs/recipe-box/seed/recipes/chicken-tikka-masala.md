@@ -42,7 +42,8 @@ created: "{{today}}"
 ## Notes
 
 Clipped and not yet cooked, so it sits in the To try view with its source
-link. Rate it and set `status` once you have made it.
+link and the day it is planned for. Rate it (1 to 5) and set `status` once
+you have made it.
 
 ## Cook log
 

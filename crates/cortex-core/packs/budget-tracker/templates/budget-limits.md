@@ -8,7 +8,7 @@ active: true
 created: "{{date}}"
 ---
 
-<!-- The title must match a `category` option in the ledger exactly (lowercase, e.g. groceries) — the views below filter on it. -->
+<!-- The title must match a `category` option in the ledger exactly (lowercase, e.g. groceries) — `spent`, `remaining` and `used` in the table and the views below all key on it. Set `monthly_limit`; the rest is computed. -->
 
 ## What counts
 
@@ -17,8 +17,8 @@ same way.
 
 ## Spent per month
 
-One bar per month. Compare the current month's bar with `monthly_limit`
-above: that is the budget check.
+One bar per month; the current month's bar is the `spent` figure in the
+table, and `monthly_limit` above is the line it should stay under.
 
 ```cortex-view
 source: collections/budget

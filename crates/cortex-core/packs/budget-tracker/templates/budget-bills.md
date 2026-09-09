@@ -3,14 +3,18 @@ title: "{{title}}"
 type: note
 tags: []
 amount: 0
-cycle: monthly
+repeat: monthly
+repeat_mode: advance
 next_due: "{{date}}"
+paid: false
 category: subscriptions
 account: checking
 active: true
 url:
 created: "{{date}}"
 ---
+
+<!-- Tick `paid` when the charge goes out: `next_due` moves forward by `repeat` and `paid` clears, in this same row. Log the payment in the ledger with `bill` set to this row so Payments below and `last_paid` fill in. -->
 
 ## Details
 
