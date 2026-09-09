@@ -54,6 +54,7 @@
 .empty {
   color: var(--text-tertiary);
   font-size: var(--text-sm);
+  opacity: 0.6;
 }
 
 .popover {

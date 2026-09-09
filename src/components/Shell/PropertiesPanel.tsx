@@ -30,7 +30,7 @@ interface Props {
 }
 
 // App-internal frontmatter that isn't a user-facing property.
-const HIDDEN = new Set(["title", "type", "icon", "cover", "views"]);
+const HIDDEN = new Set(["title", "type", "icon", "cover", "views", "parent"]);
 // Shown in the quiet line as prose ("Created 7 Sep 2026"), not as a chip.
 const CREATED = "created";
 
@@ -147,12 +147,15 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
   // frontmatter keys. Computed properties — rollups, formulas, the reverse side
   // of a relation — are never in the frontmatter and only exist in data views,
   // so they are left out rather than shown as empty inputs.
-  const schemaProps = (schema?.properties ?? []).filter(
+  // A collection's own page is not one of its rows: its frontmatter is the
+  // page's bookkeeping (views, icon, parent), so the row schema does not apply.
+  const isCollectionPage = frontmatter["type"] === "database";
+  const schemaProps = (isCollectionPage ? [] : schema?.properties ?? []).filter(
     (p) => p.type !== "rollup" && p.type !== "formula" && !(p.type === "relation" && p.from),
   );
   const schemaNames = new Set(schemaProps.map((p) => p.name));
   const items: Item[] = [
-    ...schemaProps.map((p) => ({ name: p.name, type: p.type, options: p.options, def: p })),
+    ...schemaProps.map((p) => ({ name: p.name, type: p.type, options: p.options ?? [], def: p })),
     ...Object.keys(frontmatter)
       .filter((k) => !HIDDEN.has(k) && !schemaNames.has(k))
       .map((k) => ({ name: k, type: inferType(frontmatter[k]), options: [] as SelectOption[] })),

@@ -61,24 +61,35 @@ function CollectionViewsBlock({ block, editor }: { block: any; editor: any }) {
   const setViews = bound ? page!.setViews : persistRemote;
   const source = viewSource(collection);
 
+  const menu = (
+    <Menu
+      items={[
+        { label: "Export to CSV", run: () => exportToFile("collection-csv", source, `${collection}.csv`) },
+        { label: "Export to HTML", run: () => exportToFile("collection-html", source, `${collection}.html`) },
+        ...(bound && page?.onConvertToNote ? [{ label: "Convert to checklist note", run: page.onConvertToNote }] : []),
+        ...(!bound ? [{ label: "Open the collection", run: () => window.dispatchEvent(new CustomEvent("cortex:open-note", { detail: { path: `collections/${collection}/_index.md` } })) }] : []),
+      ]}
+    />
+  );
+
   return (
     <div className={`${styles.block} ${bound ? styles.bound : ""}`} contentEditable={false}>
-      <div className={styles.bar}>
-        {!bound && (
+      {!bound && (
+        <div className={styles.bar}>
           <span className={styles.name} title={`The views of collections/${collection}, as on its own page`}>
             <DatabaseIcon size={13} /> {collection}
           </span>
-        )}
-        <Menu
-          items={[
-            { label: "Export to CSV", run: () => exportToFile("collection-csv", source, `${collection}.csv`) },
-            { label: "Export to HTML", run: () => exportToFile("collection-html", source, `${collection}.html`) },
-            ...(bound && page?.onConvertToNote ? [{ label: "Convert to checklist note", run: page.onConvertToNote }] : []),
-            ...(!bound ? [{ label: "Open the collection", run: () => window.dispatchEvent(new CustomEvent("cortex:open-note", { detail: { path: `collections/${collection}/_index.md` } })) }] : []),
-          ]}
-        />
-      </div>
-      <DataViews key={`${collection}:${bound}`} source={source} views={views.length ? views : defaultViews()} onViewsChange={setViews} />
+          {menu}
+        </div>
+      )}
+      <DataViews
+        key={`${collection}:${bound}`}
+        source={source}
+        views={views.length ? views : defaultViews()}
+        onViewsChange={setViews}
+        hotkeys={bound}
+        trailing={bound ? menu : undefined}
+      />
     </div>
   );
 }

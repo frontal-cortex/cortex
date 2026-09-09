@@ -1,5 +1,6 @@
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 
 // NOTE: intentionally not wrapped in <React.StrictMode>. BlockNote's editor does
@@ -8,5 +9,7 @@ import "./index.css";
 // found"), which broke checkbox toggles (and other block interactions) from
 // persisting. This is a known BlockNote limitation.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <App />,
+  <ErrorBoundary label="the app">
+    <App />
+  </ErrorBoundary>,
 );

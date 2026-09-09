@@ -117,6 +117,8 @@
 .docWrap {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;

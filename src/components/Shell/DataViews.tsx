@@ -5,7 +5,7 @@
 // persist to the block's YAML). The parent owns the views array + persistence;
 // this component owns which tab is active and renders it.
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from "react";
 import { commands, ViewTable, ChartResult, ViewDef, ViewType } from "../../lib/commands";
 import { VIEW_TYPES, defaultViewOfType, viewFromSpec, specFromView } from "../../lib/database";
 import {
@@ -16,6 +16,7 @@ import { ViewToolbar } from "./ViewToolbar";
 import { TrackerView, TrackerRange } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
 import { Dropdown } from "./Dropdown";
+import { ErrorBoundary } from "../ErrorBoundary";
 import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ChartIcon, TrackerIcon, TimelineIcon } from "./icons";
 import styles from "./DatabaseView.module.css";
 
@@ -48,10 +49,59 @@ interface Props {
   source: string;
   views: ViewDef[];
   onViewsChange: (views: ViewDef[]) => void;
+  /** Alt+1…9 pick a view — on for a collection's own page, off for embedded blocks. */
+  hotkeys?: boolean;
+  /** Drawn after "+ New" at the end of the tab row (the block's own menu). */
+  trailing?: ReactNode;
 }
 
-export function DataViews({ source, views, onViewsChange }: Props) {
+export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
+  // The active tab's menu is drawn by the bar, not the tab: the tab strip scrolls
+  // sideways, and a menu inside a scroller would be cut off.
+  const [menuFor, setMenuFor] = useState<number | null>(null);
+  const [menuLeft, setMenuLeft] = useState(0);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [tabsFade, setTabsFade] = useState(false);
+  const measureTabs = useCallback(() => {
+    const el = tabsRef.current;
+    if (el) setTabsFade(el.scrollWidth - el.clientWidth - el.scrollLeft > 2);
+  }, []);
+  useEffect(() => {
+    measureTabs();
+    const el = tabsRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measureTabs);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measureTabs, views]);
+  useEffect(() => {
+    if (menuFor === null) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || tabsRef.current?.contains(t)) return;
+      setMenuFor(null);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuFor]);
+  const toggleMenu = (i: number, el: HTMLElement) => {
+    const bar = tabBarRef.current;
+    setMenuLeft(bar ? Math.max(0, el.getBoundingClientRect().left - bar.getBoundingClientRect().left) : 0);
+    setMenuFor((m) => (m === i ? null : i));
+  };
+  useEffect(() => {
+    if (!hotkeys) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || !/^[1-9]$/.test(e.key)) return;
+      const i = Number(e.key) - 1;
+      if (i < views.length) { e.preventDefault(); setActiveIdx(i); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hotkeys, views.length]);
   const active = views[Math.min(activeIdx, views.length - 1)] ?? views[0];
   const activeSpec = useMemo(() => specFromView(active, source), [active, source]);
   const isChart = active.type === "chart";
@@ -118,18 +168,18 @@ export function DataViews({ source, views, onViewsChange }: Props) {
 
   return (
     <>
-      <div className={styles.tabBar}>
-        <div className={styles.tabs}>
+      <div className={styles.tabBar} ref={tabBarRef}>
+        <div className={`${styles.tabs} ${tabsFade ? styles.tabsFade : ""}`} ref={tabsRef} onScroll={measureTabs}>
           {views.map((v, i) => (
             <ViewTab
               key={`${v.name}-${i}`}
               view={v}
               active={i === activeIdx}
-              onClick={() => setActiveIdx(i)}
-              onRename={() => renameView(i)}
-              onDelete={() => deleteView(i)}
+              onClick={() => { setMenuFor(null); setActiveIdx(i); }}
+              onToggleMenu={(el) => toggleMenu(i, el)}
             />
           ))}
+        </div>
           <div className={styles.addView} ref={addViewRef}>
             <button className={styles.addBtn} title="Add view" onClick={() => setShowAddView((s) => !s)}>
               <PlusIcon size={14} />
@@ -144,8 +194,14 @@ export function DataViews({ source, views, onViewsChange }: Props) {
               </div>
             )}
           </div>
-        </div>
         <button className={styles.newBtn} onClick={newRow}>+ New</button>
+        {trailing}
+        {menuFor !== null && views[menuFor] && (
+          <div className={styles.tabMenu} style={{ left: menuLeft }} ref={menuRef}>
+            <button className={styles.tabMenuItem} onClick={() => { const i = menuFor; setMenuFor(null); renameView(i); }}>Rename</button>
+            <button className={styles.tabMenuItem} onClick={() => { const i = menuFor; setMenuFor(null); deleteView(i); }}>Delete view</button>
+          </div>
+        )}
       </div>
 
       {isChart ? (
@@ -161,6 +217,7 @@ export function DataViews({ source, views, onViewsChange }: Props) {
       )}
 
       <div className={styles.content}>
+       <ErrorBoundary inline label={`the ${active.name} view`} key={`${activeIdx}:${active.type}`}>
         {error && (missingCollection(error)
           ? <MissingCollection name={missingCollection(error)!} />
           : <div className={styles.error}>{error}</div>)}
@@ -191,27 +248,31 @@ export function DataViews({ source, views, onViewsChange }: Props) {
                         ? <TimelineView table={table} spec={activeSpec} source={source} onStartChange={(f) => updateActive({ ...active, start: f })} />
                         : <DataTable table={table} spec={activeSpec} source={source} onChanged={reload} />)
               : loading ? <div className={styles.stub}>Loading…</div> : null)}
+       </ErrorBoundary>
       </div>
     </>
   );
 }
 
-function ViewTab({ view, active, onClick, onRename, onDelete }: {
-  view: ViewDef; active: boolean; onClick: () => void; onRename: () => void; onDelete: () => void;
+function ViewTab({ view, active, onClick, onToggleMenu }: {
+  view: ViewDef; active: boolean; onClick: () => void; onToggleMenu: (el: HTMLElement) => void;
 }) {
-  const [menu, setMenu] = useState(false);
-  const ref = useOutside(() => setMenu(false));
+  const ref = useRef<HTMLDivElement>(null);
+  // Keep the active tab in view when the strip scrolls (sideways only — never
+  // move the page for it).
+  useEffect(() => {
+    const el = ref.current, strip = el?.parentElement;
+    if (!active || !el || !strip) return;
+    if (el.offsetLeft < strip.scrollLeft) strip.scrollLeft = el.offsetLeft;
+    else if (el.offsetLeft + el.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = el.offsetLeft + el.offsetWidth - strip.clientWidth;
+    }
+  }, [active]);
   return (
     <div className={`${styles.tab} ${active ? styles.tabActive : ""}`} ref={ref}>
-      <button className={styles.tabBtn} onClick={active ? () => setMenu((m) => !m) : onClick}>
+      <button className={styles.tabBtn} onClick={active ? (e) => onToggleMenu(e.currentTarget) : onClick}>
         <span className={styles.tabIcon}>{viewIcon(view.type)}</span>{view.name}
       </button>
-      {menu && active && (
-        <div className={styles.tabMenu}>
-          <button className={styles.tabMenuItem} onClick={() => { setMenu(false); onRename(); }}>Rename</button>
-          <button className={styles.tabMenuItem} onClick={() => { setMenu(false); onDelete(); }}>Delete view</button>
-        </div>
-      )}
     </div>
   );
 }

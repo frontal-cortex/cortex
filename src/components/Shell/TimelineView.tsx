@@ -98,7 +98,7 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
       let e = endField ? dateOf(row.cells[endField]) : null;
       if (s && (!e || e < s)) e = s;
       const val = colorCol ? String(row.cells[colorCol.key] ?? "") : "";
-      const color = colorCol?.schema?.options.find((o) => o.name === val)?.color ?? null;
+      const color = colorCol?.schema?.options?.find((o) => o.name === val)?.color ?? null;
       return { id: row.id, title: String(row.cells["title"] ?? row.id), start: s, end: e, color };
     });
     const scheduled = items.filter((i) => i.start).sort((a, b) => a.start!.localeCompare(b.start!));
