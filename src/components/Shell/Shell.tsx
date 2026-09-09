@@ -507,6 +507,8 @@ export function Shell({
     "toggle-properties": () => editorRef.current?.toggleProperties(),
     "marketplace":     () => setShowMarketplace((v) => !v),
     "log-today":       () => setShowLogToday((v) => !v),
+    "find-in-note":    () => editorRef.current?.openFind(),
+    "toggle-outline":  () => editorRef.current?.toggleOutline(),
   };
 
   return (
@@ -627,6 +629,8 @@ export function Shell({
           onToggleMonk={toggleMonk}
           onFocusSidebar={() => actionsRef.current?.["focus-sidebar"]()}
           onToggleProperties={() => editorRef.current?.toggleProperties()}
+          onFindInNote={note ? () => editorRef.current?.openFind() : undefined}
+          onToggleOutline={() => editorRef.current?.toggleOutline()}
           onPublish={() => setShowPublish(true)}
           onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
           isPublic={note?.frontmatter["publish"] === true}

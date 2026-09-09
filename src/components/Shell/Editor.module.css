@@ -413,3 +413,46 @@
   flex-shrink: 0;
   cursor: default;
 }
+
+/* ── Page column + outline pane ─────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* The page and its chrome (find bar, status line); the outline sits beside it. */
+.column {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Word count and reading time — one quiet line under the page. */
+.statusLine {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 3px 54px 6px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Find-in-note highlights (ProseMirror decorations, see lib/findInNote.ts) */
+:global(.cortex-find-match) {
+  background: color-mix(in srgb, var(--git-dirty) 28%, transparent);
+  border-radius: 2px;
+}
+:global(.cortex-find-match-active) {
+  background: color-mix(in srgb, var(--git-dirty) 60%, transparent);
+  outline: 1px solid var(--git-dirty);
+}
