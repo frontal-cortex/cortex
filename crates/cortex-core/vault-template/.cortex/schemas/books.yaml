@@ -1,0 +1,35 @@
+properties:
+  - name: author
+    type: text
+  - name: status
+    type: status
+    options:
+      - name: to_read
+        color: gray
+      - name: reading
+        color: blue
+      - name: finished
+        color: green
+  - name: format
+    type: select
+    options:
+      - name: book
+        color: blue
+      - name: ebook
+        color: purple
+      - name: audiobook
+        color: pink
+  - name: rating
+    type: number
+    format: stars
+    min: 0
+    max: 5
+  - name: pages
+    type: number
+  - name: started
+    type: date
+  - name: finished
+    type: date
+  - name: days
+    type: formula
+    expr: finished - started

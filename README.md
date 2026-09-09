@@ -45,7 +45,7 @@ cargo install --path crates/cortex-cli
 
 ```
 my-vault/
-├── notes/           # Your notes, in any folders you like (starter: welcome.md, ideas/, journal/, work/)
+├── notes/           # Your notes, in any folders you like (starter: welcome.md, a tour/ of the features, ideas/, journal/, work/)
 ├── templates/       # Note templates; daily.md seeds the Today note
 ├── .cortex/         # Settings, favourites — committed YAML, so config travels with the vault
 ├── .brain/          # Cache (gitignored, always safe to delete): the SQLite index

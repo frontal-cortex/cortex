@@ -158,7 +158,7 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
         ("auto_sync_minutes", "Minutes between automatic git syncs, plus on launch/focus; 0 = off (default 0)."),
         ("collab_url", "Yjs websocket relay for presence and co-editing, e.g. ws://host:1234; empty = off (default empty)."),
         ("theme_file", "Palette file to follow (Omarchy colors.toml shape, `~` expands); empty = use `theme` (default empty)."),
-        ("accent", "Action colour: empty = the theme's accent; a palette colour name (blue green yellow orange red magenta cyan brown) or a #hex (default empty)."),
+        ("accent", "Action colour: empty = the theme's accent; a palette colour name (blue green yellow orange red magenta cyan brown) or a `#hex` value (default empty)."),
         ("prose_font", "Page typeface: ysabeau | quattro | duo | recursive | alegreya | fraunces | crimson | serif | system | mono | any font-family; empty = ysabeau (default empty)."),
         ("prose_slant", "Page tilt: empty (upright) | degrees such as 4 or 8 | italic (default empty)."),
         ("keybindings", "Shortcut overrides, id -> keys (e.g. toggle-sidebar: mod+shift+b); set one with keybindings.<id>=<keys>, empty value removes it (default {})."),

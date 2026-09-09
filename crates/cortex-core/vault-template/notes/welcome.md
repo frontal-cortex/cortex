@@ -1,26 +1,38 @@
 ---
 title: Welcome
 type: note
-tags: [meta, getting-started]
+tags: [tour]
 created: {{today}}
 ---
 
-# Welcome to your Second Brain
+This is your vault: a folder of Markdown files in a git repository. The app
+is a lens on those files. Open the folder in any editor and it still makes
+sense; delete the app and nothing is lost.
 
-This is your first note. Everything here is plain Markdown in a git repo —
-you own it completely.
+The notes in the `tour/` folder show you round, one feature each, by doing
+it in place. Twenty minutes, in order, or dip in:
 
-## Try these
+- [ ] [[Tour: Writing]] — the editor: slash menu, callouts, code, maths, checklists, images
+- [ ] [[Tour: Linking]] — wiki links, backlinks, tags, the graph, search
+- [ ] [[Tour: Daily notes]] — Today, templates, placeholders
+- [ ] [[Tour: Collections]] — a database that is just a folder of notes, with live views
+- [ ] [[Tour: Templates and packs]] — the marketplace, installing a pack, making your own
+- [ ] [[Tour: Agents and the CLI]] — the terminal pane, `cortex`, MCP, proposals
+- [ ] [[Tour: Sync, publishing and looks]] — git, history, the static site, themes and fonts
 
-- **Link notes**: type `[[` to link to another note. See [[Second Brain]] for
-  what makes this approach work.
-- **Create a daily note**: hit the Today button. It uses
-  `templates/daily.md`.
-- **Organise**: make folders with the `+` button in the left panel. There are
-  example `ideas/`, `journal/`, and `work/` folders to start.
-- **Search**: full-text search is indexed automatically.
+Tick each box as you go — that is a checklist block, and ticking it edits
+this file.
 
-## Make it yours
+> [!tip] Keyboard first
+> `Ctrl+K` jumps to any note, `Ctrl+Shift+P` runs any command, `Ctrl+/` lists
+> every shortcut. On macOS read `Cmd` for `Ctrl`.
 
-Delete this note whenever you like. Edit [[Second Brain]], reshape the folders,
-write your own templates. The app never overwrites what you author.
+## When you are done
+
+Delete the `tour/` folder and the `books` collection, or keep whatever is
+useful — they are ordinary notes. [[Second Brain]] is a short note on why
+linking beats filing; it stays.
+
+`VAULT.md` in the root is the conventions reference for people;
+`AGENTS.md` is the same for AI agents. The app rewrites both when it updates,
+so they always match the version you are running.

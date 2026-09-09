@@ -19,16 +19,53 @@ pub const FILES: &[(&str, &str)] = &[
     (".gitignore", include_str!("../vault-template/.gitignore")),
     ("notes/welcome.md", include_str!("../vault-template/notes/welcome.md")),
     ("notes/ideas/second-brain.md", include_str!("../vault-template/notes/ideas/second-brain.md")),
+    // The tour: one note per feature, each doing the thing it describes.
+    ("notes/tour/writing.md", include_str!("../vault-template/notes/tour/writing.md")),
+    ("notes/tour/linking.md", include_str!("../vault-template/notes/tour/linking.md")),
+    ("notes/tour/daily-notes.md", include_str!("../vault-template/notes/tour/daily-notes.md")),
+    ("notes/tour/collections.md", include_str!("../vault-template/notes/tour/collections.md")),
+    ("notes/tour/templates-and-packs.md", include_str!("../vault-template/notes/tour/templates-and-packs.md")),
+    ("notes/tour/agents-and-cli.md", include_str!("../vault-template/notes/tour/agents-and-cli.md")),
+    ("notes/tour/sync-publishing-and-looks.md", include_str!("../vault-template/notes/tour/sync-publishing-and-looks.md")),
     ("notes/journal/.gitkeep", ""),
     ("notes/work/.gitkeep", ""),
+    // A three-row collection for the tour to show, with its schema and row template.
+    (".cortex/schemas/books.yaml", include_str!("../vault-template/.cortex/schemas/books.yaml")),
+    ("collections/books/_index.md", include_str!("../vault-template/collections/books/_index.md")),
+    ("collections/books/_template-books.md", include_str!("../vault-template/collections/books/_template-books.md")),
+    ("collections/books/how-to-take-smart-notes.md", include_str!("../vault-template/collections/books/how-to-take-smart-notes.md")),
+    ("collections/books/piranesi.md", include_str!("../vault-template/collections/books/piranesi.md")),
+    ("collections/books/thinking-in-systems.md", include_str!("../vault-template/collections/books/thinking-in-systems.md")),
     ("templates/daily.md", include_str!("../vault-template/templates/daily.md")),
     ("templates/note.md", include_str!("../vault-template/templates/note.md")),
+    ("templates/meeting.md", include_str!("../vault-template/templates/meeting.md")),
 ];
 
-/// Placeholder in the bundled notes' `created:` fields, replaced with the
-/// scaffold date. Deliberately not `{{date}}`, which the note templates use
-/// and must keep verbatim.
+/// Placeholder in the bundled notes' dates, replaced with the scaffold date —
+/// `{{today}}`, or with an offset, `{{today-40}}`, so the tour's rows have a
+/// believable past. Deliberately not `{{date}}`, which the note templates use
+/// and must keep verbatim (only names beginning `today` are touched).
 const TODAY: &str = "{{today}}";
+
+/// Fill every `{{today…}}` in `text` relative to `base`; leave every other
+/// placeholder as it is.
+fn stamp(text: &str, base: chrono::NaiveDate) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("{{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let Some(end) = after.find("}}") else { out.push_str(&rest[start..]); return out; };
+        let name = after[..end].trim();
+        match if name.starts_with("today") { crate::placeholders::resolve(name, base) } else { None } {
+            Some(v) => out.push_str(&v),
+            None => { out.push_str(&rest[start..start + 2 + end + 2]); }
+        }
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
 
 /// Write the starter vault into `root`, which must be empty or absent.
 ///
@@ -36,13 +73,13 @@ const TODAY: &str = "{{today}}";
 /// make an initial commit (the app and `cortex init` both do).
 pub fn scaffold(root: &Path) -> Result<()> {
     check_target(root)?;
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = chrono::Local::now().date_naive();
     for (rel, content) in FILES {
         let path = root.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, content.replace(TODAY, &today))?;
+        std::fs::write(&path, stamp(content, today))?;
     }
     Ok(())
 }
@@ -132,7 +169,7 @@ const STAMPED_EXT: [&str; 4] = ["md", "yaml", "yml", "txt"];
 
 fn copy_template(src: &Path, root: &Path) -> Result<()> {
     let src = src.canonicalize()?;
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = chrono::Local::now().date_naive();
     let mut files = 0usize;
     let walker = walkdir::WalkDir::new(&src).into_iter().filter_entry(|e| {
         let name = e.file_name().to_string_lossy();
@@ -152,7 +189,7 @@ fn copy_template(src: &Path, root: &Path) -> Result<()> {
         let under_templates = rel.starts_with("templates");
         if STAMPED_EXT.contains(&ext) && !under_templates {
             let text = std::fs::read_to_string(entry.path())?;
-            std::fs::write(&dest, text.replace(TODAY, &today))?;
+            std::fs::write(&dest, stamp(&text, today))?;
         } else {
             std::fs::copy(entry.path(), &dest)?;
         }
@@ -239,13 +276,35 @@ mod tests {
 
     #[test]
     fn bundled_notes_parse_as_notes() {
+        let base = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
         for (rel, content) in FILES {
-            if rel.starts_with("notes/") && rel.ends_with(".md") {
-                let note = crate::note::parse_note(rel, &content.replace(TODAY, "2026-01-01"))
-                    .unwrap_or_else(|e| panic!("{rel}: {e}"));
+            let is_row_template = rel.contains("/_template-");
+            if (rel.starts_with("notes/") || rel.starts_with("collections/")) && rel.ends_with(".md") && !is_row_template {
+                let text = stamp(content, base);
+                assert!(!text.contains("{{today"), "{rel} still has a date placeholder");
+                let note = crate::note::parse_note(rel, &text).unwrap_or_else(|e| panic!("{rel}: {e}"));
                 assert!(note.frontmatter.contains_key("title"), "{rel} has a title");
-                assert_eq!(note.frontmatter["created"], "2026-01-01", "{rel} created date");
+                let created = note.frontmatter["created"].as_str().unwrap_or_default();
+                assert!(created.starts_with("2026-") || created.starts_with("2025-"), "{rel} created date: {created}");
             }
         }
+        // Offsets go back in time; note templates keep their own placeholders.
+        assert_eq!(stamp("{{today-40}} {{today}} {{date}} {{title}}", base), "2025-12-22 2026-01-31 {{date}} {{title}}");
+    }
+
+    #[test]
+    fn the_tour_links_resolve_and_the_books_schema_parses() {
+        let titles: Vec<String> = FILES.iter().filter(|(rel, _)| rel.ends_with(".md") && !rel.contains("/_template-"))
+            .filter_map(|(rel, content)| crate::note::parse_note(rel, &stamp(content, chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap())).ok())
+            .filter_map(|n| n.frontmatter.get("title").and_then(|t| t.as_str().map(String::from)))
+            .collect();
+        for (rel, content) in FILES {
+            for cap in regex::Regex::new(r"!?\[\[([^\[\]|#]+)(?:[#|][^\]]*)?\]\]").unwrap().captures_iter(content) {
+                let target = cap[1].trim();
+                assert!(titles.iter().any(|t| t == target), "{rel} links to [[{target}]], which no starter note is titled");
+            }
+        }
+        let schema: serde_yaml::Value = serde_yaml::from_str(FILES.iter().find(|(r, _)| r.ends_with("books.yaml")).unwrap().1).unwrap();
+        assert!(schema["properties"].as_sequence().map(|s| s.len() >= 8).unwrap_or(false));
     }
 }
