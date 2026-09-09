@@ -105,12 +105,12 @@ by inferring column types (`data.rs:128`).
 | Board, group by select / status, drag between columns | done | — | Column order follows the schema's option order (`CortexViewBlock.tsx:942`). |
 | Card reorder within a column | missing | M | Cards follow the query sort only. |
 | Calendar (month) with per-day add | done | — | |
-| Calendar week / day modes; multi-day spans | missing | S / M | Rows sit on one date. |
+| Calendar week / day modes; multi-day spans | done | — | Month / Week / Day segmented control, remembered as `mode:` in the view. A row spans days when the view names `end:` (or is placed by `start` and the collection has `end`), or the cell holds `2026-09-01/2026-09-05`; spans draw as one bar across the week, in lanes (`CortexViewBlock.tsx` `CalendarView`). No drag to reschedule. |
 | Gallery with cover | done | — | Cover is always the `cover` field; no "preview = page content". |
 | Timeline / Gantt | done | — | Read-only bars from `start` to `end`; no drag to reschedule (`TimelineView.tsx`). |
 | Chart | done, beyond Notion | — | `data.rs:1756`, dependency-free SVG. |
 | Tracker (habit grid with streaks) | done, beyond Notion | — | `tracker.rs`; same from CLI and MCP. |
-| List view | missing | S | `ViewType` has no `list` (`commands.ts:106`). |
+| List view | done | — | `type: list`: one line per row — title, up to three property chips (the view's `columns:` or the first real properties), the table's row menu (open / duplicate / save as template / delete); no header. Nothing new in the engine (`ListView` in `CortexViewBlock.tsx`). |
 | Multiple saved views, committed as YAML | done | — | `_index.md` frontmatter; add / rename / delete tabs (`DataViews.tsx`). |
 | Per-view visible columns and order | done | — | Toggling a column appends it; no drag reorder. |
 | Column width, wrap | missing | M | `min-width: 150px` in CSS only. |
@@ -128,7 +128,7 @@ by inferring column types (`data.rs:128`).
 | Relative dates (`@today+30`, `@monday`, `@month`) and `@me` | done, beyond Notion | — | `data.rs:528`, `:686`. |
 | Multi-key sort with UI | done | — | Empty cells last; selects sort by option order. |
 | Group by in table view; sub-groups | partial | L | `group:` folds a table into one collapsible section per value in option order, empty last, with a count and an in-group add row that seeds the value (`CortexViewBlock.tsx` `DataTable`). Sub-groups missing. |
-| Search box inside a database | missing | S | Global FTS is not collection-scoped. |
+| Search box inside a database | partial | S | Search box at the end of the view toolbar narrows the rows on show, client-side, over the title, the visible columns and the body; debounced, with a clear button; `mod+f` goes there while the table or list has focus (the editor's find-in-note keeps the key elsewhere). Not part of the spec. Missing: the summary row still counts every row, and there is no collection-scoped FTS for the CLI / MCP. |
 | Summary row (count, sum, …) | done | — | `summary: {amount: sum, done: percent_checked}` in the view spec; count, sum, avg, min, max, percent_checked, empty, not_empty computed by the engine over the visible rows (`data.rs` `summarize`), so `cortex view --summary` and MCP return the same numbers. Picked per column from the footer; nothing is written to a row. Missing: median, range, unique, per-group summaries. |
 
 ## 7. Rows and editing
@@ -262,7 +262,7 @@ by inferring column types (`data.rs:128`).
 3. **No columns, bookmarks, embeds, TOC, synced blocks, buttons.** (Math landed: `$…$` / `$$…$$` with KaTeX.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation, a date picker and duplicate row landed.)
-6. **No sub-groups in the table view**, and no in-database search. (Filter grammar precedence and operators, table group-by and the summary row have landed.)
+6. **No sub-groups in the table view.** (Filter grammar precedence and operators, table group-by, the summary row and the in-database search box have landed.)
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
 9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.

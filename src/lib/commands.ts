@@ -142,7 +142,7 @@ export interface SortClause {
   desc: boolean;
 }
 
-export type ViewType = "table" | "board" | "calendar" | "gallery" | "chart" | "tracker" | "timeline";
+export type ViewType = "table" | "board" | "calendar" | "gallery" | "list" | "chart" | "tracker" | "timeline";
 
 /** One named view in a database / embedded data block.
  *
@@ -161,6 +161,8 @@ export interface ViewDef {
   group?: string;
   /** Calendar: the date property. Tracker: the log's date property (default `date`). */
   date?: string;
+  /** Calendar: month | week | day (default month). */
+  mode?: string;
   limit?: string;
   x?: string;
   y?: string;
@@ -178,7 +180,8 @@ export interface ViewDef {
   range?: string;
   /** Timeline: the bar's first day (default `start`, else the first date property). */
   start?: string;
-  /** Timeline: the bar's last day (default `end`, else the second date property; none = one-day bars). */
+  /** Timeline: the bar's last day (default `end`, else the second date property; none = one-day bars).
+   *  Calendar: the property that ends a multi-day span (default `end` when the date field is `start`). */
   end?: string;
   /** Table: the summary row as a YAML flow map, `{amount: sum, done: percent_checked}`
    *  (a real mapping in `_index.md` frontmatter; `database.ts` converts). */

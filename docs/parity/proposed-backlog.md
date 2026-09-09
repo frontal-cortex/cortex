@@ -423,5 +423,5 @@ relative to the two above: 36 → 34 → 37 → responsive shell → 38 → 35 �
 - **Local graph** with depth, filters and tag colouring; live physics. M.
 - **Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.
 - **Tabs and split panes.** L, and tabs were removed once after a history bug; needs a design first.
-- **Calendar week view, in-database search box, list view.** S each.
+- ~~**Calendar week view, in-database search box, list view.**~~ Done: month / week / day modes with multi-day spans, a client-side search box in the view toolbar, and `type: list`.
 - **Resizable sidebar, recent files, explorer sort, `?` shortcut overlay.** S each.
