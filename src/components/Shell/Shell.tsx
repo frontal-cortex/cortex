@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
+import { parseWikiLink } from "../../lib/wikiLink";
 import { findShortcut, applyKeymapOverrides, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
@@ -127,6 +128,8 @@ export function Shell({
   const editorRef = useRef<EditorHandle>(null);
   const leftRef = useRef<LeftPanelHandle>(null);
   const pendingFocus = useRef<"title" | "body" | null>(null);
+  /** Heading to scroll to once a `[[Note#Section]]` target has opened. */
+  const pendingSection = useRef<string | null>(null);
   const focusEditor = useCallback(() => { editorRef.current?.focusBody(); }, []);
   useEffect(() => {
     const t = setTimeout(() => { if (!selectedPathRefForFocus.current) leftRef.current?.focus(); }, 250);
@@ -148,8 +151,13 @@ export function Shell({
     const where = pendingFocus.current;
     if (!where || !note || note.path !== selectedPath) return;
     pendingFocus.current = null;
+    const section = pendingSection.current;
+    pendingSection.current = null;
     // Next frame: the editor mounts on this render and registers its handle.
-    requestAnimationFrame(() => where === "title" ? editorRef.current?.focusTitle() : editorRef.current?.focusBody());
+    requestAnimationFrame(() => {
+      if (where === "title") editorRef.current?.focusTitle(); else editorRef.current?.focusBody();
+      if (section) editorRef.current?.scrollToHeading(section);
+    });
   }, [note, selectedPath]);
   const { favorites, toggleFavorite, isFavorite } = useFavorites(!!vault);
   const { trash, refreshTrash, restore, deleteForever, emptyTrash } = useTrash(!!vault);
@@ -456,16 +464,29 @@ export function Shell({
     setSelectedPath(restoredPath);
   }, [restore, refresh]);
 
-  const handleNavigate = useCallback((target: string) => {
-    const lower = target.toLowerCase();
-    const byPath = notes.find((n) => n.path === target);
-    if (byPath) { openNote(target); return; }
-    const byTitle = notes.find((n) => (n.title || "").toLowerCase() === lower);
-    if (byTitle) { openNote(byTitle.path); return; }
-    const byStem = notes.find((n) =>
-      n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(lower),
-    );
-    if (byStem) openNote(byStem.path);
+  // Follow a wiki link in any written form: `Note`, `Note|alias`, `Note#Section`,
+  // `![[Note#Section]]`. Only the target picks the note (same order as
+  // cortex-core `vault::resolve`); a section scrolls to that heading once the
+  // note is open. `[[#Section]]` stays in the current note.
+  const handleNavigate = useCallback((raw: string) => {
+    const link = parseWikiLink(raw);
+    if (!link.target) {
+      if (link.section) editorRef.current?.scrollToHeading(link.section);
+      return;
+    }
+    const lower = link.target.toLowerCase();
+    const found =
+      notes.find((n) => n.path === link.target || n.path === `${link.target}.md`) ??
+      notes.find((n) => (n.title || "").toLowerCase() === lower) ??
+      notes.find((n) => n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(lower));
+    if (!found) return;
+    if (found.path === selectedPathRefForFocus.current) {
+      openNote(found.path);
+      if (link.section) editorRef.current?.scrollToHeading(link.section);
+      return;
+    }
+    pendingSection.current = link.section ?? null;
+    openNote(found.path);
   }, [notes, openNote]);
 
   actionsRef.current = {

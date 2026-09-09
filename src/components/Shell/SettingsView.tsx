@@ -301,7 +301,7 @@ const SECTIONS: SectionDef[] = [
       },
       {
         key: "marketplace_extra", label: "Extra indexes", keywords: "marketplace team registry additional merge urls",
-        hint: "More index URLs, comma-separated, merged with the first — a team registry alongside the official one.",
+        hint: "More index URLs, comma-separated, merged with the first — a team registry alongside the official one. Packs from these show a “Third-party index” badge: the hash check proves the files match that index, not that the index is honest, and their preview images are not loaded.",
         render: ({ settings, update }) => (
           <input className={`${styles.input} ${styles.inputMono}`} value={settings.marketplace_extra} spellCheck={false}
             placeholder="https://notes.example.com/packs/index.json"
