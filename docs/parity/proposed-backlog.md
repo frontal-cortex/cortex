@@ -364,7 +364,7 @@ editor column, hidden in monk mode. Nothing stored. Screenshot all three.
 created: 2026-09-09
 effort: L
 priority: 34
-status: planned
+status: done
 tags: [parity, mobile]
 title: Mobile — in-process git transport (RemoteOps) with desktop tests
 type: note
@@ -411,15 +411,17 @@ No Tauri mobile build in this task.
 
 ---
 
+The Android feasibility spike (`mobile-spike.md`, done 2026-09-09) adds
+four more mobile rows, priorities 36–39, and the order they run in
+relative to the two above: 36 → 34 → 37 → responsive shell → 38 → 35 → 39.
+
 ## Next in line (not sized as rows yet)
 
 - **Comments as a committed sidecar** (`notes/foo.comments.yaml`, text-quote anchors, margin rendering; BlockNote's comments extension needs a thread store). M.
-- **Publish database views**: render `cortex-view` fences as static tables on the site, and index body text into `search.json`. M.
-- **CI and auto-update**: a `.github/` build matrix for the three desktop OSes plus `tauri-plugin-updater`. Not parity, but today nobody can receive a build. M.
-- **Assets that are not images**: `read_asset` returns `image/png` for everything and the rehydration regex only matches `![](assets/…)`, so captioned images, video, audio and file blocks render broken after reload. S.
+- ~~**Publish database views**: render `cortex-view` fences as static tables on the site, and index body text into `search.json`. M.~~ Done.
+- ~~**CI and auto-update**: a `.github/` build matrix for the three desktop OSes plus `tauri-plugin-updater`. Not parity, but today nobody can receive a build. M.~~ Done: `.github/workflows/{ci,release}.yml`, updater plugin, Check for updates in palette + Settings; keypair setup in `docs/development.md`.
 - **Local graph** with depth, filters and tag colouring; live physics. M.
 - **Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.
 - **Tabs and split panes.** L, and tabs were removed once after a history bug; needs a design first.
-- **Property types**: date range, files, created/edited time and by as queryable columns. M.
 - ~~**Calendar week view, in-database search box, list view.**~~ Done: month / week / day modes with multi-day spans, a client-side search box in the view toolbar, and `type: list`.
 - **Resizable sidebar, recent files, explorer sort, `?` shortcut overlay.** S each.

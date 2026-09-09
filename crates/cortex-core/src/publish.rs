@@ -14,7 +14,10 @@
 //! a later build can remove what it wrote before and nothing else. Wiki links
 //! to published notes become relative links; links to anything unpublished
 //! degrade to plain text, so the site never reveals what stayed private.
-//! Read-only: no comments, no presence, no editing.
+//! Database views (`cortex-view` fences and a collection page's own views)
+//! become static tables through the same `resolve_view` the app uses, and
+//! `search.json` carries the start of each body so the index page's search
+//! finds words inside pages. Read-only: no comments, no presence, no editing.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -184,7 +187,8 @@ pub fn build(root: &Path, out: &Path, force: bool) -> Result<Report> {
         render_body(root, &p.note, 0, &all, &by_path, &mut assets).ok()
     });
     files.insert("index.html".into(), index_html(&site, &published, home_html.as_deref()).into_bytes());
-    files.insert("search.json".into(), serde_json::to_vec(&published.iter().map(|p| &p.entry).collect::<Vec<_>>()).map_err(json_err)?);
+    let search: Vec<SearchEntry> = published.iter().map(|p| SearchEntry { entry: &p.entry, text: search_text(&p.note.body, SEARCH_TEXT_LIMIT) }).collect();
+    files.insert("search.json".into(), serde_json::to_vec(&search).map_err(json_err)?);
     files.insert("style.css".into(), STYLE.as_bytes().to_vec());
 
     // Assets the pages reference, copied byte for byte.
@@ -325,7 +329,16 @@ fn render_body(
     by_path: &BTreeMap<&str, &PublishEntry>,
     assets: &mut BTreeSet<String>,
 ) -> Result<String> {
-    use pulldown_cmark::{html, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+    use pulldown_cmark::{html, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+
+    // A collection's own page shows its views first, as the app does, unless
+    // the body places them itself with a `cortex-views` fence.
+    let mut out = String::new();
+    if let Some(coll) = own_collection(&note.path) {
+        if !note.body.contains("```cortex-views") {
+            out.push_str(&render_collection_views(root, coll, depth, by_path));
+        }
+    }
 
     let md = rewrite_wiki_links(&note.body, depth, all, by_path);
     let mut opts = Options::empty();
@@ -341,9 +354,20 @@ fn render_body(
     // Headings get ids so `[[note#section]]` links land; images and `.md`
     // links get rewritten and the assets collected.
     let mut heading_text: Option<String> = None;
+    // A `cortex-view` / `cortex-views` / `cortex-chart` fence being collected,
+    // to render as a table where the code block would have gone.
+    let mut fence: Option<(String, String)> = None;
     let mut events: Vec<Event> = Vec::new();
     for ev in Parser::new_ext(&md, opts) {
         match ev {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(ref lang))) if is_view_fence(lang) => {
+                fence = Some((lang.trim().to_string(), String::new()));
+            }
+            Event::Text(ref t) if fence.is_some() => fence.as_mut().unwrap().1.push_str(t),
+            Event::End(TagEnd::CodeBlock) if fence.is_some() => {
+                let (lang, spec) = fence.take().unwrap();
+                events.push(Event::Html(CowStr::from(render_fence(root, &lang, &spec, &note.path, depth, by_path))));
+            }
             Event::Start(Tag::Image { link_type, dest_url, title, id }) => {
                 let dest = match local_asset(root, &dest_url) {
                     Some(rel) => {
@@ -389,9 +413,390 @@ fn render_body(
             other => events.push(other),
         }
     }
+    let mut body = String::new();
+    html::push_html(&mut body, events.into_iter());
+    out.push_str(&highlights(&callouts(&body)));
+    Ok(out)
+}
+
+// ── Database views ──────────────────────────────────────────────────────────
+// A `cortex-view` fence, a `cortex-views` fence, and the `views:` of a
+// collection's `_index.md` all render as static tables through the same
+// `data::resolve_view` the app's table uses — columns, filter, sort, summary
+// and number formats included. Other view types (board, calendar, gallery,
+// chart, timeline, tracker) degrade to that table with a note saying which
+// view they were. Rows link to their own page when that row is published.
+
+fn is_view_fence(lang: &str) -> bool {
+    matches!(lang.trim(), "cortex-view" | "cortex-views" | "cortex-chart")
+}
+
+/// `collections/<name>/_index.md` → `<name>`.
+fn own_collection(path: &str) -> Option<&str> {
+    path.strip_prefix("collections/")?.strip_suffix("/_index.md").filter(|c| !c.is_empty() && !c.contains('/'))
+}
+
+fn render_fence(root: &Path, lang: &str, spec: &str, note_path: &str, depth: usize, by_path: &BTreeMap<&str, &PublishEntry>) -> String {
+    match lang {
+        "cortex-views" => {
+            let named = spec.lines().find_map(|l| l.trim().strip_prefix("collection:")).map(str::trim).filter(|c| !c.is_empty());
+            match named.or_else(|| own_collection(note_path)) {
+                Some(coll) => render_collection_views(root, coll, depth, by_path),
+                None => String::new(),
+            }
+        }
+        "cortex-chart" if !spec.lines().any(|l| l.starts_with("type:")) => {
+            render_view(root, &format!("type: chart\n{spec}"), None, depth, by_path)
+        }
+        _ => render_view(root, spec, None, depth, by_path),
+    }
+}
+
+/// The views a collection's `_index.md` declares, each as `(name, spec)` —
+/// the frontmatter entry with the collection's `source:` added, the same
+/// spec the app builds for its tabs.
+fn collection_views(root: &Path, coll: &str) -> Vec<(String, String)> {
+    let Ok(text) = std::fs::read_to_string(root.join("collections").join(coll).join("_index.md")) else { return vec![] };
+    let Ok(note) = note::parse_note("_index.md", &text) else { return vec![] };
+    let Some(views) = note.frontmatter.get("views").and_then(|v| v.as_array()) else { return vec![] };
+    views.iter().filter_map(|v| {
+        let mut obj = v.as_object()?.clone();
+        let name = obj.remove("name").and_then(|n| n.as_str().map(str::to_string))
+            .or_else(|| obj.get("type").and_then(|t| t.as_str()).map(str::to_string))
+            .unwrap_or_else(|| "Table".into());
+        obj.insert("source".into(), serde_json::Value::String(format!("collections/{coll}")));
+        let spec = serde_yaml::to_string(&serde_json::Value::Object(obj)).ok()?;
+        Some((name, spec))
+    }).collect()
+}
+
+fn render_collection_views(root: &Path, coll: &str, depth: usize, by_path: &BTreeMap<&str, &PublishEntry>) -> String {
+    collection_views(root, coll).iter().map(|(name, spec)| render_view(root, spec, Some(name), depth, by_path)).collect()
+}
+
+/// One view as a `<section class="view">`: its name (when it has one), a
+/// note when the type is not a table, and the table itself.
+fn render_view(root: &Path, spec_yaml: &str, name: Option<&str>, depth: usize, by_path: &BTreeMap<&str, &PublishEntry>) -> String {
+    let mut out = String::from("<section class=\"view\">\n");
+    if let Some(n) = name {
+        out.push_str(&format!("<h3 class=\"view-name\">{}</h3>\n", esc(n)));
+    }
+    let spec: crate::data::ViewSpec = match serde_yaml::from_str(spec_yaml) {
+        Ok(s) => s,
+        Err(e) => {
+            out.push_str(&format!("<p class=\"view-note\">View not rendered: {}</p>\n</section>\n", esc(&e.to_string())));
+            return out;
+        }
+    };
+    let kind = spec.kind.as_deref().map(str::trim).filter(|k| !k.is_empty()).unwrap_or("table");
+    if kind != "table" {
+        out.push_str(&format!("<p class=\"view-note\">A {} view, shown here as a table.</p>\n", esc(kind)));
+    }
+    let table = if kind == "chart" {
+        crate::data::run_chart(root, spec_yaml).map(|c| chart_table(&c))
+    } else {
+        crate::data::resolve_view(root, spec_yaml).map(|t| view_table(&t, &spec, depth, by_path))
+    };
+    match table {
+        Ok(html) => out.push_str(&html),
+        Err(e) => out.push_str(&format!("<p class=\"view-note\">View not rendered: {}</p>\n", esc(&e.to_string()))),
+    }
+    out.push_str("</section>\n");
+    out
+}
+
+/// A chart's aggregated points as a table: one row per x, one column per series.
+fn chart_table(c: &crate::data::ChartResult) -> String {
+    let mut out = format!("<table class=\"view-table\">\n<thead><tr><th>{}</th>", esc(&c.x_label));
+    if c.series.is_empty() {
+        out.push_str(&format!("<th>{}</th>", esc(&c.y_label)));
+    } else {
+        for s in &c.series { out.push_str(&format!("<th>{}</th>", esc(&s.name))); }
+    }
+    out.push_str("</tr></thead>\n<tbody>\n");
+    let xs: Vec<&str> = if c.series.is_empty() { c.points.iter().map(|p| p.x.as_str()).collect() } else {
+        let mut xs: Vec<&str> = Vec::new();
+        for s in &c.series { for p in &s.points { if !xs.contains(&p.x.as_str()) { xs.push(&p.x); } } }
+        xs
+    };
+    for x in xs {
+        out.push_str(&format!("<tr><td>{}</td>", esc(x)));
+        if c.series.is_empty() {
+            let y = c.points.iter().find(|p| p.x == x).map(|p| fmt_num(p.y)).unwrap_or_default();
+            out.push_str(&format!("<td>{y}</td>"));
+        } else {
+            for s in &c.series {
+                let y = s.points.iter().find(|p| p.x == x).map(|p| fmt_num(p.y)).unwrap_or_default();
+                out.push_str(&format!("<td>{y}</td>"));
+            }
+        }
+        out.push_str("</tr>\n");
+    }
+    out.push_str("</tbody></table>\n");
+    out
+}
+
+/// The rows of a resolved view as HTML: grouped sections when the spec asks,
+/// a summary footer when it asks, the title cell (else the first) linking to
+/// the row's page when that row is published.
+fn view_table(t: &crate::data::ResolvedTable, spec: &crate::data::ViewSpec, depth: usize, by_path: &BTreeMap<&str, &PublishEntry>) -> String {
+    use crate::data::ResolvedRow;
+    let cols = &t.columns;
+    if cols.is_empty() {
+        return "<p class=\"view-note\">No rows.</p>\n".to_string();
+    }
+    let link_col = cols.iter().position(|c| c.key == "title").unwrap_or(0);
+    let coll = spec.source.strip_prefix("collections/").map(|c| c.trim_end_matches('/'));
+    let href = |row: &ResolvedRow| -> Option<String> {
+        let path = format!("collections/{}/{}.md", coll?, row.id);
+        by_path.get(path.as_str()).map(|e| format!("{}{}", up(depth), e.url))
+    };
+
+    let mut out = String::from("<table class=\"view-table\">\n<thead><tr>");
+    for c in cols { out.push_str(&format!("<th>{}</th>", esc(&c.key))); }
+    out.push_str("</tr></thead>\n");
+
+    let row_html = |row: &ResolvedRow| -> String {
+        let mut s = String::from("<tr>");
+        for (i, c) in cols.iter().enumerate() {
+            let v = row.cells.get(&c.key).unwrap_or(&serde_json::Value::Null);
+            let cell = cell_html(v, c.schema.as_ref());
+            match (i == link_col, href(row)) {
+                (true, Some(url)) => s.push_str(&format!("<td><a href=\"{}\">{}</a></td>", esc(&url), cell)),
+                _ => s.push_str(&format!("<td>{cell}</td>")),
+            }
+        }
+        s.push_str("</tr>\n");
+        s
+    };
+
+    match spec.group.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+        Some(field) => {
+            let options = cols.iter().find(|c| c.key == field).and_then(|c| c.schema.as_ref()).map(|s| s.options.iter().map(|o| o.name.clone()).collect::<Vec<_>>()).unwrap_or_default();
+            for (key, rows) in group_rows(&t.rows, field, &options) {
+                let label = if key == "—" { format!("No {}", esc(field)) } else { esc(&key) };
+                out.push_str(&format!(
+                    "<tbody class=\"group\">\n<tr class=\"group-row\"><th colspan=\"{}\">{label} <span class=\"count\">{}</span></th></tr>\n",
+                    cols.len(), rows.len()
+                ));
+                for r in rows { out.push_str(&row_html(r)); }
+                out.push_str("</tbody>\n");
+            }
+        }
+        None => {
+            out.push_str("<tbody>\n");
+            for r in &t.rows { out.push_str(&row_html(r)); }
+            out.push_str("</tbody>\n");
+        }
+    }
+
+    if !t.summary.is_empty() {
+        out.push_str("<tfoot><tr class=\"summary\">");
+        for c in cols {
+            match (spec.summary.get(&c.key).map(|f| f.trim()).filter(|f| !f.is_empty()), t.summary.get(&c.key)) {
+                (Some(func), Some(v)) => out.push_str(&format!(
+                    "<td><span class=\"summary-label\">{}</span> {}</td>",
+                    summary_label(func), summary_html(v, func, c.schema.as_ref())
+                )),
+                _ => out.push_str("<td></td>"),
+            }
+        }
+        out.push_str("</tr></tfoot>\n");
+    }
+    out.push_str("</table>\n");
+    out
+}
+
+/// Rows bucketed by `field`: the property's option order first, then other
+/// values alphabetically, then the rows with none (`—`) — the app's buckets.
+fn group_rows<'a>(rows: &'a [crate::data::ResolvedRow], field: &str, options: &[String]) -> Vec<(String, Vec<&'a crate::data::ResolvedRow>)> {
+    let mut groups: BTreeMap<String, Vec<&crate::data::ResolvedRow>> = BTreeMap::new();
+    for r in rows {
+        let key = r.cells.get(field).map(json_text).unwrap_or_default();
+        groups.entry(if key.is_empty() { "—".into() } else { key }).or_default().push(r);
+    }
+    let mut ordered = Vec::new();
+    for o in options {
+        if let Some(rs) = groups.remove(o) { ordered.push((o.clone(), rs)); }
+    }
+    let none = groups.remove("—");
+    ordered.extend(groups);
+    if let Some(rs) = none { ordered.push(("—".into(), rs)); }
+    ordered
+}
+
+/// A cell's raw text: lists joined, numbers without a trailing `.0`.
+fn json_text(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.as_f64().map(fmt_num).unwrap_or_default(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Array(a) => a.iter().map(json_text).collect::<Vec<_>>().join(", "),
+        other => other.to_string(),
+    }
+}
+
+fn as_number(v: &serde_json::Value) -> Option<f64> {
+    match v {
+        serde_json::Value::Number(n) => n.as_f64().filter(|f| f.is_finite()),
+        serde_json::Value::String(s) if !s.trim().is_empty() => s.trim().parse::<f64>().ok().filter(|f| f.is_finite()),
+        _ => None,
+    }
+}
+
+/// `12` / `3.5` — an integer plainly, anything else to one decimal.
+fn fmt_num(n: f64) -> String {
+    if !n.is_finite() { return "—".into(); }
+    if n.fract() == 0.0 { format!("{}", n as i64) } else { format!("{n:.1}") }
+}
+
+/// `1234567.89` with `decimals` → `1,234,567.89`.
+fn grouped(n: f64, decimals: usize) -> String {
+    let s = format!("{:.*}", decimals, n.abs());
+    let (int, frac) = s.split_once('.').map(|(i, f)| (i, Some(f))).unwrap_or((&s, None));
     let mut out = String::new();
-    html::push_html(&mut out, events.into_iter());
-    Ok(highlights(&callouts(&out)))
+    for (i, c) in int.chars().enumerate() {
+        if i > 0 && (int.len() - i) % 3 == 0 { out.push(','); }
+        out.push(c);
+    }
+    if let Some(f) = frac { out.push('.'); out.push_str(f); }
+    if n < 0.0 { format!("-{out}") } else { out }
+}
+
+/// The text of a number under a schema's `format:` — what the app shows.
+fn format_number(n: f64, schema: Option<&crate::schema::PropertyDef>) -> String {
+    let unit = schema.and_then(|s| s.unit.as_deref()).unwrap_or("");
+    match schema.and_then(|s| s.format.as_deref()) {
+        Some("percent") => format!("{}%", fmt_num(n)),
+        Some("currency") => format!("{unit}{}", grouped(n, 2)),
+        Some("integer") => grouped(n.round(), 0),
+        Some("decimal") => grouped(n, 1),
+        Some("progress") => {
+            // A bare 0–100 bar is a share, so it reads as one; a custom range or unit reads as itself.
+            let bare = schema.map_or(true, |s| s.min.is_none() && s.max.is_none()) && unit.is_empty();
+            format!("{}{}", fmt_num(n), if bare { "%" } else { unit })
+        }
+        _ => fmt_num(n),
+    }
+}
+
+/// One cell at rest: `—` for nothing, Yes/No, lists joined, and numbers
+/// drawn as the column's format asks (stars, a progress bar, a unit).
+fn cell_html(v: &serde_json::Value, schema: Option<&crate::schema::PropertyDef>) -> String {
+    let format = schema.and_then(|s| s.format.as_deref());
+    if let (Some("stars"), Some(s)) = (format, schema) {
+        let max = s.max.map(|m| m.round().max(1.0) as usize).unwrap_or(5);
+        let n = as_number(v);
+        let filled = n.map(|n| (n.round().max(0.0) as usize).min(max)).unwrap_or(0);
+        let title = n.map(|n| format!("{} of {max}", fmt_num(n))).unwrap_or_else(|| "—".into());
+        return format!("<span class=\"stars\" title=\"{title}\">{}{}</span>", "★".repeat(filled), "☆".repeat(max - filled));
+    }
+    let n = match v {
+        serde_json::Value::Null => return "—".into(),
+        serde_json::Value::Bool(b) => return if *b { "Yes" } else { "No" }.into(),
+        serde_json::Value::Array(a) if a.is_empty() => return "—".into(),
+        serde_json::Value::Array(_) => return esc(&json_text(v)),
+        serde_json::Value::String(s) if s.is_empty() => return "—".into(),
+        _ if format.is_some() => as_number(v),
+        serde_json::Value::Number(_) => as_number(v),
+        _ => None,
+    };
+    let Some(n) = n else { return esc(&json_text(v)) };
+    if let (Some("progress"), Some(s)) = (format, schema) {
+        let (lo, hi) = (s.min.unwrap_or(0.0), s.max.unwrap_or(100.0));
+        let pct = if hi > lo { ((n - lo) / (hi - lo) * 100.0).clamp(0.0, 100.0) } else { 0.0 };
+        return format!(
+            "<span class=\"progress\"><span class=\"progress-track\"><span class=\"progress-fill\" style=\"width:{}%\"></span></span> {}</span>",
+            fmt_num(pct), esc(&format_number(n, schema))
+        );
+    }
+    esc(&format_number(n, schema))
+}
+
+fn summary_label(func: &str) -> &'static str {
+    match func {
+        "count" => "Count",
+        "empty" => "Empty",
+        "not_empty" => "Not empty",
+        "percent_checked" => "Checked",
+        "sum" => "Sum",
+        "avg" => "Average",
+        "min" => "Min",
+        "max" => "Max",
+        _ => "Summary",
+    }
+}
+
+/// A footer value: a share as `n%`, counts plain, arithmetic in the column's
+/// number format (bars and stars make no sense for a total).
+fn summary_html(v: &serde_json::Value, func: &str, schema: Option<&crate::schema::PropertyDef>) -> String {
+    let Some(n) = as_number(v) else { return cell_html(v, None) };
+    match func {
+        "percent_checked" => format!("{}%", fmt_num(n)),
+        "count" | "empty" | "not_empty" => fmt_num(n),
+        _ => match schema.and_then(|s| s.format.as_deref()) {
+            Some("stars") | Some("progress") | None => fmt_num(n),
+            Some(_) => esc(&format_number(n, schema)),
+        },
+    }
+}
+
+// ── Search index ────────────────────────────────────────────────────────────
+
+/// How much of a body `search.json` carries per page.
+const SEARCH_TEXT_LIMIT: usize = 2048;
+
+/// One `search.json` entry: the page's listing plus the start of its body as
+/// plain text, so the index page's search can find a word in a body and show
+/// where it was. Only published pages are indexed — nothing private leaks.
+#[derive(Debug, Clone, Serialize)]
+struct SearchEntry<'a> {
+    #[serde(flatten)]
+    entry: &'a PublishEntry,
+    text: String,
+}
+
+/// The body as plain text: Markdown stripped, wiki links reduced to their
+/// label, view fences and raw HTML dropped, whitespace collapsed, and cut at
+/// `limit` characters.
+fn search_text(body: &str, limit: usize) -> String {
+    use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+    let md = rewrite_wiki_links(body, 0, &[], &BTreeMap::new());
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TASKLISTS);
+    opts.insert(Options::ENABLE_FOOTNOTES);
+    opts.insert(Options::ENABLE_MATH);
+    let mut words: Vec<String> = Vec::new();
+    let mut skipping = false;
+    for ev in Parser::new_ext(&md, opts) {
+        match ev {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(ref lang))) if is_view_fence(lang) => skipping = true,
+            Event::End(TagEnd::CodeBlock) => skipping = false,
+            _ if skipping => {}
+            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
+                words.extend(t.split_whitespace().map(str::to_string));
+            }
+            _ => {}
+        }
+    }
+    let mut out = String::new();
+    for w in words {
+        if out.len() + w.len() + 1 > limit {
+            // Keep a legible start even when the first word alone is oversized.
+            if out.is_empty() {
+                let mut end = limit.min(w.len());
+                while !w.is_char_boundary(end) { end -= 1; }
+                out.push_str(&w[..end]);
+            }
+            break;
+        }
+        if !out.is_empty() { out.push(' '); }
+        out.push_str(&w);
+    }
+    out
 }
 
 /// `==text==` (the editor's highlight syntax, as in Obsidian) → `<mark>`.
@@ -522,7 +927,7 @@ fn index_html(site: &Site, published: &[Published], home: Option<&str>) -> Strin
         let e = &p.entry;
         let tags: Vec<String> = e.tags.iter().filter(|t| t.as_str() != "public").map(|t| esc(t)).collect();
         inner.push_str(&format!(
-            "<li data-text=\"{search}\"><a href=\"{url}\">{title}</a>{date}{tags}</li>\n",
+            "<li data-text=\"{search}\" data-url=\"{url}\"><a href=\"{url}\">{title}</a>{date}{tags}</li>\n",
             search = esc(&format!("{} {}", e.title, e.tags.join(" ")).to_lowercase()),
             url = esc(&e.url),
             title = esc(&e.title),
@@ -536,9 +941,18 @@ fn index_html(site: &Site, published: &[Published], home: Option<&str>) -> Strin
 }
 
 const SEARCH_SCRIPT: &str = r#"<script>
-(function(){var q=document.getElementById('q'),items=[].slice.call(document.querySelectorAll('#list li')),none=document.getElementById('none');
-q.addEventListener('input',function(){var w=q.value.trim().toLowerCase().split(/\s+/).filter(Boolean),n=0;
-items.forEach(function(li){var t=li.getAttribute('data-text'),ok=w.every(function(x){return t.indexOf(x)>=0});li.hidden=!ok;if(ok)n++});none.hidden=n>0||!w.length});})();
+(function(){var q=document.getElementById('q'),items=[].slice.call(document.querySelectorAll('#list li')),none=document.getElementById('none'),idx=null,loading=false;
+// Titles and tags are inline; body text comes from search.json, fetched on the first keystroke (a file:// page falls back to titles).
+function load(cb){if(idx){cb();return}if(loading)return;loading=true;
+fetch('search.json').then(function(r){return r.json()}).then(function(d){idx={};d.forEach(function(e){var t=e.text||'';idx[e.url]={t:t,l:t.toLowerCase()}})}).catch(function(){idx={}}).then(function(){loading=false;cb()})}
+function snippet(li,body,w){var s=li.querySelector('.snippet');if(!s){s=document.createElement('span');s.className='snippet';li.appendChild(s)}
+var hit=-1,len=0;if(body)w.forEach(function(x){var i=body.l.indexOf(x);if(i>=0&&(hit<0||i<hit)){hit=i;len=x.length}});
+if(hit<0){s.textContent='';s.hidden=true;return}
+var src=body.t.length===body.l.length?body.t:body.l,a=Math.max(0,hit-40),b=Math.min(src.length,hit+len+80);
+s.textContent=(a>0?'…':'')+src.slice(a,b)+(b<src.length?'…':'');s.hidden=false}
+function run(){var w=q.value.trim().toLowerCase().split(/\s+/).filter(Boolean),n=0;
+items.forEach(function(li){var t=li.getAttribute('data-text'),body=idx&&idx[li.getAttribute('data-url')],ok=w.every(function(x){return t.indexOf(x)>=0||(body&&body.l.indexOf(x)>=0)});li.hidden=!ok;if(ok)n++;snippet(li,ok&&w.length?body:null,w)});none.hidden=n>0||!w.length}
+q.addEventListener('input',function(){run();if(q.value.trim())load(run)});})();
 </script>"#;
 
 const STYLE: &str = r#":root{--bg:#fbfaf8;--fg:#1f1e1c;--muted:#6f6c66;--line:#e6e3dd;--accent:#2d6bd1;--code:#f1efea;--font:"iA Writer Quattro S","Ysabeau",Georgia,"Times New Roman",serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -566,6 +980,13 @@ input[type=checkbox]{accent-color:var(--accent)}
 .notes{font-family:var(--sans)}#q{width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);margin:8px 0 16px}#q:focus{outline:none;border-color:var(--accent)}
 #list{list-style:none;padding:0;margin:0}#list li{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line)}#list a{font-size:17px;text-decoration:none;color:var(--fg)}#list a:hover{color:var(--accent)}#list time{font-size:13px;color:var(--muted)}
 article.home{margin-bottom:2.5em}#none{color:var(--muted)}
+#list .snippet{flex-basis:100%;font-size:13px;color:var(--muted);line-height:1.4}
+.view{margin:1.4em 0}.view-name{margin:0 0 .3em}.view-note{font-family:var(--sans);font-size:13px;color:var(--muted);margin:0 0 .5em}
+.view-table{overflow-wrap:anywhere}.view-table td a{text-decoration:none;font-weight:600;color:var(--fg)}.view-table td a:hover{color:var(--accent)}
+.view-table tr.group-row th{padding-top:18px;color:var(--fg);border-bottom-width:2px}.view-table .count{color:var(--muted);font-weight:400;margin-left:6px}
+.view-table tfoot td{color:var(--muted);border-bottom:0;font-size:13px}.summary-label{text-transform:uppercase;letter-spacing:.05em;font-size:11px;margin-right:4px}
+.stars{letter-spacing:1px;color:#d9a520;white-space:nowrap}
+.progress{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}.progress-track{display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}.progress-fill{display:block;height:100%;background:var(--accent)}
 "#;
 
 // ── GitHub Pages ────────────────────────────────────────────────────────────
@@ -847,6 +1268,160 @@ mod tests {
         let css = std::fs::read_to_string(out.join("style.css")).unwrap();
         assert!(css.contains(".math-display"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A `tasks` collection with a typed schema (currency, checkbox, stars,
+    /// progress, status options), a published `_index.md` with a grouped and
+    /// summarised table plus a board, one published row and one private row.
+    fn database_vault(name: &str) -> PathBuf {
+        let root = vault(name);
+        let w = |rel: &str, s: &str| {
+            let p = root.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, s).unwrap();
+        };
+        w(".cortex/schemas/tasks.yaml", "properties:\n- name: status\n  type: status\n  options:\n  - name: todo\n    color: gray\n  - name: done\n    color: green\n- name: hours\n  type: number\n  format: currency\n  unit: €\n- name: done_flag\n  type: checkbox\n- name: rating\n  type: number\n  format: stars\n  max: 5\n- name: progress\n  type: number\n  format: progress\n");
+        w("collections/tasks/_index.md", "---\ntitle: Tasks\ntype: database\npublish: true\nviews:\n- name: Table\n  type: table\n  columns: [title, status, hours, done_flag, rating, progress]\n  sort: [title]\n  group: status\n  summary: {hours: sum, done_flag: percent_checked, title: count}\n- name: Board\n  type: board\n  group: status\n---\n\nWhat we are working on.\n");
+        w("collections/tasks/a.md", "---\ndone_flag: true\nhours: 3\nprogress: 40\npublish: true\nrating: 4\nstatus: done\ntitle: Alpha\n---\n\nAlpha body.\n");
+        w("collections/tasks/b.md", "---\ndone_flag: false\nhours: 1234.5\nstatus: todo\ntitle: Beta\n---\n\nPrivate row body.\n");
+        w("collections/tasks/c.md", "---\nhours: 2\ntitle: Gamma\n---\n");
+        root
+    }
+
+    #[test]
+    fn collection_page_renders_its_views_as_tables() {
+        let root = database_vault("dbindex");
+        let out = root.join("site");
+        build(&root, &out, false).unwrap();
+        let page = std::fs::read_to_string(out.join("collections/tasks/index.html")).unwrap();
+        // Views come first, then the body prose.
+        assert!(page.find("<h3 class=\"view-name\">Table</h3>").unwrap() < page.find("What we are working on").unwrap(), "{page}");
+        assert!(page.contains("<h3 class=\"view-name\">Board</h3>"), "{page}");
+        assert!(page.contains("A board view, shown here as a table."), "{page}");
+        assert!(!page.contains("language-cortex"), "no raw fence: {page}");
+        // Columns as the spec orders them.
+        assert!(page.contains("<thead><tr><th>title</th><th>status</th><th>hours</th><th>done_flag</th><th>rating</th><th>progress</th></tr></thead>"), "{page}");
+        // Groups in the status option order, the rows without one last.
+        let todo = page.find("todo <span class=\"count\">1</span>").expect("todo group");
+        let done = page.find("done <span class=\"count\">1</span>").expect("done group");
+        let none = page.find("No status <span class=\"count\">1</span>").expect("empty group");
+        assert!(todo < done && done < none, "{page}");
+        // The published row links to its page; the private ones are plain text.
+        assert!(page.contains("<td><a href=\"../../collections/tasks/a/\">Alpha</a></td>"), "{page}");
+        assert!(page.contains("<td>Beta</td>") && page.contains("<td>Gamma</td>"), "{page}");
+        assert!(!page.contains("tasks/b/"), "{page}");
+        // Number formats: currency with unit and grouping, checkbox, stars, progress bar.
+        assert!(page.contains("<td>€3.00</td>") && page.contains("<td>€1,234.50</td>"), "{page}");
+        assert!(page.contains("<td>Yes</td>") && page.contains("<td>No</td>"), "{page}");
+        assert!(page.contains("<span class=\"stars\" title=\"4 of 5\">★★★★☆</span>"), "{page}");
+        assert!(page.contains("style=\"width:40%\"></span></span> 40%</span>"), "{page}");
+        // Summary footer: labelled, in the column's format; a share as a percent.
+        assert!(page.contains("<td><span class=\"summary-label\">Sum</span> €1,239.50</td>"), "{page}");
+        assert!(page.contains("<td><span class=\"summary-label\">Checked</span> 33%</td>"), "{page}");
+        assert!(page.contains("<td><span class=\"summary-label\">Count</span> 3</td>"), "{page}");
+        let css = std::fs::read_to_string(out.join("style.css")).unwrap();
+        assert!(css.contains(".view-table") && css.contains(".progress-fill"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn view_fences_in_notes_render_as_tables() {
+        let root = database_vault("dbfence");
+        std::fs::write(
+            root.join("notes/views.md"),
+            "---\ntitle: Views\npublish: true\n---\n\nDone so far:\n\n```cortex-view\nsource: collections/tasks\nfilter: status == done\ncolumns: [title, hours]\n```\n\nAll of them:\n\n```cortex-views\ncollection: tasks\n```\n\n```cortex-view\nsource: collections/nowhere\n```\n",
+        )
+        .unwrap();
+        let out = root.join("site");
+        build(&root, &out, false).unwrap();
+        let page = std::fs::read_to_string(out.join("notes/views/index.html")).unwrap();
+        // The filtered fence: one row, linked, only the asked-for columns.
+        assert!(page.contains("<thead><tr><th>title</th><th>hours</th></tr></thead>"), "{page}");
+        assert!(page.contains("<td><a href=\"../../collections/tasks/a/\">Alpha</a></td><td>€3.00</td>"), "{page}");
+        let first = &page[..page.find("<h3 class=\"view-name\">Table</h3>").unwrap()];
+        assert!(first.contains("Alpha") && !first.contains("Beta"), "filtered out: {first}");
+        // The collection's own views, by name, from a `cortex-views` fence.
+        assert!(page.contains("<h3 class=\"view-name\">Board</h3>"), "{page}");
+        // A broken spec explains itself instead of failing the build.
+        assert!(page.contains("class=\"view-note\">View not rendered: "), "{page}");
+        assert!(!page.contains("language-cortex-view"), "{page}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn search_json_carries_body_text() {
+        let root = vault("search");
+        let long = "lorem ".repeat(1000);
+        std::fs::write(
+            root.join("notes/long.md"),
+            format!("---\ntitle: Long\npublish: true\n---\n\nUnique **needle** here, see [[Secret Note|the link]].\n\n```cortex-view\nsource: collections/tasks\n```\n\n<details><summary>More</summary>\n\n{long}\n\n</details>\n"),
+        )
+        .unwrap();
+        let out = root.join("site");
+        build(&root, &out, false).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(out.join("search.json")).unwrap()).unwrap();
+        let entries = json.as_array().unwrap();
+        assert_eq!(entries.len(), 3);
+        let long_entry = entries.iter().find(|e| e["title"] == "Long").unwrap();
+        let text = long_entry["text"].as_str().unwrap();
+        assert!(text.starts_with("Unique needle here, see the link. lorem lorem"), "{text}");
+        assert!(!text.contains("source:") && !text.contains("<details>") && !text.contains("**"), "{text}");
+        assert!(text.len() <= SEARCH_TEXT_LIMIT && text.len() > SEARCH_TEXT_LIMIT - 20, "{}", text.len());
+        assert_eq!(long_entry["url"], "notes/long/");
+        assert!(entries.iter().all(|e| e["title"] != "Secret Note"));
+        assert!(!std::fs::read_to_string(out.join("search.json")).unwrap().contains("TOPSECRET"));
+        // The index page carries the hook the script keys on, and the script fetches the index.
+        let index = std::fs::read_to_string(out.join("index.html")).unwrap();
+        assert!(index.contains("data-url=\"notes/long/\"") && index.contains("fetch('search.json')") && index.contains("snippet"), "{index}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn number_formats_and_cells() {
+        use crate::schema::{PropType, PropertyDef};
+        let def = |format: &str, unit: Option<&str>, min: Option<f64>, max: Option<f64>| PropertyDef {
+            name: "n".into(), ty: PropType::Number, format: Some(format.into()), unit: unit.map(String::from), min, max, ..Default::default()
+        };
+        assert_eq!(fmt_num(3.0), "3");
+        assert_eq!(fmt_num(2.25), "2.2");
+        assert_eq!(grouped(-1234567.891, 2), "-1,234,567.89");
+        assert_eq!(grouped(999.0, 0), "999");
+        assert_eq!(format_number(0.5, None), "0.5");
+        assert_eq!(format_number(12.5, Some(&def("percent", None, None, None))), "12.5%");
+        assert_eq!(format_number(1500.0, Some(&def("currency", Some("$"), None, None))), "$1,500.00");
+        assert_eq!(format_number(1500.7, Some(&def("integer", None, None, None))), "1,501");
+        assert_eq!(format_number(2.0, Some(&def("decimal", None, None, None))), "2.0");
+        assert_eq!(format_number(40.0, Some(&def("progress", None, None, None))), "40%");
+        assert_eq!(format_number(4.0, Some(&def("progress", Some("kg"), Some(0.0), Some(10.0)))), "4kg");
+
+        use serde_json::json as j;
+        assert_eq!(cell_html(&j!(null), None), "—");
+        assert_eq!(cell_html(&j!(""), None), "—");
+        assert_eq!(cell_html(&j!(true), None), "Yes");
+        assert_eq!(cell_html(&j!(["a", "b"]), None), "a, b");
+        assert_eq!(cell_html(&j!("<b>"), None), "&lt;b&gt;");
+        assert_eq!(cell_html(&j!(2.5), None), "2.5");
+        assert_eq!(cell_html(&j!("3"), Some(&def("stars", None, None, Some(4.0)))), "<span class=\"stars\" title=\"3 of 4\">★★★☆</span>");
+        assert_eq!(cell_html(&j!(null), Some(&def("stars", None, None, None))), "<span class=\"stars\" title=\"—\">☆☆☆☆☆</span>");
+        assert!(cell_html(&j!(5), Some(&def("progress", None, Some(0.0), Some(10.0)))).contains("width:50%"));
+        // A text cell in a formatted column is shown as it is.
+        assert_eq!(cell_html(&j!("tbd"), Some(&def("currency", None, None, None))), "tbd");
+
+        assert_eq!(summary_html(&j!(50), "percent_checked", None), "50%");
+        assert_eq!(summary_html(&j!(7), "count", Some(&def("currency", Some("€"), None, None))), "7");
+        assert_eq!(summary_html(&j!(7), "sum", Some(&def("currency", Some("€"), None, None))), "€7.00");
+        assert_eq!(summary_html(&j!(3.5), "avg", Some(&def("stars", None, None, None))), "3.5");
+    }
+
+    #[test]
+    fn groups_follow_option_order_then_alpha_then_empty() {
+        use crate::data::ResolvedRow;
+        let row = |id: &str, status: serde_json::Value| ResolvedRow { id: id.into(), cells: [("status".to_string(), status)].into_iter().collect() };
+        let rows = vec![row("a", serde_json::json!("zeta")), row("b", serde_json::json!(null)), row("c", serde_json::json!("done")), row("d", serde_json::json!("alpha")), row("e", serde_json::json!("todo"))];
+        let groups = group_rows(&rows, "status", &["todo".into(), "done".into()]);
+        let keys: Vec<&str> = groups.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["todo", "done", "alpha", "zeta", "—"]);
+        assert_eq!(groups[4].1[0].id, "b");
     }
 
     #[test]

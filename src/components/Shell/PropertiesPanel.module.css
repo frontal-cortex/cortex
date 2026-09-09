@@ -236,6 +236,14 @@
   accent-color: var(--accent);
 }
 
+/* A computed value (created / edited time and by): shown, never edited. */
+.readonly {
+  display: block;
+  padding: 3px 6px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
 /* Add a property */
 .addProp {
   position: relative;

@@ -166,6 +166,7 @@ fn prop_type_name(ty: ColumnType) -> &'static str {
         ColumnType::Bool => "checkbox",
         ColumnType::Date => "date",
         ColumnType::List => "multi_select",
+        ColumnType::DateRange => "date_range",
         ColumnType::Text => "text",
     }
 }

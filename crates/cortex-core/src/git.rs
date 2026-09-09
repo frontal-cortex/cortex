@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
 use crate::error::{AppError, Result};
+use crate::remote::default_remote;
 
 #[derive(Debug, Serialize)]
 pub struct VaultStatus {
@@ -113,6 +114,124 @@ pub fn get_note_history(repo: &Repository, path: &str, limit: usize) -> Result<V
     }
 
     Ok(out)
+}
+
+// ── Authorship: who created and last edited a file, and when ──────────────────
+//
+// The source of the `created_time` / `created_by` / `edited_time` /
+// `edited_by` property types. Nothing here is written to a note: the values
+// are read from git history on every view run (one walk for a whole
+// collection) and fall back to the file's mtime outside a repository.
+
+/// When a file was first committed and last changed, and by whom. Times are
+/// local `YYYY-MM-DDTHH:MM`; authors are git author names, empty when the
+/// value came from the filesystem instead of a commit.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Authorship {
+    pub created_at: String,
+    pub created_by: String,
+    pub edited_at: String,
+    pub edited_by: String,
+}
+
+/// A unix timestamp as local `YYYY-MM-DDTHH:MM` — the same shape every
+/// authorship value has, so filters can still compare it against a plain
+/// `YYYY-MM-DD` (the engine trims the time when the other side is a day).
+pub fn format_time(secs: i64) -> String {
+    chrono::DateTime::from_timestamp(secs, 0)
+        .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%dT%H:%M").to_string())
+        .unwrap_or_default()
+}
+
+fn mtime_of(abs: &Path) -> String {
+    std::fs::metadata(abs).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| format_time(d.as_secs() as i64))
+        .unwrap_or_default()
+}
+
+/// Authorship for several vault-relative paths at once — one walk over the
+/// history, not one per file. A commit that leaves the paths' common parent
+/// directory untouched is skipped without looking at the paths. A file with
+/// no commit (never committed, or no repository at all) gets its mtime for
+/// both times and no author; a file with uncommitted changes gets its mtime
+/// and the local git user as its last edit, since that edit is not in any
+/// commit yet.
+pub fn authorship(root: &Path, paths: &[String]) -> std::collections::HashMap<String, Authorship> {
+    let mut out: std::collections::HashMap<String, Authorship> = std::collections::HashMap::new();
+    if paths.is_empty() { return out; }
+    let repo = Repository::open(root).ok();
+
+    // (newest commit, oldest commit) per path, as (time, author).
+    let mut hits: std::collections::HashMap<&str, (Option<(i64, String)>, Option<(i64, String)>)> = std::collections::HashMap::new();
+    if let Some(repo) = &repo {
+        // The directory every path shares, if any — the pruning key.
+        let common: Option<&Path> = {
+            let first = Path::new(&paths[0]).parent();
+            first.filter(|d| paths.iter().all(|p| Path::new(p).parent() == Some(d)) && !d.as_os_str().is_empty())
+        };
+        if let Ok(mut walk) = repo.revwalk() {
+            if walk.push_head().is_ok() && walk.set_sorting(Sort::TIME).is_ok() {
+                for oid in walk.flatten() {
+                    let Ok(commit) = repo.find_commit(oid) else { continue };
+                    let Ok(tree) = commit.tree() else { continue };
+                    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+                    if let Some(dir) = common {
+                        let cur = tree.get_path(dir).ok().map(|e| e.id());
+                        let prev = parent_tree.as_ref().and_then(|t| t.get_path(dir).ok().map(|e| e.id()));
+                        if cur == prev { continue; }
+                    }
+                    let when = commit.time().seconds();
+                    let who = commit.author().name().unwrap_or("").to_string();
+                    for path in paths {
+                        let target = Path::new(path);
+                        let cur = tree.get_path(target).ok().map(|e| e.id());
+                        let prev = parent_tree.as_ref().and_then(|t| t.get_path(target).ok().map(|e| e.id()));
+                        if cur.is_some() && cur != prev {
+                            let entry = hits.entry(path.as_str()).or_default();
+                            if entry.0.is_none() { entry.0 = Some((when, who.clone())); }
+                            entry.1 = Some((when, who.clone()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let local_user = repo.as_ref().and_then(|r| signature(r).ok()).and_then(|s| s.name().map(str::to_string)).unwrap_or_default();
+    for path in paths {
+        let abs = root.join(path);
+        let mut a = Authorship::default();
+        match hits.get(path.as_str()) {
+            Some((Some(newest), Some(oldest))) => {
+                a.created_at = format_time(oldest.0);
+                a.created_by = oldest.1.clone();
+                a.edited_at = format_time(newest.0);
+                a.edited_by = newest.1.clone();
+                // Uncommitted changes are the newest edit of all.
+                let dirty = repo.as_ref().and_then(|r| r.status_file(Path::new(path)).ok())
+                    .map(|st| st.intersects(git2::Status::WT_MODIFIED | git2::Status::INDEX_MODIFIED | git2::Status::WT_NEW | git2::Status::INDEX_NEW))
+                    .unwrap_or(false);
+                if dirty {
+                    a.edited_at = mtime_of(&abs);
+                    a.edited_by = local_user.clone();
+                }
+            }
+            _ => {
+                let m = mtime_of(&abs);
+                a.created_at = m.clone();
+                a.edited_at = m;
+            }
+        }
+        out.insert(path.clone(), a);
+    }
+    out
+}
+
+/// Authorship of one file (the properties panel's read-only rows).
+pub fn authorship_of(root: &Path, path: &str) -> Authorship {
+    authorship(root, &[path.to_string()]).remove(path).unwrap_or_default()
 }
 
 /// Read the contents of a file as it existed at a specific commit.
@@ -304,8 +423,10 @@ pub fn stage_all_and_commit(repo: &Repository, message: &str) -> Result<()> {
 // resolution UI (and any git CLI user) can work with. A failed rebase would
 // strand the repo mid-replay with no good in-app recovery.
 //
-// Push/pull shell out to system git so SSH agents and credential helpers work;
-// everything else uses git2.
+// The remote + merge operations live behind `remote::RemoteOps`: on desktop
+// they shell out to system git so SSH agents and credential helpers work; on
+// mobile they run in-process via libgit2 (see `remote.rs`). Everything else
+// uses git2 directly.
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -318,137 +439,34 @@ pub enum SyncOutcome {
     Conflicts { files: Vec<String> },
 }
 
-fn run_git(path: &Path, args: &[&str]) -> Result<std::process::Output> {
-    Ok(std::process::Command::new("git")
-        .args(args)
-        .current_dir(path)
-        .output()?)
-}
-
-fn git_stdout(path: &Path, args: &[&str]) -> Result<String> {
-    let out = run_git(path, args)?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-fn current_branch(path: &Path) -> Result<String> {
-    // symbolic-ref (not rev-parse) so an unborn branch — a fresh vault with no
-    // commits yet — still resolves to its name instead of erroring.
-    git_stdout(path, &["symbolic-ref", "--short", "HEAD"])
-        .map_err(|_| AppError::Other("Cannot sync: detached HEAD".into()))
-}
-
-fn head_oid(path: &Path) -> String {
-    git_stdout(path, &["rev-parse", "HEAD"]).unwrap_or_default()
-}
-
 /// Files currently in the unmerged (conflicted) state.
 pub fn list_conflicts(path: &Path) -> Result<Vec<String>> {
-    let out = git_stdout(path, &["diff", "--name-only", "--diff-filter=U"])?;
-    Ok(out.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+    default_remote().list_conflicts(path)
 }
 
 /// Full sync: commit dirty work, merge in the remote, push. Never leaves the
 /// repo in a broken state — a conflicted merge is surfaced (recoverable), and
-/// any other pull failure is rolled back with `merge --abort`.
+/// any other pull failure is rolled back.
 pub fn sync_vault(path: &Path) -> Result<SyncOutcome> {
-    // A merge already in progress (e.g. app restarted mid-resolution) takes
-    // priority — surface it instead of stacking another pull on top.
-    let existing = list_conflicts(path)?;
-    if !existing.is_empty() {
-        return Ok(SyncOutcome::Conflicts { files: existing });
-    }
-
-    // Commit local work first: a merge needs a clean tree, and "share my
-    // current state" is what the user means by sync.
-    {
-        let repo = Repository::open(path)?;
-        let st = get_status(&repo)?;
-        if !(st.staged.is_empty() && st.unstaged.is_empty() && st.untracked.is_empty()) {
-            stage_all_and_commit(&repo, "Auto-commit before sync")?;
-        }
-    }
-
-    let branch = current_branch(path)?;
-    let before = head_oid(path);
-
-    let out = run_git(path, &["pull", "--no-rebase", "--no-edit", "origin", &branch])?;
-    if !out.status.success() {
-        let conflicts = list_conflicts(path)?;
-        if !conflicts.is_empty() {
-            return Ok(SyncOutcome::Conflicts { files: conflicts });
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        // A brand-new branch the remote doesn't know yet isn't an error — there
-        // is just nothing to pull. Anything else: restore a clean state.
-        if !stderr.contains("couldn't find remote ref") {
-            let _ = run_git(path, &["merge", "--abort"]);
-            return Err(AppError::Other(stderr));
-        }
-    }
-    let pulled = head_oid(path) != before;
-
-    // `-u` keeps the upstream set so ahead/behind tracking works from the start.
-    let out = run_git(path, &["push", "-u", "origin", &branch])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-
-    Ok(SyncOutcome::Ok { pulled })
+    default_remote().sync(path)
 }
 
 /// Resolve one conflicted file: take ours / theirs wholesale, or `manual` when
 /// the user has already edited the markers away in the editor. Stages the file.
 pub fn resolve_conflict(path: &Path, file: &str, side: &str) -> Result<()> {
-    match side {
-        "ours" | "theirs" => {
-            let flag = if side == "ours" { "--ours" } else { "--theirs" };
-            let out = run_git(path, &["checkout", flag, "--", file])?;
-            if !out.status.success() {
-                return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-            }
-        }
-        "manual" => {}
-        other => return Err(AppError::Other(format!("Unknown resolution side '{other}'"))),
-    }
-    let out = run_git(path, &["add", "--", file])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(())
+    default_remote().resolve_conflict(path, file, side)
 }
 
 /// Conclude a fully-resolved merge: commit it and push. If conflicts remain,
 /// returns them instead (the UI keeps the resolution flow open).
 pub fn complete_merge(path: &Path) -> Result<SyncOutcome> {
-    let remaining = list_conflicts(path)?;
-    if !remaining.is_empty() {
-        return Ok(SyncOutcome::Conflicts { files: remaining });
-    }
-    if path.join(".git").join("MERGE_HEAD").exists() {
-        let out = run_git(path, &["commit", "--no-edit"])?;
-        if !out.status.success() {
-            return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-        }
-    }
-    let branch = current_branch(path)?;
-    let out = run_git(path, &["push", "-u", "origin", &branch])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(SyncOutcome::Ok { pulled: true })
+    default_remote().complete_merge(path)
 }
 
 /// Abandon the in-progress merge entirely: local commits stay, remote changes
 /// are un-applied, the working tree returns to the pre-pull state.
 pub fn abort_merge(path: &Path) -> Result<()> {
-    let out = run_git(path, &["merge", "--abort"])?;
-    if !out.status.success() {
-        return Err(AppError::Other(String::from_utf8_lossy(&out.stderr).to_string()));
-    }
-    Ok(())
+    default_remote().abort_merge(path)
 }
 
 /// Pending proposals: every `agent/*` branch, local or on `origin`. A branch
@@ -494,7 +512,7 @@ fn delete_remote_branch(repo: &Repository, branch_name: &str) {
         return;
     }
     if let Some(dir) = repo.workdir() {
-        let _ = run_git(dir, &["push", "origin", "--delete", branch_name]);
+        let _ = default_remote().delete_remote_branch(dir, branch_name);
     }
 }
 
@@ -640,7 +658,7 @@ pub fn discard_agent_branch(repo: &Repository, branch_name: &str) -> Result<()> 
 // ── Tests: the multi-user sync contract ─────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn sh(dir: &Path, args: &[&str]) {
@@ -748,6 +766,69 @@ mod tests {
         assert!(list_conflicts(&bob).unwrap().is_empty());
 
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// Commit `rel` with a fixed author and time, so authorship is deterministic.
+    pub(crate) fn commit_as(repo: &Repository, rel: &str, text: &str, who: &str, secs: i64) {
+        let root = repo.workdir().unwrap();
+        let abs = root.join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, text).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(rel)).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::new(who, &format!("{who}@test.local"), &git2::Time::new(secs, 0)).unwrap();
+        let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit> = parent.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, &format!("edit {rel}"), &tree, &parents).unwrap();
+    }
+
+    #[test]
+    fn authorship_reads_first_and_last_commit_with_mtime_fallbacks() {
+        let dir = std::env::temp_dir().join(format!("cortex-authorship-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = Repository::init(&dir).unwrap();
+        let t0 = 1_700_000_000;
+        commit_as(&repo, "collections/tasks/a.md", "---\ntitle: A\n---\n", "alice", t0);
+        commit_as(&repo, "collections/tasks/b.md", "---\ntitle: B\n---\n", "bob", t0 + 3600);
+        commit_as(&repo, "notes/other.md", "unrelated", "carol", t0 + 7200);
+        commit_as(&repo, "collections/tasks/a.md", "---\ntitle: A2\n---\n", "bob", t0 + 10_800);
+        // Never committed: mtime stands in, no author.
+        std::fs::write(dir.join("collections/tasks/c.md"), "---\ntitle: C\n---\n").unwrap();
+
+        let paths: Vec<String> = ["a", "b", "c"].iter().map(|s| format!("collections/tasks/{s}.md")).collect();
+        let got = authorship(&dir, &paths);
+        let a = &got["collections/tasks/a.md"];
+        assert_eq!((a.created_at.as_str(), a.created_by.as_str()), (format_time(t0).as_str(), "alice"));
+        assert_eq!((a.edited_at.as_str(), a.edited_by.as_str()), (format_time(t0 + 10_800).as_str(), "bob"));
+        let b = &got["collections/tasks/b.md"];
+        assert_eq!(b.created_at, b.edited_at);
+        assert_eq!((b.created_by.as_str(), b.edited_by.as_str()), ("bob", "bob"));
+        let c = &got["collections/tasks/c.md"];
+        assert!(c.created_by.is_empty() && c.edited_by.is_empty());
+        assert!(!c.created_at.is_empty() && c.created_at == c.edited_at, "{c:?}");
+        assert_eq!(format_time(t0).len(), 16, "YYYY-MM-DDTHH:MM");
+
+        // An uncommitted change is the newest edit: mtime, local user.
+        std::fs::write(dir.join("collections/tasks/b.md"), "---\ntitle: B changed\n---\n").unwrap();
+        let b = authorship_of(&dir, "collections/tasks/b.md");
+        assert_eq!(b.created_by, "bob");
+        assert_ne!(b.edited_by, "bob");
+        assert!(b.edited_at >= b.created_at);
+
+        // No repository at all: both times from the filesystem.
+        let plain = std::env::temp_dir().join(format!("cortex-authorship-plain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&plain);
+        std::fs::create_dir_all(plain.join("collections/x")).unwrap();
+        std::fs::write(plain.join("collections/x/r.md"), "---\ntitle: R\n---\n").unwrap();
+        let r = authorship_of(&plain, "collections/x/r.md");
+        assert!(!r.created_at.is_empty() && r.created_at == r.edited_at && r.created_by.is_empty());
+        assert_eq!(authorship_of(&plain, "collections/x/missing.md"), Authorship::default());
+
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&plain).ok();
     }
 
     #[test]

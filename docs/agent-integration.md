@@ -38,6 +38,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex write <note> < body.md` | replace the body, keep the frontmatter |
 | `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
+| `cortex assets [--unused]` | every file under `assets/` with its size, type and how many notes reference it; `--unused` keeps only the orphans. A report, never a delete |
 | `cortex mv <note> <dest> [--title t]` | rename or move a note — `dest` is a new path (`notes/x/plan.md`) or a folder (`notes/x/`) — and rewrite every inbound `[[link]]` to follow it, aliases / sections / embeds kept; one commit when `auto_commit` is on. `cortex set <note> title=…` relinks the same way |
 | `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty) |
 | `cortex schema [key]` | typed properties for a collection or note type |
@@ -213,7 +214,33 @@ properties:
     type: number
     format: currency          # percent | progress (a 0–100 bar) | currency | stars | integer | decimal
     unit: "€"
+  - name: added               # from git history, never written: when the row's
+    type: created_time        # file was first committed (created_by: by whom),
+  - name: touched             # and when it last changed (edited_time /
+    type: edited_time         # edited_by). Outside a repository the file's
+                              # mtime stands in and the author is empty.
+  - name: trip                # a start and an end under one key:
+    type: date_range          #   trip: {start: 2026-09-10, end: 2026-09-12}
+  - name: attachments         # a list of vault-relative paths (assets/…)
+    type: files
 ```
+
+A **date range** is one nested mapping — `trip:` with `start:` and an optional
+`end:` (a one-day range has none) — so either end changes on its own line and
+the pair cannot drift apart. In a filter `trip < d` means the range ends
+before `d`, `trip > d` that it starts after, `trip == d` and `trip within 7d`
+that it contains the day or overlaps the window; sorting is by start, and a
+`repeat` moves both ends. `cortex set collections/trips/x
+'trip={start: 2026-09-10, end: 2026-09-12}'` writes one. A timeline with
+`start: trip` draws both ends from it; a calendar shows the row on every day
+it spans.
+
+The **git-derived** values (`created_time` `created_by` `edited_time`
+`edited_by`) are `YYYY-MM-DDTHH:MM` local times and git author names, read
+from the history on every view run — one walk per collection — and never
+stored. A day literal in a filter (`touched >= @today-7`) compares against
+them by day. A file with uncommitted changes reports its mtime and the local
+git user as the last edit.
 
 Formulas know `+ - * / %`, comparisons, `and or not`, and `days_until(d)`,
 `days_since(d)`, `days_between(a, b)`, `today()`, `year(d)`, `month(d)`,

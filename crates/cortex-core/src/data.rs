@@ -30,6 +30,9 @@ pub enum CellValue {
     Bool(bool),
     Date(String),       // ISO YYYY-MM-DD, kept as text but typed for sorting/filtering
     List(Vec<String>),
+    /// A date range: start and end (ISO days; `end` may be empty for an open
+    /// or one-day range). Sorts by start; see `eval_cmp` for how it filters.
+    Range(String, String),
 }
 
 impl CellValue {
@@ -52,6 +55,18 @@ impl CellValue {
             }
             CellValue::Bool(b) => b.to_string(),
             CellValue::List(items) => items.join(", "),
+            CellValue::Range(start, end) => {
+                if end.is_empty() || end == start { start.clone() } else { format!("{start} → {end}") }
+            }
+        }
+    }
+
+    /// The `{start, end}` of a range cell; a plain date is a one-day range.
+    pub(crate) fn as_range(&self) -> Option<(&str, &str)> {
+        match self {
+            CellValue::Range(s, e) => Some((s.as_str(), if e.is_empty() { s.as_str() } else { e.as_str() })),
+            CellValue::Date(d) => Some((d.as_str(), d.as_str())),
+            _ => None,
         }
     }
 }
@@ -64,6 +79,7 @@ pub enum ColumnType {
     Bool,
     Date,
     List,
+    DateRange,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -109,8 +125,30 @@ fn json_to_cell(v: &serde_json::Value) -> CellValue {
                 other => other.to_string(),
             }).collect())
         }
-        serde_json::Value::Object(_) => CellValue::Text(v.to_string()),
+        serde_json::Value::Object(o) => match range_of(o) {
+            Some((start, end)) => CellValue::Range(start, end),
+            None => CellValue::Text(v.to_string()),
+        },
     }
+}
+
+/// `{start: YYYY-MM-DD, end: YYYY-MM-DD}` — the on-disk form of a date range
+/// property. `end` is optional; anything else is not a range.
+fn range_of(o: &serde_json::Map<String, serde_json::Value>) -> Option<(String, String)> {
+    let start = o.get("start")?.as_str()?;
+    if !looks_like_date(start) { return None; }
+    let end = o.get("end").and_then(|e| e.as_str()).unwrap_or("");
+    if !end.is_empty() && !looks_like_date(end) { return None; }
+    if o.keys().any(|k| k != "start" && k != "end") { return None; }
+    Some((start.to_string(), end.to_string()))
+}
+
+/// The frontmatter value for a date range, `end` left out when empty.
+pub(crate) fn range_json(start: &str, end: &str) -> serde_json::Value {
+    let mut o = serde_json::Map::new();
+    o.insert("start".into(), serde_json::Value::String(start.to_string()));
+    if !end.is_empty() && end != start { o.insert("end".into(), serde_json::Value::String(end.to_string())); }
+    serde_json::Value::Object(o)
 }
 
 fn col_type(v: &CellValue) -> ColumnType {
@@ -119,6 +157,7 @@ fn col_type(v: &CellValue) -> ColumnType {
         CellValue::Bool(_) => ColumnType::Bool,
         CellValue::Date(_) => ColumnType::Date,
         CellValue::List(_) => ColumnType::List,
+        CellValue::Range(..) => ColumnType::DateRange,
         _ => ColumnType::Text,
     }
 }
@@ -416,6 +455,12 @@ fn eval_cmp(cell: &CellValue, op: Op, literal: &str) -> bool {
         Op::IsNotEmpty => return !eval_cmp(cell, Op::IsEmpty, literal),
         Op::Within => {
             let Some((lo, hi)) = within_bounds(literal, crate::placeholders::today()) else { return false };
+            // A range is within a window when the two overlap.
+            if let CellValue::Range(s, _) = cell {
+                if s.is_empty() { return false; }
+                let (start, end) = cell.as_range().unwrap_or_default();
+                return start <= hi.as_str() && end >= lo.as_str();
+            }
             return eval_cmp(cell, Op::Ge, &lo) && eval_cmp(cell, Op::Le, &hi);
         }
         _ => {}
@@ -425,9 +470,27 @@ fn eval_cmp(cell: &CellValue, op: Op, literal: &str) -> bool {
     // sweep in undated rows.
     let empty = matches!(cell, CellValue::Null)
         || matches!(cell, CellValue::Text(t) if t.is_empty())
-        || matches!(cell, CellValue::List(items) if items.is_empty());
+        || matches!(cell, CellValue::List(items) if items.is_empty())
+        || matches!(cell, CellValue::Range(s, _) if s.is_empty());
     if op == Op::IsEmpty {
         return empty;
+    }
+    // A range is before a day when it ends before it, after when it starts
+    // after it, and equal to (or containing) a day when the day falls inside.
+    if let (CellValue::Range(..), false) = (cell, empty) {
+        let (start, end) = cell.as_range().unwrap_or_default();
+        let lit = &literal[..literal.len().min(10)];
+        return match op {
+            Op::Eq | Op::Contains => start <= lit && lit <= end,
+            Op::Ne => !(start <= lit && lit <= end),
+            Op::Lt => end < lit,
+            Op::Le => end <= lit,
+            Op::Gt => start > lit,
+            Op::Ge => start >= lit,
+            Op::StartsWith => start.starts_with(literal),
+            Op::EndsWith => end.ends_with(literal),
+            _ => false,
+        };
     }
     if empty {
         return match op { Op::Eq => literal.is_empty(), Op::Ne => !literal.is_empty(), _ => false };
@@ -456,7 +519,11 @@ fn eval_cmp(cell: &CellValue, op: Op, literal: &str) -> bool {
             _ => false,
         };
     }
-    let a = cell.as_text();
+    let mut a = cell.as_text();
+    // A day against a date-time (`edited_time <= @today`): compare the day.
+    if looks_like_date(literal) && a.len() > 10 && looks_like_date(&a[..10]) {
+        a.truncate(10);
+    }
     match op {
         Op::Eq => a == literal,
         Op::Ne => a != literal,
@@ -718,6 +785,7 @@ impl ColumnType {
             ColumnType::Bool => "bool",
             ColumnType::Date => "date",
             ColumnType::List => "list",
+            ColumnType::DateRange => "date_range",
         }
     }
 }
@@ -735,6 +803,7 @@ impl CellValue {
             CellValue::List(items) => {
                 serde_json::Value::Array(items.iter().cloned().map(serde_json::Value::String).collect())
             }
+            CellValue::Range(start, end) => range_json(start, end),
         }
     }
 }
@@ -850,9 +919,10 @@ fn prop_ty(ty: crate::schema::PropType) -> &'static str {
     use crate::schema::PropType;
     match ty {
         PropType::Number => "number",
-        PropType::Date => "date",
+        PropType::Date | PropType::CreatedTime | PropType::EditedTime => "date",
         PropType::Checkbox => "bool",
-        PropType::MultiSelect | PropType::Relation => "list",
+        PropType::MultiSelect | PropType::Relation | PropType::Files => "list",
+        PropType::DateRange => "date_range",
         _ => "text",
     }
 }
@@ -878,6 +948,9 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
     // on a rollup or a formula (`progress < 100`, `sort: [days_left]`).
     let mut table = resolve_source(root, &spec.source)?;
     if let Some(s) = &schema {
+        if let Some(name) = spec.source.strip_prefix("collections/") {
+            apply_authorship(root, &mut table, name.trim_end_matches('/'), s);
+        }
         apply_rollups(root, &mut table, s);
         apply_formulas(&mut table, s);
     }
@@ -1234,6 +1307,17 @@ fn coerce(value: &str, ty: &str) -> serde_json::Value {
             v.split(',').map(|s| s.trim()).filter(|s| !s.is_empty())
                 .map(|s| serde_json::Value::String(s.to_string())).collect(),
         ),
+        // The first two ISO days in the text, however they are joined
+        // (`2026-09-10 → 2026-09-12`, `2026-09-10/2026-09-12`, or JSON).
+        "date_range" => {
+            let days: Vec<&str> = v.match_indices(|c: char| c.is_ascii_digit())
+                .filter_map(|(i, _)| v.get(i..i + 10)).filter(|d| looks_like_date(d)).collect();
+            let mut days = days.into_iter();
+            match (days.next(), days.next()) {
+                (Some(start), end) => range_json(start, end.unwrap_or("")),
+                (None, _) => serde_json::Value::String(value.to_string()),
+            }
+        }
         _ => serde_json::Value::String(value.to_string()), // text, date
     }
 }
@@ -1418,6 +1502,12 @@ fn recur(dir: &Path, row_id: &str, note: &mut crate::note::Note, schema: Option<
                 if primary.is_none() || preferred { primary = Some(shifted.clone()); }
                 next.insert(k.clone(), serde_json::Value::String(shifted));
             }
+        } else if let Some((start, end)) = v.as_object().and_then(range_of) {
+            // A date range moves as a whole.
+            let s = crate::recurrence::shift_text(&start, interval);
+            let e = if end.is_empty() { String::new() } else { crate::recurrence::shift_text(&end, interval) };
+            if primary.is_none() { primary = Some(s.clone()); }
+            next.insert(k.clone(), range_json(&s, &e));
         }
     }
     // Reset the trigger only — the field whose edit finished the row: a
@@ -1789,6 +1879,7 @@ fn cell_is_empty(v: Option<&CellValue>) -> bool {
         None | Some(CellValue::Null) => true,
         Some(CellValue::Text(t)) | Some(CellValue::Date(t)) => t.trim().is_empty(),
         Some(CellValue::List(items)) => items.is_empty(),
+        Some(CellValue::Range(start, _)) => start.is_empty(),
         _ => false,
     }
 }
@@ -1838,6 +1929,37 @@ fn rollup_value(rows: &[&Row], prop: &str, func: &str) -> CellValue {
             CellValue::Num(v)
         }
         _ => CellValue::Null,
+    }
+}
+
+/// Fill the git-derived properties — `created_time`, `created_by`,
+/// `edited_time`, `edited_by` — from one walk of the history for the whole
+/// collection (`git::authorship`). Computed on read, never written; a value a
+/// row happens to carry under the same key is overridden.
+pub fn apply_authorship(root: &Path, table: &mut Table, collection: &str, schema: &crate::schema::TypeSchema) {
+    let props: Vec<&crate::schema::PropertyDef> = schema.properties.iter().filter(|p| p.ty.is_authorship()).collect();
+    if props.is_empty() { return; }
+    let paths: Vec<String> = table.rows.iter().map(|r| format!("collections/{collection}/{}.md", r.id)).collect();
+    let info = crate::git::authorship(root, &paths);
+    for (row, path) in table.rows.iter_mut().zip(&paths) {
+        let a = info.get(path).cloned().unwrap_or_default();
+        for p in &props {
+            use crate::schema::PropType;
+            let v = match p.ty {
+                PropType::CreatedTime => CellValue::Date(a.created_at.clone()),
+                PropType::EditedTime => CellValue::Date(a.edited_at.clone()),
+                PropType::CreatedBy => CellValue::Text(a.created_by.clone()),
+                _ => CellValue::Text(a.edited_by.clone()),
+            };
+            row.cells.insert(p.name.clone(), v);
+        }
+    }
+    for p in &props {
+        let ty = if matches!(p.ty, crate::schema::PropType::CreatedTime | crate::schema::PropType::EditedTime) { ColumnType::Date } else { ColumnType::Text };
+        match table.columns.iter_mut().find(|c| c.key == p.name) {
+            Some(c) => c.ty = ty,
+            None => table.columns.push(Column { key: p.name.clone(), ty }),
+        }
     }
 }
 
@@ -2885,5 +3007,105 @@ mod tests {
         assert_eq!(out.rows.len(), 2); // A (has rust) + B (rating 2)
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn date_range_cells_filter_sort_and_write_one_line() {
+        let root = gap_root("daterange");
+        put(&root, ".cortex/schemas/trips.yaml", "properties:\n- name: trip\n  type: date_range\n- name: gap\n  type: formula\n  expr: days_between(trip, '2026-09-01')\n");
+        put(&root, "collections/trips/a.md", "---\ntitle: A\ntrip:\n  end: 2026-09-12\n  start: 2026-09-10\n---\n\nBody.\n");
+        put(&root, "collections/trips/b.md", "---\ntitle: B\ntrip:\n  start: 2026-09-20\n---\n");
+        put(&root, "collections/trips/c.md", "---\ntitle: C\n---\n");
+        let t = read_collection(&root, "trips").unwrap();
+        assert_eq!(t.columns.iter().find(|c| c.key == "trip").unwrap().ty, ColumnType::DateRange);
+        let a = t.rows.iter().find(|r| r.id == "a").unwrap();
+        assert_eq!(a.cells["trip"], CellValue::Range("2026-09-10".into(), "2026-09-12".into()));
+        assert_eq!(a.cells["trip"].as_text(), "2026-09-10 → 2026-09-12");
+        assert_eq!(a.cells["trip"].to_json(), serde_json::json!({"start": "2026-09-10", "end": "2026-09-12"}));
+        let b = t.rows.iter().find(|r| r.id == "b").unwrap();
+        assert_eq!(b.cells["trip"].as_text(), "2026-09-20");
+
+        let names = |spec: &str| -> Vec<String> { run_view(&root, spec).unwrap().rows.iter().map(|r| r.cells["title"].as_text()).collect() };
+        assert_eq!(names("source: collections/trips\nfilter: trip == 2026-09-11\n"), vec!["A"], "a day inside the range");
+        assert_eq!(names("source: collections/trips\nfilter: trip < 2026-09-13\n"), vec!["A"], "ends before");
+        assert_eq!(names("source: collections/trips\nfilter: trip >= 2026-09-12\n"), vec!["B"], "starts on or after");
+        assert_eq!(names("source: collections/trips\nfilter: trip is_empty\n"), vec!["C"]);
+        assert_eq!(names("source: collections/trips\nsort: [trip desc]\n"), vec!["B", "A", "C"], "by start, empties last");
+        // `within` means overlap: a range straddling today is in both windows,
+        // one long past is in neither.
+        let today = crate::placeholders::today();
+        let around = CellValue::Range(iso(today - chrono::Duration::days(1)), iso(today + chrono::Duration::days(1)));
+        assert!(eval_cmp(&around, Op::Within, "7d") && eval_cmp(&around, Op::Within, "-7d"));
+        assert!(!eval_cmp(&a.cells["trip"], Op::Within, "7d") || today <= chrono::NaiveDate::from_ymd_opt(2026, 9, 12).unwrap());
+        assert!(!eval_cmp(&CellValue::Range(String::new(), String::new()), Op::Within, "7d"));
+        // A formula sees the start day.
+        let r = resolve_view(&root, "source: collections/trips\nsort: [title]\n").unwrap();
+        assert_eq!(r.rows[0].cells["gap"], serde_json::json!(-9.0));
+        assert_eq!(r.columns.iter().find(|c| c.key == "trip").unwrap().ty, "date_range");
+
+        // Editing the end changes one line; the wire value may be joined any way.
+        let before = std::fs::read_to_string(root.join("collections/trips/a.md")).unwrap();
+        set_cell(&root, "collections/trips", "a", "trip", "2026-09-10 → 2026-09-14", "date_range").unwrap();
+        let after = std::fs::read_to_string(root.join("collections/trips/a.md")).unwrap();
+        let removed: Vec<&str> = before.lines().filter(|l| !after.contains(l)).collect();
+        let added: Vec<&str> = after.lines().filter(|l| !before.contains(l)).collect();
+        assert_eq!((removed, added), (vec!["  end: 2026-09-12"], vec!["  end: 2026-09-14"]), "{after}");
+        assert!(after.ends_with("Body.\n"));
+        set_cell(&root, "collections/trips", "b", "trip", "2026-10-01/2026-10-03", "date_range").unwrap();
+        let b = crate::note::parse_note("", &std::fs::read_to_string(root.join("collections/trips/b.md")).unwrap()).unwrap();
+        assert_eq!(b.frontmatter["trip"], serde_json::json!({"start": "2026-10-01", "end": "2026-10-03"}));
+        set_cell(&root, "collections/trips", "b", "trip", "2026-10-05", "date_range").unwrap();
+        let b = crate::note::parse_note("", &std::fs::read_to_string(root.join("collections/trips/b.md")).unwrap()).unwrap();
+        assert_eq!(b.frontmatter["trip"], serde_json::json!({"start": "2026-10-05"}), "a single day has no end");
+        assert_eq!(coerce("", "date_range"), serde_json::json!(""), "cleared");
+
+        // A repeating row moves its range as a whole.
+        put(&root, "collections/trips/r.md", "---\ndone: true\nrepeat: weekly\nrepeat_mode: advance\ntitle: R\ntrip:\n  end: 2026-09-12\n  start: 2026-09-10\n---\n");
+        apply_row_effects(&root, "collections/trips/r.md", &["done".into()]).unwrap();
+        let r = crate::note::parse_note("", &std::fs::read_to_string(root.join("collections/trips/r.md")).unwrap()).unwrap();
+        assert_eq!(r.frontmatter["trip"], serde_json::json!({"start": "2026-09-17", "end": "2026-09-19"}));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn day_literals_compare_against_date_times_by_day() {
+        let c = CellValue::Date("2026-09-09T14:03".into());
+        assert!(eval_cmp(&c, Op::Le, "2026-09-09") && eval_cmp(&c, Op::Eq, "2026-09-09") && !eval_cmp(&c, Op::Lt, "2026-09-09"));
+        assert!(eval_cmp(&c, Op::Gt, "2026-09-08") && !eval_cmp(&c, Op::Ge, "2026-09-10"));
+        assert!(eval_cmp(&c, Op::StartsWith, "2026-09"));
+    }
+
+    #[test]
+    fn authorship_properties_come_from_git_and_run_before_filters() {
+        let root = gap_root("authorship");
+        let repo = git2::Repository::init(&root).unwrap();
+        let t0 = 1_700_000_000;
+        crate::git::tests::commit_as(&repo, "collections/tasks/a.md", "---\ntitle: A\n---\n", "alice", t0);
+        crate::git::tests::commit_as(&repo, "collections/tasks/b.md", "---\ntitle: B\n---\n", "bob", t0 + 3600);
+        crate::git::tests::commit_as(&repo, "collections/tasks/a.md", "---\ntitle: A\nadded: bogus\n---\n", "bob", t0 + 3 * 86_400);
+        put(&root, ".cortex/schemas/tasks.yaml", "properties:\n- name: added\n  type: created_time\n- name: author\n  type: created_by\n- name: touched\n  type: edited_time\n- name: editor\n  type: edited_by\n");
+
+        let r = resolve_view(&root, "source: collections/tasks\nsort: [added]\n").unwrap();
+        let ids: Vec<&str> = r.rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b"]);
+        let a = &r.rows[0].cells;
+        assert_eq!(a["author"], serde_json::json!("alice"));
+        assert_eq!(a["editor"], serde_json::json!("bob"));
+        assert_eq!(a["added"], serde_json::json!(crate::git::format_time(t0)), "a row's own `added` key is overridden");
+        assert_eq!(a["touched"], serde_json::json!(crate::git::format_time(t0 + 3 * 86_400)));
+        let col = r.columns.iter().find(|c| c.key == "added").unwrap();
+        assert_eq!((col.ty.as_str(), col.schema.as_ref().map(|s| s.ty)), ("date", Some(crate::schema::PropType::CreatedTime)));
+        assert!(r.all_columns.contains(&"editor".to_string()));
+
+        // Filters and sorts see the computed values.
+        let names = |spec: &str| -> Vec<String> { resolve_view(&root, spec).unwrap().rows.iter().map(|r| r.cells["title"].as_str().unwrap().to_string()).collect() };
+        assert_eq!(names("source: collections/tasks\nfilter: author == alice\n"), vec!["A"]);
+        assert_eq!(names("source: collections/tasks\nfilter: editor == bob\nsort: [touched desc]\n"), vec!["A", "B"]);
+        let day = crate::git::format_time(t0 + 3600)[..10].to_string();
+        assert_eq!(names(&format!("source: collections/tasks\nfilter: touched <= {day} and touched >= {day}\n")), vec!["B"], "day literals match the date-time's day");
+
+        // The table's CSV export and a schema-less collection are untouched: nothing is written.
+        assert!(!std::fs::read_to_string(root.join("collections/tasks/b.md")).unwrap().contains("touched"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
