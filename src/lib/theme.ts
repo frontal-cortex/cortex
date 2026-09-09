@@ -12,6 +12,22 @@ import { listen } from "@tauri-apps/api/event";
 import { commands, Palette, Settings } from "./commands";
 import { applyProseFont, applyProseSlant } from "./fonts";
 
+/** Themes whose published `accent` is a cool alias on a warm palette —
+ *  Omarchy's Gruvbox names its teal as the accent, while Gruvbox is orange
+ *  everywhere else. With no `accent` chosen in Settings, the colour that
+ *  belongs is used instead; a chosen accent still wins. Keyed by the theme
+ *  name Omarchy publishes; a prefix match covers light/dark variants. */
+const PREFERRED_ACCENT: Record<string, string> = {
+  gruvbox: "orange",
+};
+
+function preferredAccent(palette: Palette): string | null {
+  const name = (palette.name ?? "").toLowerCase();
+  const key = Object.keys(PREFERRED_ACCENT).find((k) => name === k || name.startsWith(`${k}-`));
+  const hex = key ? palette.colors[PREFERRED_ACCENT[key]] : undefined;
+  return hex ?? null;
+}
+
 let lastPref: Settings["theme"] = "system";
 let paletteKeys: string[] = [];
 let lastPalette: Palette | null = null;
@@ -69,6 +85,12 @@ export function applyPalette(palette: Palette | null) {
     paletteKeys.push(name);
   }
   root.dataset.palette = "on";
+  // A theme known to publish the wrong accent for itself gets the right one.
+  const preferred = preferredAccent(palette);
+  if (preferred) {
+    root.style.setProperty("--palette-accent", preferred);
+    if (!paletteKeys.includes("accent")) paletteKeys.push("accent");
+  }
   // The palette decides light vs dark — tag pills and BlockNote follow it.
   root.dataset.theme = palette.mode === "light" ? "light" : "dark";
   applyAccent(lastAccent, palette);

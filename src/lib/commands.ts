@@ -711,6 +711,8 @@ export interface AgentCli {
 export interface Palette {
   mode: "light" | "dark" | string;
   colors: Record<string, string>;
+  /** The desktop theme's name when known (Omarchy's `theme.name`). */
+  name?: string | null;
 }
 
 /** Result of a sync: clean (did we pull anything?) or a conflicted merge. */
@@ -882,8 +884,10 @@ export const commands = {
   openVault: (path: string) =>
     invoke<VaultInfo>("open_vault", { path }),
 
-  createVaultFromTemplate: (path: string) =>
-    invoke<void>("create_vault_from_template", { path }),
+  /** Scaffold a vault at `path` — from the bundled tour, or from `template`:
+   *  a folder, an `owner/repo` on GitHub, or a git URL (files copied, history not). */
+  createVaultFromTemplate: (path: string, template?: string) =>
+    invoke<void>("create_vault_from_template", { path, template: template || null }),
 
   closeVault: () =>
     invoke<void>("close_vault"),
@@ -893,6 +897,10 @@ export const commands = {
 
   getRecentVaults: () =>
     invoke<RecentVault[]>("get_recent_vaults"),
+
+  /** Drop a vault from the recent list (the vault itself is untouched). */
+  forgetRecent: (path: string) =>
+    invoke<RecentVault[]>("forget_recent", { path }),
 
   /** The last notes opened in this vault, most recent first (`.brain/ui-state.json`). */
   getRecentNotes: () =>

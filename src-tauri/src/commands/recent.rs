@@ -80,6 +80,18 @@ pub fn get_recent_vaults(app: AppHandle) -> Result<Vec<RecentVault>> {
         .collect())
 }
 
+/// Drop `path` from the recent list — the vault itself is untouched. Returns
+/// the list as the home screen should now show it.
+#[tauri::command]
+pub fn forget_recent(app: AppHandle, path: String) -> Result<Vec<RecentVault>> {
+    let mut recents = read_recents(&app);
+    recents.retain(|r| r.path != path);
+    if let (Ok(file), Ok(json)) = (recents_file(&app), serde_json::to_string_pretty(&recents)) {
+        std::fs::write(file, json)?;
+    }
+    Ok(recents.into_iter().filter(|r| Path::new(&r.path).is_dir()).collect())
+}
+
 // ── Recent notes (per vault, `.brain/ui-state.json`) ──────────────────────────
 
 fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
