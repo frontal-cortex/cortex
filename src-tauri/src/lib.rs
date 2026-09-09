@@ -90,6 +90,7 @@ pub fn run() {
             commands::notes::list_vault_dirs,
             commands::notes::save_asset,
             commands::notes::read_asset,
+            commands::clipboard::read_clipboard,
             commands::config::get_favorites,
             commands::config::set_favorites,
             commands::config::get_settings,

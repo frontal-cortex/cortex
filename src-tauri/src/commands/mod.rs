@@ -10,3 +10,4 @@ pub mod vault;
 pub mod publish;
 pub mod packs;
 pub mod tracker;
+pub mod clipboard;
