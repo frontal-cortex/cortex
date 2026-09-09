@@ -18,13 +18,13 @@ screen but the Markdown save path throws it away.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Paragraph, headings 1-6, bullet / numbered / check lists, quote, divider | done | — | BlockNote defaults. Check-list items strike through live (`index.css:61`). |
-| Toggle list / toggle heading | partial | M | Works on screen, but the Markdown exporter flattens `<details>` to a plain bullet or heading, so the toggle is gone on reopen. The roadmap's chosen serialisation is `<details><summary>`. |
+| Toggle list / toggle heading | done | — | Saved as `<details><summary>…</summary> … </details>` (a heading inside the summary for toggle headings), the roadmap's chosen form; inline styles in the summary go out as HTML tags. Translated at the load/save boundary (`richFormats.ts`). |
 | Callout | partial | S | Five fixed kinds (note, tip, info, warning, danger) with fixed emoji and colour (`CalloutBlock.tsx:21`); the icon click only cycles kinds. Inline content only, no nested blocks. Round-trips as `> [!type]`. |
 | Code block: language, highlighting | partial | S | The fence language survives the parse, but the app passes no `supportedLanguages` so there is no picker, and no highlighter is configured (no shiki dependency). Plain monospace. |
 | Table | partial | M | Default table block with handles. Saved as GFM, so cell colours, column widths, header column and merged cells are lost. |
 | Image: paste, drop, upload | done | — | Custom paste/drop plugin (`Editor.tsx:389-431`), stored in `assets/` (`commands/notes.rs:772`). |
-| Image: resize | partial | S | Resize handles work, but width has no Markdown form and resets on reload. |
-| Image: caption | partial | S | Serialised as `<figure>`, but the asset rehydration regex only matches `![](assets/…)` (`Editor.tsx:58`), so a captioned image renders broken after reload. |
+| Image: resize | done | — | A resized image is saved as `<img src="assets/…" alt="…" width="480">` (inside `<figure>` when captioned); an unsized one stays `![alt](assets/…)`. GitHub and Obsidian honour the width. |
+| Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
 | File attachment | partial | M | Uploads to `assets/`, degrades to a plain link on save; `read_asset` labels every non-image as `image/png` (`commands/notes.rs:833`) so non-image assets cannot be served. |
 | Video / audio | partial | M | Blocks exist; same asset rehydration gap; no YouTube/Vimeo player or oEmbed. |
 | Bookmark / link preview | missing | M | No fetch or preview code. Roadmap: plain `[title](url)` with a cached card in `.brain/`. |
@@ -48,8 +48,9 @@ screen but the Markdown save path throws it away.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Bold, italic, strikethrough, code, link | done | — | |
-| Underline | partial | M | Applies on screen; the exporter strips `<u>` on save. |
-| Text colour, highlight | partial | M | Applies on screen; colour spans are stripped on save. Cortex needs a Markdown convention (`==mark==` for highlight is the obvious one; colour may be a non-goal). |
+| Underline | done | — | Saved as `<u>…</u>`; runs of underlined text keep bold / italic inside them (`<u>**a** b</u>`). |
+| Highlight | partial | S | Saved as `==text==` (Obsidian's syntax; rendered as `<mark>` by `cortex publish`). The highlight *colour* is not stored — every highlight reopens as the default yellow. |
+| Text colour | non-goal | — | Applies on screen only; the span is dropped on save. There is no legible Markdown form for a coloured run and inline `<span style>` would fail principle 3, so this stays a deliberate non-goal (see below). |
 | Inline math | missing | M | |
 | `Ctrl+B` | note | S | Bound to toggle-sidebar in capture phase (`keymap.ts:49`), so bold is toolbar or `**` only. |
 
@@ -253,7 +254,7 @@ by inferring column types (`data.rs:128`).
 ## Notable gaps, ranked
 
 1. **No import path.** Nobody can move in from Notion, CSV, or Evernote. Opening a Markdown folder works but writes files into it.
-2. **Silent formatting loss on save**: underline, colour, highlight, toggles, image width. They look like they work until the note is reopened.
+2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
 3. **No math, columns, bookmarks, embeds, TOC, synced blocks, buttons.** Math is the cheapest and the most missed.
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing is mouse-only**: no keyboard cell navigation, bulk edit, column resize / reorder, or date picker.
@@ -264,3 +265,7 @@ by inferring column types (`data.rs:128`).
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
 12. **Mobile is a doc, not a target.**
+
+## Deliberate non-goals
+
+- **Text colour.** No Markdown convention exists for a coloured run, and `<span style="color:…">` in a note would fail the degradability principle. The editor still shows the colour while the note is open; it is not saved. Highlight is the supported way to mark text.
