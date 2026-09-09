@@ -11,6 +11,7 @@ import { useLayout } from "../../hooks/useLayout";
 import { useSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX } from "../../hooks/useSidebarWidth";
 import { useRecentNotes } from "../../hooks/useRecentNotes";
 import { ExplorerSort, DEFAULT_SORT, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
+import { useComments } from "../../hooks/useComments";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
 import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/database";
@@ -28,6 +29,7 @@ import { LogTodayModal } from "./LogTodayModal";
 import { PublishModal } from "./PublishModal";
 import { ImportModal } from "./ImportModal";
 import { ShortcutOverlay } from "./ShortcutOverlay";
+import { UpdateModal } from "./UpdateModal";
 import { syncTheme } from "../../lib/theme";
 import styles from "./Shell.module.css";
 
@@ -63,7 +65,8 @@ export function Shell({
     toggleRight();
     if (opening) requestAnimationFrame(() => termRef.current?.focus());
   }, [monk, rightVisible, toggleRight]);
-  const [showGraph, setShowGraph] = useState(false);
+  // The graph modal: closed, or open globally / locally around the open note.
+  const [showGraph, setShowGraph] = useState<false | "global" | "local">(false);
   // A tag page: the notes carrying this tag, as a view over the index (nothing written).
   const [openTag, setOpenTag] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -75,6 +78,8 @@ export function Shell({
   const [showPublish, setShowPublish] = useState(false);
   // The Import dialog — CSV into a collection, or a Markdown folder into notes/.
   const [showImport, setShowImport] = useState(false);
+  // Check for updates — asks the release channel, installs only on confirm.
+  const [showUpdate, setShowUpdate] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   // The `?` overlay — every shortcut, read from the keymap registry.
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -173,6 +178,19 @@ export function Shell({
 
   const { notes, dirs, tags, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
   const { note, saving, save, applyNote } = useNote(selectedPath);
+  // The open note's comment threads (its `.comments.yaml` sidecar) and the
+  // margin that shows them. Open/closed is a way of reading, so it lives in
+  // localStorage like the outline.
+  const commentsApi = useComments(selectedPath ?? "");
+  const [commentsOpen, setCommentsOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem("cortex.commentsOpen") === "1"; } catch { return false; }
+  });
+  const toggleComments = useCallback(() => {
+    setCommentsOpen((v) => {
+      try { localStorage.setItem("cortex.commentsOpen", v ? "0" : "1"); } catch { /* fine */ }
+      return !v;
+    });
+  }, []);
   useEffect(() => {
     const where = pendingFocus.current;
     if (!where || !note || note.path !== selectedPath) return;
@@ -233,6 +251,11 @@ export function Shell({
         }
       }
       if (payload.config) loadSettings();
+      // A comment sidecar changed under us (an agent, a teammate's sync): the
+      // panel for that note reloads.
+      for (const path of payload.comments ?? []) {
+        window.dispatchEvent(new CustomEvent("cortex:comments-changed", { detail: { path } }));
+      }
       // Any write dirties the working tree; refs moving changes branches/commits.
       onRefreshStatus();
     });
@@ -330,6 +353,9 @@ export function Shell({
       }
       const id = findShortcut(e);
       if (!id) return;
+      // A widget with a find of its own (a data view's search box) keeps mod+f
+      // while it has focus; the editor's find-in-note is untouched elsewhere.
+      if (id === "find-in-note" && (e.target as HTMLElement | null)?.closest?.("[data-find-scope]")) return;
       e.preventDefault();
       e.stopPropagation();
       actionsRef.current?.[id]();
@@ -530,7 +556,8 @@ export function Shell({
     "quick-capture":   () => setShowCapture(true),
     "new-note":        () => { handleNewNote(undefined); },
     "today":           () => { handleToday(); },
-    "graph":           () => setShowGraph((x) => !x),
+    "graph":           () => setShowGraph((x) => (x ? false : "global")),
+    "local-graph":     () => setShowGraph((x) => (x === "local" ? false : "local")),
     "back":            back,
     "forward":         forward,
     "settings":        () => setShowSettings((v) => !v),
@@ -544,6 +571,8 @@ export function Shell({
     "log-today":       () => setShowLogToday((v) => !v),
     "find-in-note":    () => editorRef.current?.openFind(),
     "toggle-outline":  () => editorRef.current?.toggleOutline(),
+    "toggle-comments": () => { if (note) toggleComments(); },
+    "comment":         () => editorRef.current?.commentOnSelection(),
     "shortcut-help":   () => setShowShortcuts((v) => !v),
   };
 
@@ -578,7 +607,7 @@ export function Shell({
         onBack={back}
         onForward={forward}
         onSync={handleSync}
-        onOpenGraph={() => setShowGraph(true)}
+        onOpenGraph={() => setShowGraph("global")}
         onOpenSwitcher={() => setSwitcher("notes")}
         onToday={handleToday}
         leftOpen={leftVisible}
@@ -586,6 +615,10 @@ export function Shell({
         onToggleLeft={toggleLeft}
         onToggleRight={handleToggleTerminal}
         onToggleMonk={toggleMonk}
+        commentsOpen={commentsOpen}
+        unresolvedComments={commentsApi.unresolved}
+        hasNote={!!note}
+        onToggleComments={toggleComments}
       />}
 
       <div className={styles.body} style={{ "--left-panel-width": `${sidebarWidth}px` } as CSSProperties}>
@@ -612,7 +645,7 @@ export function Shell({
           onTurnIntoDatabase={handleTurnIntoDatabase}
           onToggleFavorite={toggleFavorite}
           isFavorite={isFavorite}
-          onOpenGraph={() => setShowGraph(true)}
+          onOpenGraph={() => setShowGraph("global")}
           onNewFromTemplate={handleNewFromTemplate}
           onNewCollection={handleNewCollection}
           onOpenCollection={handleOpenCollection}
@@ -661,6 +694,13 @@ export function Shell({
           onNavigate={handleNavigate}
           onApplyNote={applyNote}
           onConvertToNote={handleConvertToNote}
+          comments={commentsApi.threads}
+          commentsOpen={commentsOpen}
+          onToggleComments={toggleComments}
+          onAddComment={async (text, anchor) => { await commentsApi.add(text, anchor); scheduleAutoCommit(); }}
+          onReplyComment={async (id, text) => { await commentsApi.reply(id, text); scheduleAutoCommit(); }}
+          onResolveComment={async (id, resolved) => { await commentsApi.resolve(id, resolved); scheduleAutoCommit(); }}
+          onDeleteComment={async (id) => { await commentsApi.remove(id); scheduleAutoCommit(); }}
         />
 
         {terminalMounted && (
@@ -694,7 +734,7 @@ export function Shell({
           onClose={() => { setSwitcher(null); focusEditor(); }}
           onNewNote={() => handleNewNote()}
           onToday={handleToday}
-          onOpenGraph={() => setShowGraph(true)}
+          onOpenGraph={() => setShowGraph("global")}
           onNewFromTemplate={handleNewFromTemplate}
           onNewCollection={handleNewCollection}
           onSync={handleSync}
@@ -711,8 +751,11 @@ export function Shell({
           onToggleProperties={() => editorRef.current?.toggleProperties()}
           onFindInNote={note ? () => editorRef.current?.openFind() : undefined}
           onToggleOutline={() => editorRef.current?.toggleOutline()}
+          onToggleComments={note ? toggleComments : undefined}
+          onComment={note ? () => editorRef.current?.commentOnSelection() : undefined}
           onPublish={() => setShowPublish(true)}
           onImport={() => setShowImport(true)}
+          onCheckForUpdates={() => setShowUpdate(true)}
           onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
           isPublic={note?.frontmatter["publish"] === true}
           hasRemote={vault.has_remote}
@@ -737,6 +780,10 @@ export function Shell({
           onChanged={() => { refresh(); scheduleAutoCommit(); }}
           onOpenNote={(p) => openNote(p)}
         />
+      )}
+
+      {showUpdate && (
+        <UpdateModal onClose={() => { setShowUpdate(false); focusEditor(); }} />
       )}
 
       {showCapture && (
@@ -767,6 +814,8 @@ export function Shell({
       {showGraph && (
         <GraphView
           notes={notes}
+          currentPath={note?.path ?? null}
+          initialMode={showGraph}
           onNavigate={(path) => { setSelectedPath(path); setShowGraph(false); }}
           onClose={() => setShowGraph(false)}
         />

@@ -95,6 +95,17 @@ pub fn note_history(
     git::get_note_history(&repo, &path, limit)
 }
 
+/// Who created and last edited a note, and when — from git history, with the
+/// file's mtime standing in outside a repository. The values the
+/// `created_time` / `created_by` / `edited_time` / `edited_by` property types
+/// show in a data view; the properties panel asks for one note.
+#[tauri::command]
+pub fn note_authorship(path: String, state: State<'_, VaultState>) -> Result<git::Authorship> {
+    let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
+    if path.contains("..") { return Err(AppError::Other("Invalid path".into())); }
+    Ok(git::authorship_of(&root, &path))
+}
+
 #[tauri::command]
 pub fn note_at(path: String, hash: String, state: State<'_, VaultState>) -> Result<String> {
     let repo = open_repo(&state)?;

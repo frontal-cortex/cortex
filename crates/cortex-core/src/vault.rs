@@ -181,6 +181,7 @@ follows every change you make on disk.
 ## Layout
 
 - `notes/` — all notes, in whatever folders the owner likes. `notes/journal/` holds daily notes.
+  `notes/foo.comments.yaml` beside `notes/foo.md` is its comment threads — discussion about a note, never in it.
 - `collections/<name>/` — a database: one note per row, properties in frontmatter, `_index.md` is the table.
 - `templates/` — note templates (`{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}`).
 - `.cortex/` — committed config: settings, property schemas, members. `.brain/` is a cache; ignore it.
@@ -193,7 +194,10 @@ follows every change you make on disk.
   Prefer the tools below over editing YAML by hand — they keep files canonical so diffs stay clean.
 - Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by path, then title, then filename stem.
   Rename or move with `cortex mv` (or `set title=`), never by hand: every inbound link is rewritten to follow.
-- Never write derived data (rollups, counts) into notes; the app computes it.
+- Never write derived data (rollups, counts, created/edited time and by) into notes; the app computes it.
+- A `date_range` property is one nested mapping, `trip: {start: YYYY-MM-DD, end: YYYY-MM-DD}`; a `files` property is a list of `assets/…` paths.
+- A paragraph that is only `[Label](https://…)` shows as a bookmark card; one that is only `<https://…>` embeds the page. A bare URL stays text.
+- To question or discuss a passage without changing it, comment (`cortex comment <note> --quote "…" "text"`); the thread lands in the note's sidecar, not its body.
 
 ## Tools
 
@@ -204,11 +208,13 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
     cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f] [--summary f=sum]
+    cortex comments <note> [--all]           comment threads       cortex comment <note> [--quote "…"] "text" | --reply ID "text" | --resolve ID
     cortex mv <note> <path-or-dir/> [--title t]   rename/move; inbound [[links]] are rewritten to follow
     cortex schema [key]                      typed properties      cortex status
     cortex schema rename <key> <old> <new>   rename a property everywhere (rows, views, rollups, formulas)
     cortex schema rm <key> <name>            delete a property everywhere (refused while a rollup or formula uses it)
     cortex settings [get k | set k=v.. | describe]   app settings   cortex agents
+    cortex assets [--unused]                 files under assets/ with reference counts; --unused = orphans (never deletes)
     cortex import csv <file> --collection <c> [--dry-run]   a CSV as rows   cortex import markdown <dir> [--into n] [--dry-run]
     cortex import notion <zip> [--into n] [--dry-run]   a Notion export: pages, databases as collections, a report note
     cortex propose <name> [-m msg] <paths>   hand changes to the owner for review (see below)

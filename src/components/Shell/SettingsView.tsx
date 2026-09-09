@@ -17,9 +17,10 @@ import {
 } from "../../lib/keymap";
 import { Dropdown } from "./Dropdown";
 import { AgentIcon } from "./agentIcons";
+import { UpdateChecker } from "./UpdateModal";
 import {
   CloseIcon, SearchIcon, FolderIcon, ThemeIcon, TextLinesIcon, FileIcon, SyncIcon, TerminalIcon,
-  PersonIcon, LinkIcon, OpenIcon, GlobeIcon, TemplateIcon, SparkleIcon,
+  PersonIcon, LinkIcon, OpenIcon, GlobeIcon, TemplateIcon, SparkleIcon, DownloadIcon,
 } from "./icons";
 import styles from "./SettingsView.module.css";
 
@@ -514,6 +515,20 @@ const SECTIONS: SectionDef[] = [
           <input className={`${styles.input} ${styles.inputMono}`} value={settings.collab_url} spellCheck={false}
             placeholder="ws://host:1234" onChange={(e) => update({ collab_url: e.target.value.trim() })} />
         ),
+      },
+    ],
+  },
+  {
+    id: "updates",
+    title: "Updates",
+    blurb: "New releases of the app. Checks only when you ask; installs only when you confirm.",
+    icon: <DownloadIcon size={14} />,
+    rows: [
+      {
+        label: "Check for updates", wide: true,
+        keywords: "update upgrade version release latest download install about",
+        hint: "Asks the release channel compiled into this build for a newer version. A build from source has no channel and says so.",
+        render: () => <UpdateChecker />,
       },
     ],
   },

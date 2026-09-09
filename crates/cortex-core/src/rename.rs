@@ -75,6 +75,7 @@ pub fn rename_note(root: &Path, db: &Db, old_path: &str, new_path: &str, new_tit
             std::fs::create_dir_all(parent)?;
         }
         std::fs::rename(&from_abs, &to_abs)?;
+        crate::comments::rename(root, old_path, new_path)?;
         db.rename_note(old_path, new_path)?;
     }
 

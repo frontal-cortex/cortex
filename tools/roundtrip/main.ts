@@ -5,13 +5,14 @@ import { BlockNoteEditor } from "@blocknote/core";
 import { cortexSchema } from "../../src/components/Shell/schema";
 import { inflateRichFormats, flattenRichFormats } from "../../src/components/Shell/richFormats";
 import { inflateCallouts, flattenCallouts } from "../../src/components/Shell/CalloutBlock";
+import { extractEmbedLines, inflateWebBlocks, flattenWebBlocks } from "../../src/lib/webBlocks";
 
 const editor = BlockNoteEditor.create({ schema: cortexSchema });
 const out: string[] = [];
 const log = (s: string) => out.push(s);
 const strip = (b: any) => JSON.parse(JSON.stringify(b, (k, v) => (k === "id" ? undefined : v)));
-const load = (md: string) => inflateRichFormats(inflateCallouts(editor.tryParseMarkdownToBlocks(md)));
-const save = (blocks: any[]) => editor.blocksToMarkdownLossy(flattenRichFormats(flattenCallouts(blocks)) as any);
+const load = (md: string) => inflateRichFormats(inflateCallouts(inflateWebBlocks(editor.tryParseMarkdownToBlocks(extractEmbedLines(md)))));
+const save = (blocks: any[]) => editor.blocksToMarkdownLossy(flattenRichFormats(flattenCallouts(flattenWebBlocks(blocks))) as any);
 
 // 1. Canonical files: open, save without edits → byte-identical.
 const files: Record<string, string> = {
@@ -39,6 +40,17 @@ const files: Record<string, string> = {
   list: "* one ==two== <u>three</u>\n  * nested ==x==\n",
   quoteHighlight: "> quoted ==text==\n",
   heading: "# Head ==light==\n",
+  // Bookmark: a paragraph that is exactly one web link. Embed: an autolink
+  // alone on a line. Anything else with a URL stays what it was.
+  bookmark: "[Rust](https://www.rust-lang.org/)\n",
+  bookmarkDefaultLabel: "[rust-lang.org](https://www.rust-lang.org/)\n",
+  bookmarkParens: "[Wiki](https://en.wikipedia.org/wiki/Rust_\\(programming_language\\))\n",
+  webEmbed: "<https://www.youtube.com/watch?v=_x9y_z-AB>\n",
+  webEmbedInFence: "```\n<https://www.youtube.com/watch?v=x>\n```\n",
+  bareUrl: "https://example.com/\n",
+  linkInProse: "See [Rust](https://www.rust-lang.org/) now.\n",
+  relativeLink: "[Child](child.md)\n",
+  linkInList: "* [Rust](https://www.rust-lang.org/)\n",
 };
 // Non-canonical spellings settle into the canonical one on the first save and
 // are stable after that.
@@ -77,6 +89,9 @@ const styled: Record<string, any[]> = {
   imgWidth: [{ type: "image", props: { url: "assets/x.png", name: "pic", previewWidth: 480.4 } }],
   imgWidthCaption: [{ type: "image", props: { url: "assets/x.png", previewWidth: 480, caption: "cap" } }],
   textColourDropped: [{ type: "paragraph", content: [{ type: "text", text: "c", styles: { textColor: "red" } }] }],
+  bookmark: [{ type: "bookmark", props: { url: "https://www.rust-lang.org/", title: "The Rust language" } }],
+  bookmarkNoLabel: [{ type: "bookmark", props: { url: "https://www.rust-lang.org/", title: "" } }],
+  webEmbed: [{ type: "webEmbed", props: { url: "https://vimeo.com/76979871" } }],
 };
 for (const [name, blocks] of Object.entries(styled)) {
   try {

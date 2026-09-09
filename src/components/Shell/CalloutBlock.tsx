@@ -109,15 +109,18 @@ export function inflateCallouts(blocks: any[]): any[] {
 
 /** Blocks → markdown: collapse a callout back to a `> [!type] …` blockquote. */
 export function flattenCallouts(blocks: any[]): any[] {
-  return blocks.map((b) => {
+  // Blocks nested under a callout (Tab in the editor) are hoisted after the
+  // quote rather than lost on save.
+  return blocks.flatMap((b) => {
     if (b?.type === "callout") {
       const type = String(b.props?.calloutType ?? "note");
       const content = Array.isArray(b.content) ? b.content : [];
-      return { type: "quote", content: [{ type: "text", text: `[!${type}] `, styles: {} }, ...content] };
+      const quote = { type: "quote", content: [{ type: "text", text: `[!${type}] `, styles: {} }, ...content] };
+      return [quote, ...flattenCallouts(Array.isArray(b.children) ? b.children : [])];
     }
     if (Array.isArray(b?.children) && b.children.length) {
-      return { ...b, children: flattenCallouts(b.children) };
+      return [{ ...b, children: flattenCallouts(b.children) }];
     }
-    return b;
+    return [b];
   });
 }

@@ -17,6 +17,7 @@ export type ShortcutId =
   | "new-note"
   | "today"
   | "graph"
+  | "local-graph"
   | "back"
   | "forward"
   | "settings"
@@ -30,6 +31,8 @@ export type ShortcutId =
   | "log-today"
   | "find-in-note"
   | "toggle-outline"
+  | "toggle-comments"
+  | "comment"
   | "shortcut-help";
 
 /** Where a shortcut belongs in the `?` overlay, in display order. */
@@ -50,6 +53,7 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "new-note":        { keys: "mod+n",       label: "New note",         area: "Create" },
   "today":           { keys: "mod+shift+t", label: "Today's note",     area: "Create" },
   "graph":           { keys: "mod+g",       label: "Graph view",       area: "Navigate" },
+  "local-graph":     { keys: "mod+shift+g", label: "Local graph",      area: "Navigate" },
   "back":            { keys: "mod+[",       label: "Back",             area: "Navigate" },
   "forward":         { keys: "mod+]",       label: "Forward",          area: "Navigate" },
   "settings":        { keys: "mod+,",       label: "Settings",         area: "App" },
@@ -63,6 +67,8 @@ export const SHORTCUTS: Record<ShortcutId, Shortcut> = {
   "log-today":         { keys: "mod+shift+h", label: "Log today",         area: "Create" },
   "find-in-note":      { keys: "mod+f",       label: "Find in note",      area: "Note" },
   "toggle-outline":    { keys: "mod+shift+o", label: "Toggle outline",    area: "Note" },
+  "toggle-comments":   { keys: "mod+shift+c", label: "Toggle comments",   area: "Note" },
+  "comment":           { keys: "mod+alt+c",   label: "Comment on selection", area: "Note" },
   "shortcut-help":     { keys: "mod+/",       label: "Keyboard shortcuts", area: "App" },
 };
 

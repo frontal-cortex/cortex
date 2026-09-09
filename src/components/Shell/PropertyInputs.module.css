@@ -1,0 +1,107 @@
+/* Date range: two pickers side by side */
+.range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.range > * { flex: 1; min-width: 0; }
+.rangeArrow {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+/* Files: chips with a thumbnail or a name, a remove cross, an add button */
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.file {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+.fileOpen {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  max-width: 100%;
+}
+.thumb {
+  display: block;
+  height: 44px;
+  max-width: 96px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+.filesCompact .thumb { height: 28px; max-width: 64px; }
+.fileName {
+  display: inline-block;
+  padding: 1px 7px;
+  font-size: var(--text-xs);
+  line-height: 18px;
+  color: var(--text-secondary);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileRemove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.file:hover .fileRemove { display: inline-flex; }
+.fileRemove:hover { color: var(--danger); border-color: var(--danger); }
+
+.fileAdd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: 18px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fileAdd:hover { color: var(--text-primary); border-color: var(--border-focus); }
+.fileAdd:disabled { opacity: 0.6; cursor: default; }
+.filesCompact .fileAdd { opacity: 0; }
+.filesCompact:hover .fileAdd, .filesCompact .fileAdd:focus-visible { opacity: 1; }
+/* An empty compact cell keeps the button reachable. */
+.filesCompact .fileAdd:only-child { opacity: 0.6; }
+
+.empty { color: var(--text-tertiary); opacity: 0.55; }
+.error {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}

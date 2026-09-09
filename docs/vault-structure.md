@@ -25,6 +25,12 @@ the left panel.
 - `notes/journal/YYYY-MM-DD.md` — daily notes (created by the Today button)
 - `notes/work/`, `notes/personal/`, etc. — any grouping that suits the user
 
+**Comments** on a note live beside it, never in it: `notes/foo.comments.yaml`
+is a committed list of threads on `notes/foo.md`, each anchored to a quoted
+passage (`quote` + which `occurrence`), with author (git identity), `created`,
+`resolved` and `replies`. The sidecar is not a note — it is never indexed,
+listed or published — and it moves with the note on rename.
+
 Empty directories are tracked via `.gitkeep` files so git preserves them.
 
 ## `templates/`
@@ -45,6 +51,7 @@ the app rebuilds it by scanning the vault on next open.
 |------|-------------|
 | `index.db` | SQLite database: full-text search (FTS5), note entries, link graph |
 | `ui-state.json` | Disposable UI memory: the last 10 opened notes (the sidebar's Recent section). Settings live in `.cortex/settings.yaml`, which is committed. |
+| `previews/<sha256>.json` | Bookmark cards: a page's title, description, favicon and image, fetched once per URL. Derived, so never in the note; delete and the cards refetch |
 
 ## `VAULT.md`
 
@@ -82,5 +89,7 @@ file stays legible without the app:
 | Underline | `<u>text</u>` |
 | Resized image | `<img src="assets/pic.png" alt="pic" width="480">` |
 | Database view | a `cortex-view` fenced block |
+| Bookmark card | `[Label](https://…)` alone in a paragraph — a paragraph that is exactly one web link |
+| Web embed | `<https://…>` alone in a paragraph (a CommonMark autolink; a bare URL stays text) |
 
 Text colour has no file form and is not saved.
