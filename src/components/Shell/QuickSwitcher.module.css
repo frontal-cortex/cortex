@@ -102,6 +102,22 @@
   white-space: nowrap;
 }
 
+/* A body match from the full-text fallback, in place of the path. */
+.itemSnippet {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.itemSnippet mark {
+  background: var(--accent-light);
+  color: var(--text-primary);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .cmdPrefix {
   font-size: var(--text-base);
   font-weight: 600;

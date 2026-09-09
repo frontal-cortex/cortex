@@ -203,11 +203,11 @@ by inferring column types (`data.rs:128`).
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Full-text index | done | — | FTS5 over title and body (`db.rs:42`); tags, type, parent, icon are in `notes` but not in FTS. `icon` / `parent` are computed by the indexer but never persisted (`db.rs:63`). |
-| Query syntax | partial | S | Non-alphanumerics stripped, `*` appended per word (`db.rs:209`): no phrases, `OR`, `NOT`, or field scoping. |
-| Snippets / highlights | missing | S | |
-| Ranking | partial | S | Raw BM25; no title boost or recency. |
-| Search filters (tag, type, date, folder) | missing | M | |
-| Quick switcher | partial | S | Client-side substring over the loaded note list; does not use FTS, so cannot match body text. |
+| Query syntax | done | — | `search.rs`: `"phrases"`, `-word`, `OR`, `tag:` / `type:` / `path:` filters (negatable); every term quoted so punctuation never breaks the FTS5 query. |
+| Snippets / highlights | done | — | `snippet()` on the body with `<mark>` around the match; under each sidebar result, in the quick switcher, in `cortex search` and the MCP `search` tool. |
+| Ranking | partial | S | BM25 with the title weighted 5× over the body; no recency. |
+| Search filters (tag, type, date, folder) | partial | S | `tag:`, `type:`, `path:` (folder as a path substring). No date filter. |
+| Quick switcher | partial | S | Substring over the loaded note list first; falls back to FTS when that finds nothing, so body text reaches the note. |
 | CLI `cortex search` | done | — | Note: every CLI invocation re-indexes the whole vault (`ops.rs:148`). |
 
 ## 13. API and automation
@@ -260,7 +260,7 @@ by inferring column types (`data.rs:128`).
 6. **Table view cannot group**; no in-database search or summary row. (Filter grammar: precedence, parentheses and the missing operators landed.)
 7. **No comments, mentions are plain text, no notifications.** Co-editing exists; discussion does not.
 8. **No permissions or sharing model**; publishing is all-or-nothing per note.
-9. **Search discards FTS5's power**: no phrases, operators, snippets or filters; the quick switcher ignores FTS.
+9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. **No CI, no release pipeline, no auto-update.** There is currently no way for a user to receive a build.
 12. **Mobile is a doc, not a target.**

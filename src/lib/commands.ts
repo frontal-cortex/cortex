@@ -276,6 +276,12 @@ export interface NoteEntry {
   parent: string | null;
 }
 
+/** A search result: the note plus one line of its body around the match,
+ *  the matched words wrapped in `<mark>…</mark>` (empty for filter-only queries). */
+export interface SearchHit extends NoteEntry {
+  snippet: string;
+}
+
 // Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
 export interface Note {
   path: string;
@@ -651,8 +657,9 @@ export const commands = {
   deleteNote: (path: string) =>
     invoke<void>("delete_note", { path }),
 
+  /** Full-text search. Operators: `"phrase"`, `-word`, `OR`, `tag:x`, `type:x`, `path:x`. */
   searchNotes: (query: string) =>
-    invoke<NoteEntry[]>("search_notes", { query }),
+    invoke<SearchHit[]>("search_notes", { query }),
 
   createFolder: (path: string) =>
     invoke<void>("create_folder", { path }),

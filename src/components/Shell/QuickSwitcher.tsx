@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
-import { NoteEntry, commands } from "../../lib/commands";
+import { NoteEntry, SearchHit, commands } from "../../lib/commands";
+import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
 import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
@@ -66,7 +67,10 @@ export function QuickSwitcher({
   const rawQuery = isActionMode === "actions" ? query.slice(1).trimStart() : query;
 
   // ── Note results ────────────────────────────────────────────────────────────
-  const noteResults = isActionMode === "notes"
+  // Substring over title / path / tags first — instant, and what you want for
+  // a note you know by name. When that finds nothing, fall back to the
+  // full-text index so a note is reachable by a word in its body.
+  const substringResults: (NoteEntry & { snippet?: string })[] = isActionMode === "notes"
     ? (rawQuery
         ? notes.filter((n) =>
             n.title.toLowerCase().includes(rawQuery.toLowerCase()) ||
@@ -75,6 +79,19 @@ export function QuickSwitcher({
           )
         : notes.slice(0, 12))
     : [];
+  const needsFts = isActionMode === "notes" && !!rawQuery && substringResults.length === 0;
+  const [ftsResults, setFtsResults] = useState<SearchHit[]>([]);
+  useEffect(() => {
+    if (!needsFts) { setFtsResults([]); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      commands.searchNotes(rawQuery)
+        .then((hits) => { if (!cancelled) setFtsResults(hits.slice(0, 20)); })
+        .catch(() => {});
+    }, 120);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [needsFts, rawQuery]);
+  const noteResults = needsFts ? ftsResults : substringResults;
 
   // ── Action results ──────────────────────────────────────────────────────────
   const buildActions = useCallback((): Action[] => {
@@ -285,7 +302,9 @@ export function QuickSwitcher({
                   >
                     <span className={styles.itemIcon}>{note.icon ?? "📄"}</span>
                     <span className={styles.itemTitle}>{note.title || "Untitled"}</span>
-                    <span className={styles.itemPath}>{note.path}</span>
+                    {note.snippet
+                      ? <span className={styles.itemSnippet} title={note.path}><Snippet text={note.snippet} /></span>
+                      : <span className={styles.itemPath}>{note.path}</span>}
                   </button>
                 ))
               : actionResults.map((action, i) => (
