@@ -137,6 +137,19 @@ export function GalleryIcon({ size = 14 }: IconProps) {
   );
 }
 
+export function ListIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="6.5" r="1" fill="currentColor" />
+      <circle cx="5" cy="12" r="1" fill="currentColor" />
+      <circle cx="5" cy="17.5" r="1" fill="currentColor" />
+      <line x1="9.5" y1="6.5" x2="20" y2="6.5" />
+      <line x1="9.5" y1="12" x2="20" y2="12" />
+      <line x1="9.5" y1="17.5" x2="20" y2="17.5" />
+    </svg>
+  );
+}
+
 export function ChartIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

@@ -160,6 +160,24 @@ filter and limit): `count`, `sum`, `avg`, `min`, `max`, `percent_checked`
 `query_collection`; the app's footer shows the same numbers. A table with
 `group: status` folds into one section per value, in option order.
 
+**View types.** `type:` picks how the app draws the same rows; the engine
+returns the same table whatever it says, so `cortex view` and `run_view` never
+care. Beyond the query keys every view shares, each type reads its own:
+
+| `type` | Shows | Keys it reads |
+|---|---|---|
+| `table` | editable grid | `columns`, `group` (sections), `summary` |
+| `list` | one line per row: title and up to three property chips | `columns` (which chips) |
+| `board` | cards in columns by a select / status | `group` (required) |
+| `calendar` | rows on a month, week or day grid | `date` (the day), `mode: month \| week \| day`, `end` (a span's last day — default `end` when `date: start`; a cell holding `2026-09-01/2026-09-05` spans on its own) |
+| `gallery` | cards with a `cover` image | `columns` |
+| `timeline` | bars from a start to an end date on a week axis | `start`, `end` |
+| `chart` | a line or bar chart | `x`, `y`, `agg`, `chartType`, `bucket`, `series` |
+| `tracker` | items × days with streaks | `log`, `date`, `done`, `range` |
+
+The app's search box above a view narrows the rows on show without touching
+the spec — it is never written to a file.
+
 **Sorting.** `sort: [due, priority desc]`. Empty cells sort last in either
 direction. A select or status property sorts by its option order, not
 alphabetically — `priority: [p1, p2, p3]` puts p1 first whatever the words are.

@@ -300,6 +300,9 @@ export function Shell({
       if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setOpenTag(null); setShowCapture(false); return; }
       const id = findShortcut(e);
       if (!id) return;
+      // A widget with a find of its own (a data view's search box) keeps mod+f
+      // while it has focus; the editor's find-in-note is untouched elsewhere.
+      if (id === "find-in-note" && (e.target as HTMLElement | null)?.closest?.("[data-find-scope]")) return;
       e.preventDefault();
       e.stopPropagation();
       actionsRef.current?.[id]();

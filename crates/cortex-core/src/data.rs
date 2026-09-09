@@ -2837,6 +2837,38 @@ mod tests {
     }
 
     #[test]
+    fn calendar_mode_and_end_survive_the_structured_round_trip() {
+        // The app remembers the calendar's mode and span field in the spec;
+        // both are plain options the engine carries through untouched.
+        let spec = "source: collections/trips\ntype: calendar\ndate: start\nend: end\nmode: week\n";
+        let s = parse_view_spec(spec).unwrap();
+        assert_eq!(s.kind.as_deref(), Some("calendar"));
+        assert_eq!(s.date.as_deref(), Some("start"));
+        assert_eq!(s.options.get("mode").map(String::as_str), Some("week"));
+        assert_eq!(s.options.get("end").map(String::as_str), Some("end"));
+        let yaml = serialize_view_spec(&s);
+        assert!(yaml.contains("mode: week\n"), "{yaml}");
+        assert!(yaml.contains("end: end\n"), "{yaml}");
+        let again = parse_view_spec(&yaml).unwrap();
+        assert_eq!(again.options, s.options);
+    }
+
+    #[test]
+    fn a_list_view_resolves_like_a_table() {
+        // `type: list` is presentation only: the engine returns the same rows,
+        // filtered and sorted, that the table would — from the CLI and MCP too.
+        let root = gap_root("list");
+        put(&root, "collections/books/a.md", "---\ntitle: A\nstatus: reading\n---\n");
+        put(&root, "collections/books/b.md", "---\ntitle: B\nstatus: done\n---\n");
+        let spec = "source: collections/books\ntype: list\nfilter: status == 'reading'\ncolumns: [title, status]\n";
+        let t = resolve_view(&root, spec).unwrap();
+        assert_eq!(t.rows.len(), 1);
+        assert_eq!(t.rows[0].cells["title"], serde_json::json!("A"));
+        assert_eq!(t.columns.iter().map(|c| c.key.as_str()).collect::<Vec<_>>(), vec!["title", "status"]);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn list_membership_and_and_or() {
         let root = scratch("tags");
         write(&root.join("collections/notes/a.md"),
