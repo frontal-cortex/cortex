@@ -1,7 +1,7 @@
 format: 1
 id: one-on-one
 name: "1:1 Notes"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "A page per person with a running agenda, one row per 1:1, and the follow-ups from all of them in one list."
 description: |

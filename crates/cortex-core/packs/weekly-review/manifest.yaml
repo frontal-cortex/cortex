@@ -1,7 +1,7 @@
 format: 1
 id: weekly-review
 name: "Weekly Review"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "One row per week: a plan, then the get-clear / get-current review; reviews due, rating and carry-over charted."
 description: |

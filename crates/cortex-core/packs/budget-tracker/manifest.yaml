@@ -1,7 +1,7 @@
 format: 1
 id: budget-tracker
 name: "Budget Tracker"
-version: 2.1.0
+version: 2.1.1
 kind: collection
 summary: "A ledger of transactions, limits per category with spent and remaining computed, bills that advance when you tick paid."
 description: |
