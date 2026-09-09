@@ -5,101 +5,18 @@
 // the custom block exists only in memory, translated at the load/save boundary
 // exactly like the cortex-view block.
 
-import { useState, useEffect, useCallback, createElement, Fragment } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { commands, NoteRef } from "../../lib/commands";
-import { parseWikiLink, wikiLinkLabel } from "../../lib/wikiLink";
+import { parseWikiLink } from "../../lib/wikiLink";
 import { OpenIcon } from "./icons";
+import { MiniMarkdown } from "./MiniMarkdown";
 import styles from "./NoteEmbedBlock.module.css";
 
 /** Ask the shell to navigate to a wiki target (reuses Shell's resolver). */
 function navigateTo(target: string) {
   window.dispatchEvent(new CustomEvent("cortex:navigate", { detail: { target } }));
-}
-
-// ── Minimal markdown → React (headings, lists, quotes, paragraphs; inline
-// bold/code and [[wiki links]]). Deliberately small: this is a preview, not the
-// full editor. ───────────────────────────────────────────────────────────────
-
-function renderInline(text: string, keyBase: string): React.ReactNode[] {
-  const out: React.ReactNode[] = [];
-  // Split on [[wiki]], **bold**, and `code`, keeping the delimiters.
-  const re = /(\[\[[^\]]+\]\]|\*\*[^*]+\*\*|`[^`]+`)/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let i = 0;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push(<Fragment key={`${keyBase}-t${i}`}>{text.slice(last, m.index)}</Fragment>);
-    const tok = m[0];
-    if (tok.startsWith("[[")) {
-      const target = tok.slice(2, -2).trim();
-      out.push(
-        <span key={`${keyBase}-w${i}`} className={styles.wikiLink} onClick={() => navigateTo(target)}>
-          {wikiLinkLabel(parseWikiLink(target))}
-        </span>,
-      );
-    } else if (tok.startsWith("**")) {
-      out.push(<strong key={`${keyBase}-b${i}`}>{tok.slice(2, -2)}</strong>);
-    } else {
-      out.push(<code key={`${keyBase}-c${i}`} className={styles.code}>{tok.slice(1, -1)}</code>);
-    }
-    last = m.index + tok.length;
-    i++;
-  }
-  if (last < text.length) out.push(<Fragment key={`${keyBase}-t${i}`}>{text.slice(last)}</Fragment>);
-  return out;
-}
-
-function MiniMarkdown({ body }: { body: string }) {
-  const lines = body.split("\n");
-  const out: React.ReactNode[] = [];
-  let para: string[] = [];
-  let list: string[] = [];
-  let key = 0;
-
-  const flushPara = () => {
-    if (para.length) {
-      out.push(<p key={`p${key++}`}>{renderInline(para.join(" "), `p${key}`)}</p>);
-      para = [];
-    }
-  };
-  const flushList = () => {
-    if (list.length) {
-      out.push(
-        <ul key={`u${key++}`} className={styles.list}>
-          {list.map((li, j) => <li key={j}>{renderInline(li, `u${key}-${j}`)}</li>)}
-        </ul>,
-      );
-      list = [];
-    }
-  };
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    const heading = line.match(/^(#{1,6})\s+(.*)$/);
-    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    const quote = line.match(/^>\s?(.*)$/);
-    if (heading) {
-      flushPara(); flushList();
-      const lvl = Math.min(heading[1].length, 6);
-      const tag = `h${Math.min(lvl + 2, 6)}`;
-      out.push(createElement(tag, { key: `h${key++}`, className: styles.heading }, renderInline(heading[2], `h${key}`)));
-    } else if (bullet) {
-      flushPara();
-      list.push(bullet[1]);
-    } else if (quote) {
-      flushPara(); flushList();
-      out.push(<blockquote key={`q${key++}`} className={styles.quote}>{renderInline(quote[1], `q${key}`)}</blockquote>);
-    } else if (line.trim() === "") {
-      flushPara(); flushList();
-    } else {
-      flushList();
-      para.push(line);
-    }
-  }
-  flushPara(); flushList();
-  return <>{out}</>;
 }
 
 // ── The block ─────────────────────────────────────────────────────────────────

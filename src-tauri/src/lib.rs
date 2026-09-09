@@ -184,7 +184,7 @@ pub fn run() {
             commands::publish::publish_write_github_action,
             commands::packs::packs_catalog,
             commands::packs::packs_show,
-            commands::packs::packs_files,
+            commands::packs::packs_preview,
             commands::packs::packs_install,
             commands::packs::packs_update,
             commands::packs::packs_remove,

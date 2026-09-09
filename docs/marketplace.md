@@ -87,7 +87,9 @@ Zettelkasten literature note, map of content.
 <id>/
 ├── manifest.yaml
 ├── README.md              # long description, shown on the pack's page (optional)
-├── preview.png            # card image, ≤ 200 KB (optional)
+├── preview.png            # card hero, ≤ 200 KB (optional; the first gallery image stands in)
+├── preview/*.png          # screenshot gallery for the pack's page: png/jpg/jpeg/webp,
+│                          #   ≤ 600 KB each, at most 8, sorted by filename (optional)
 ├── templates/*.md         # → <vault>/templates/ — except templates/<name>.md, the row
 │                          #   template → <vault>/collections/<name>/_template-<name>.md
 ├── schemas/*.yaml         # → <vault>/.cortex/schemas/          (collection packs)
@@ -133,10 +135,19 @@ files:                          # every file, so lint can catch strays and insta
 
 Rules `lint` enforces:
 
-- Only `.md`, `.yaml`, `.png`, `.jpg`, `.webp`, `.svg` files; only under the
-  five known folders; no path with `..`, no absolute paths, no symlinks; total
-  ≤ 2 MB, images ≤ 200 KB each.
-- Every file listed in `files`, every listed file present, nothing unlisted.
+- Only `.md`, `.yaml`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.svg` files; only
+  under the six known folders; no path with `..`, no absolute paths, no
+  symlinks; total ≤ 2 MB, images ≤ 200 KB each.
+- `preview/` holds screenshots only (`.png`, `.jpg`, `.jpeg`, `.webp`),
+  directly in the folder, ≤ 600 KB each and at most eight. They describe the
+  pack rather than belong to it: not listed in `files`, not counted toward
+  the 2 MB, never installed, never fetched on install, and — like
+  `preview.png` — not compiled into the app's bundle (`build.rs` skips image
+  files), so a bundled pack shows pictures only once the remote index
+  supplies their URLs.
+- Every file listed in `files`, every listed file present, nothing unlisted
+  (`manifest.yaml`, `README.md`, `preview.png` and `preview/` are the
+  exceptions: they describe the pack and are not installed).
 - Frontmatter parses with placeholders quoted; only known placeholders
   (`{{date}}`, `{{time}}`, `{{title}}`, `{{uuid}}` in templates; `{{today}}`
   in seeds); schema property types are ones the app knows; every view in
@@ -208,6 +219,7 @@ the repo, not the manifest — a contributor cannot promote themselves).
     { "id": "tasks", "name": "Tasks", "version": "1.2.0", "kind": "collection",
       "tier": "official", "summary": "…", "tags": ["…"], "author": {"name": "…"},
       "license": "CC0-1.0", "min_cortex": "0.3.0", "preview": "tasks/preview.png",
+      "previews": ["tasks/preview/board.png", "tasks/preview/calendar.png"],
       "files": ["templates/task.md", "…"],
       "sha256": { "templates/task.md": "…", "…": "…" },
       "commit": "a1b2c3…" }
@@ -215,8 +227,14 @@ the repo, not the manifest — a contributor cannot promote themselves).
 }
 ```
 
+`preview` is the card's hero (`<id>/preview.png`, or the first gallery image
+when the pack ships no `preview.png`) and `previews` the gallery, one
+`<id>/preview/<file>` per screenshot sorted by filename, both relative to
+`base`; `previews` is always present, `[]` when there are none. The app
+resolves them against `base` and loads them only from the official index.
 Per-file hashes let the app verify what it downloaded and let `update`
-tell modified files from untouched ones. `commit` pins the pack to the
+tell modified files from untouched ones; the gallery is not among them, since
+install never fetches it. `commit` pins the pack to the
 revision the index was generated from, so what a user installs is exactly
 what was reviewed.
 
@@ -331,9 +349,17 @@ content right):
 - Cards: preview image or a rendered excerpt of the template / the table's
   columns and views; name, summary, tier badge, author, version; Install →
   Installed, or Update when the index has a newer version.
-- Pack page: full description, the file list ("what this installs"), the
-  license and credits, a link to the source in the marketplace repo,
-  Install / Update / Remove with the conflict report shown before writing.
+- Pack page: the screenshot gallery (hero plus `preview/`, with a lightbox),
+  a short lead with the rest of the description behind More, an at-a-glance
+  row (properties, each view with its type's icon, example rows, note
+  templates, a bundle's parts), the properties with select options as the
+  coloured pills they become, and the row / note template rendered as a note
+  reads (Raw shows the source). The file list ("what this installs"), the
+  license and credits and a link to the source in the marketplace repo sit in
+  a Details fold at the bottom; Install / Update / Remove show the conflict
+  report before writing. Everything the page shows comes from
+  `marketplace::preview` in core (the `packs_preview` command), parsed with
+  the same YAML reader lint uses — the page reads no YAML itself.
 - Entry points: command palette *Browse templates…*, the Templates section
   header, the Getting-started card's "Try a template" step, and a
   "Get more" row at the bottom of New from template.

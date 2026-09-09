@@ -1,20 +1,25 @@
 // Marketplace — a full-window page in the Settings shell: nav left, content
 // right. Cards for every pack the vault can see (bundled official ones plus
-// the configured indexes), a pack page with the exact files an install would
-// write, and Install / Update / Remove that never overwrite the user's own
-// work. Nothing here fetches or installs on its own; every write is a click,
+// the configured indexes), a pack page that shows what an install gives you
+// (screenshots, properties, views, the template as it reads) with the exact
+// files behind a Details fold, and Install / Update / Remove that never
+// overwrite the user's own work. Nothing here fetches or installs on its own; every write is a click,
 // and `.cortex/packs.yaml` records it so `cortex packs` sees the same state.
 
 import { useCallback, useEffect, useMemo, useRef, useState, ReactNode, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { openExternal } from "../../lib/links";
+import { tagStyle } from "../../lib/colors";
 import {
-  commands, PackCatalog, PackEntry, Pack, PackPlan, PackText, PackKind, PackTier,
+  commands, PackCatalog, PackEntry, Pack, PackPlan, PackPreview, PackPreviewProperty, PackKind, PackTier,
   PackInstallReport, PackUpdateReport, PackRemoveReport,
 } from "../../lib/commands";
 import { Dropdown } from "./Dropdown";
+import { MiniMarkdown, renderInline } from "./MiniMarkdown";
 import {
-  CloseIcon, SearchIcon, SyncIcon, TemplateIcon, DatabaseIcon, SparkleIcon, ChevronLeftIcon,
-  OpenIcon, TagsListIcon, CheckSquareIcon, FolderIcon,
+  CloseIcon, SearchIcon, SyncIcon, TemplateIcon, DatabaseIcon, SparkleIcon, ChevronLeftIcon, ChevronRightIcon,
+  OpenIcon, TagsListIcon, CheckSquareIcon, FolderIcon, TextLinesIcon,
+  TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, TrackerIcon, TimelineIcon,
 } from "./icons";
 import styles from "./MarketplaceView.module.css";
 
@@ -308,6 +313,8 @@ function Card({ entry, onOpen, onChanged }: { entry: PackEntry; onOpen: () => vo
     finally { setBusy(false); }
   };
   const state = entry.update_available ? "update" : entry.installed_version ? "installed" : "new";
+  // preview.png, or the first gallery screenshot when the pack ships none.
+  const hero = entry.preview ?? entry.previews[0] ?? null;
   return (
     <div
       className={`${styles.card} ${entry.needs_newer_app ? styles.cardDim : ""}`}
@@ -316,8 +323,8 @@ function Card({ entry, onOpen, onChanged }: { entry: PackEntry; onOpen: () => vo
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
     >
-      {entry.preview && isOfficialSource(entry.source) ? (
-        <img className={styles.cardImage} src={entry.preview} alt="" loading="lazy" />
+      {hero && isOfficialSource(entry.source) ? (
+        <img className={styles.cardImage} src={hero} alt="" loading="lazy" />
       ) : entry.excerpt ? (
         <CardExcerpt entry={entry} />
       ) : (
@@ -461,6 +468,12 @@ function CardExcerpt({ entry }: { entry: PackEntry }) {
 }
 
 // ── Pack page ─────────────────────────────────────────────────────────────────
+//
+// Pictures before prose: the gallery (when the index supplies screenshots),
+// a two-sentence lead, a row of chips saying what an install gives you, the
+// properties with their options as coloured pills, the template rendered the
+// way a note reads — and the file list, licence and source folded away at
+// the bottom, where someone who wants the exact paths still finds them.
 
 type Report =
   | { kind: "install"; reports: PackInstallReport[] }
@@ -470,7 +483,8 @@ type Report =
 function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () => void; onChanged: () => void }) {
   const [pack, setPack] = useState<Pack | null>(null);
   const [plan, setPlan] = useState<PackPlan | null>(null);
-  const [texts, setTexts] = useState<PackText[]>([]);
+  // undefined while loading; null when the pack could not be read.
+  const [preview, setPreview] = useState<PackPreview | null | undefined>(undefined);
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState<null | "install" | "update" | "remove">(null);
   const [err, setErr] = useState<string | null>(null);
@@ -478,9 +492,13 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
 
   const load = useCallback(() => {
     commands.packsShow(entry.id, force).then(([p, pl]) => { setPack(p); setPlan(pl); setErr(null); }).catch((e) => setErr(String(e)));
-    commands.packsFiles(entry.id).then(setTexts).catch(() => {});
   }, [entry.id, force]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let live = true;
+    commands.packsPreview(entry.id).then((pv) => { if (live) setPreview(pv); }).catch(() => { if (live) setPreview(null); });
+    return () => { live = false; };
+  }, [entry.id]);
 
   const run = async (what: "install" | "update" | "remove") => {
     setBusy(what); setErr(null); setReport(null);
@@ -498,9 +516,13 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
   const installed = !!entry.installed_version;
   const skipped = plan?.steps.filter((s) => s.action === "skip") ?? [];
   const canForce = skipped.some((s) => s.dest.startsWith("templates/") || s.dest.startsWith(".cortex/schemas/"));
-  const sourceUrl = entry.source === "bundled" || entry.source.startsWith("https://frontal-cortex.github.io/marketplace/")
-    ? `${MARKETPLACE_REPO}/tree/main/packs/${entry.id}`
-    : entry.source;
+  const official = isOfficialSource(entry.source);
+  const sourceUrl = official ? `${MARKETPLACE_REPO}/tree/main/packs/${entry.id}` : entry.source;
+  // Screenshots load only from the official index (see the trust model);
+  // the hero comes first, the gallery after it, without repeating the hero.
+  const images = official ? [entry.preview, ...entry.previews].filter((u, i, all): u is string => !!u && all.indexOf(u) === i) : [];
+  const hasPreview = !!preview && (preview.collections.length > 0 || preview.templates.length > 0 || preview.includes.length > 0);
+  const many = (preview?.collections.length ?? 0) > 1;
 
   return (
     <section className={styles.section} aria-label={entry.name}>
@@ -508,7 +530,7 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
       <div className={styles.packHead}>
         <span className={styles.packGlyph}><KindIcon kind={entry.kind} size={20} /></span>
         <div className={styles.packTitle}>
-          <h2 className={styles.sectionTitle}>{entry.name} <TierBadge tier={entry.tier} />{!isOfficialSource(entry.source) && <> <SourceBadge /></>}</h2>
+          <h2 className={styles.sectionTitle}>{entry.name} <TierBadge tier={entry.tier} />{!official && <> <SourceBadge /></>}</h2>
           <div className={styles.cardMeta}>
             <span>{KIND_ONE[entry.kind]}</span>
             <span>·</span>
@@ -553,50 +575,84 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
       {err && <div className={`${styles.callout} ${styles.calloutWarn}`}>{err}</div>}
       {report && <ReportView report={report} />}
 
-      <p className={styles.description}>{(m?.description || entry.description || entry.summary).trim()}</p>
-      {entry.tags.length > 0 && <div className={styles.cardTags}>{entry.tags.map((t) => <span key={t} className={styles.tag}>{t}</span>)}</div>}
+      <Gallery images={images} name={entry.name} />
 
-      <Preview entry={entry} texts={texts} />
+      <Lead text={(m?.description || entry.description || entry.summary).trim()} tags={entry.tags} />
 
-      <h3 className={styles.h3}>What this installs</h3>
-      {!plan ? (
-        <span className={styles.note}>Working out the plan…</span>
-      ) : plan.steps.length === 0 && entry.kind === "bundle" ? (
-        <span className={styles.note}>A bundle installs the packs it includes: {m?.includes?.join(", ")}.</span>
-      ) : (
-        <ul className={styles.files}>
-          {plan.steps.map((s) => (
-            <li key={s.pack_path} className={styles.fileRow}>
-              <code className={styles.filePath}>{s.dest}</code>
-              <span className={`${styles.action} ${styles[`action_${s.action}`]}`}>
-                {s.action === "write" ? "new" : s.action === "overwrite" ? (installed ? "replace (unchanged since install)" : "replace") : s.action === "merge" ? "merge properties into your schema" : `kept — ${s.reason}`}
-              </span>
-            </li>
+      {preview && hasPreview && <Glance preview={preview} />}
+
+      {preview?.collections.map((c) => (
+        <div key={c.name} className={styles.block}>
+          {many && (
+            <h3 className={styles.h3}>
+              {c.icon && <span className={styles.blockIcon}>{c.icon}</span>}{c.title || c.name}
+              <code className={styles.blockPath}>collections/{c.name}/</code>
+            </h3>
+          )}
+          {!many && <h3 className={styles.h3}>Properties</h3>}
+          <PropertyList properties={c.properties} />
+          {c.template && <TemplateBlock label={`New row in ${c.title || c.name}`} path={`collections/${c.name}/_template-${c.name}.md`} body={c.template} />}
+        </div>
+      ))}
+
+      {preview && preview.templates.length > 0 && (
+        <div className={styles.block}>
+          <h3 className={styles.h3}>{preview.templates.length === 1 ? "Note template" : "Note templates"}</h3>
+          {preview.templates.map((t) => (
+            <TemplateBlock key={t.path} label={t.title ?? t.path.replace(/^templates\//, "").replace(/\.md$/, "")} path={t.path} body={t.body} open={preview.collections.length === 0 && preview.templates.length === 1} />
           ))}
-        </ul>
+        </div>
       )}
-      {canForce && !installed && (
-        <label className={styles.check}>
-          <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
-          Overwrite templates and schemas that are already there. Never touches a database row.
-        </label>
-      )}
-      <span className={styles.note}>
-        Every file is plain Markdown or YAML. An installed file you edit is yours: update and remove leave it alone.
-      </span>
 
-      <h3 className={styles.h3}>Licence and source</h3>
-      <div className={styles.kv}>
-        <span>Licence</span><span>{entry.license}</span>
-        {entry.credits && <><span>Credits</span><span>{entry.credits}</span></>}
-        <span>Source</span>
-        <span>
-          <button className={styles.link} onClick={() => openExternal(sourceUrl).catch(() => {})}>
-            <OpenIcon size={11} /> {sourceUrl.replace(/^https?:\/\//, "")}
-          </button>
-        </span>
-        <span>Terminal</span><span><code>cortex packs {installed ? "show" : "install"} {entry.id}</code></span>
-      </div>
+      {preview !== undefined && (
+        <details className={styles.details} open={images.length === 0 && !hasPreview}>
+          <summary className={styles.summary}>
+            <ChevronRightIcon size={12} /> Details
+            <span className={styles.summaryHint}>{plan ? `${plan.steps.length} files` : "files"} · {entry.license || "no licence"} · source</span>
+          </summary>
+          <div className={styles.detailsBody}>
+            <h3 className={styles.h3}>What this installs</h3>
+            {!plan ? (
+              <span className={styles.note}>Working out the plan…</span>
+            ) : plan.steps.length === 0 && entry.kind === "bundle" ? (
+              <span className={styles.note}>A bundle installs the packs it includes: {m?.includes?.join(", ")}.</span>
+            ) : (
+              <ul className={styles.files}>
+                {plan.steps.map((s) => (
+                  <li key={s.pack_path} className={styles.fileRow}>
+                    <code className={styles.filePath}>{s.dest}</code>
+                    <span className={`${styles.action} ${styles[`action_${s.action}`]}`}>
+                      {s.action === "write" ? "new" : s.action === "overwrite" ? (installed ? "replace (unchanged since install)" : "replace") : s.action === "merge" ? "merge properties into your schema" : `kept — ${s.reason}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canForce && !installed && (
+              <label className={styles.check}>
+                <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+                Overwrite templates and schemas that are already there. Never touches a database row.
+              </label>
+            )}
+            <span className={styles.note}>
+              Every file is plain Markdown or YAML. An installed file you edit is yours: update and remove leave it alone.
+            </span>
+
+            <h3 className={styles.h3}>Licence and source</h3>
+            <div className={styles.kv}>
+              <span>Licence</span><span>{entry.license}</span>
+              {entry.credits && <><span>Credits</span><span>{entry.credits}</span></>}
+              <span>Source</span>
+              <span>
+                <button className={styles.link} onClick={() => openExternal(sourceUrl).catch(() => {})}>
+                  <OpenIcon size={11} /> {sourceUrl.replace(/^https?:\/\//, "")}
+                </button>
+              </span>
+              <span>Terminal</span><span><code>cortex packs {installed ? "show" : "install"} {entry.id}</code></span>
+            </div>
+          </div>
+        </details>
+      )}
     </section>
   );
 }
@@ -639,89 +695,214 @@ function ReportView({ report }: { report: Report }) {
   );
 }
 
-// ── Preview: what the template or table looks like ───────────────────────────
-//
-// Packs are plain files, so the preview is the files themselves: a note
-// pack shows the template's body; a database pack shows its columns and
-// views from the schema and index.md. The tiny parsers below only need to
-// understand the shapes lint already enforces.
+// ── Gallery: the screenshots, with a lightbox ────────────────────────────────
 
-function splitFrontmatter(text: string): { fm: string; body: string } {
-  if (!text.startsWith("---")) return { fm: "", body: text };
-  const end = text.indexOf("\n---", 3);
-  if (end < 0) return { fm: "", body: text };
-  return { fm: text.slice(3, end), body: text.slice(end + 4).replace(/^\r?\n/, "") };
-}
-
-function listOf(yaml: string, key: string): { name: string; type: string; options: string[] }[] {
-  const lines = yaml.split("\n");
-  const start = lines.findIndex((l) => l.trim() === `${key}:`);
-  if (start < 0) return [];
-  const out: { name: string; type: string; options: string[] }[] = [];
-  for (let i = start + 1; i < lines.length; i++) {
-    const l = lines[i];
-    if (/^\S/.test(l)) break;
-    const m = l.match(/^\s*-\s+name:\s*(.+)$/);
-    if (m) { out.push({ name: unquote(m[1]), type: "", options: [] }); continue; }
-    const t = l.match(/^\s+type:\s*(.+)$/);
-    if (t && out.length) { if (!out[out.length - 1].type) out[out.length - 1].type = unquote(t[1]); continue; }
-    const o = l.match(/^\s+-\s+name:\s*(.+)$/);
-    if (o && out.length) out[out.length - 1].options.push(unquote(o[1]));
-  }
-  return out;
-}
-
-function unquote(s: string): string {
-  const t = s.trim();
-  return (t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")) ? t.slice(1, -1) : t;
-}
-
-function Preview({ entry, texts }: { entry: PackEntry; texts: PackText[] }) {
-  const text = (p: string) => texts.find((t) => t.path === p)?.text ?? null;
-  if (entry.kind === "bundle") return null;
-  if (entry.kind === "collection" && entry.collection) {
-    const schema = text(`schemas/${entry.collection}.yaml`);
-    const index = text("index.md");
-    const props = schema ? listOf(schema, "properties") : [];
-    const views = index ? listOf(splitFrontmatter(index).fm, "views") : [];
-    const rowTpl = text(`templates/${entry.collection}.md`);
-    if (!props.length && !views.length) return null;
-    return (
-      <div className={styles.preview}>
-        <div className={styles.previewHead}>
-          <span><DatabaseIcon size={12} /> collections/{entry.collection}/</span>
-          {views.length > 0 && <span className={styles.views}>{views.map((v) => <span key={v.name} className={styles.view}>{v.name}</span>)}</span>}
-        </div>
-        <table className={styles.columns}>
-          <thead><tr><th>title</th>{props.map((p) => <th key={p.name}>{p.name}</th>)}</tr></thead>
-          <tbody>
-            <tr>
-              <td className={styles.colType}>text</td>
-              {props.map((p) => <td key={p.name} className={styles.colType}>{p.type}{p.options.length > 0 ? ` · ${p.options.join(" / ")}` : ""}</td>)}
-            </tr>
-          </tbody>
-        </table>
-        {rowTpl && <Excerpt text={splitFrontmatter(rowTpl).body} label={`templates/${entry.collection}.md — the shape of a new row`} />}
-      </div>
-    );
-  }
-  const first = entry.files.find((f) => f.startsWith("templates/"));
-  const body = first ? text(first) : null;
-  if (!body) return null;
+function Gallery({ images, name }: { images: string[]; name: string }) {
+  const [i, setI] = useState(0);
+  const [big, setBig] = useState(false);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const n = images.length;
+  const go = useCallback((d: number) => { if (n > 1) setI((x) => (x + d + n) % n); }, [n]);
+  useEffect(() => { setI(0); }, [images.join("\n")]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    stripRef.current?.children[i]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [i]);
+  if (n === 0) return null;
+  const cur = Math.min(i, n - 1);
+  const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowRight") { e.preventDefault(); go(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); go(-1); }
+    else if (e.key === "Enter") { e.preventDefault(); setBig(true); }
+  };
   return (
-    <div className={styles.preview}>
-      <Excerpt text={splitFrontmatter(body).body} label={first!} />
+    <div className={styles.gallery} tabIndex={0} onKeyDown={onKey} role="group" aria-label={`${name} screenshots`}>
+      <div className={styles.galleryMain}>
+        <img
+          className={styles.galleryImage}
+          src={images[cur]}
+          alt={`${name} screenshot ${cur + 1} of ${n}`}
+          onClick={() => setBig(true)}
+          title="Click to enlarge"
+        />
+        {n > 1 && (
+          <>
+            <button className={`${styles.galleryArrow} ${styles.galleryPrev}`} onClick={() => go(-1)} aria-label="Previous screenshot" tabIndex={-1}><ChevronLeftIcon size={16} /></button>
+            <button className={`${styles.galleryArrow} ${styles.galleryNext}`} onClick={() => go(1)} aria-label="Next screenshot" tabIndex={-1}><ChevronRightIcon size={16} /></button>
+            <span className={styles.galleryCount}>{cur + 1} / {n}</span>
+          </>
+        )}
+      </div>
+      {n > 1 && (
+        <div className={styles.thumbs} ref={stripRef}>
+          {images.map((src, j) => (
+            <button key={src} className={`${styles.thumb} ${j === cur ? styles.thumbOn : ""}`} onClick={() => setI(j)} aria-label={`Screenshot ${j + 1}`} tabIndex={-1}>
+              <img src={src} alt="" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+      {big && <Lightbox src={images[cur]} index={cur} count={n} onClose={() => setBig(false)} onStep={go} />}
     </div>
   );
 }
 
-function Excerpt({ text, label }: { text: string; label: string }) {
-  const lines = text.replace(/\s+$/, "").split("\n");
-  const shown = lines.slice(0, 28);
+function Lightbox({ src, index, count, onClose, onStep }: { src: string; index: number; count: number; onClose: () => void; onStep: (d: number) => void }) {
+  useEffect(() => {
+    // Capture phase, so the marketplace's own Escape handler (which backs out
+    // of the pack page) does not see the key that closed the lightbox.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); onStep(1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); e.stopPropagation(); onStep(-1); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose, onStep]);
+  return createPortal(
+    <div className={styles.lightbox} onClick={onClose} role="dialog" aria-label="Screenshot">
+      <img className={styles.lightboxImage} src={src} alt="" onClick={(e) => e.stopPropagation()} />
+      {count > 1 && (
+        <>
+          <button className={`${styles.galleryArrow} ${styles.galleryPrev}`} onClick={(e) => { e.stopPropagation(); onStep(-1); }} aria-label="Previous screenshot"><ChevronLeftIcon size={18} /></button>
+          <button className={`${styles.galleryArrow} ${styles.galleryNext}`} onClick={(e) => { e.stopPropagation(); onStep(1); }} aria-label="Next screenshot"><ChevronRightIcon size={18} /></button>
+          <span className={`${styles.galleryCount} ${styles.lightboxCount}`}>{index + 1} / {count}</span>
+        </>
+      )}
+      <button className={styles.lightboxClose} onClick={onClose} aria-label="Close (Esc)"><CloseIcon size={16} /></button>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Lead: the first sentence or two, the rest behind More ───────────────────
+
+/** The first sentence, plus the second when together they stay short. */
+function splitLead(text: string): { lead: string; rest: string } {
+  const t = text.trim();
+  const paras = t.split(/\n\s*\n/);
+  const first = paras[0].replace(/\s+/g, " ").trim();
+  const sentences = first.split(/(?<=[.!?])\s+(?=[A-Z0-9("`*])/);
+  let lead = sentences[0] ?? first;
+  if (sentences.length > 1 && (lead + " " + sentences[1]).length <= 240) lead = `${lead} ${sentences[1]}`;
+  const restFirst = first.slice(lead.length).trim();
+  const rest = [restFirst, ...paras.slice(1)].filter((p) => p.trim()).join("\n\n");
+  return { lead, rest };
+}
+
+function Lead({ text, tags }: { text: string; tags: string[] }) {
+  const [more, setMore] = useState(false);
+  const { lead, rest } = useMemo(() => splitLead(text), [text]);
   return (
-    <div className={styles.excerpt}>
-      <div className={styles.excerptLabel}><TemplateIcon size={11} /> {label}</div>
-      <pre className={styles.excerptBody}>{shown.join("\n")}{lines.length > shown.length ? `\n… ${lines.length - shown.length} more lines` : ""}</pre>
+    <div className={styles.lead}>
+      <p className={styles.leadText}>
+        {renderInline(lead, "lead")}
+        {rest && !more && <> <button className={styles.more} onClick={() => setMore(true)}>More</button></>}
+      </p>
+      {more && rest && (
+        <div className={styles.leadRest}>
+          <MiniMarkdown body={rest} />
+          <button className={styles.more} onClick={() => setMore(false)}>Less</button>
+        </div>
+      )}
+      {tags.length > 0 && <div className={styles.cardTags}>{tags.map((t) => <span key={t} className={styles.tag}>{t}</span>)}</div>}
+    </div>
+  );
+}
+
+// ── At a glance: chips for what an install gives you ────────────────────────
+
+/** The same icons the view switcher uses, keyed by the view's type. */
+function viewTypeIcon(type: string, size = 12) {
+  switch (type) {
+    case "board": return <BoardIcon size={size} />;
+    case "calendar": return <CalendarIcon size={size} />;
+    case "gallery": return <GalleryIcon size={size} />;
+    case "list": return <ListIcon size={size} />;
+    case "chart": return <ChartIcon size={size} />;
+    case "tracker": return <TrackerIcon size={size} />;
+    case "timeline": return <TimelineIcon size={size} />;
+    default: return <TableIcon size={size} />;
+  }
+}
+
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function Glance({ preview }: { preview: PackPreview }) {
+  const props = preview.collections.reduce((n, c) => n + c.properties.length, 0);
+  const seeds = preview.collections.reduce((n, c) => n + c.seeds, 0);
+  const views = preview.collections.flatMap((c) => c.views.map((v) => ({ ...v, coll: c.title || c.name })));
+  const manyColls = preview.collections.length > 1;
+  return (
+    <div className={styles.glance} aria-label="At a glance">
+      {manyColls && <span className={styles.chip}><DatabaseIcon size={12} /> {plural(preview.collections.length, "collection")}</span>}
+      {props > 0 && <span className={styles.chip}><TextLinesIcon size={12} /> {plural(props, "property", "properties")}</span>}
+      {views.map((v, i) => (
+        <span key={`${v.coll}-${v.name}-${i}`} className={`${styles.chip} ${styles.chipView}`} title={`${v.type} view${manyColls ? ` in ${v.coll}` : ""}`}>
+          {viewTypeIcon(v.type)} {v.name}
+        </span>
+      ))}
+      {seeds > 0 && <span className={styles.chip}><DatabaseIcon size={12} /> {plural(seeds, "example row")}</span>}
+      {preview.templates.length > 0 && <span className={styles.chip}><TemplateIcon size={12} /> {plural(preview.templates.length, "note template")}</span>}
+      {preview.includes.map((id) => <span key={id} className={styles.chip}><FolderIcon size={12} /> {id}</span>)}
+    </div>
+  );
+}
+
+// ── Properties: one row each, options as the pills they become ──────────────
+
+const TYPE_LABEL: Record<string, string> = {
+  multi_select: "multi-select", date_range: "date range", created_time: "created", created_by: "created by",
+  edited_time: "edited", edited_by: "edited by",
+};
+
+function PropertyList({ properties }: { properties: PackPreviewProperty[] }) {
+  const row = (name: string, type: string, extra: ReactNode, key: string) => (
+    <div key={key} className={styles.propRow}>
+      <span className={styles.propName}>{name}</span>
+      <span className={styles.typeChip}>{TYPE_LABEL[type] ?? type}</span>
+      <span className={styles.propExtra}>{extra}</span>
+    </div>
+  );
+  return (
+    <div className={styles.props}>
+      {row("title", "text", <span className={styles.propHint}>the row's name</span>, "_title")}
+      {properties.map((p) => row(p.name, p.type, (
+        <>
+          {p.options.length > 0 && p.options.map((o) => <span key={o.name} className={styles.pill} style={tagStyle(o.color)}>{o.name}</span>)}
+          {p.detail && <span className={styles.propHint}>{p.detail}</span>}
+          {p.format && <span className={styles.propHint}>{p.format}</span>}
+        </>
+      ), p.name))}
+    </div>
+  );
+}
+
+// ── Template: rendered like a note, raw on request ──────────────────────────
+
+function TemplateBlock({ label, path, body, open: initiallyOpen = false }: { label: string; path: string; body: string; open?: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const [raw, setRaw] = useState(false);
+  return (
+    <div className={styles.tpl}>
+      <div className={styles.tplBar}>
+        <button className={styles.tplToggle} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          <span className={`${styles.tplChevron} ${open ? styles.tplChevronOpen : ""}`}><ChevronRightIcon size={12} /></span>
+          {open ? "Hide template" : "Show template"}
+          <span className={styles.tplLabel}>{renderInline(label, "tpl")}</span>
+        </button>
+        {open && (
+          <button className={`${styles.tplRaw} ${raw ? styles.tplRawOn : ""}`} onClick={() => setRaw((r) => !r)} aria-pressed={raw} title={raw ? "Show it rendered" : `Show the source of ${path}`}>
+            Raw
+          </button>
+        )}
+      </div>
+      {open && (raw
+        ? <pre className={styles.tplSource}>{body}</pre>
+        : <div className={styles.tplBody}><MiniMarkdown body={body} /></div>
+      )}
+      {open && <code className={styles.tplPath}>{path}</code>}
     </div>
   );
 }

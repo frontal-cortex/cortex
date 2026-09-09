@@ -6,7 +6,7 @@
 use tauri::{AppHandle, Manager, State};
 
 use cortex_core::error::{AppError, Result};
-use cortex_core::marketplace::{self as mk, Catalog, InstallReport, Pack, Plan, RemoveReport, UpdateReport};
+use cortex_core::marketplace::{self as mk, Catalog, InstallReport, Pack, PackPreview, Plan, RemoveReport, UpdateReport};
 
 use super::vault::VaultState;
 
@@ -54,27 +54,14 @@ pub fn packs_remove(id: String, state: State<'_, VaultState>) -> Result<RemoveRe
     mk::remove(&root(&state)?, &id)
 }
 
-/// A pack's text files (Markdown and YAML) with where each lands, for the
-/// Marketplace page's preview. Binary files (images) come back without text.
-#[derive(serde::Serialize)]
-pub struct PackText {
-    pub path: String,
-    pub dest: Option<String>,
-    pub text: Option<String>,
-}
-
+/// What the pack's page shows: each collection's properties, views, row
+/// template and seed count, the note templates, a bundle's parts — parsed
+/// in core, so the page never reads YAML itself.
 #[tauri::command]
-pub fn packs_files(id: String, app: AppHandle, state: State<'_, VaultState>) -> Result<Vec<PackText>> {
+pub fn packs_preview(id: String, app: AppHandle, state: State<'_, VaultState>) -> Result<PackPreview> {
     let root = root(&state)?;
     let pack = mk::resolve(&root, cache_dir(&app).as_deref(), &id, true)?;
-    Ok(pack.files.iter().map(|f| {
-        let is_text = f.path.ends_with(".md") || f.path.ends_with(".yaml");
-        PackText {
-            path: f.path.clone(),
-            dest: mk::destination(&pack.manifest, &f.path),
-            text: is_text.then(|| String::from_utf8_lossy(&f.contents).into_owned()),
-        }
-    }).collect())
+    Ok(mk::preview(&pack))
 }
 
 /// Start a pack directory from a template or collection in this vault.
