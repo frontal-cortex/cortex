@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import "./styles/tokens.css";
 import "./styles/fonts.css";
 import { useVault } from "./hooks/useVault";
+import { useViewportAttribute } from "./hooks/useViewport";
 import { initThemeListener } from "./lib/theme";
 import { isMac } from "./lib/keymap";
 import { VaultPicker } from "./components/VaultPicker/VaultPicker";
@@ -13,6 +14,8 @@ export default function App() {
   useEffect(() => initThemeListener(), []);
   // Lets CSS make platform calls (e.g. room for macOS window controls).
   useEffect(() => { document.documentElement.dataset.platform = isMac ? "mac" : "other"; }, []);
+  // …and viewport calls: `data-viewport` is how CSS knows a phone from a desktop (lib/breakpoints.ts).
+  useViewportAttribute();
 
   // While deciding whether to reopen the last vault, show only the app
   // background rather than a landing page that would vanish a moment later.

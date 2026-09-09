@@ -624,3 +624,43 @@
   font-size: 13px;
   line-height: 1;
 }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   The panel fills its drawer; rows and buttons grow to a thumb, and the
+   hover-revealed actions stay visible — nothing hovers on a touch screen. */
+:root[data-viewport="phone"] .root {
+  width: 100%;
+  min-width: 0;
+}
+
+:root[data-viewport="phone"] .favRow,
+:root[data-viewport="phone"] .footerBtn,
+:root[data-viewport="phone"] .resultRow,
+:root[data-viewport="phone"] .commitRow,
+:root[data-viewport="phone"] .trashRow {
+  min-height: var(--tap-target);
+}
+
+:root[data-viewport="phone"] .searchInput {
+  padding: 10px 0;
+  font-size: var(--text-sm);
+}
+
+:root[data-viewport="phone"] .sectionToggle {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+:root[data-viewport="phone"] .iconBtn,
+:root[data-viewport="phone"] .sectionAction {
+  min-width: 36px;
+  min-height: 36px;
+  justify-content: center;
+}
+
+:root[data-viewport="phone"] .favStar,
+:root[data-viewport="phone"] .sectionAction,
+:root[data-viewport="phone"] .trashAction,
+:root[data-viewport="phone"] .trashDelete {
+  opacity: 1;
+}

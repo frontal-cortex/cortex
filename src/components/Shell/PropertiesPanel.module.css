@@ -2,10 +2,10 @@
    created date, last editor, the properties that have values as chips.
    Clicking the line (or Ctrl+Shift+I) opens the full Notion-style panel:
    one row per property with a type icon, name and editor, plus "Add a
-   property". Aligned to the title's 54px inset. */
+   property". Aligned to the title's inset (--page-inset). */
 
 .root {
-  padding: 0 54px var(--space-3);
+  padding: 0 var(--page-inset) var(--space-3);
   margin-bottom: var(--space-2);
 }
 

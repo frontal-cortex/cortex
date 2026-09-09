@@ -240,7 +240,7 @@ by inferring column types (`data.rs:128`).
 | CI / release workflow | done | — | `.github/workflows/ci.yml` (tests, tsc, vite build, clippy on every PR / push to main) and `release.yml` (tauri-action matrix → draft GitHub release with signed bundles + `latest.json`). |
 | Auto-update | done | — | `tauri-plugin-updater` wired (desktop only); Check for updates in the palette and Settings → Updates, install on confirm then relaunch. The committed `pubkey` is a placeholder: the app says "no update channel" until a maintainer generates the keypair per `docs/development.md`. |
 | Mobile (Android / iOS) | missing; spike done | L | No mobile targets, no `gen/`, the git transport is ready (`remote::Git2Remote`, selected on iOS/Android). The Android feasibility spike (`docs/parity/mobile-spike.md`) is a go with a blocker list and rows 36–39; see `obsidian-parity.md` §14. |
-| Responsive layout | missing | M | Three `@media` rules, all in overlays; sidebar draggable 200–480px but no breakpoints; window `minWidth: 800`. |
+| Responsive layout | partial | M | Shell done: one breakpoint system (`lib/breakpoints.ts` → `data-viewport` on `<html>`, `useViewport`), drawer sidebar + bottom-sheet terminal + compact top bar below 600px, tokenised page inset, thumb-sized rows and toolbar buttons, window `minWidth: 360`. Database views are still mouse-first and wide (next mobile row). |
 | Onboarding | done | — | Getting-started card, `VAULT.md` / `AGENTS.md`, searchable settings hints. No `?` shortcut overlay, no in-app help. |
 
 ## Where Cortex is ahead of Notion
@@ -264,7 +264,7 @@ by inferring column types (`data.rs:128`).
 9. ~~**Search discards FTS5's power**~~ Done: phrases, operators, snippets, tag/type/path filters, FTS fallback in the quick switcher. Still missing: date filters, recency ranking, collection-scoped search.
 10. **Rows are re-parsed from disk on every render**, with rollups re-reading the target collection once per rollup property (`data.rs:1525`). Fine at personal scale, a cliff past a few thousand rows.
 11. ~~**No CI, no release pipeline, no auto-update.**~~ Done: CI on every PR, a tagged-release matrix, and in-app updates; the signing keypair still has to be generated once (`docs/development.md`).
-12. **Mobile is a doc, not a target.** The Android spike (`mobile-spike.md`) says go; the work is sequenced, not started.
+12. **Mobile is a doc, not a target.** The shell is responsive to phone widths now; the git transport and Tauri mobile targets remain.
 
 ## Deliberate non-goals
 

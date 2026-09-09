@@ -8,6 +8,7 @@ import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
+import { useViewport } from "../../hooks/useViewport";
 import { useSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX } from "../../hooks/useSidebarWidth";
 import { useRecentNotes } from "../../hooks/useRecentNotes";
 import { ExplorerSort, DEFAULT_SORT, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
@@ -53,7 +54,9 @@ export function Shell({
 }: Props) {
   // Quick switcher: null = closed; "actions" opens it straight into `>` mode.
   const [switcher, setSwitcher] = useState<null | "notes" | "actions">(null);
-  const { leftVisible, rightVisible, monk, toggleLeft, toggleRight, toggleMonk } = useLayout();
+  // At phone widths the sidebar is an overlay drawer (see useLayout).
+  const { isPhone: drawer } = useViewport();
+  const { leftVisible, rightVisible, monk, toggleLeft, closeLeft, toggleRight, toggleMonk } = useLayout(drawer);
   // The terminal mounts the first time its pane opens and then stays mounted
   // (hidden) so the session survives toggling.
   const [terminalMounted, setTerminalMounted] = useState(false);
@@ -162,6 +165,18 @@ export function Shell({
   /** Heading to scroll to once a `[[Note#Section]]` target has opened. */
   const pendingSection = useRef<string | null>(null);
   const focusEditor = useCallback(() => { editorRef.current?.focusBody(); }, []);
+
+  // The drawer gets out of the way once you have picked something — a note, a
+  // tag page, a full-window page — and Escape (or a tap on the backdrop)
+  // closes it by hand. The desktop pane never auto-closes.
+  const drawerOpen = drawer && leftVisible;
+  useEffect(() => { if (drawer) closeLeft(); }, [drawer, closeLeft, selectedPath, openTag, showSettings, showMarketplace, showGraph]);
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { closeLeft(); focusEditor(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawerOpen, closeLeft, focusEditor]);
   useEffect(() => {
     const t = setTimeout(() => { if (!selectedPathRefForFocus.current) leftRef.current?.focus(); }, 250);
     return () => clearTimeout(t);
@@ -622,7 +637,8 @@ export function Shell({
       />}
 
       <div className={styles.body} style={{ "--left-panel-width": `${sidebarWidth}px` } as CSSProperties}>
-        <div className={styles.leftSlot} style={leftVisible ? undefined : { display: "none" }}>
+        {drawerOpen && <div className={styles.backdrop} onClick={() => { closeLeft(); focusEditor(); }} aria-hidden />}
+        <div className={`${styles.leftSlot} ${drawer ? styles.drawer : ""}`} style={leftVisible ? undefined : { display: "none" }}>
         <LeftPanel
           ref={leftRef}
           onEscape={focusEditor}
@@ -639,7 +655,7 @@ export function Shell({
           agentBranches={agentBranches}
           commits={commits}
           favorites={favorites}
-          onSelect={(p) => openNote(p)}
+          onSelect={(p) => { openNote(p); if (drawer) closeLeft(); }}
           onNewNote={handleNewNote}
           onDeleteNote={handleDelete}
           onTurnIntoDatabase={handleTurnIntoDatabase}

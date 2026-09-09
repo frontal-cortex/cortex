@@ -215,7 +215,6 @@ th.today, td.today { background: var(--accent-light); }
 }
 .setupChip:hover { border-color: var(--accent); color: var(--accent); }
 
-@media (max-width: 700px) {
-  .summary { margin-left: 0; }
-  .todayMeta .streakBest { display: none; }
-}
+/* Narrow windows (compact and below, see lib/breakpoints.ts). */
+:root:not([data-viewport="wide"]) .summary { margin-left: 0; }
+:root:not([data-viewport="wide"]) .todayMeta .streakBest { display: none; }

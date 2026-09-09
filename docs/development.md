@@ -48,9 +48,10 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── SettingsView.tsx  # Full-window settings page: section nav, search, one row per settings.yaml key
 │   │   ├── PublishModal.tsx  # The only path to a published site: shows what goes, where, and the result
 │   │   └── TerminalPane.tsx  # xterm.js over a real PTY; opens into `terminal_command` (an agent CLI)
-│   ├── hooks/                # React hooks (useVault, useNotes)
+│   ├── hooks/                # React hooks (useVault, useNotes, useViewport)
 │   ├── lib/                  # Shared utilities (commands.ts, fileTree.ts)
 │   │   ├── keymap.ts         # Keyboard shortcuts — the single source of truth for bindings + hints
+│   │   ├── breakpoints.ts    # Viewport breakpoints (phone / compact / wide) — the single source for responsive CSS
 │   │   └── theme.ts          # Light/dark preference + desktop palette → CSS custom properties
 │   └── styles/tokens.css     # Design tokens (CSS variables)
 ├── src-tauri/                # Rust backend
@@ -150,6 +151,19 @@ trashes it. Widget-local keys like these are listed in `keymap.ts`
 (`TABLE_KEYS`) so hints read from one place, but they are not rebindable
 app shortcuts. Dates go through `DatePicker` everywhere — a typed value is
 written only when it names a real calendar day.
+
+**One breakpoint system, no per-file `@media`**: `lib/breakpoints.ts` holds
+the two widths (phone < 600px, compact < 820px). `useViewport` watches them
+with `matchMedia`, and `App` stamps the result on `<html>` as
+`data-viewport="phone|compact|wide"` (plus `--bp-phone` / `--bp-compact`
+custom properties, for reference). Stylesheets select on the attribute —
+`:root[data-viewport="phone"] .row { … }` — so a breakpoint changes in one
+place. Below the phone breakpoint the sidebar is an overlay drawer
+(`useLayout(drawer)`: session-only, never persisted, closes on Escape, on a
+backdrop tap and once you pick something), the terminal a bottom sheet, the
+top bar compact, and the page full-bleed via the `--page-inset` token that
+title, properties, backlinks and the BlockNote body all align on;
+`--tap-target` sizes rows and toolbar buttons for a thumb.
 
 **The app can wear the desktop's palette**: `settings.theme_file` names a flat
 TOML of colour names → hex (Omarchy's `colors.toml`; `~` expands per machine).

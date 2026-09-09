@@ -83,3 +83,15 @@
   color: var(--text-tertiary);
   font-style: italic;
 }
+
+/* Phone: the outline floats over the page's right edge instead of taking a
+   column the page cannot spare. */
+:root[data-viewport="phone"] .root {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  width: min(260px, 80vw);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
+}

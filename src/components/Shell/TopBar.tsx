@@ -60,7 +60,7 @@ export function TopBar({
         </button>
       </div>
 
-      <div className={styles.identity} data-tauri-drag-region>
+      <div className={`${styles.identity} ${styles.phoneHidden}`} data-tauri-drag-region>
         <span className={styles.vaultName}>{vaultName}</span>
       </div>
 
@@ -73,7 +73,7 @@ export function TopBar({
         <button className={styles.action} onClick={onOpenSwitcher} title={`Quick switcher (${shortcutFor("quick-switcher")})`}>
           <SearchIcon size={15} />
         </button>
-        <button className={styles.action} onClick={onOpenGraph} title={`Graph view (${shortcutFor("graph")})`}>
+        <button className={`${styles.action} ${styles.phoneHidden}`} onClick={onOpenGraph} title={`Graph view (${shortcutFor("graph")})`}>
           <GraphIcon size={15} />
         </button>
         <button
@@ -102,7 +102,7 @@ export function TopBar({
         <button className={`${styles.action} ${rightOpen ? styles.actionOn : ""}`} onClick={onToggleRight} title={`Toggle terminal (${shortcutFor("toggle-terminal")})`}>
           <TerminalIcon size={15} />
         </button>
-        <button className={styles.action} onClick={onToggleMonk} title={`Monk mode — just the page (${shortcutFor("monk-mode")})`}>
+        <button className={`${styles.action} ${styles.phoneHidden}`} onClick={onToggleMonk} title={`Monk mode — just the page (${shortcutFor("monk-mode")})`}>
           <MonkIcon size={15} />
         </button>
       </div>

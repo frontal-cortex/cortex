@@ -468,9 +468,28 @@
   font-size: var(--text-sm);
 }
 
-/* Narrow windows: controls drop under their labels instead of squeezing. */
-@media (max-width: 820px) {
-  .row { grid-template-columns: minmax(0, 1fr); }
-  .control { justify-content: flex-start; }
-  .nav { width: 190px; }
+/* Narrow windows (compact and below, see lib/breakpoints.ts): controls drop
+   under their labels instead of squeezing. */
+:root:not([data-viewport="wide"]) .row { grid-template-columns: minmax(0, 1fr); }
+:root:not([data-viewport="wide"]) .control { justify-content: flex-start; }
+:root:not([data-viewport="wide"]) .nav { width: 190px; }
+
+/* Phone: the nav becomes a strip of section chips above the content. */
+:root[data-viewport="phone"] .page { flex-direction: column; }
+:root[data-viewport="phone"] .nav {
+  width: auto;
+  border-right: none;
+  border-bottom: 1px solid var(--border);
 }
+:root[data-viewport="phone"] .navList {
+  flex-direction: row;
+  gap: 4px;
+  padding: 0 var(--space-3) var(--space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+:root[data-viewport="phone"] .navItem { width: auto; flex-shrink: 0; white-space: nowrap; min-height: 36px; }
+:root[data-viewport="phone"] .navFoot { display: none; }
+:root[data-viewport="phone"] .closeBtn { padding: 10px; }
+:root[data-viewport="phone"] .content { padding: var(--space-4) var(--space-3) var(--space-6); }

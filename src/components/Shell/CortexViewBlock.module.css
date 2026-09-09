@@ -1638,3 +1638,18 @@
   white-space: nowrap;
 }
 .remoteImg:hover { color: var(--text-primary); border-color: var(--border-focus); }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   The table still scrolls sideways inside .tableWrap (never the page); rows
+   grow to a thumb, the row actions stay visible, and the sticky title column
+   gives up some width so a second column is always in view. */
+:root[data-viewport="phone"] .table td { padding: 11px var(--space-2); }
+:root[data-viewport="phone"] .table th { padding: 10px var(--space-2); }
+:root[data-viewport="phone"] .table th:first-child { width: 160px; }
+:root[data-viewport="phone"] .table td:first-child > .cellEditable,
+:root[data-viewport="phone"] .table td:first-child > .cellReadonly { max-width: 200px; }
+:root[data-viewport="phone"] .rowActionCol { width: 76px; }
+:root[data-viewport="phone"] .rowOpen,
+:root[data-viewport="phone"] .rowMore { opacity: 1; padding: 8px; }
+:root[data-viewport="phone"] .cardDelete { opacity: 1; }
+:root[data-viewport="phone"] .boardCol { min-width: min(260px, 80vw); }
