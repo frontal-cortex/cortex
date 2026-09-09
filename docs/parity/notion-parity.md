@@ -179,11 +179,11 @@ by inferring column types (`data.rs:128`).
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Publish to web (static site) | done | — | One page per note, index, assets, `search.json`, write manifest for safe rebuilds (`publish.rs:146`). |
+| Publish to web (static site) | done | — | One page per note, index, assets, `search.json` (title, tags and the first ~2 KB of body text; the index page's search matches bodies and shows a snippet), write manifest for safe rebuilds (`publish.rs:146`). |
 | Per-note public flag | done | — | `publish: true` or the `public` tag; palette toggle; never `templates/`, `VAULT.md`, `AGENTS.md`. |
 | Wiki links, aliases, anchors; unpublished targets degrade to text | done | — | |
 | Callouts on the site | done | — | Eight kinds. |
-| Database views on the site | missing | M | A `cortex-view` fence publishes as a raw YAML code block. |
+| Database views on the site | done | — | `cortex-view` / `cortex-views` fences and a collection page's own `views:` render as static tables through `data::resolve_view` (columns, filter, sort, grouped sections, summary row, number formats; rows link to their page when published). Board / calendar / gallery / timeline / tracker degrade to that table with a note; a chart becomes its aggregated points table, not an SVG (`publish.rs` Database views). |
 | Site search | partial | S | Four-line `indexOf` over title and tags; body text never searchable; `search.json` unused. |
 | GitHub Pages push + Action | done | — | `workflow_dispatch` only, by design. |
 | Custom domain (`CNAME`) | missing | S | |

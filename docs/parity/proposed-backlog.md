@@ -418,7 +418,7 @@ relative to the two above: 36 → 34 → 37 → responsive shell → 38 → 35 �
 ## Next in line (not sized as rows yet)
 
 - **Comments as a committed sidecar** (`notes/foo.comments.yaml`, text-quote anchors, margin rendering; BlockNote's comments extension needs a thread store). M.
-- **Publish database views**: render `cortex-view` fences as static tables on the site, and index body text into `search.json`. M.
+- ~~**Publish database views**: render `cortex-view` fences as static tables on the site, and index body text into `search.json`. M.~~ Done.
 - ~~**CI and auto-update**: a `.github/` build matrix for the three desktop OSes plus `tauri-plugin-updater`. Not parity, but today nobody can receive a build. M.~~ Done: `.github/workflows/{ci,release}.yml`, updater plugin, Check for updates in palette + Settings; keypair setup in `docs/development.md`.
 - **Local graph** with depth, filters and tag colouring; live physics. M.
 - **Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.

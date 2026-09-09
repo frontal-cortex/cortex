@@ -185,7 +185,7 @@ responsive shell groundwork*, the `RemoteOps` row and the spike's rows
 | Callouts | done | — | |
 | Embeds | partial | S | `![[note]]` becomes a link, never inlined (deliberate: no unpublished body leaks). |
 | Client-side search | partial | S | `search.json` has title and tags only; body text is not searchable. |
-| Database / `cortex-view` blocks | missing | M | Rendered as a raw code fence (`publish.rs:333`). |
+| Database / `cortex-view` blocks | done | — | Rendered as static tables by the same `resolve_view` the app uses — grouped sections, summary row, number formats, row links to published pages; non-table view types degrade to the table with a note (`publish.rs`, Database views). Site search also matches body text. |
 | Graph on the site | missing | M | |
 | GitHub Pages push + Action | done | — | |
 | Comments, presence, auth-gated pages | missing, by design | L | "Read-only: no comments, no presence" (`publish.rs:17`). |
