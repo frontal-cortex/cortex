@@ -16,11 +16,11 @@ at the end so they are not mistaken for gaps.
 |---|---|---|---|
 | `[[wiki links]]` stored as plain text | done | — | A ProseMirror decoration over the literal text (`src/lib/wikiLinkExtension.ts:37`); the file never holds a node type. |
 | Autocomplete on `[[` and `@` | done | — | `src/lib/wikiLinkSuggestion.ts:33`, inserted at `Editor.tsx:472`. |
-| Aliases `[[note\|alias]]` | partial | M | Only the static-site builder splits on `\|` (`publish.rs:268`). In the app the whole inner text is handed to navigation (`Shell.tsx:459`) so a click is a silent no-op, and the indexer stores `Note\|alias` verbatim (`note.rs:88`) so no backlink is recorded. |
-| Heading links `[[note#heading]]` | partial | M | Section slicing exists for embeds (`commands/notes.rs:44-74`) and publish; click-navigation never splits on `#` and the index stores the whole string. |
+| Aliases `[[note\|alias]]` | done | — | One parser, `note::parse_wiki_link`, feeds the indexer, `vault::resolve`, `resolve_ref`, publish, the CLI and the editor. The decoration shows only the alias (syntax reappears while the cursor is in the link); backlinks and the graph match on the target alone. |
+| Heading links `[[note#heading]]` | done | — | Same parser; a click opens the note and scrolls to the heading. Embeds still slice the section. |
 | Block references `^id` | missing | L | No block-id parsing or generation anywhere. |
-| Link resolution rules | partial | S | Three parallel resolvers that disagree: core (`vault.rs:342`) and the app (`Shell.tsx:459`) fall back to a *substring* stem match, the Tauri command (`commands/notes.rs:117`) to an exact one. `[[api]]` can land on `rapid-notes.md`. Duplicate titles resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
-| Automatic link update on rename / move | missing | M | `rename_note` and `move_note` (`commands/notes.rs:323`, `:410`) rename the file and reindex. Links resolve by title, so a *title* change orphans every inbound `[[Title]]`. |
+| Link resolution rules | done | — | One resolver, core `vault::resolve` (path, title, exact stem — all case-insensitive), called by `resolve_ref`, the app's click handler (`resolve_note`), the CLI, MCP and the publisher. Duplicate titles still resolve to whichever file the walk yields first; no "create note" on an unresolved click. |
+| Automatic link update on rename / move | done | — | `rename::rename_note` in core: sidebar rename / move, editor title edits, `cortex mv`, `cortex set title=` and the MCP `move_note` tool all rewrite inbound `[[old]]`, `[[old\|alias]]`, `[[old#h]]`, `![[old]]` via the `links` table; one commit per rename with `auto_commit`. Ambiguous (shared) titles are left alone. |
 | Unlinked mentions | missing | M | No code. |
 | Backlinks panel | partial | S | Flat list of titles under the note (`BacklinksPanel.tsx`); `get_backlinks` (`db.rs:98`) returns no context snippet. Hidden when empty. |
 | Outgoing links panel | missing | S | Data exists (`db.rs:157`, `cortex links`); no UI. |
@@ -67,19 +67,19 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Frontmatter `tags:` | done | — | Indexed as JSON in `notes.tags` (`index.rs:39`, `db.rs:56`). |
-| Inline `#tags` in the body | missing | M | The only body scanner is `extract_wiki_links` (`note.rs:88`). |
-| Nested tags `parent/child` | missing | M | Tags are opaque strings. |
-| Tag browser / tag pane | missing | M | Sidebar sections are fixed: favorites, notes, templates, trash (`LeftPanel.tsx:63`). |
-| Tag page (all notes with tag X) | missing | S | Tags match as substrings in search but are not clickable. |
-| Tag autocomplete while writing | partial | S | Only inside typed `multi_select` properties, from the committed schema. |
+| Frontmatter `tags:` | done | — | Indexed as JSON in `notes.tags`; merged with inline tags by `tags::note_tags` (`tags.rs`). |
+| Inline `#tags` in the body | done | — | `tags::extract_inline_tags` scans the body next to `extract_wiki_links`; skips code fences, inline code, headings, URLs, `[[Note#Section]]`, `&#39;`, `\#escaped`. Stored in the same `notes.tags` column; nothing written to the file. |
+| Nested tags `parent/child` | done | — | `tags::list_tags` builds a tree by `/` with counts (a parent counts its children once per note); `--tag project` matches `project/alpha` (`tags::has_tag`, case-insensitive). |
+| Tag browser / tag pane | done | — | Tags sidebar section (`LeftPanel.tsx` `TagTree`, `FileTree.tsx` `BranchRow`): tree by `/`, counts, folds like folders, keyboard-navigable through the flat row model (`treeRows.ts` kind `tag`). Hidden when the vault has no tags. |
+| Tag page (all notes with tag X) | done | — | `TagView.tsx`: Enter or a click on a tag opens a filtered view of matching notes (children included), with breadcrumbs, child-tag chips and `j`/`k`/Enter/`h`. A view over the index, never a saved file. |
+| Tag autocomplete while writing | done | — | `#` in the editor completes from `list_tags` (`wikiLinkSuggestion.ts` trigger `tag`); a query no tag matches is offered as a new one. Typed `multi_select` properties still complete from the schema. |
 
 ## 7. Folders and files
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | File tree, nesting, keyboard nav | done | — | Flat row model with roving tabindex, `j/k`, `Enter`, `n`, `/` (`treeRows.ts`). |
-| Drag-and-drop move, rename, context menu | done | — | Rename, Duplicate, Turn into collection, Favorite, Reveal, Export HTML, Copy path, Delete (`FileTree.tsx:485`). Rename does not update inbound links (§1). |
+| Drag-and-drop move, rename, context menu | done | — | Rename, Duplicate, Turn into collection, Favorite, Reveal, Export HTML, Copy path, Delete (`FileTree.tsx:485`). Rename and drop rewrite inbound links (§1). |
 | Folder notes | missing | M | No `folder/folder.md` convention for plain folders (collections have `_index.md`, which is the database page). |
 | Explorer sort options | missing | S | Hard-coded A→Z (`fileTree.ts:152`). |
 | Favourites | done | — | `.cortex/favorites.yaml`; no nested bookmark folders or bookmarked searches. |
@@ -90,11 +90,11 @@ at the end so they are not mistaken for gaps.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Full-text search (FTS5) | done | — | `notes_fts(title, body)`, ranked (`db.rs:40`, `:174`). |
-| Operators (`tag:`, `path:`, quotes, `-`, `OR`, regex) | missing | M | `fts_query` (`db.rs:215`) strips every non-alphanumeric character and appends `*` to each word, so `tag:foo` becomes `tagfoo*`. FTS5 already supports phrases, `NEAR` and column filters; the query builder discards them. |
-| Result snippets / highlights | missing | S | Results render as plain tree rows; `snippet()` never called. |
+| Operators (`tag:`, `path:`, quotes, `-`, `OR`, regex) | partial | S | `search::parse` (`search.rs`) translates `"phrases"`, `-word`, `OR`, `tag:` / `type:` / `path:` (negatable) into an FTS5 MATCH plus filters on the `notes` columns; shared by app, CLI and MCP. Title matches are boosted 5×. No regex, `NEAR`, or `line:` / `section:`. |
+| Result snippets / highlights | done | — | `snippet()` on the body, `<mark>` around the match, one line; shown under each sidebar result and in the quick switcher's FTS fallback. |
 | Vault-wide search and replace | missing | L | |
-| Find in note (`Ctrl+F`) | missing | S | Not bound in `keymap.ts`; BlockNote ships none. |
-| Quick switcher | partial | S | Case-insensitive substring over title/path/tags (`QuickSwitcher.tsx:69`), no fuzzy matching or ranking. |
+| Find in note (`Ctrl+F`) | done | — | `find-in-note` (`mod+f`) in `keymap.ts`; decoration-based highlights with count and next / previous (`lib/findInNote.ts`, `FindBar.tsx`). |
+| Quick switcher | partial | S | Case-insensitive substring over title/path/tags, then falls back to FTS (with snippets) when that finds nothing, so a body word reaches the note. No fuzzy matching or ranking of the substring pass. |
 | Command palette (`>` prefix) | done | — | ~18 actions plus one per template; `mod+shift+p`. |
 
 ## 9. Workspace
@@ -105,9 +105,9 @@ at the end so they are not mistaken for gaps.
 | Tabs, pinned tabs | missing | L | Deliberately removed after a history-corruption bug (`useNavHistory.ts:52`). |
 | Back / forward | done | — | 50-deep history, `mod+[` / `mod+]`. |
 | Resizable sidebar | missing | S | `--left-panel-width: 260px` is a constant (`tokens.css:60`); `LeftPanel.module.css` fixes both `width` and `min-width`. |
-| Outline pane | missing | M | No heading extraction UI. |
+| Outline pane | done | — | Headings derived from the live blocks, beside the page (`toggle-outline`, `mod+shift+o`); click jumps, the entry under the cursor is marked (`OutlinePane.tsx`). |
 | Properties pane | done | — | Typed, schema-driven, with option colours; richer than Obsidian's. |
-| Status bar (word / char / backlink count) | missing | S | No footer, no word-count code. |
+| Status bar (word / char / backlink count) | partial | S | Words, characters and reading time under the page (`lib/textStats.ts`), hidden in monk mode; no backlink count (backlinks list under the note). |
 | Focus / zen mode | done | — | "Monk mode", `mod+shift+m`. |
 | Right sidebar | partial | S | Exists but is the terminal only (fixed 440px); backlinks and properties live inside the editor column. |
 
@@ -115,7 +115,7 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Central shortcut registry, platform labels | done | — | `keymap.ts:38-56`, 17 shortcuts, every hint renders from it. |
+| Central shortcut registry, platform labels | done | — | `keymap.ts`, 19 shortcuts, every hint renders from it. |
 | Customisable keybindings + recorder | done | — | `keybindings:` in settings; conflict detection; recorder in Settings; settable from the CLI. |
 | Keyboard-first navigation | done | — | Sidebar roving tabindex, focus-sidebar / focus-editor. |
 | Vim keybindings in the editor | missing | L | BlockNote/ProseMirror, not CodeMirror. Non-goal unless a modal-editing plugin appears. |
@@ -138,7 +138,7 @@ at the end so they are not mistaken for gaps.
 |---|---|---|---|
 | JS plugin API / community plugins | missing, by design | L | `marketplace.rs:6`: "A pack is data, never code." |
 | Template and database packs | done | — | See §5. |
-| `cortex` CLI | done | — | `ls show new set write links backlinks search collections view schema status settings agents propose publish packs tracker track`, all with `--json`. |
+| `cortex` CLI | done | — | `ls show new set write mv links backlinks search collections view schema status settings agents propose publish packs tracker track`, all with `--json`. |
 | MCP server | done | — | 26 tools (`mcp.rs:208-345`). |
 | Declarative `cortex-view` specs in a note | done, beyond Obsidian | — | Same spec runs in the app, CLI and MCP. |
 | Agent proposals (branch, diff, apply / discard) | done, beyond Obsidian | — | `git.rs:523`; `CommitDiffModal.tsx`. |
@@ -188,6 +188,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
 | Obsidian Bases vs Cortex collections | done, well ahead | — | Typed schemas, relations, rollups, a real formula evaluator, recurrence, trackers with streaks, seven view types, same queries from the CLI and MCP. See `notion-parity.md` §4-§6. |
+| Math `$…$` / `$$…$$` (MathJax in Obsidian) | done | — | Same syntax on disk, rendered with KaTeX in the editor (`MathBlock.tsx`). `$$` on an empty line or `/math` opens a block; `$…$` typed inline becomes an equation. |
 | Audio recorder | missing | M | |
 | Slides / presentation mode | missing | M | |
 | PDF viewer | missing | L | Only images render from `assets/`. |
@@ -196,19 +197,20 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 | Embedded terminal / agent pane | done, beyond Obsidian | — | Real PTY (`terminal.rs`), opens into a detected agent CLI. |
 | Export | partial | S | Note → HTML only. No PDF, no Markdown-with-resolved-links. |
 | Import an Obsidian vault | done | — | `cortex import markdown <vault> [--into NAME]`, MCP `import_markdown`, **Import…** in the palette (`import.rs`): copies every `.md` under `notes/<name>/` keeping frontmatter and `[[links]]` verbatim, copies referenced images (`![[pic.png]]` too) into `assets/` and rewrites the paths, skips `.obsidian/` and reports every skip; the source vault is never modified. Aliases and heading links are carried as text and hit the §1 limits. |
+| `==highlight==`, `<u>`, `<details>` folds, sized `<img>` | done | — | The same on-disk forms Obsidian reads; the editor writes and re-reads them (`richFormats.ts`), and `cortex publish` renders `==…==` as `<mark>`. Highlight colour is not kept. |
 
 ## Notable gaps, ranked
 
-1. **Aliases and heading links break navigation and backlinks.** The parsing already exists in `publish.rs`; it is just not shared with the indexer and the app resolver. Best value for effort on this list.
-2. **Rename / move never rewrites inbound links.** Table stakes for an Obsidian user.
-3. **Search has no operators and no snippets.** FTS5 can do it; the query builder throws the capability away.
-4. **No inline `#tags` and no tag pane.** For many Obsidian users tags are the organising layer.
+1. ~~**Aliases and heading links break navigation and backlinks.**~~ Closed: one parser in cortex-core, shared by every reader.
+2. ~~**Rename / move never rewrites inbound links.**~~ Closed: `rename::rename_note` in cortex-core relinks every referrer; app, CLI and MCP share it.
+3. ~~**Search has no operators and no snippets.**~~ Done: phrases, `-`, `OR`, `tag:` / `type:` / `path:`, snippets, title boost, FTS fallback in the quick switcher. Still missing: regex, vault-wide replace, find-in-note.
+4. ~~**No inline `#tags` and no tag pane.**~~ Done: inline tags are indexed, the sidebar has a tag tree, and every tag opens a page.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
 6. **Graph is a static global snapshot.** No local graph, filters, colouring or live physics.
 7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints.
 8. **No block references.** The deepest structural gap and the most expensive.
 9. **No canvas.**
-10. **Small conveniences, individually cheap:** recent files, outline, word count, find-in-note, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions.
+10. **Small conveniences, individually cheap:** recent files, explorer sort, folder notes, CSS snippets, resizable sidebar, unlinked mentions (outline, word count and find-in-note are done).
 
 ## Deliberate non-goals
 

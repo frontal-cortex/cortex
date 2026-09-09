@@ -81,6 +81,14 @@ export interface PropertyDef {
   auto?: string;
 }
 
+/** What a property rename / delete touched. */
+export interface PropertyChange {
+  rows: number;
+  views: number;
+  schemas: string[];
+  files: string[];
+}
+
 export interface TypeSchema {
   properties: PropertyDef[];
 }
@@ -94,8 +102,13 @@ export interface ViewColumn {
 
 export interface FilterClause {
   field: string;
+  /** `== != > >= < <= contains does_not_contain starts_with ends_with is_empty is_not_empty within in`. */
   op: string;
+  /** Comma-separated for `in`; empty for `is_empty` / `is_not_empty`. */
   value: string;
+  /** A parenthesised group: its own clauses and connector (field/op/value unused). */
+  clauses?: FilterClause[];
+  join?: string;
 }
 
 export interface SortClause {
@@ -141,6 +154,9 @@ export interface ViewDef {
   start?: string;
   /** Timeline: the bar's last day (default `end`, else the second date property; none = one-day bars). */
   end?: string;
+  /** Table: the summary row as a YAML flow map, `{amount: sum, done: percent_checked}`
+   *  (a real mapping in `_index.md` frontmatter; `database.ts` converts). */
+  summary?: string;
   /** Any other option a view type defines. */
   [option: string]: string | string[] | undefined;
 }
@@ -164,6 +180,8 @@ export interface StructuredSpec {
   group?: string | null;
   date?: string | null;
   limit?: number | null;
+  /** Table summary row, field → function. */
+  summary?: Record<string, string>;
   /** View-type options (x, chartType, log, range, …), carried through untouched. */
   [option: string]: unknown;
 }
@@ -179,6 +197,9 @@ export interface ViewTable {
   /** All source fields before column projection — for the toolbar's dropdowns. */
   allColumns: string[];
   rows: ViewRow[];
+  /** The spec's `summary:` functions evaluated by the engine over `rows`, field → value.
+   *  Absent when the spec asks for none. */
+  summary?: Record<string, string | number | boolean | string[] | null>;
 }
 
 export interface ChartPoint {
@@ -260,6 +281,18 @@ export interface NoteRef {
   found: boolean;
 }
 
+/** What `rename_note` / `title_changed` did (cortex-core `rename::RenameReport`). */
+export interface RenameReport {
+  old_path: string;
+  new_path: string;
+  old_title: string;
+  new_title: string;
+  /** Notes whose [[links]] were rewritten to follow the rename. */
+  rewritten: string[];
+  /** True when auto-commit is on and the rename became one commit. */
+  committed: boolean;
+}
+
 export interface NoteEntry {
   path: string;
   title: string;
@@ -269,6 +302,21 @@ export interface NoteEntry {
   icon: string | null;
   /** `parent:` frontmatter — a collection name or a `notes/<folder>` path the page nests under in the sidebar. */
   parent: string | null;
+}
+
+/** One node of the vault's tag tree: `path` is the full tag (`project/alpha`),
+ *  `name` its last segment, `count` the notes carrying it or any child. */
+export interface TagNode {
+  name: string;
+  path: string;
+  count: number;
+  children: TagNode[];
+}
+
+/** A search result: the note plus one line of its body around the match,
+ *  the matched words wrapped in `<mark>…</mark>` (empty for filter-only queries). */
+export interface SearchHit extends NoteEntry {
+  snippet: string;
 }
 
 // Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
@@ -665,6 +713,14 @@ export const commands = {
   upsertProperty: (key: string, property: PropertyDef) =>
     invoke<void>("upsert_property", { key, property }),
 
+  /** Rename a property in the schema, every row, the views and dependent rollups / formulas. */
+  renameProperty: (key: string, old: string, next: string) =>
+    invoke<PropertyChange>("rename_property", { key, old, new: next }),
+
+  /** Delete a property from the schema, every row and every view; fails while a rollup / formula uses it. */
+  deleteProperty: (key: string, name: string) =>
+    invoke<PropertyChange>("delete_property", { key, name }),
+
   getMembers: () =>
     invoke<Member[]>("get_members"),
 
@@ -692,6 +748,9 @@ export const commands = {
   listNotes: () =>
     invoke<NoteEntry[]>("list_notes"),
 
+  listTags: () =>
+    invoke<TagNode[]>("list_tags"),
+
   readNote: (path: string) =>
     invoke<Note>("read_note", { path }),
 
@@ -710,8 +769,9 @@ export const commands = {
   deleteNote: (path: string) =>
     invoke<void>("delete_note", { path }),
 
+  /** Full-text search. Operators: `"phrase"`, `-word`, `OR`, `tag:x`, `type:x`, `path:x`. */
   searchNotes: (query: string) =>
-    invoke<NoteEntry[]>("search_notes", { query }),
+    invoke<SearchHit[]>("search_notes", { query }),
 
   createFolder: (path: string) =>
     invoke<void>("create_folder", { path }),
@@ -719,8 +779,18 @@ export const commands = {
   deleteFolder: (path: string) =>
     invoke<void>("delete_folder", { path }),
 
-  renameNote: (oldPath: string, newPath: string) =>
-    invoke<void>("rename_note", { oldPath, newPath }),
+  /** Rename / move a note (and retitle it when `title` is given); every
+   *  inbound link is rewritten to follow, one commit when auto-commit is on. */
+  renameNote: (oldPath: string, newPath: string, title?: string) =>
+    invoke<RenameReport>("rename_note", { oldPath, newPath, title: title ?? null }),
+
+  /** After the editor has saved a new title: point `[[Old Title]]` links at the new one. */
+  titleChanged: (path: string, oldTitle: string, newTitle: string) =>
+    invoke<RenameReport>("title_changed", { path, oldTitle, newTitle }),
+
+  /** The note a `[[wiki link]]` (any written form) points at — resolved by cortex-core. */
+  resolveNote: (target: string) =>
+    invoke<NoteEntry | null>("resolve_note", { target }),
 
   duplicateNote: (path: string) =>
     invoke<string>("duplicate_note", { path }),

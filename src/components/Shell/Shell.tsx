@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
+import { parseWikiLink } from "../../lib/wikiLink";
 import { findShortcut, applyKeymapOverrides, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
@@ -15,6 +16,7 @@ import { QuickSwitcher } from "./QuickSwitcher";
 import { QuickCapture } from "./QuickCapture";
 import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
+import { TagView } from "./TagView";
 import { TopBar } from "./TopBar";
 import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
 import { SettingsView } from "./SettingsView";
@@ -58,6 +60,8 @@ export function Shell({
     if (opening) requestAnimationFrame(() => termRef.current?.focus());
   }, [monk, rightVisible, toggleRight]);
   const [showGraph, setShowGraph] = useState(false);
+  // A tag page: the notes carrying this tag, as a view over the index (nothing written).
+  const [openTag, setOpenTag] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   // The template marketplace — a full-window page like Settings.
   const [showMarketplace, setShowMarketplace] = useState(false);
@@ -130,6 +134,8 @@ export function Shell({
   const editorRef = useRef<EditorHandle>(null);
   const leftRef = useRef<LeftPanelHandle>(null);
   const pendingFocus = useRef<"title" | "body" | null>(null);
+  /** Heading to scroll to once a `[[Note#Section]]` target has opened. */
+  const pendingSection = useRef<string | null>(null);
   const focusEditor = useCallback(() => { editorRef.current?.focusBody(); }, []);
   useEffect(() => {
     const t = setTimeout(() => { if (!selectedPathRefForFocus.current) leftRef.current?.focus(); }, 250);
@@ -145,14 +151,19 @@ export function Shell({
     setSelectedPath(path);
   }, [setSelectedPath]);
 
-  const { notes, dirs, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
+  const { notes, dirs, tags, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
   const { note, saving, save, applyNote } = useNote(selectedPath);
   useEffect(() => {
     const where = pendingFocus.current;
     if (!where || !note || note.path !== selectedPath) return;
     pendingFocus.current = null;
+    const section = pendingSection.current;
+    pendingSection.current = null;
     // Next frame: the editor mounts on this render and registers its handle.
-    requestAnimationFrame(() => where === "title" ? editorRef.current?.focusTitle() : editorRef.current?.focusBody());
+    requestAnimationFrame(() => {
+      if (where === "title") editorRef.current?.focusTitle(); else editorRef.current?.focusBody();
+      if (section) editorRef.current?.scrollToHeading(section);
+    });
   }, [note, selectedPath]);
   const { favorites, toggleFavorite, isFavorite } = useFavorites(!!vault);
   const { trash, refreshTrash, restore, deleteForever, emptyTrash } = useTrash(!!vault);
@@ -286,7 +297,7 @@ export function Shell({
   const actionsRef = useRef<Record<ShortcutId, () => void> | null>(null);
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setShowCapture(false); return; }
+      if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setOpenTag(null); setShowCapture(false); return; }
       const id = findShortcut(e);
       if (!id) return;
       e.preventDefault();
@@ -459,17 +470,29 @@ export function Shell({
     setSelectedPath(restoredPath);
   }, [restore, refresh]);
 
-  const handleNavigate = useCallback((target: string) => {
-    const lower = target.toLowerCase();
-    const byPath = notes.find((n) => n.path === target);
-    if (byPath) { openNote(target); return; }
-    const byTitle = notes.find((n) => (n.title || "").toLowerCase() === lower);
-    if (byTitle) { openNote(byTitle.path); return; }
-    const byStem = notes.find((n) =>
-      n.path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().includes(lower),
-    );
-    if (byStem) openNote(byStem.path);
-  }, [notes, openNote]);
+  // Follow a wiki link in any written form: `Note`, `Note|alias`, `Note#Section`,
+  // `![[Note#Section]]`. The note is picked by cortex-core `vault::resolve`
+  // (path, then title, then exact filename stem) — the same resolver the CLI,
+  // embeds and the publisher use; a section scrolls to that heading once the
+  // note is open. `[[#Section]]` stays in the current note.
+  const handleNavigate = useCallback((raw: string) => {
+    const link = parseWikiLink(raw);
+    if (!link.target) {
+      if (link.section) editorRef.current?.scrollToHeading(link.section);
+      return;
+    }
+    void (async () => {
+      const found = await commands.resolveNote(link.target).catch(() => null);
+      if (!found) return;
+      if (found.path === selectedPathRefForFocus.current) {
+        openNote(found.path);
+        if (link.section) editorRef.current?.scrollToHeading(link.section);
+        return;
+      }
+      pendingSection.current = link.section ?? null;
+      openNote(found.path);
+    })();
+  }, [openNote]);
 
   actionsRef.current = {
     "quick-switcher":  () => setSwitcher("notes"),
@@ -489,6 +512,8 @@ export function Shell({
     "toggle-properties": () => editorRef.current?.toggleProperties(),
     "marketplace":     () => setShowMarketplace((v) => !v),
     "log-today":       () => setShowLogToday((v) => !v),
+    "find-in-note":    () => editorRef.current?.openFind(),
+    "toggle-outline":  () => editorRef.current?.toggleOutline(),
   };
 
   return (
@@ -521,6 +546,8 @@ export function Shell({
           onOpenCommandPalette={() => setSwitcher("actions")}
           notes={notes}
           dirs={dirs}
+          tags={tags}
+          onOpenTag={setOpenTag}
           selectedPath={selectedPath}
           status={status}
           agentBranches={agentBranches}
@@ -554,6 +581,7 @@ export function Shell({
           note={note}
           saving={saving}
           allNotes={notes}
+          tags={tags}
           vaultPath={vault.path}
           reloadToken={reloadToken}
           collab={collab}
@@ -609,6 +637,8 @@ export function Shell({
           onToggleMonk={toggleMonk}
           onFocusSidebar={() => actionsRef.current?.["focus-sidebar"]()}
           onToggleProperties={() => editorRef.current?.toggleProperties()}
+          onFindInNote={note ? () => editorRef.current?.openFind() : undefined}
+          onToggleOutline={() => editorRef.current?.toggleOutline()}
           onPublish={() => setShowPublish(true)}
           onImport={() => setShowImport(true)}
           onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
@@ -641,6 +671,17 @@ export function Shell({
         <QuickCapture
           onCapture={handleQuickCapture}
           onClose={() => setShowCapture(false)}
+        />
+      )}
+
+      {openTag && (
+        <TagView
+          tag={openTag}
+          tags={tags}
+          notes={notes}
+          onOpenTag={setOpenTag}
+          onNavigate={(path) => { setOpenTag(null); openNote(path); }}
+          onClose={() => { setOpenTag(null); focusEditor(); }}
         />
       )}
 

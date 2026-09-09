@@ -528,6 +528,7 @@ dependencies = [
  "git2",
  "hex",
  "pulldown-cmark",
+ "regex",
  "rusqlite",
  "semver",
  "serde",

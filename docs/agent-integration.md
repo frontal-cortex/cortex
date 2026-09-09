@@ -27,8 +27,9 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 
 | Command | Does |
 |---|---|
-| `cortex ls [dir] [--type t] [--tag t]` | list notes, newest first |
-| `cortex search <words>` | full-text search (prefix match per word) |
+| `cortex ls [dir] [--type t] [--tag t]` | list notes, newest first; `--tag` sees frontmatter and inline `#tags`, and a parent matches its children |
+| `cortex tags` | every tag with note counts, nested by `/` (`--json` keeps the tree) |
+| `cortex search <query>` | full-text search: words prefix-match; `"exact phrase"`, `-excluded`, `a OR b`, `tag:x`, `type:x`, `path:x` (any filter negatable, `-tag:x`; quote the whole query when a word starts with `-`); each hit carries a body snippet with the match in `<mark>` |
 | `cortex show <note> [--body]` | print a note — by path, title, or filename stem |
 | `cortex new <title> [--dir d] [--type t] [--tag t]… [--template x] [--body -]` | create; prints the path |
 | `cortex set <note> key=value… [key+=v] [key-=v] [key=]` | merge typed properties (`3`, `true`, `[a, b]`); `key+=v` / `key-=v` add to or remove from a list; `key=` removes. A missing `collections/<c>/<id>` row is created first from the collection's row template, so a tracker's day file needs no setup |
@@ -37,8 +38,10 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex write <note> < body.md` | replace the body, keep the frontmatter |
 | `cortex fmt [notes…]` | rewrite in canonical form (sorted keys) |
 | `cortex links <note>` / `cortex backlinks <note>` | the link graph, resolved |
-| `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n]` | query a database like the app's table |
+| `cortex mv <note> <dest> [--title t]` | rename or move a note — `dest` is a new path (`notes/x/plan.md`) or a folder (`notes/x/`) — and rewrite every inbound `[[link]]` to follow it, aliases / sections / embeds kept; one commit when `auto_commit` is on. `cortex set <note> title=…` relinks the same way |
+| `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty) |
 | `cortex schema [key]` | typed properties for a collection or note type |
+| `cortex schema rename <key> <old> <new>` / `cortex schema rm <key> <name>` | rename or delete a property everywhere at once: the schema, the key in every row, the collection's views, and the rollups / formulas (in any schema) that reference it. `rm` is refused while a rollup or formula still depends on the property, and says which |
 | `cortex status` | changed files, sync counts, recent commits, proposals |
 | `cortex init [DIR]` | create a new vault (bundled starter template, git initialised, docs + settings written) — works offline |
 | `cortex publish [--out DIR \| --gh-pages \| --github-action]` | list, build, or push the site of notes marked `publish: true`; never runs on its own (see `docs/publishing.md`) |
@@ -59,9 +62,9 @@ Every command takes `--json`. Errors go to stderr with exit code 1.
 ## The MCP server
 
 `cortex mcp` speaks the Model Context Protocol over stdio and exposes the
-same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
+same operations as tools: `list_notes`, `list_tags`, `search`, `read_note`, `create_note`,
 `write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
-`query_collection`, `get_schema`, `status`, `propose`, `list_proposals`,
+`query_collection`, `get_schema`, `rename_property`, `delete_property`, `status`, `propose`, `list_proposals`,
 `proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_packs`, `install_pack`,
 `update_pack`, `remove_pack` (template packs — an agent asked to "set up a habit tracker" can
 install one; every result is a plain file the user sees at once, and `.cortex/packs.yaml` makes it
@@ -136,12 +139,26 @@ exits.
 Every collection view — in `_index.md`, in a `cortex-view` fence, in `cortex view`
 and MCP `run_view` — shares one engine. What it understands:
 
-**Filters.** `field OP value` joined by `and` / `or`; ops `== != > >= < <= contains`;
-strings in single quotes. Values may be **relative dates**: `@today`, `@today-7`,
+**Filters.** `field OP value` joined by `and` / `or`; `and` binds tighter
+than `or`, parentheses group, `not` negates what follows:
+`(status == 'todo' or status == 'doing') and not owner is_empty`. Ops:
+`== != > >= < <= contains does_not_contain starts_with ends_with`,
+`is_empty` / `is_not_empty` (no value), `in [a, b]` (equal to any), and
+`within 7d` for dates (today through today+7; `-7d` the past week; units
+`d w m y`). Strings in single quotes; on a list property `contains` and `==`
+mean "has that item". Values may be **relative dates**: `@today`, `@today-7`,
 `@today+30`, `@tomorrow`, `@yesterday`, `@monday` (this week's), `@monday-1`,
 `@sunday`, `@month` (`YYYY-MM`), `@month-1`, `@year`, `@week` (`YYYY-Www`), and
 `@me` (the current member). An empty cell equals `''` and satisfies no ordering
 comparison, so `due <= @today` never sweeps in undated rows.
+
+**Summary row.** `summary: {amount: sum, done: percent_checked}` on a table
+view computes one value per named field over the rows the view shows (after
+filter and limit): `count`, `sum`, `avg`, `min`, `max`, `percent_checked`
+(share of rows ticked, 0–100), `empty`, `not_empty`. The values come back as
+`summary` from `cortex view --summary amount=sum` and MCP `run_view` /
+`query_collection`; the app's footer shows the same numbers. A table with
+`group: status` folds into one section per value, in option order.
 
 **Sorting.** `sort: [due, priority desc]`. Empty cells sort last in either
 direction. A select or status property sorts by its option order, not

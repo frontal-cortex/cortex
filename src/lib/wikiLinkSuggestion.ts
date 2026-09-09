@@ -7,8 +7,8 @@ export interface SuggestionCoords {
   bottom: number;
 }
 
-/** What opened the suggestion: a `[[` wiki link or an `@` mention. */
-export type SuggestionTrigger = "wiki" | "mention";
+/** What opened the suggestion: a `[[` wiki link, an `@` mention, or a `#` tag. */
+export type SuggestionTrigger = "wiki" | "mention" | "tag";
 
 export interface SuggestionHandle {
   /** Called from ProseMirror; React updates the dropdown via this. */
@@ -59,6 +59,18 @@ function detectSuggestion(state: EditorState): PluginState {
     const afterAt = textBefore.slice(atIdx + 1);
     if (/\s/.test(before) && !/[\s@[\]]/.test(afterAt)) {
       return { active: true, query: afterAt, from: $cursor.start() + atIdx, trigger: "mention" };
+    }
+  }
+
+  // `#tag` — at a word boundary (start, whitespace or `(`, the same rule the
+  // indexer applies), and the query runs only while tag characters continue.
+  // `# ` at a line start is a heading: the space ends the query at once.
+  const hashIdx = textBefore.lastIndexOf("#");
+  if (hashIdx !== -1) {
+    const before = hashIdx === 0 ? " " : textBefore[hashIdx - 1];
+    const afterHash = textBefore.slice(hashIdx + 1);
+    if ((/\s/.test(before) || before === "(") && /^[\p{L}\p{N}_\-/]*$/u.test(afterHash)) {
+      return { active: true, query: afterHash, from: $cursor.start() + hashIdx, trigger: "tag" };
     }
   }
 
