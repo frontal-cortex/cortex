@@ -822,8 +822,14 @@ pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<Stri
     if !abs.exists() {
         return Err(AppError::Other(format!("Asset not found: {rel_path}")));
     }
+    // A `cover:` value comes from frontmatter — possibly a pack's seed row. It
+    // may point anywhere inside the vault, never outside it (no `..`, no symlink out).
+    let (real, real_root) = (abs.canonicalize()?, root.canonicalize()?);
+    if !real.starts_with(&real_root) {
+        return Err(AppError::Other(format!("Asset is outside the vault: {rel_path}")));
+    }
 
-    let data = std::fs::read(&abs)?;
+    let data = std::fs::read(&real)?;
     let b64 = general_purpose::STANDARD.encode(&data);
 
     let ext = std::path::Path::new(&rel_path)
