@@ -1,0 +1,10 @@
+{
+  "identifier": "desktop",
+  "description": "Desktop-only capabilities: in-app updates and relaunch after one",
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": ["main"],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

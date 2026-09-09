@@ -2344,18 +2344,21 @@ export function inflateViewBlocks(blocks: any[]): any[] {
 
 /** Blocks → markdown: collapse live view blocks back to standard code fences. */
 export function flattenViewBlocks(blocks: any[]): any[] {
-  return blocks.map((b) => {
+  // A fence cannot hold children: blocks nested under a view (Tab in the
+  // editor) are hoisted after it rather than lost on save.
+  return blocks.flatMap((b) => {
     if (b?.type === "cortexView") {
-      return {
+      const fence = {
         type: "codeBlock",
         props: { language: String(b.props?.lang ?? "cortex-view") },
         content: [{ type: "text", text: String(b.props?.spec ?? ""), styles: {} }],
       };
+      return [fence, ...flattenViewBlocks(Array.isArray(b.children) ? b.children : [])];
     }
     if (Array.isArray(b?.children) && b.children.length) {
-      return { ...b, children: flattenViewBlocks(b.children) };
+      return [{ ...b, children: flattenViewBlocks(b.children) }];
     }
-    return b;
+    return [b];
   });
 }
 
