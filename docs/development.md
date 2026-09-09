@@ -163,6 +163,9 @@ Output is in `src-tauri/target/release/bundle/`.
 # TypeScript type check
 npx tsc --noEmit
 
+# Pure TypeScript helpers (node's built-in runner, no bundler)
+npm run test:lib
+
 # Rust tests (all crates)
 cargo test --workspace
 
