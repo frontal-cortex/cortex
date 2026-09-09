@@ -34,6 +34,7 @@ cortex/                       # Cargo workspace root (Cargo.toml, Cargo.lock, ta
 │   │   ├── vault-template/   # The starter vault, compiled in (template.rs) — no network clone
 │   │   ├── src/settings.rs   # `.cortex/settings.yaml`: every key described, typed `set_field`, `ensure_complete`
 │   │   ├── src/vault.rs      # Vault discovery + the VAULT.md / AGENTS.md text written on first open
+│   │   ├── src/remote.rs     # `RemoteOps`: sync/merge/conflicts — `ShellRemote` (desktop) or `Git2Remote` (mobile)
 │   │   ├── src/publish.rs    # Static site from notes marked publish: true — build, gh-pages push, Action template
 │   │   └── src/agents.rs     # Which agent CLIs (claude, hermes, …) are on $PATH, for `terminal_command`
 │   └── cortex-cli/           # `cortex` binary: CLI (main.rs) + MCP server (mcp.rs) over shared ops.rs
@@ -78,9 +79,12 @@ identical YAML output — critical for clean git diffs.
 **SQLite index is a cache**: deleting `.brain/index.db` and restarting
 rebuilds it. The `.md` files are always the source of truth.
 
-**Sync shells out to git**: push/pull use the system `git` binary so SSH
-agents and OS credential helpers work. Internal ops (status, commit,
-branch management) use `git2` (libgit2) for cross-platform reliability.
+**Sync shells out to git on desktop**: push/pull use the system `git` binary
+so SSH agents and OS credential helpers work. Those operations sit behind the
+`remote::RemoteOps` trait (`remote.rs`): `ShellRemote` on desktop, `Git2Remote`
+(in-process libgit2, HTTPS + token) on iOS/Android or with
+`CORTEX_GIT_TRANSPORT=git2` — see `docs/MOBILE.md`. Internal ops (status,
+commit, branch management) use `git2` (libgit2) for cross-platform reliability.
 Commits use the configured git identity; on a machine without one,
 `git::signature()` falls back to `<login> <login@hostname>` so auto-commit
 (on by default) and the initial commit of a new vault still happen.

@@ -232,16 +232,19 @@ export function inflateEmbeds(blocks: any[]): any[] {
 
 /** Blocks → markdown: collapse embed blocks back to a `![[target]]` paragraph. */
 export function flattenEmbeds(blocks: any[]): any[] {
-  return blocks.map((b) => {
+  // Blocks nested under an embed (Tab in the editor) are hoisted after the
+  // `![[…]]` paragraph rather than lost on save.
+  return blocks.flatMap((b) => {
     if (b?.type === "noteEmbed") {
-      return {
+      const para = {
         type: "paragraph",
         content: [{ type: "text", text: `![[${String(b.props?.target ?? "")}]]`, styles: {} }],
       };
+      return [para, ...flattenEmbeds(Array.isArray(b.children) ? b.children : [])];
     }
     if (Array.isArray(b?.children) && b.children.length) {
-      return { ...b, children: flattenEmbeds(b.children) };
+      return [{ ...b, children: flattenEmbeds(b.children) }];
     }
-    return b;
+    return [b];
   });
 }

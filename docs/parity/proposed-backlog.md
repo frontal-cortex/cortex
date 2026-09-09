@@ -364,7 +364,7 @@ editor column, hidden in monk mode. Nothing stored. Screenshot all three.
 created: 2026-09-09
 effort: L
 priority: 34
-status: planned
+status: done
 tags: [parity, mobile]
 title: Mobile — in-process git transport (RemoteOps) with desktop tests
 type: note
@@ -410,6 +410,10 @@ No Tauri mobile build in this task.
 ```
 
 ---
+
+The Android feasibility spike (`mobile-spike.md`, done 2026-09-09) adds
+four more mobile rows, priorities 36–39, and the order they run in
+relative to the two above: 36 → 34 → 37 → responsive shell → 38 → 35 → 39.
 
 ## Next in line (not sized as rows yet)
 
