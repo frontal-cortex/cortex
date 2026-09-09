@@ -27,7 +27,8 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 
 | Command | Does |
 |---|---|
-| `cortex ls [dir] [--type t] [--tag t]` | list notes, newest first |
+| `cortex ls [dir] [--type t] [--tag t]` | list notes, newest first; `--tag` sees frontmatter and inline `#tags`, and a parent matches its children |
+| `cortex tags` | every tag with note counts, nested by `/` (`--json` keeps the tree) |
 | `cortex search <words>` | full-text search (prefix match per word) |
 | `cortex show <note> [--body]` | print a note — by path, title, or filename stem |
 | `cortex new <title> [--dir d] [--type t] [--tag t]… [--template x] [--body -]` | create; prints the path |
@@ -56,7 +57,7 @@ Every command takes `--json`. Errors go to stderr with exit code 1.
 ## The MCP server
 
 `cortex mcp` speaks the Model Context Protocol over stdio and exposes the
-same operations as tools: `list_notes`, `search`, `read_note`, `create_note`,
+same operations as tools: `list_notes`, `list_tags`, `search`, `read_note`, `create_note`,
 `write_note`, `set_properties`, `links`, `backlinks`, `list_collections`,
 `query_collection`, `get_schema`, `status`, `propose`, `list_proposals`,
 `proposal_diff`, `get_settings`, `set_settings`, `list_agents`, `list_packs`, `install_pack`,

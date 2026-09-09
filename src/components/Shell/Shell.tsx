@@ -15,6 +15,7 @@ import { QuickSwitcher } from "./QuickSwitcher";
 import { QuickCapture } from "./QuickCapture";
 import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
+import { TagView } from "./TagView";
 import { TopBar } from "./TopBar";
 import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
 import { SettingsView } from "./SettingsView";
@@ -57,6 +58,8 @@ export function Shell({
     if (opening) requestAnimationFrame(() => termRef.current?.focus());
   }, [monk, rightVisible, toggleRight]);
   const [showGraph, setShowGraph] = useState(false);
+  // A tag page: the notes carrying this tag, as a view over the index (nothing written).
+  const [openTag, setOpenTag] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   // The template marketplace — a full-window page like Settings.
   const [showMarketplace, setShowMarketplace] = useState(false);
@@ -142,7 +145,7 @@ export function Shell({
     setSelectedPath(path);
   }, [setSelectedPath]);
 
-  const { notes, dirs, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
+  const { notes, dirs, tags, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
   const { note, saving, save, applyNote } = useNote(selectedPath);
   useEffect(() => {
     const where = pendingFocus.current;
@@ -283,7 +286,7 @@ export function Shell({
   const actionsRef = useRef<Record<ShortcutId, () => void> | null>(null);
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setShowCapture(false); return; }
+      if (e.key === "Escape") { setSwitcher(null); setShowGraph(false); setOpenTag(null); setShowCapture(false); return; }
       const id = findShortcut(e);
       if (!id) return;
       e.preventDefault();
@@ -518,6 +521,8 @@ export function Shell({
           onOpenCommandPalette={() => setSwitcher("actions")}
           notes={notes}
           dirs={dirs}
+          tags={tags}
+          onOpenTag={setOpenTag}
           selectedPath={selectedPath}
           status={status}
           agentBranches={agentBranches}
@@ -551,6 +556,7 @@ export function Shell({
           note={note}
           saving={saving}
           allNotes={notes}
+          tags={tags}
           vaultPath={vault.path}
           reloadToken={reloadToken}
           collab={collab}
@@ -629,6 +635,17 @@ export function Shell({
         <QuickCapture
           onCapture={handleQuickCapture}
           onClose={() => setShowCapture(false)}
+        />
+      )}
+
+      {openTag && (
+        <TagView
+          tag={openTag}
+          tags={tags}
+          notes={notes}
+          onOpenTag={setOpenTag}
+          onNavigate={(path) => { setOpenTag(null); openNote(path); }}
+          onClose={() => { setOpenTag(null); focusEditor(); }}
         />
       )}
 

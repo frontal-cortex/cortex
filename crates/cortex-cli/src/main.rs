@@ -42,9 +42,12 @@ enum Cmd {
         dir: Option<String>,
         #[arg(long = "type")]
         note_type: Option<String>,
+        /// Only notes carrying this tag (frontmatter or inline #tag; a parent matches its children)
         #[arg(long)]
         tag: Option<String>,
     },
+    /// Every tag in the vault with note counts, nested by `/`
+    Tags,
     /// Full-text search over titles and bodies
     Search { query: Vec<String> },
     /// Print a note — by path, title, or filename stem
@@ -304,6 +307,7 @@ fn run() -> Result<()> {
         Cmd::Ls { dir, note_type, tag } => {
             out.notes(&v.list(dir.as_deref(), note_type.as_deref(), tag.as_deref()))
         }
+        Cmd::Tags => out.tags(&v.tags()),
         Cmd::Search { query } => out.notes(&v.search(&query.join(" "))?),
         Cmd::Show { target, body } => {
             if out.json { out.emit(&v.read(&target)?) }
@@ -729,6 +733,17 @@ impl Out {
     /// The settings file as it is on disk (YAML), or JSON.
     fn settings(&self, s: &cortex_core::settings::Settings) -> Result<()> {
         if self.json { self.emit(s) } else { print!("{}", serde_yaml::to_string(s)?); Ok(()) }
+    }
+
+    /// The tag tree, indented by nesting; JSON keeps the tree.
+    fn tags(&self, tags: &[cortex_core::tags::TagNode]) -> Result<()> {
+        if self.json {
+            return self.emit(&tags);
+        }
+        table(&["TAG", "NOTES"], cortex_core::tags::flatten(tags).iter().map(|t| vec![
+            format!("{}{}", "  ".repeat(t.path.matches('/').count()), t.name), t.count.to_string(),
+        ]).collect());
+        Ok(())
     }
 
     fn notes(&self, notes: &[NoteEntry]) -> Result<()> {

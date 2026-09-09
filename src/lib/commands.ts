@@ -271,6 +271,15 @@ export interface NoteEntry {
   parent: string | null;
 }
 
+/** One node of the vault's tag tree: `path` is the full tag (`project/alpha`),
+ *  `name` its last segment, `count` the notes carrying it or any child. */
+export interface TagNode {
+  name: string;
+  path: string;
+  count: number;
+  children: TagNode[];
+}
+
 // Keys are sorted alphabetically by the Rust BTreeMap — stable YAML output.
 export interface Note {
   path: string;
@@ -627,6 +636,9 @@ export const commands = {
 
   listNotes: () =>
     invoke<NoteEntry[]>("list_notes"),
+
+  listTags: () =>
+    invoke<TagNode[]>("list_tags"),
 
   readNote: (path: string) =>
     invoke<Note>("read_note", { path }),

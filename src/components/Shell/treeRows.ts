@@ -9,7 +9,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 // the eye sees, regardless of which section it belongs to. The list is the
 // keyboard's whole world; the DOM is only consulted to move focus.
 
-export type TreeRowKind = "section" | "dir" | "note" | "collection" | "trash" | "action";
+export type TreeRowKind = "section" | "dir" | "tag" | "note" | "collection" | "trash" | "action";
 
 export interface TreeRow {
   id: string;
@@ -18,9 +18,9 @@ export interface TreeRow {
   label: string;
   depth: number;
   parentId: string | null;
-  /** Section and dir rows only. */
+  /** Section, dir and (nested) tag rows only. */
   expanded?: boolean;
-  /** Vault-relative path for note/dir rows; collection index path for databases. */
+  /** Vault-relative path for note/dir rows; collection index path for databases; the full tag for tag rows. */
   path?: string;
   /** Where `n` creates a note from this row. */
   folder?: string;

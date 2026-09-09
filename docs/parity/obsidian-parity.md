@@ -67,12 +67,12 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-| Frontmatter `tags:` | done | — | Indexed as JSON in `notes.tags` (`index.rs:39`, `db.rs:56`). |
-| Inline `#tags` in the body | missing | M | The only body scanner is `extract_wiki_links` (`note.rs:88`). |
-| Nested tags `parent/child` | missing | M | Tags are opaque strings. |
-| Tag browser / tag pane | missing | M | Sidebar sections are fixed: favorites, notes, templates, trash (`LeftPanel.tsx:63`). |
-| Tag page (all notes with tag X) | missing | S | Tags match as substrings in search but are not clickable. |
-| Tag autocomplete while writing | partial | S | Only inside typed `multi_select` properties, from the committed schema. |
+| Frontmatter `tags:` | done | — | Indexed as JSON in `notes.tags`; merged with inline tags by `tags::note_tags` (`tags.rs`). |
+| Inline `#tags` in the body | done | — | `tags::extract_inline_tags` scans the body next to `extract_wiki_links`; skips code fences, inline code, headings, URLs, `[[Note#Section]]`, `&#39;`, `\#escaped`. Stored in the same `notes.tags` column; nothing written to the file. |
+| Nested tags `parent/child` | done | — | `tags::list_tags` builds a tree by `/` with counts (a parent counts its children once per note); `--tag project` matches `project/alpha` (`tags::has_tag`, case-insensitive). |
+| Tag browser / tag pane | done | — | Tags sidebar section (`LeftPanel.tsx` `TagTree`, `FileTree.tsx` `BranchRow`): tree by `/`, counts, folds like folders, keyboard-navigable through the flat row model (`treeRows.ts` kind `tag`). Hidden when the vault has no tags. |
+| Tag page (all notes with tag X) | done | — | `TagView.tsx`: Enter or a click on a tag opens a filtered view of matching notes (children included), with breadcrumbs, child-tag chips and `j`/`k`/Enter/`h`. A view over the index, never a saved file. |
+| Tag autocomplete while writing | done | — | `#` in the editor completes from `list_tags` (`wikiLinkSuggestion.ts` trigger `tag`); a query no tag matches is offered as a new one. Typed `multi_select` properties still complete from the schema. |
 
 ## 7. Folders and files
 
@@ -201,7 +201,7 @@ groundwork* and *Mobile mode — Tauri 2 mobile feasibility spike*.
 1. **Aliases and heading links break navigation and backlinks.** The parsing already exists in `publish.rs`; it is just not shared with the indexer and the app resolver. Best value for effort on this list.
 2. **Rename / move never rewrites inbound links.** Table stakes for an Obsidian user.
 3. **Search has no operators and no snippets.** FTS5 can do it; the query builder throws the capability away.
-4. **No inline `#tags` and no tag pane.** For many Obsidian users tags are the organising layer.
+4. ~~**No inline `#tags` and no tag pane.**~~ Done: inline tags are indexed, the sidebar has a tag tree, and every tag opens a page.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
 6. **Graph is a static global snapshot.** No local graph, filters, colouring or live physics.
 7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints.
