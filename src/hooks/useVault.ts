@@ -59,19 +59,28 @@ export function useVault() {
     await openVaultPath(selected);
   }, [openVaultPath]);
 
-  const createVault = useCallback(async () => {
+  const createVault = useCallback(async (template?: string) => {
     const selected = await saveDialog({
-      title: "Create new vault",
+      title: template ? "Create a vault from the template" : "Create a vault",
       defaultPath: "cortex-vault",
     });
     if (!selected) return;
     setState((s) => ({ ...s, creating: true, error: null }));
     try {
-      await commands.createVaultFromTemplate(selected);
+      await commands.createVaultFromTemplate(selected, template);
       const vault = await commands.openVault(selected);
       setState((s) => ({ ...s, vault, creating: false, error: null }));
     } catch (e) {
       setState((s) => ({ ...s, creating: false, error: String(e) }));
+    }
+  }, []);
+
+  const forgetRecent = useCallback(async (path: string) => {
+    try {
+      const recentVaults = await commands.forgetRecent(path);
+      setState((s) => ({ ...s, recentVaults }));
+    } catch (e) {
+      setState((s) => ({ ...s, error: String(e) }));
     }
   }, []);
 
@@ -149,6 +158,7 @@ export function useVault() {
   return {
     ...state,
     openVault,
+    forgetRecent,
     openVaultPath,
     createVault,
     closeVault,

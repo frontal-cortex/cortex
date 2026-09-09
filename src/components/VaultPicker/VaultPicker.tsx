@@ -1,11 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RecentVault } from "../../lib/commands";
 import styles from "./VaultPicker.module.css";
 
 interface Props {
   onOpen: () => void;
-  onCreate: () => void;
+  /** Create a vault — from the bundled tour, or from a template (a folder, owner/repo, or git URL). */
+  onCreate: (template?: string) => void;
   onOpenRecent: (path: string) => void;
+  onForgetRecent: (path: string) => void;
   recentVaults: RecentVault[];
   creating: boolean;
   error: string | null;
@@ -23,7 +25,7 @@ function tokenRgb(name: string, fallback: Rgb): Rgb {
 }
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, creating, error }: Props) {
+export function VaultPicker({ onOpen, onCreate, onOpenRecent, onForgetRecent, recentVaults, creating, error }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -292,6 +294,28 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
     };
   }, []);
 
+  const [panel, setPanel] = useState(false);
+  const [fromTemplate, setFromTemplate] = useState(false);
+  const [template, setTemplate] = useState("");
+  const listRef = useRef<HTMLUListElement>(null);
+  const hasRecents = recentVaults.length > 0;
+
+  // Arrow keys walk the recent list; Enter on a row opens it (it is a button).
+  const onListKey = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const rows = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? []);
+    const i = rows.findIndex((b) => b === document.activeElement);
+    const next = rows[(i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length];
+    if (next) { e.preventDefault(); next.focus(); }
+  };
+
+  const create = () => {
+    const spec = fromTemplate ? template.trim() : "";
+    if (fromTemplate && !spec) return;
+    setPanel(false);
+    onCreate(spec || undefined);
+  };
+
   return (
     <div className={styles.root}>
       <div className={styles.blob} data-blob="1" />
@@ -303,55 +327,112 @@ export function VaultPicker({ onOpen, onCreate, onOpenRecent, recentVaults, crea
           <BrainIcon />
           <span>Cortex</span>
         </div>
-        <h1 className={styles.title}>Your second brain, in plain text.</h1>
+        <h1 className={styles.title}>Notes that link, remember, and stay yours.</h1>
         <p className={styles.subtitle}>
-          A local-first knowledge base backed by a plain git repo.
+          Plain Markdown in a git repository you control. Local first; agents welcome.
         </p>
-        <div className={styles.actions}>
-          <button className={styles.button} onClick={onCreate} disabled={creating}>
-            {creating ? "Creating…" : "Create new vault"}
-          </button>
-          <button className={styles.buttonSecondary} onClick={onOpen} disabled={creating}>
-            Open existing vault
-          </button>
-        </div>
-        {error && <p className={styles.error}>{error}</p>}
-        {recentVaults.length > 0 && (
+
+        {hasRecents && (
           <div className={styles.recents}>
-            <p className={styles.recentsLabel}>Recent vaults</p>
-            <ul className={styles.recentsList}>
+            <p className={styles.recentsLabel}>Continue</p>
+            <ul className={styles.recentsList} ref={listRef} onKeyDown={onListKey}>
               {recentVaults.map((v, i) => (
-                <li key={v.path}>
+                <li key={v.path} className={styles.recentRow}>
                   <button
                     type="button"
+                    data-row
                     autoFocus={i === 0}
                     className={styles.recentItem}
                     onClick={() => onOpenRecent(v.path)}
                     disabled={creating}
-                    title={v.path}
+                    title={`${v.path}${i === 0 ? " — Enter" : ""}`}
                   >
                     <span className={styles.recentName}>{v.name}</span>
                     <span className={styles.recentPath}>{prettyPath(v.path)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.forget}
+                    title="Remove from this list (the vault itself stays)"
+                    aria-label={`Remove ${v.name} from the list`}
+                    onClick={() => onForgetRecent(v.path)}
+                    disabled={creating}
+                  >
+                    ×
                   </button>
                 </li>
               ))}
             </ul>
           </div>
         )}
+
+        <div className={styles.actions}>
+          <button
+            className={hasRecents ? styles.buttonSecondary : styles.button}
+            onClick={() => setPanel((p) => !p)}
+            disabled={creating}
+            aria-expanded={panel}
+          >
+            {creating ? "Creating…" : hasRecents ? "New vault" : "Create a vault"}
+          </button>
+          <button className={styles.buttonSecondary} onClick={onOpen} disabled={creating}>
+            Open a folder
+          </button>
+        </div>
+
+        {panel && !creating && (
+          <div className={styles.panel} role="group" aria-label="New vault">
+            <label className={styles.choice}>
+              <input type="radio" name="start" checked={!fromTemplate} onChange={() => setFromTemplate(false)} />
+              <span>
+                <strong>Start with the tour</strong>
+                <small>Seven short notes that show the app, and a small collection to click through. Delete them when done.</small>
+              </span>
+            </label>
+            <label className={styles.choice}>
+              <input type="radio" name="start" checked={fromTemplate} onChange={() => setFromTemplate(true)} />
+              <span>
+                <strong>Start from a template</strong>
+                <small>A repository or folder whose notes, folders and collections become the starting point.</small>
+                {fromTemplate && (
+                  <input
+                    className={styles.input}
+                    autoFocus
+                    value={template}
+                    placeholder="owner/repo · git URL · folder"
+                    spellCheck={false}
+                    onChange={(e) => setTemplate(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") create(); }}
+                  />
+                )}
+              </span>
+            </label>
+            <div className={styles.panelActions}>
+              <button className={styles.button} onClick={create} disabled={fromTemplate && !template.trim()}>
+                Choose where to keep it…
+              </button>
+              <button className={styles.buttonSecondary} onClick={() => setPanel(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {error && <p className={styles.error}>{error}</p>}
         <p className={styles.hint}>
-          A new vault opens on a short tour of the app and is a repository
-          from the start. Opening any folder of Markdown works too.
+          {hasRecents
+            ? "Enter opens the first vault. A vault is a folder; open any folder of Markdown."
+            : "A vault is a folder of Markdown files and a git repository from the start. Open any folder of notes you already have."}
         </p>
       </div>
     </div>
   );
 }
 
-// Show the containing directory (the full path is on the button's title tooltip).
+/** A path as a person reads it: `~` for home, no trailing separator. */
 function prettyPath(path: string): string {
   const sep = path.includes("\\") ? "\\" : "/";
-  const cut = path.lastIndexOf(sep);
-  return cut > 0 ? path.slice(0, cut) : path;
+  let p = path.replace(/[\\/]+$/, "");
+  p = p.replace(/^\/home\/[^/]+(?=\/|$)/, "~").replace(/^\/Users\/[^/]+(?=\/|$)/, "~").replace(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/, "~");
+  return p.split(sep).join(sep === "\\" ? " \\ " : " / ");
 }
 
 function BrainIcon() {

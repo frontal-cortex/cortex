@@ -43,6 +43,7 @@ export default function App() {
             onOpen={vault.openVault}
             onCreate={vault.createVault}
             onOpenRecent={vault.openVaultPath}
+            onForgetRecent={vault.forgetRecent}
             recentVaults={vault.recentVaults}
             creating={vault.creating}
             error={vault.error}
