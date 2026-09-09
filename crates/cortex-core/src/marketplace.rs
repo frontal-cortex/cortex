@@ -1365,10 +1365,21 @@ pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: boo
                 Some((m, ..)) => version_gt(&e.manifest.version, &m.version),
                 None => true,
             };
+            let same = matches!(best.get(&e.manifest.id), Some((m, ..)) if m.version == e.manifest.version);
             if newer {
                 let base = resolve_base(&url, &index.base);
                 let previews = e.previews.iter().map(|p| format!("{base}{p}")).collect();
                 best.insert(e.manifest.id.clone(), (e.manifest, e.tier, url.clone(), e.preview.map(|p| format!("{base}{p}")), previews));
+            } else if same {
+                // The bundled copy of this very version wins the tie, but it
+                // never carries screenshots: take those from the index.
+                let base = resolve_base(&url, &index.base);
+                if let Some(slot) = best.get_mut(&e.manifest.id) {
+                    if slot.3.is_none() && slot.4.is_empty() {
+                        slot.3 = e.preview.map(|p| format!("{base}{p}"));
+                        slot.4 = e.previews.iter().map(|p| format!("{base}{p}")).collect();
+                    }
+                }
             }
         }
     }
