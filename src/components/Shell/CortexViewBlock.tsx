@@ -20,6 +20,7 @@ import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
 import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
+import { DateRangeInput, FilesInput, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
 import styles from "./CortexViewBlock.module.css";
 
 /** Select-like columns render as colored pills (incl. person + relation). The
@@ -29,11 +30,28 @@ function isSelectColumn(col: ViewColumn): boolean {
   return t === "select" || t === "status" || t === "multi_select" || t === "person" || (t === "relation" && !col.schema?.from);
 }
 
-/** Rollups, formulas and reverse relations: computed by the engine, read-only here. */
+/** Rollups, formulas, reverse relations and the git-derived properties
+ *  (created / edited time and by): computed by the engine, read-only here. */
 function isComputedColumn(col: ViewColumn): boolean {
   const t = col.schema?.type;
-  return t === "rollup" || t === "formula" || (t === "relation" && !!col.schema?.from);
+  return t === "rollup" || t === "formula" || (t === "relation" && !!col.schema?.from) || isAuthorshipType(t);
 }
+
+function isAuthorshipType(t: PropType | undefined): boolean {
+  return t === "created_time" || t === "created_by" || t === "edited_time" || t === "edited_by";
+}
+
+/** A date-range column: declared as one, or inferred from `{start, end}` values. */
+function isRangeColumn(col: ViewColumn): boolean {
+  return col.schema?.type === "date_range" || (!col.schema && col.ty === "date_range");
+}
+
+const AUTHORSHIP_LABELS: Record<string, string> = {
+  created_time: "Created time · from git history",
+  created_by: "Created by · from git history",
+  edited_time: "Last edited time · from git history",
+  edited_by: "Last edited by · from git history",
+};
 
 /** Columns whose values are numbers and can carry a display format. */
 function isNumericColumn(col: ViewColumn): boolean {
@@ -57,6 +75,12 @@ const COLUMN_TYPES: { value: PropType; label: string }[] = [
   { value: "multi_select", label: "Multi-select" },
   { value: "person", label: "Person" },
   { value: "url", label: "URL" },
+  { value: "date_range", label: "Date range" },
+  { value: "files", label: "Files" },
+  { value: "created_time", label: "Created time" },
+  { value: "created_by", label: "Created by" },
+  { value: "edited_time", label: "Last edited time" },
+  { value: "edited_by", label: "Last edited by" },
 ];
 
 /** Column header with a Notion-style "property type" menu. Setting a select-like
@@ -100,6 +124,8 @@ function ColumnHeader({ col, canType, onSetType, onSetFormat, onRename, onDelete
   const format = col.schema?.format ?? "";
   const computedLabel = col.schema?.type === "formula"
     ? `Formula · ${col.schema.expr ?? ""}`
+    : isAuthorshipType(col.schema?.type)
+      ? AUTHORSHIP_LABELS[col.schema!.type]
     : col.schema?.type === "rollup"
       ? `Rollup · ${col.schema.function ?? "count"}${col.schema.from ? ` from ${col.schema.from}` : ` via ${col.schema.relation ?? ""}`}`
       : `Rows of ${col.schema?.from ?? ""} linking here`;
@@ -111,7 +137,7 @@ function ColumnHeader({ col, canType, onSetType, onSetFormat, onRename, onDelete
       </button>
       {open && (
         <div className={styles.colMenu}>
-          {computed ? (
+          {computed && !isAuthorshipType(current) ? (
             <div className={styles.colMenuLabel}>{computedLabel}</div>
           ) : (
             <>
@@ -394,6 +420,7 @@ function formatCell(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
   if (Array.isArray(v)) return v.join(", ");
   if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (typeof v === "object") return formatRange(v) || JSON.stringify(v);
   return String(v);
 }
 
@@ -704,6 +731,7 @@ function CheckboxCell({ value, editable, saving, onCommit }: {
 function toInput(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (Array.isArray(v)) return v.join(", ");
+  if (typeof v === "object") return formatRange(v);
   return String(v);
 }
 
@@ -806,11 +834,46 @@ function DateCell({ value, editable, saving, onCommit, forceOpen, onDone }: {
   );
 }
 
+/** A date-range cell: "start → end" at rest; open, two date pickers. The
+ *  committed text carries both days; the engine stores `{start, end}`. */
+function DateRangeCell({ value, editable, saving, onCommit, forceOpen, onDone }: {
+  value: unknown;
+  editable: boolean;
+  saving: boolean;
+  onCommit: (v: string) => void;
+  forceOpen?: boolean;
+  onDone?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (forceOpen && editable) setEditing(true); }, [forceOpen, editable]);
+  if (!editable) return <span className={styles.cellReadonly}>{formatCell(value)}</span>;
+  if (!editing) {
+    const text = formatRange(value);
+    return (
+      <span className={`${styles.cellEditable} ${text === "" ? styles.cellEmpty : ""}`} title="Click to edit" onClick={() => setEditing(true)}>
+        {saving ? "…" : formatCell(value)}
+      </span>
+    );
+  }
+  const close = () => { setEditing(false); onDone?.(); };
+  return (
+    <div className={styles.cellDate}>
+      <DateRangeInput
+        value={value}
+        autoFocus
+        inputClassName={styles.cellInput}
+        onChange={(r) => { onCommit(r ? formatRange(r) : ""); if (!r || r.end) close(); }}
+        onCancel={close}
+      />
+    </div>
+  );
+}
+
 /** The width class for a column: a floor per kind of value so dates and pills
  *  never squeeze, and text never sprawls. */
 function colClass(c: ViewColumn): string {
   const t = c.schema?.type;
-  if (t === "relation" || t === "person") return styles.colRel;
+  if (t === "relation" || t === "person" || t === "files" || isRangeColumn(c)) return styles.colRel;
   if (isSelectColumn(c)) return styles.colSel;
   if (c.ty === "date" || t === "date") return styles.colDate;
   if (c.ty === "bool" || t === "checkbox") return styles.colBool;
@@ -1156,6 +1219,28 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
       );
     }
     const editable = c.key !== "$body" && c.key !== "id";
+    if (isRangeColumn(c)) {
+      return (
+        <DateRangeCell
+          value={row.cells[c.key]}
+          editable={editable}
+          saving={savingKey === key}
+          onCommit={(v) => commit(c, row.id, v, "date_range")}
+          forceOpen={opening}
+          onDone={done}
+        />
+      );
+    }
+    if (c.schema?.type === "files") {
+      return (
+        <FilesInput
+          value={row.cells[c.key]}
+          editable={editable}
+          compact
+          onChange={(next) => commit(c, row.id, next.join(", "), "list")}
+        />
+      );
+    }
     if (isDate(c)) {
       return (
         <DateCell
@@ -1197,7 +1282,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange }: {
     const c = cols[p.c], row = rows[p.r];
     if (!c || !row || !cellEditable(c)) return;
     if (isBool(c)) { const on = row.cells[c.key] === true || row.cells[c.key] === "true"; commit(c, row.id, on ? "false" : "true", "bool"); return; }
-    if (c.schema?.format === "stars") return;
+    if (c.schema?.format === "stars" || c.schema?.type === "files") return;
     setEditKey(cellKey(p));
   };
 
@@ -1745,7 +1830,7 @@ function AssetImg({ value, className }: { value: unknown; className?: string }) 
 function dateFieldFor(table: ViewTable, spec: string): string {
   const declared = peek(spec, "date");
   if (declared) return declared;
-  const dateCol = table.columns.find((c) => c.ty === "date" && c.key !== "$body");
+  const dateCol = table.columns.find((c) => (c.ty === "date" || c.ty === "date_range") && c.key !== "$body");
   if (dateCol) return dateCol.key;
   for (const k of ["date", "created", "due"]) {
     if (table.columns.some((c) => c.key === k)) return k;
@@ -1767,14 +1852,21 @@ export function CalendarView({ table, spec, source, onChanged }: {
   const dateField = dateFieldFor(table, spec);
   const canOpen = source.startsWith("collections/");
 
-  // Group rows by their YYYY-MM-DD date. Non-date / unparseable rows are skipped.
+  // Group rows by their YYYY-MM-DD date. A date range puts the row on every
+  // day it spans (capped at a year). Non-date / unparseable rows are skipped.
   const byDay = new Map<string, ViewTable["rows"]>();
   for (const row of table.rows) {
-    const v = row.cells[dateField];
-    const key = typeof v === "string" ? v.slice(0, 10) : "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
-    if (!byDay.has(key)) byDay.set(key, []);
-    byDay.get(key)!.push(row);
+    const r = rangeOf(row.cells[dateField]);
+    if (!r || !/^\d{4}-\d{2}-\d{2}$/.test(r.start)) continue;
+    const last = rangeEnd(r);
+    const d = new Date(`${r.start}T00:00:00`);
+    for (let n = 0; n < 366; n++) {
+      const key = ymd(d);
+      if (key > last) break;
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key)!.push(row);
+      d.setDate(d.getDate() + 1);
+    }
   }
 
   // Default to the month holding the most rows, else today.

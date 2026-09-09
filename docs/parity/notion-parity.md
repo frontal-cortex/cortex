@@ -90,10 +90,10 @@ by inferring column types (`data.rs:128`).
 | Number formats | done | — | percent, progress bar, currency (bare unit prefix, not locale codes), stars, integer, decimal, with min / max / unit (`schema.rs:99`). |
 | Auto-stamped dates (`auto: status == done`) | done, beyond Notion | — | `data.rs:1111`. |
 | Recurrence (`repeat: 2w`, `repeat_mode: advance`) | done, beyond Notion | — | `recurrence.rs`. Data-model only; nothing fires while the app is closed. |
-| date range (start + end in one property) | missing | M | The timeline uses two separate date properties. |
-| files / media | missing | M | Gallery covers are a `cover` string convention. |
+| date range (start + end in one property) | done | — | `type: date_range`, stored as `key: {start, end}` under one frontmatter key (`schema.rs`, `data.rs` `CellValue::Range`): `<`/`<=` compare the end, `>`/`>=` the start, `==` and `within` mean overlap, sort is by start; a repeat moves the whole range. Two date pickers in the table and panel; `start: trip` on a timeline draws both ends, a calendar shows the row on every day it spans. |
+| files / media | done | — | `type: files`: a list of `assets/…` paths; thumbnails for images, name chips otherwise, an upload button through `save_asset` (`PropertyInputs.tsx`). Gallery covers still read the `cover` string. |
 | email, phone | missing | S | Text with no validation or `mailto:` / `tel:` affordance. |
-| created time / by, last edited time / by | partial | M | `created` is a plain date seeded by the client. Last-edited-by comes from git and shows only in the properties panel header (`PropertiesPanel.tsx:194`); none are queryable columns. |
+| created time / by, last edited time / by | done | — | `created_time` / `created_by` / `edited_time` / `edited_by` property types, computed from git history in one walk per view run (`git.rs` `authorship`, `data.rs` `apply_authorship`) with the file's mtime standing in outside a repo; never written to a row. Read-only in the table and panel, usable in filter and sort (they run before filters, like rollups); a day literal compares against the `YYYY-MM-DDTHH:MM` value by day. |
 | unique id / auto-number | missing | M | Row id is `row-<base36 timestamp>`, hidden from cells. |
 | button property | missing | L | |
 

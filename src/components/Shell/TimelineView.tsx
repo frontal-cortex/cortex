@@ -3,12 +3,15 @@
 // week axis: a roadmap, a set of trips, a project's milestones. The data is the
 // same `run_view` table the table and board use; only the field mapping is the
 // view's — `start:` and `end:` (default `start` / `end`, else the first two
-// date columns; with one date column every item is a one-day bar). Items with
-// no start sit under "Unscheduled". Read-only in this pass: click a bar to open
+// date columns; with one date column every item is a one-day bar). A
+// `date_range` property carries both ends itself: `start: trip` (or the first
+// range column, when nothing is declared) draws each row from its start to its
+// end. Items with no start sit under "Unscheduled". Read-only in this pass: click a bar to open
 // the row, j/k to move, Enter to open, t to scroll to today.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ViewTable, ViewColumn } from "../../lib/commands";
+import { rangeOf, rangeEnd } from "./PropertyInputs";
 import { TimelineIcon } from "./icons";
 import styles from "./TimelineView.module.css";
 
@@ -48,13 +51,17 @@ function peek(spec: string, key: string): string | undefined {
   return spec.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim();
 }
 
-/** The start/end fields: the spec's, else `start`/`end`, else the date columns. */
+/** The start/end fields: the spec's, else `start`/`end`, else a date-range
+ *  column (which is both ends at once), else the date columns. */
 export function timelineFields(table: ViewTable, spec: string): { start: string | null; end: string | null } {
   const has = (k: string | undefined) => !!k && table.columns.some((c) => c.key === k);
+  const isRange = (k: string | null) => !!k && table.columns.some((c) => c.key === k && (c.ty === "date_range" || c.schema?.type === "date_range"));
+  const rangeCols = table.columns.filter((c) => c.ty === "date_range" || c.schema?.type === "date_range").map((c) => c.key);
   const dateCols = table.columns.filter((c) => c.ty === "date" && c.key !== "$body").map((c) => c.key);
   const declaredStart = peek(spec, "start");
   const declaredEnd = peek(spec, "end");
-  const start = has(declaredStart) ? declaredStart! : has("start") ? "start" : dateCols[0] ?? null;
+  const start = has(declaredStart) ? declaredStart! : has("start") ? "start" : rangeCols[0] ?? dateCols[0] ?? null;
+  if (isRange(start)) return { start, end: start };
   const rest = dateCols.filter((k) => k !== start);
   const end = has(declaredEnd) ? declaredEnd! : has("end") && "end" !== start ? "end" : rest[0] ?? null;
   return { start, end };
@@ -94,8 +101,10 @@ export function TimelineView({ table, spec, source, onStartChange }: Props) {
 
   const { scheduled, unscheduled, axisStart, weeks, todayIdx } = useMemo(() => {
     const items: Item[] = table.rows.map((row) => {
-      const s = startField ? dateOf(row.cells[startField]) : null;
-      let e = endField ? dateOf(row.cells[endField]) : null;
+      // A range cell carries both ends; a plain date is its own start.
+      const sr = startField ? rangeOf(row.cells[startField]) : null;
+      const s = sr && dateOf(sr.start) ? sr.start : null;
+      let e = endField === startField ? (sr ? dateOf(rangeEnd(sr)) : null) : endField ? dateOf(row.cells[endField]) : null;
       if (s && (!e || e < s)) e = s;
       const val = colorCol ? String(row.cells[colorCol.key] ?? "") : "";
       const color = colorCol?.schema?.options?.find((o) => o.name === val)?.color ?? null;
