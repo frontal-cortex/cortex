@@ -20,7 +20,7 @@ screen but the Markdown save path throws it away.
 | Paragraph, headings 1-6, bullet / numbered / check lists, quote, divider | done | — | BlockNote defaults. Check-list items strike through live (`index.css:61`). |
 | Toggle list / toggle heading | partial | M | Works on screen, but the Markdown exporter flattens `<details>` to a plain bullet or heading, so the toggle is gone on reopen. The roadmap's chosen serialisation is `<details><summary>`. |
 | Callout | partial | S | Five fixed kinds (note, tip, info, warning, danger) with fixed emoji and colour (`CalloutBlock.tsx:21`); the icon click only cycles kinds. Inline content only, no nested blocks. Round-trips as `> [!type]`. |
-| Code block: language, highlighting | partial | S | The fence language survives the parse, but the app passes no `supportedLanguages` so there is no picker, and no highlighter is configured (no shiki dependency). Plain monospace. |
+| Code block: language, highlighting | done | — | Picker over a curated list of 33 languages and lazily loaded shiki highlighting (`Shell/codeBlock.ts`). Colours are `--code-*` tokens (`tokens.css`), so they follow light/dark and the desktop palette. Still an ordinary ```lang fence on disk; a fence language outside the list is kept as-is. |
 | Table | partial | M | Default table block with handles. Saved as GFM, so cell colours, column widths, header column and merged cells are lost. |
 | Image: paste, drop, upload | done | — | Custom paste/drop plugin (`Editor.tsx:389-431`), stored in `assets/` (`commands/notes.rs:772`). |
 | Image: resize | partial | S | Resize handles work, but width has no Markdown form and resets on reload. |
