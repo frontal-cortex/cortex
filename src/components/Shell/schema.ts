@@ -7,11 +7,13 @@ import { cortexViewSpec } from "./CortexViewBlock";
 import { noteEmbedSpec } from "./NoteEmbedBlock";
 import { calloutSpec } from "./CalloutBlock";
 import { collectionViewsSpec } from "./CollectionViewsBlock";
+import { codeBlockSpec } from "./codeBlock";
 import { mathBlockSpec, inlineMathSpec } from "./MathBlock";
 
 export const cortexSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
+    codeBlock: codeBlockSpec,
     cortexView: cortexViewSpec,
     noteEmbed: noteEmbedSpec,
     callout: calloutSpec,
