@@ -162,17 +162,11 @@ at the end so they are not mistaken for gaps.
 
 | Feature | Status | Effort | Notes |
 |---|---|---|---|
-6. ~~**Graph is a static global snapshot.**~~ Done: local graph with depth, filters, tag/folder colouring, link-count sizing, live physics with dragging.
-7. **Mobile is a doc, not a target.** Zero mobile config, shell-out git, no breakpoints. The spike (`mobile-spike.md`) says go and sequences the work.
+| Tauri 2 mobile feasibility spike (Android) | done | — | `docs/parity/mobile-spike.md`: go, with a blocker list and four sequenced rows (36–39). No Android toolchain on the dev machine, so no build was attempted. |
 | Tauri mobile targets configured | missing | L | `tauri.conf.json` has no `android` / `ios` keys; no `src-tauri/gen/`; no mobile deps. The only mobile artefact is the boilerplate `mobile_entry_point` attribute (`src-tauri/src/lib.rs:24`). |
 | Mobile-capable git backend | partial | M | `remote::RemoteOps` with `ShellRemote` (desktop, unchanged) and `Git2Remote` (libgit2: HTTPS + token, fetch/merge/conflicts/ours/theirs/abort/complete, identity), selected by target OS; unit-tested on desktop against a bare repo (`remote.rs`). Still missing: keychain-stored token (`MOBILE.md` Phase 2), clone-into-container vault flow (Phase 3); `terminal.rs` and `reveal_path` still spawn subprocesses. |
 | Responsive shell CSS | done | — | One breakpoint system: `lib/breakpoints.ts` (phone < 600, compact < 820) stamped on `<html>` as `data-viewport` by `useViewport`; every module selects on it instead of its own `@media`. Below 600px the sidebar is an overlay drawer (Escape / backdrop / picking a note closes it), the terminal a bottom sheet, the top bar compact, the page full-bleed (`--page-inset`), rows and buttons thumb-sized (`--tap-target`). Settings, Marketplace and Tracker share the same breakpoints. Window `minWidth: 360`. Phone-width database views and touch input are the next row. |
 | Touch handling | partial | M | The graph pans, zooms and drags with pointer events (`touch-action: none`); the rest has no pointer or touch events; tree DnD is HTML5 only. |
-=======
-| Tauri 2 mobile feasibility spike (Android) | done | — | `docs/parity/mobile-spike.md`: go, with a blocker list and four sequenced rows (36–39). No Android toolchain on the dev machine, so no build was attempted. |
-| Tauri mobile targets configured | missing | L | `tauri.conf.json` has no `android` / `ios` keys; no `src-tauri/gen/`; no mobile deps. The only mobile artefact is the boilerplate `mobile_entry_point` attribute (`src-tauri/src/lib.rs:24`). Spike row 38 owns `tauri android init`. |
-| Mobile-capable git backend | missing | L | pull, push, merge abort, ours/theirs, complete merge and `git config` all shell out (`git.rs`); `terminal.rs` and `reveal_path` spawn subprocesses. `docs/MOBILE.md` has the plan (a `RemoteOps` trait with a git2 implementation). The spike found libgit2 is built **without** the `https` feature (`Cargo.toml` `vendored-openssl` alone), so in-process HTTPS does not exist yet even on desktop. |
->>>>>>> origin/main
 
 The feasibility spike is done (`mobile-spike.md`); *Mobile mode —
 responsive shell groundwork*, the `RemoteOps` row and the spike's rows
@@ -215,6 +209,8 @@ responsive shell groundwork*, the `RemoteOps` row and the spike's rows
 3. ~~**Search has no operators and no snippets.**~~ Done: phrases, `-`, `OR`, `tag:` / `type:` / `path:`, snippets, title boost, FTS fallback in the quick switcher. Still missing: regex, vault-wide replace, find-in-note.
 4. ~~**No inline `#tags` and no tag pane.**~~ Done: inline tags are indexed, the sidebar has a tag tree, and every tag opens a page.
 5. **No tabs, no splits.** Single-document workspace is a hard blocker for side-by-side reading and writing.
+6. ~~**Graph is a static global snapshot.**~~ Done: local graph with depth, filters, tag/folder colouring, link-count sizing, live physics with dragging.
+7. **Mobile is a doc, not a target.** Zero mobile config; the in-process git transport (`remote.rs`) and the responsive shell have landed, and the spike (`mobile-spike.md`) says go and sequences the rest.
 8. **No block references.** The deepest structural gap and the most expensive.
 9. **No canvas.**
 10. **Small conveniences, individually cheap:** folder notes, CSS snippets, unlinked mentions (outline, word count, find-in-note, recent files, explorer sort, the resizable sidebar and the `?` overlay are done).

@@ -9,14 +9,8 @@ Rust phases below are shared by both platforms.
 
 Desktop behavior stays **byte-for-byte unchanged**. It keeps shelling out to
 system `git` for remote operations, which preserves SSH agents and credential
-<<<<<<< HEAD
 helpers — the reason `git.rs` shells out in the first place (see `remote.rs`). Mobile gets a **parallel, in-process path** selected at
 compile time by target OS (`remote::default_remote`).
-=======
-helpers — the reason `git.rs` shells out in the first place (see the comment at
-`git.rs:308-309`). Mobile gets a **parallel, in-process path** selected at compile
-time with `#[cfg(mobile)]`.
->>>>>>> origin/main
 
 On mobile there is no system `git` binary and no ability to spawn subprocesses,
 and there is no arbitrary-folder picker. So:
@@ -38,7 +32,6 @@ cover. The transport refactor (Phase 1) is the actual mobile project.
 
 | Operation | Desktop (`ShellRemote`) | Mobile (`Git2Remote`) |
 |---|---|---|
-<<<<<<< HEAD
 | pull (fetch + merge) | `git pull --no-rebase` | `Remote::fetch` + `Repository::merge` |
 | push | `git push -u origin <branch>` | `Remote::push` + `Branch::set_upstream` |
 | merge abort | `git merge --abort` | index ← HEAD, force-checkout touched paths, `cleanup_state` |
@@ -47,21 +40,11 @@ cover. The transport refactor (Phase 1) is the actual mobile project.
 | branch/state | `symbolic-ref`, `rev-parse`, `diff` | `HEAD` symbolic target, `Index::conflicts` |
 | user identity | `git config user.name/email` | `Repository::config` |
 | reveal in OS | `open -R` / `explorer` (`notes.rs`) | desktop only — `#[cfg]` off (Phase 3) |
+| discard a pushed agent branch | `git push origin --delete` | `Remote::push` with a `:refs/heads/<b>` refspec (`delete_remote_branch`) |
+| gh-pages publish | `init`, `add`, `commit`, `push --force` (`publish.rs`) | desktop only |
+| embedded terminal | PTY + `$SHELL` (`terminal.rs`) | desktop only |
 
 All of the above live in `crates/cortex-core/src/remote.rs` (Phase 1, below).
-=======
-| pull (fetch + merge) | `git.rs:377` | `git pull --no-rebase --no-edit` |
-| push | `git.rs:394`, `git.rs:437` | `git push -u origin <branch>` |
-| merge abort | `git.rs:387`, `git.rs:447` | `git merge --abort` |
-| conflict resolve (ours/theirs) | `git.rs:408`, `git.rs:416` | `git checkout --ours/--theirs` + `add` |
-| complete merge | `git.rs:431` | `git commit --no-edit` |
-| branch/state | `git.rs:336`–`351` | `symbolic-ref`, `rev-parse`, `diff --diff-filter=U` |
-| discard a pushed agent branch | `git.rs:497` | `git push origin --delete` |
-| user identity | `members.rs:64` | `git config user.name/email` |
-| gh-pages publish | `publish.rs:589`–`625` | `init`, `add`, `commit`, `push --force` (desktop only) |
-| reveal in OS | `commands/notes.rs:376`–`381` | `open -R` / `explorer` / `xdg-open` (desktop only) |
-| embedded terminal | `src-tauri/src/terminal.rs` | PTY + `$SHELL` (desktop only) |
->>>>>>> origin/main
 
 Internal git2 operations (status, commit, log, diff, agent-branch merge) already
 work cross-platform and are untouched.
