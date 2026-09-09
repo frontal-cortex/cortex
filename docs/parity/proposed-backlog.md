@@ -420,6 +420,5 @@ No Tauri mobile build in this task.
 - **Local graph** with depth, filters and tag colouring; live physics. M.
 - **Bookmark block** with a `.brain/` preview cache, and a plain iframe embed block. M.
 - **Tabs and split panes.** L, and tabs were removed once after a history bug; needs a design first.
-- **Property types**: date range, files, created/edited time and by as queryable columns. M.
 - **Calendar week view, in-database search box, list view.** S each.
 - **Resizable sidebar, recent files, explorer sort, `?` shortcut overlay.** S each.

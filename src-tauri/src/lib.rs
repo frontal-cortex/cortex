@@ -115,6 +115,7 @@ pub fn run() {
             commands::git::git_log,
             commands::git::git_diff,
             commands::git::note_history,
+            commands::git::note_authorship,
             commands::git::note_at,
             commands::git::restore_note,
             commands::git::list_agent_branches,

@@ -192,7 +192,8 @@ follows every change you make on disk.
   Prefer the tools below over editing YAML by hand — they keep files canonical so diffs stay clean.
 - Link notes with `[[Title]]` — also `[[Title#Section]]` and `[[Title|shown text]]`. Links resolve by path, then title, then filename stem.
   Rename or move with `cortex mv` (or `set title=`), never by hand: every inbound link is rewritten to follow.
-- Never write derived data (rollups, counts) into notes; the app computes it.
+- Never write derived data (rollups, counts, created/edited time and by) into notes; the app computes it.
+- A `date_range` property is one nested mapping, `trip: {start: YYYY-MM-DD, end: YYYY-MM-DD}`; a `files` property is a list of `assets/…` paths.
 
 ## Tools
 

@@ -35,7 +35,27 @@ export type PropType =
   | "url"
   | "person"
   | "relation"
-  | "rollup" | "formula";
+  | "rollup" | "formula"
+  /** `{start, end}` under one key; filters compare the end for `<`, the start for `>`, overlap for `within`. */
+  | "date_range"
+  /** A list of vault-relative file paths (`assets/…`). */
+  | "files"
+  /** Computed from git history (mtime outside a repo); never written to a row. */
+  | "created_time" | "created_by" | "edited_time" | "edited_by";
+
+/** The four git-derived properties, computed on read (`note_authorship`). */
+export interface Authorship {
+  created_at: string;
+  created_by: string;
+  edited_at: string;
+  edited_by: string;
+}
+
+/** A date range property's value as stored: `{start, end?}`. */
+export interface DateRange {
+  start: string;
+  end?: string;
+}
 
 export interface Member {
   name: string;
@@ -95,7 +115,7 @@ export interface TypeSchema {
 
 export interface ViewColumn {
   key: string;
-  ty: "text" | "number" | "bool" | "date" | "list";
+  ty: "text" | "number" | "bool" | "date" | "list" | "date_range";
   /** Typed-property schema for select/status columns (options + colors). */
   schema?: PropertyDef;
 }
@@ -939,6 +959,10 @@ export const commands = {
 
   noteHistory: (path: string, limit: number) =>
     invoke<CommitEntry[]>("note_history", { path, limit }),
+
+  /** Created / last edited time and author of one note, from git (mtime outside a repo). */
+  noteAuthorship: (path: string) =>
+    invoke<Authorship>("note_authorship", { path }),
 
   noteAt: (path: string, hash: string) =>
     invoke<string>("note_at", { path, hash }),
