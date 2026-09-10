@@ -1349,12 +1349,18 @@ pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: boo
         } else { None };
         let index = match index {
             Some(i) => Some(i),
-            None if online => match fetch_index(&url) {
-                Ok(i) => {
-                    if let Some(p) = &cached { let _ = std::fs::create_dir_all(p.parent().unwrap()); let _ = std::fs::write(p, serde_json::to_vec(&i).unwrap_or_default()); }
-                    Some(i)
-                }
-                Err(e) => { errors.push((url.clone(), e.to_string())); None }
+            None if online => match recent_failure(&url, refresh) {
+                // A dead index is remembered for a while: the page opens many
+                // times an hour and each open must not wait on a timeout.
+                Some(e) => { errors.push((url.clone(), e)); None }
+                None => match fetch_index(&url) {
+                    Ok(i) => {
+                        forget_failure(&url);
+                        if let Some(p) = &cached { let _ = std::fs::create_dir_all(p.parent().unwrap()); let _ = std::fs::write(p, serde_json::to_vec(&i).unwrap_or_default()); }
+                        Some(i)
+                    }
+                    Err(e) => { remember_failure(&url, &e.to_string()); errors.push((url.clone(), e.to_string())); None }
+                },
             },
             None => None,
         };
@@ -1399,6 +1405,27 @@ pub fn catalog(root: &Path, cache_dir: Option<&Path>, refresh: bool, online: boo
     Catalog { entries, errors, fetched_at }
 }
 
+/// Index fetches that failed recently, by URL — retried after a pause, or at
+/// once when the user asks to refresh.
+fn failures() -> &'static std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, String)>> {
+    static F: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, String)>>> = std::sync::OnceLock::new();
+    F.get_or_init(Default::default)
+}
+const RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+fn recent_failure(url: &str, refresh: bool) -> Option<String> {
+    if refresh { return None; }
+    let map = failures().lock().ok()?;
+    let (at, err) = map.get(url)?;
+    (at.elapsed() < RETRY_AFTER).then(|| format!("{err} (not retried for a while; Refresh to try now)"))
+}
+fn remember_failure(url: &str, err: &str) {
+    if let Ok(mut m) = failures().lock() { m.insert(url.to_string(), (std::time::Instant::now(), err.to_string())); }
+}
+fn forget_failure(url: &str) {
+    if let Ok(mut m) = failures().lock() { m.remove(url); }
+}
+
 fn bundled_featured() -> Vec<String> {
     // The curated order, embedded by build.rs from marketplace/featured.yaml
     // (or the copy tools/sync-packs.sh vendors beside the packs).
@@ -1417,7 +1444,11 @@ fn version_gt(a: &str, b: &str) -> bool {
 /// Find a pack by id across the bundle and the configured indexes, fetching
 /// its files (and verifying them) when it comes from an index.
 pub fn resolve(root: &Path, cache_dir: Option<&Path>, id: &str, online: bool) -> Result<Pack> {
-    let cat = catalog(root, cache_dir, false, online);
+    // The catalog here is what the page already showed: the cached index, or
+    // the bundle. Fetching an index is the page's Refresh, not a side effect
+    // of opening a pack.
+    let cat = catalog(root, cache_dir, false, false);
+    let _ = online;
     let entry = cat.entries.iter().find(|e| e.manifest.id == id)
         .ok_or_else(|| AppError::Other(format!("no pack named '{id}' (see `cortex packs list`)")))?;
     if entry.source == "bundled" {
@@ -1430,7 +1461,37 @@ pub fn resolve(root: &Path, cache_dir: Option<&Path>, id: &str, online: bool) ->
         None => fetch_index(&url)?,
     };
     let ie = index.packs.iter().find(|e| e.manifest.id == id).ok_or_else(|| AppError::Other(format!("'{id}' is no longer in {url}")))?;
-    fetch_pack(&index, &url, ie)
+    fetch_pack_cached(cache_dir, &index, &url, ie)
+}
+
+/// `fetch_pack`, but a pack fetched once is kept under the cache directory
+/// (`packs/<id>/<version>/`) and read from there while every file still
+/// matches the hash the index promised. Opening a pack's page twice, or
+/// opening it and then installing it, downloads it once.
+pub fn fetch_pack_cached(cache_dir: Option<&Path>, index: &Index, index_url: &str, entry: &IndexEntry) -> Result<Pack> {
+    let dir = cache_dir.map(|d| d.join("packs").join(&entry.manifest.id).join(&entry.manifest.version));
+    if let Some(dir) = &dir {
+        let mut files = Vec::new();
+        let complete = entry.sha256.iter().all(|(path, want)| {
+            match std::fs::read(dir.join(path)) {
+                Ok(bytes) if &sha256_hex(&bytes) == want => { files.push(PackFile { path: path.clone(), contents: bytes }); true }
+                _ => false,
+            }
+        });
+        if complete && !files.is_empty() {
+            files.sort_by(|a, b| a.path.cmp(&b.path));
+            return Ok(Pack { manifest: entry.manifest.clone(), tier: entry.tier, source: index_url.into(), files });
+        }
+    }
+    let pack = fetch_pack(index, index_url, entry)?;
+    if let Some(dir) = &dir {
+        for f in &pack.files {
+            let p = dir.join(&f.path);
+            if let Some(parent) = p.parent() { let _ = std::fs::create_dir_all(parent); }
+            let _ = std::fs::write(p, &f.contents);
+        }
+    }
+    Ok(pack)
 }
 
 #[cfg(test)]
@@ -1888,6 +1949,19 @@ mod tests {
         let fetched = fetch_index(&url).unwrap();
         let p = fetch_pack(&fetched, &url, fetched.packs.iter().find(|e| e.manifest.id == "tasks").unwrap()).unwrap();
         assert_eq!(p.files.len(), tasks.sha256.len());
+
+        // Fetched once into the cache, then served from it even when the source is gone.
+        let cache = dir.join("cache");
+        let te = fetched.packs.iter().find(|e| e.manifest.id == "tasks").unwrap();
+        let first = fetch_pack_cached(Some(&cache), &fetched, &url, te).unwrap();
+        assert!(cache.join("packs/tasks").join(&te.manifest.version).join("manifest.yaml").exists());
+        std::fs::rename(dir.join("packs/tasks"), dir.join("packs/tasks-gone")).unwrap();
+        let second = fetch_pack_cached(Some(&cache), &fetched, &url, te).unwrap();
+        assert_eq!(first.files.len(), second.files.len());
+        // A tampered cache entry is refetched (and, with the source gone, refused).
+        std::fs::write(cache.join("packs/tasks").join(&te.manifest.version).join("index.md"), "evil").unwrap();
+        assert!(fetch_pack_cached(Some(&cache), &fetched, &url, te).is_err());
+        std::fs::rename(dir.join("packs/tasks-gone"), dir.join("packs/tasks")).unwrap();
 
         // Tamper with a file: the fetch refuses.
         std::fs::write(dir.join("packs/tasks/index.md"), "evil").unwrap();
