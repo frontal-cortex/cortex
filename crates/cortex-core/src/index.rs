@@ -101,6 +101,7 @@ mod tests {
         std::fs::create_dir_all(root.join("notes")).unwrap();
         std::fs::create_dir_all(root.join(".git/objects")).unwrap();
         std::fs::create_dir_all(root.join(".trash")).unwrap();
+        std::fs::create_dir_all(root.join("collections/tasks")).unwrap();
         let w = |rel: &str, s: &str| std::fs::write(root.join(rel), s).unwrap();
         w("notes/keep.md", "---\ntitle: Keep\n---\nalpha\n");
         w("notes/gone.md", "---\ntitle: Gone\n---\nbeta\n");
