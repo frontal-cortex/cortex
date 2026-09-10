@@ -80,6 +80,15 @@ test("each action calls the operation it stands for", async () => {
   await assert.rejects(runButton({ label: "x", action: "url", url: "file:///etc/passwd" }, "n.md", d), /Only http/);
 });
 
+test("add-row without a template uses the collection's own row template when it exists", async () => {
+  const log: string[] = [];
+  const d = { ...deps(log), listRowTemplates: async (s: string) => (s === "collections/budget" ? ["budget", "refund"] : []) };
+  await runButton({ label: "x", action: "add-row", collection: "budget", values: { kind: "expense" } }, "n.md", d);
+  assert.equal(log[0], 'tpl collections/budget row-x budget {"kind":"expense"}');
+  await runButton({ label: "x", action: "add-row", collection: "tasks", values: {} }, "n.md", d);
+  assert.match(log[1], /^addRow collections\/tasks row-x /);
+});
+
 test("rowOf and collectButtons", () => {
   assert.deepEqual(rowOf("collections/budget/rent.md"), { source: "collections/budget", id: "rent" });
   assert.equal(rowOf("collections/budget/_index.md"), null);

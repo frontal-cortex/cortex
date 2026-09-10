@@ -63,29 +63,32 @@ a:focus-visible,
 }
 
 /* ── Columns ───────────────────────────────────────────────────────────────
+   React block specs (columnList, column, cortexButton) render inside a
+   `.bn-react-node-view-renderer` wrapper between `.bn-block` and
+   `.bn-block-content`; the selectors below go through it.
    A columnList block's children (column blocks) sit side by side; each column's
    own children are its content. Widths come from the column's `width` prop
    (1, 2, 3 → flex-grow). Under ~700px, or on a phone, they stack. */
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group {
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group {
   display: flex;
   gap: 24px;
   align-items: flex-start;
   margin-left: 0;
   padding-left: 0;
 }
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group > .bn-block-outer {
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group > .bn-block-outer {
   flex: 1 1 0;
   min-width: 0;
 }
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="column"][data-width="2"]) { flex-grow: 2 !important; }
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="column"][data-width="3"]) { flex-grow: 3 !important; }
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="column"]) > .bn-block > .bn-block-group {
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"][data-width="2"]) { flex-grow: 2 !important; }
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"][data-width="3"]) { flex-grow: 3 !important; }
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"]) > .bn-block > .bn-block-group {
   margin-left: 0;
   padding-left: 0;
   border-left: 1px dashed transparent;
   transition: border-color 0.12s ease;
 }
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="column"]):hover > .bn-block > .bn-block-group {
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"]):hover > .bn-block > .bn-block-group {
   border-color: var(--border);
 }
 .bn-block-content[data-content-type="columnList"],
@@ -93,18 +96,29 @@ a:focus-visible,
   padding: 0 !important;
   min-height: 0 !important;
 }
-@media (max-width: 700px) {
-  .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; gap: 4px; }
+/* BlockNote draws a guide line beside nested blocks (its react stylesheet:
+   `.bn-block-group .bn-block .bn-block-group .bn-block-outer::before`). A
+   column and what it holds are laid out, not indented, so no guide there;
+   deeper nesting inside a column keeps its own. */
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"])::before,
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"]) > .bn-block > .bn-block-group > .bn-block-outer::before {
+  display: none !important;
 }
-:root[data-viewport="phone"] .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; gap: 4px; }
+/* Stack when the document area (Editor.module.css `.docWrap`, an inline-size
+   container) is narrow — the sidebar open in a small window — not only when
+   the whole viewport is. */
+@container (max-width: 800px) {
+  .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; gap: 4px; }
+}
+:root[data-viewport="phone"] .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; gap: 4px; }
 
 /* ── Buttons ───────────────────────────────────────────────────────────────
    Consecutive button blocks flow as one row of pills. */
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="cortexButton"]) {
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="cortexButton"]) {
   display: inline-block;
   vertical-align: middle;
   margin-right: 8px;
 }
-.bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="cortexButton"]) > .bn-block > .bn-block-content {
+.bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="cortexButton"]) > .bn-block > .bn-react-node-view-renderer > .bn-block-content {
   padding: 2px 0 !important;
 }

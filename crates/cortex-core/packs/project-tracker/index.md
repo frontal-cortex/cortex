@@ -126,6 +126,10 @@ limit: 10
 
 ::: end
 
+```cortex-views
+collection: projects
+```
+
 One row per project — anything with an outcome and more than one step. A
 project has a `status`, a `priority` (p1 first), an `area`, a `start` and a
 `deadline`, and one `next_action`: the next physical thing to do. The rest

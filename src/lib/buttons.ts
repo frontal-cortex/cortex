@@ -26,7 +26,9 @@ export interface ButtonSpec {
   collection?: string;
   /** add-row: property values for the new row; set: values written to the current row. */
   values?: Record<string, string>;
-  /** add-row: a row template name (without `_template-` / `.md`). */
+  /** add-row: a row template name (without `_template-` / `.md`). When
+   *  omitted, the collection's own `_template-<collection>` is used if it
+   *  exists, so the button's row has the same defaults as any other. */
   template?: string;
   /** add-row: open the new row when it exists. */
   open?: boolean;
@@ -168,6 +170,8 @@ export function describeButton(spec: ButtonSpec): string {
 export interface ButtonDeps {
   addRow(source: string, id: string, fields: Record<string, string>): Promise<void>;
   addRowFromTemplate(source: string, id: string, template: string, fields: Record<string, string>): Promise<void>;
+  /** Row template names of a collection (without `_template-`), for the default. */
+  listRowTemplates?(source: string): Promise<string[]>;
   setCell(source: string, rowId: string, field: string, value: string): Promise<void>;
   /** The tracker views in the vault: collection, view name, and the view's YAML spec. */
   listTrackers(): Promise<{ collection: string; name: string; spec: string }[]>;
@@ -205,7 +209,12 @@ export async function runButton(spec: ButtonSpec, notePath: string, deps: Button
       const source = `collections/${spec.collection}`;
       const id = (deps.newId ?? newRowId)();
       const fields = expandValues(spec.values, now);
-      if (spec.template) await deps.addRowFromTemplate(source, id, spec.template, fields);
+      let template = spec.template;
+      if (!template && deps.listRowTemplates) {
+        const names = await deps.listRowTemplates(source).catch(() => [] as string[]);
+        if (names.includes(spec.collection)) template = spec.collection;
+      }
+      if (template) await deps.addRowFromTemplate(source, id, template, fields);
       else await deps.addRow(source, id, { title: "Untitled", created: isoDate(now), ...fields });
       if (spec.open) deps.openNote(`${source}/${id}.md`);
       return `Added a row to ${spec.collection}`;

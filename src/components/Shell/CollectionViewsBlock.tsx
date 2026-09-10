@@ -171,15 +171,20 @@ export function flattenCollectionViews(blocks: any[]): any[] {
   });
 }
 
-/** A collection's own page always shows its views: add the block at the top
- *  when the note has no fence yet. Idempotent. */
+/** A collection's own page always shows its views: add the block when the
+ *  note has no fence yet — at the top of an ordinary page, but under a body
+ *  that already lays out views of its own (a dashboard: `cortex-view` blocks
+ *  or a column layout), so the dashboard comes first. Idempotent. */
 export function ensureCollectionViewsBlock(editor: any, collection: string): void {
-  const has = (blocks: any[]): boolean => blocks.some((b) => b?.type === "collectionViews" || (Array.isArray(b?.children) && has(b.children)));
-  if (has(editor.document)) return;
-  const first = editor.document[0];
+  const any = (blocks: any[], types: string[]): boolean =>
+    blocks.some((b) => types.includes(b?.type) || (Array.isArray(b?.children) && any(b.children, types)));
+  if (any(editor.document, ["collectionViews"])) return;
+  const doc = editor.document;
   const block = { type: "collectionViews", props: { collection } } as never;
-  if (first) editor.insertBlocks([block], first, "before");
-  else editor.replaceBlocks(editor.document, [block]);
+  if (!doc.length) { editor.replaceBlocks(doc, [block]); return; }
+  const dashboard = any(doc, ["cortexView", "columnList"]);
+  if (dashboard) editor.insertBlocks([block], doc[doc.length - 1], "after");
+  else editor.insertBlocks([block], doc[0], "before");
 }
 
 export function collectionViewsSlashItem(editor: any): DefaultReactSuggestionItem {

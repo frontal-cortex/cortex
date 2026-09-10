@@ -125,6 +125,10 @@ filter: week >= @today-91
 
 ::: end
 
+```cortex-views
+collection: weeks
+```
+
 One row per week. `week` is its Monday, `status` says whether you have done
 the review yet, `rating` is the week out of ten, `focus` is the one sentence
 you set at the start, `areas` is what the week touched (filter the table on

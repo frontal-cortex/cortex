@@ -190,6 +190,10 @@ limit: 10
 
 ::: end
 
+```cortex-views
+collection: budget
+```
+
 One row per transaction: what it was, the date, the amount (always positive
 — `kind` says whether it was spent, earned or moved between your own
 accounts), a category and the account it hit; a transfer names both

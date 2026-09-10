@@ -337,12 +337,13 @@ by label while it is open.
     action: add-row
     collection: budget
     values: {kind: expense, date: "{{today}}"}
-    template: quick        # optional row template
+    template: quick        # optional; default: the collection's own _template-<collection>
     open: true             # open the new row
     ```
 
 Actions: `add-row` (a `collection`, preset `values` with `{{today±n}}`,
-`{{date±n}}`, `{{time}}`, optional `template`, optional `open`); `open` (a
+`{{date±n}}`, `{{time}}`, optional `template` — without one the collection's
+own `_template-<collection>` applies when it exists — optional `open`); `open` (a
 `target` note by title or path, or a `collection` with an optional `view`
 tab name); `log` (a tracker `collection` and the `item` to tick today); `set`
 (`values` applied to the row whose page holds the button — refused

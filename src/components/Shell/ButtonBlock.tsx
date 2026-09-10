@@ -26,6 +26,7 @@ export function appButtonDeps(): ButtonDeps {
   return {
     addRow: (s, id, f) => commands.addRow(s, id, f),
     addRowFromTemplate: (s, id, t, f) => commands.addRowFromTemplate(s, id, t, f),
+    listRowTemplates: (s) => commands.listRowTemplates(s),
     setCell: (s, id, k, v) => commands.setCell(s, id, k, v, "text"),
     listTrackers: () => commands.listTrackers(),
     trackerToggle: (l, d, dn, date, item) => commands.trackerToggle(l, d, dn, date, item, true).then(() => {}),

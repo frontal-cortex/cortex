@@ -120,6 +120,10 @@ height: small
 
 ::: end
 
+```cortex-views
+collection: habits
+```
+
 Every habit is a row here, with its own page (open it for its history and
 your notes on why it matters). Every day is one file in `collections/habit-log/`
 whose `done:` list names the habits you completed; a day with no file is a day

@@ -5,6 +5,10 @@
   padding: var(--space-3);
   margin: var(--space-2) 0;
   user-select: none;
+  /* A flex item of BlockNote's block content: without this it cannot shrink
+     below its widest row and slides under the next column of a layout. */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .header {

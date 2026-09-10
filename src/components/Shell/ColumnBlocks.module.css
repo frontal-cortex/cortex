@@ -14,10 +14,10 @@
 }
 .listBar { justify-content: flex-end; }
 
-:global(.bn-block-outer:hover) > :global(.bn-block) > :global(.bn-block-content) > .listBar,
-:global(.bn-block-outer:hover) > :global(.bn-block) > :global(.bn-block-content) > .colBar,
-:global(.bn-block-outer:focus-within) > :global(.bn-block) > :global(.bn-block-content) > .listBar,
-:global(.bn-block-outer:focus-within) > :global(.bn-block) > :global(.bn-block-content) > .colBar {
+:global(.bn-block-outer:hover) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .listBar,
+:global(.bn-block-outer:hover) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .colBar,
+:global(.bn-block-outer:focus-within) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .listBar,
+:global(.bn-block-outer:focus-within) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .colBar {
   opacity: 1;
 }
 
