@@ -2933,7 +2933,13 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   // The toolbar's search: narrows the rows on show, client-side, never written.
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const focusSearch = () => searchRef.current?.focus();
+  // The controls live behind the toolbar's Settings chip here; mod+f in the
+  // rows opens them so the search box exists to take the focus.
+  const [toolbarOpen, setToolbarOpen] = useState(false);
+  const focusSearch = () => {
+    setToolbarOpen(true);
+    requestAnimationFrame(() => searchRef.current?.focus());
+  };
   const shown = useMemo(() => (table ? searchRows(table, search) : null), [table, search]);
   const [chart, setChart] = useState<ChartResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3028,6 +3034,9 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
           search={search}
           onSearchChange={setSearch}
           searchRef={searchRef}
+          collapsible
+          open={toolbarOpen}
+          onOpenChange={setToolbarOpen}
         />
       )}
 
