@@ -14,7 +14,7 @@ import { shortcutFor } from "../../lib/keymap";
 import { SelectCell } from "./SelectCell";
 import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
-import { DateRangeInput, FilesInput, filesOf, formatRange, rangeOf } from "./PropertyInputs";
+import { DateRangeInput, FilesInput, Ring, filesOf, formatRange, rangeOf } from "./PropertyInputs";
 import {
   CalendarIcon, CheckSquareIcon, SelectDotIcon, TagsListIcon, PersonIcon,
   LinkIcon, RelationIcon, TextLinesIcon, PlusIcon, ChevronRightIcon, GlobeIcon, MoreIcon,
@@ -354,11 +354,16 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
                   {(() => { const v = authorshipValue(authorship, item.type); return v ? (item.type.endsWith("_time") ? formatDateTime(v) : v) : "—"; })()}
                 </span>
               ) : (
-                <ValueInput
-                  value={frontmatter[item.name]}
-                  type={item.type}
-                  onCommit={(v) => set(item.name, v)}
-                />
+                <span className={styles.numberRow}>
+                  {item.def?.format === "ring" && typeof frontmatter[item.name] === "number" && (
+                    <Ring inside pct={ringPct(frontmatter[item.name] as number, item.def)} text={ringText(frontmatter[item.name] as number, item.def)} />
+                  )}
+                  <ValueInput
+                    value={frontmatter[item.name]}
+                    type={item.type}
+                    onCommit={(v) => set(item.name, v)}
+                  />
+                </span>
               )}
             </div>
           </div>
@@ -370,6 +375,19 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
       </div>}
     </div>
   );
+}
+
+/** Where a number sits between its property's min and max (0–100 by default), unclamped. */
+function ringPct(n: number, def: PropertyDef): number {
+  const lo = def.min ?? 0, hi = def.max ?? 100;
+  return hi > lo ? ((n - lo) / (hi - lo)) * 100 : 0;
+}
+
+/** The text inside a ring: the bare share, or the value with its unit. */
+function ringText(n: number, def: PropertyDef): string {
+  const bare = def.min === undefined && def.max === undefined && !def.unit;
+  const s = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return bare ? `${s}%` : `${s}${def.unit ?? ""}`;
 }
 
 function ValueInput({ value, type, onCommit }: {

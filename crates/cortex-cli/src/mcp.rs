@@ -177,6 +177,12 @@ pub struct QueryArgs {
     /// Summary row, field → function: count, sum, avg, min, max, percent_checked, empty, not_empty
     #[serde(default)]
     pub summary: std::collections::BTreeMap<String, String>,
+    /// One of the collection's saved views, by name — its keys, overridden by the arguments here. A chart view answers with points, a stats view with tiles.
+    pub view: Option<String>,
+    /// Section the rows by this property (groups come back in display order with per-group summaries)
+    pub group: Option<String>,
+    /// With a date group: day | week | month | quarter | year
+    pub bucket: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -418,15 +424,20 @@ with the match wrapped in <mark>.")]
         json(&self.vault.collections())
     }
 
-    #[tool(description = "Query a collection like the app's table view: filter, sort, columns, limit, and an optional summary (field → count | sum | avg | min | max | percent_checked | empty | not_empty). Returns columns, rows and the summary values.")]
+    #[tool(description = "Query a collection like the app's table view: filter, sort, columns, group (+ bucket: day | week | month | quarter | year for a date), limit, and an optional summary (field → count | sum | avg | min | max | percent_checked | empty | not_empty). Returns columns, rows, groups (each with row ids and its own summary) and the summary values. Pass `view` to run one of the collection's saved views by name instead — a chart view returns its points, a stats view its tiles.")]
     fn query_collection(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
-        let summary: Vec<(String, String)> = a.summary.into_iter().collect();
-        json(&self.vault.view(&a.collection, a.filter.as_deref(), &a.sort, a.columns.as_deref(), a.limit, &summary).map_err(err)?)
+        let q = crate::ops::ViewQuery { view: a.view, filter: a.filter, sort: a.sort, columns: a.columns, group: a.group, bucket: a.bucket, limit: a.limit, summary: a.summary.into_iter().collect() };
+        json(&self.vault.view(&a.collection, &q).map_err(err)?)
     }
 
-    #[tool(description = "Run a cortex-view YAML spec (source: collections/<name> or data/<file>.csv, plus filter / sort / columns / limit / summary) and return its columns and rows — the same query the app's views run, summary values included.")]
+    #[tool(description = "Run a cortex-view YAML spec (source: collections/<name> or data/<file>.csv, plus filter / sort / columns / group / bucket / limit / summary) — the same query the app's views run. `type: chart` (x, y, agg, chartType: line | bar | area | donut | pie, bucket, series) returns aggregated points; `type: stats` (stats: [{label, agg, field, filter, format} | {label, expr}]) returns tiles; anything else returns columns, rows, groups and summary values.")]
     fn run_view(&self, Parameters(a): Parameters<RunViewArgs>) -> Result<CallToolResult, McpError> {
-        json(&cortex_core::data::resolve_view(&self.vault.root, &a.spec).map_err(err)?)
+        let root = &self.vault.root;
+        match cortex_core::data::spec_kind(&a.spec).as_str() {
+            "chart" => json(&cortex_core::data::run_chart(root, &cortex_core::members::resolve_me(&a.spec, root)).map_err(err)?),
+            "stats" => json(&cortex_core::data::run_stats(root, &a.spec).map_err(err)?),
+            _ => json(&cortex_core::data::resolve_view(root, &a.spec).map_err(err)?),
+        }
     }
 
     #[tool(description = "A collection's tracker view (habits and the like): items × days for the range, each item's current and longest streak, this week's count against its target, and per-day done/expected with perfect days. Computed on read; nothing is stored.")]

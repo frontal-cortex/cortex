@@ -1712,3 +1712,227 @@
 }
 .dayItemOpen { cursor: pointer; }
 .dayItemOpen:hover, .dayItemOpen:focus-visible { background: var(--accent-light); color: var(--accent); outline: none; }
+
+/* ── Chart polish: heights, area fill, donut / pie ─────────────────────────── */
+.chartSmall .chart {
+  max-height: 150px;
+}
+.chartLarge .chart {
+  max-height: 420px;
+  min-height: 320px;
+}
+.area {
+  fill: var(--accent);
+  opacity: 0.18;
+  stroke: none;
+}
+.roundWrap {
+  display: grid;
+  grid-template-columns: minmax(160px, 260px) 1fr;
+  grid-template-rows: auto auto;
+  column-gap: var(--space-4);
+  row-gap: var(--space-2);
+  align-items: center;
+}
+.roundWrap .count {
+  grid-column: 1 / -1;
+}
+.roundChart {
+  outline: none;
+  border-radius: 50%;
+}
+.roundChart:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.chartSmall .roundChart {
+  max-height: 150px;
+}
+.chartLarge .roundChart {
+  max-height: 420px;
+}
+.slice {
+  cursor: pointer;
+  stroke: var(--bg-panel);
+  stroke-width: 1.5;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.sliceOn {
+  opacity: 1;
+}
+.roundChart:hover .slice:not(.sliceOn),
+.roundChart:focus-within .slice:not(.sliceOn) {
+  opacity: 0.75;
+}
+.sliceLabel {
+  fill: var(--bg-panel);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  pointer-events: none;
+}
+.roundValue {
+  fill: var(--text-primary);
+  font-size: 22px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.roundSub {
+  fill: var(--text-tertiary);
+  font-size: 10px;
+  font-family: var(--font-sans);
+}
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-xs);
+  min-width: 0;
+}
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  min-width: 0;
+}
+.legendItem:hover,
+.legendOn {
+  background: var(--bg-hover);
+}
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+.legendName {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.legendValue {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+:root[data-viewport="phone"] .roundWrap {
+  grid-template-columns: 1fr;
+}
+
+/* ── Grouped sections: per-group summaries ─────────────────────────────────── */
+.groupSummaryRow td {
+  padding: 2px var(--space-2);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border);
+}
+.groupSummaryInline {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+.listGroup + .listGroup .groupToggle {
+  margin-top: var(--space-2);
+}
+
+/* ── Gallery: compact KPI cards and sizes ──────────────────────────────────── */
+.gallerySmall {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+.galleryLarge {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.galleryCompact .galleryBody {
+  padding: var(--space-3);
+  gap: 4px;
+}
+.galleryKicker {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.galleryBig {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.2em;
+}
+.galleryBig .progress {
+  min-width: 0;
+  max-width: none;
+}
+.galleryLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.galleryLine > span:last-child {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Stats view: tiles ─────────────────────────────────────────────────────── */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+.statTile {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.statValue {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.statLabel {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.statError {
+  border-style: dashed;
+}
+.statNote {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  white-space: normal;
+}

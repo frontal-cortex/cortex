@@ -456,18 +456,7 @@ fn render_fence(root: &Path, lang: &str, spec: &str, note_path: &str, depth: usi
 /// the frontmatter entry with the collection's `source:` added, the same
 /// spec the app builds for its tabs.
 fn collection_views(root: &Path, coll: &str) -> Vec<(String, String)> {
-    let Ok(text) = std::fs::read_to_string(root.join("collections").join(coll).join("_index.md")) else { return vec![] };
-    let Ok(note) = note::parse_note("_index.md", &text) else { return vec![] };
-    let Some(views) = note.frontmatter.get("views").and_then(|v| v.as_array()) else { return vec![] };
-    views.iter().filter_map(|v| {
-        let mut obj = v.as_object()?.clone();
-        let name = obj.remove("name").and_then(|n| n.as_str().map(str::to_string))
-            .or_else(|| obj.get("type").and_then(|t| t.as_str()).map(str::to_string))
-            .unwrap_or_else(|| "Table".into());
-        obj.insert("source".into(), serde_json::Value::String(format!("collections/{coll}")));
-        let spec = serde_yaml::to_string(&serde_json::Value::Object(obj)).ok()?;
-        Some((name, spec))
-    }).collect()
+    crate::data::collection_view_specs(root, coll).into_iter().map(|(name, _, spec)| (name, spec)).collect()
 }
 
 fn render_collection_views(root: &Path, coll: &str, depth: usize, by_path: &BTreeMap<&str, &PublishEntry>) -> String {
@@ -492,10 +481,10 @@ fn render_view(root: &Path, spec_yaml: &str, name: Option<&str>, depth: usize, b
     if kind != "table" {
         out.push_str(&format!("<p class=\"view-note\">A {} view, shown here as a table.</p>\n", esc(kind)));
     }
-    let table = if kind == "chart" {
-        crate::data::run_chart(root, spec_yaml).map(|c| chart_table(&c))
-    } else {
-        crate::data::resolve_view(root, spec_yaml).map(|t| view_table(&t, &spec, depth, by_path))
+    let table = match kind {
+        "chart" => crate::data::run_chart(root, spec_yaml).map(|c| chart_table(&c)),
+        "stats" => crate::data::run_stats(root, spec_yaml).map(|s| stats_html(&s)),
+        _ => crate::data::resolve_view(root, spec_yaml).map(|t| view_table(&t, &spec, depth, by_path)),
     };
     match table {
         Ok(html) => out.push_str(&html),
@@ -505,10 +494,32 @@ fn render_view(root: &Path, spec_yaml: &str, name: Option<&str>, depth: usize, b
     out
 }
 
-/// A chart's aggregated points as a table: one row per x, one column per series.
+/// A stats view as tiles: the value large, its label under it.
+fn stats_html(s: &crate::data::StatsResult) -> String {
+    let mut out = String::from("<div class=\"stats\">\n");
+    for st in &s.stats {
+        let value = match st.value {
+            Some(n) => {
+                let def = st.format.as_ref().map(|f| crate::schema::PropertyDef { format: Some(f.clone()), ..Default::default() });
+                cell_html(&serde_json::json!(n), def.as_ref())
+            }
+            None => esc(&st.text),
+        };
+        out.push_str(&format!("<div class=\"stat\"><div class=\"stat-value\">{value}</div><div class=\"stat-label\">{}</div></div>\n", esc(&st.label)));
+    }
+    out.push_str("</div>\n");
+    out
+}
+
+/// A chart's aggregated points as a table: one row per x, one column per
+/// series — and each slice's share for a donut or pie.
 fn chart_table(c: &crate::data::ChartResult) -> String {
+    let round = matches!(c.chart_type.as_str(), "donut" | "pie");
+    let total: f64 = c.points.iter().map(|p| p.y.max(0.0)).sum();
     let mut out = format!("<table class=\"view-table\">\n<thead><tr><th>{}</th>", esc(&c.x_label));
-    if c.series.is_empty() {
+    if round {
+        out.push_str(&format!("<th>{}</th><th>Share</th>", esc(&c.y_label)));
+    } else if c.series.is_empty() {
         out.push_str(&format!("<th>{}</th>", esc(&c.y_label)));
     } else {
         for s in &c.series { out.push_str(&format!("<th>{}</th>", esc(&s.name))); }
@@ -521,7 +532,11 @@ fn chart_table(c: &crate::data::ChartResult) -> String {
     };
     for x in xs {
         out.push_str(&format!("<tr><td>{}</td>", esc(x)));
-        if c.series.is_empty() {
+        if round {
+            let y = c.points.iter().find(|p| p.x == x).map(|p| p.y).unwrap_or(0.0);
+            let share = if total > 0.0 { format!("{}%", fmt_num(y.max(0.0) / total * 100.0)) } else { "—".into() };
+            out.push_str(&format!("<td>{}</td><td>{share}</td>", fmt_num(y)));
+        } else if c.series.is_empty() {
             let y = c.points.iter().find(|p| p.x == x).map(|p| fmt_num(p.y)).unwrap_or_default();
             out.push_str(&format!("<td>{y}</td>"));
         } else {
@@ -570,59 +585,41 @@ fn view_table(t: &crate::data::ResolvedTable, spec: &crate::data::ViewSpec, dept
         s
     };
 
-    match spec.group.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
-        Some(field) => {
-            let options = cols.iter().find(|c| c.key == field).and_then(|c| c.schema.as_ref()).map(|s| s.options.iter().map(|o| o.name.clone()).collect::<Vec<_>>()).unwrap_or_default();
-            for (key, rows) in group_rows(&t.rows, field, &options) {
-                let label = if key == "—" { format!("No {}", esc(field)) } else { esc(&key) };
-                out.push_str(&format!(
-                    "<tbody class=\"group\">\n<tr class=\"group-row\"><th colspan=\"{}\">{label} <span class=\"count\">{}</span></th></tr>\n",
-                    cols.len(), rows.len()
-                ));
-                for r in rows { out.push_str(&row_html(r)); }
-                out.push_str("</tbody>\n");
+    // A summary row — the footer, or one section's — in the columns it summarises.
+    let summary_cells = |values: &BTreeMap<String, serde_json::Value>| -> String {
+        cols.iter().map(|c| match (spec.summary.get(&c.key).map(|f| f.trim()).filter(|f| !f.is_empty()), values.get(&c.key)) {
+            (Some(func), Some(v)) => format!("<td><span class=\"summary-label\">{}</span> {}</td>", summary_label(func), summary_html(v, func, c.schema.as_ref())),
+            _ => "<td></td>".to_string(),
+        }).collect()
+    };
+
+    // The engine's sections: option order or newest bucket first, each with its own summary.
+    if !t.groups.is_empty() {
+        let by_id: BTreeMap<&str, &ResolvedRow> = t.rows.iter().map(|r| (r.id.as_str(), r)).collect();
+        let field = spec.group.as_deref().unwrap_or_default();
+        for g in &t.groups {
+            let label = if g.key.is_empty() { format!("No {}", esc(field)) } else { esc(&g.label) };
+            out.push_str(&format!(
+                "<tbody class=\"group\">\n<tr class=\"group-row\"><th colspan=\"{}\">{label} <span class=\"count\">{}</span></th></tr>\n",
+                cols.len(), g.row_ids.len()
+            ));
+            for id in &g.row_ids { if let Some(r) = by_id.get(id.as_str()) { out.push_str(&row_html(r)); } }
+            if !g.summary.is_empty() {
+                out.push_str(&format!("<tr class=\"summary group-summary\">{}</tr>\n", summary_cells(&g.summary)));
             }
-        }
-        None => {
-            out.push_str("<tbody>\n");
-            for r in &t.rows { out.push_str(&row_html(r)); }
             out.push_str("</tbody>\n");
         }
+    } else {
+        out.push_str("<tbody>\n");
+        for r in &t.rows { out.push_str(&row_html(r)); }
+        out.push_str("</tbody>\n");
     }
 
     if !t.summary.is_empty() {
-        out.push_str("<tfoot><tr class=\"summary\">");
-        for c in cols {
-            match (spec.summary.get(&c.key).map(|f| f.trim()).filter(|f| !f.is_empty()), t.summary.get(&c.key)) {
-                (Some(func), Some(v)) => out.push_str(&format!(
-                    "<td><span class=\"summary-label\">{}</span> {}</td>",
-                    summary_label(func), summary_html(v, func, c.schema.as_ref())
-                )),
-                _ => out.push_str("<td></td>"),
-            }
-        }
-        out.push_str("</tr></tfoot>\n");
+        out.push_str(&format!("<tfoot><tr class=\"summary\">{}</tr></tfoot>\n", summary_cells(&t.summary)));
     }
     out.push_str("</table>\n");
     out
-}
-
-/// Rows bucketed by `field`: the property's option order first, then other
-/// values alphabetically, then the rows with none (`—`) — the app's buckets.
-fn group_rows<'a>(rows: &'a [crate::data::ResolvedRow], field: &str, options: &[String]) -> Vec<(String, Vec<&'a crate::data::ResolvedRow>)> {
-    let mut groups: BTreeMap<String, Vec<&crate::data::ResolvedRow>> = BTreeMap::new();
-    for r in rows {
-        let key = r.cells.get(field).map(json_text).unwrap_or_default();
-        groups.entry(if key.is_empty() { "—".into() } else { key }).or_default().push(r);
-    }
-    let mut ordered = Vec::new();
-    for o in options {
-        if let Some(rs) = groups.remove(o) { ordered.push((o.clone(), rs)); }
-    }
-    let none = groups.remove("—");
-    ordered.extend(groups);
-    if let Some(rs) = none { ordered.push(("—".into(), rs)); }
-    ordered
 }
 
 /// A cell's raw text: lists joined, numbers without a trailing `.0`.
@@ -672,7 +669,7 @@ fn format_number(n: f64, schema: Option<&crate::schema::PropertyDef>) -> String 
         Some("currency") => format!("{unit}{}", grouped(n, 2)),
         Some("integer") => grouped(n.round(), 0),
         Some("decimal") => grouped(n, 1),
-        Some("progress") => {
+        Some("progress") | Some("ring") => {
             // A bare 0–100 bar is a share, so it reads as one; a custom range or unit reads as itself.
             let bare = schema.map_or(true, |s| s.min.is_none() && s.max.is_none()) && unit.is_empty();
             format!("{}{}", fmt_num(n), if bare { "%" } else { unit })
@@ -703,6 +700,15 @@ fn cell_html(v: &serde_json::Value, schema: Option<&crate::schema::PropertyDef>)
         _ => None,
     };
     let Some(n) = n else { return esc(&json_text(v)) };
+    if let (Some("ring"), Some(s)) = (format, schema) {
+        // An arc round a small circle (r=8 → circumference 50.27); red once past the end.
+        let pct = crate::data::percent_of(n, Some(s));
+        let dash = 50.27 * (pct.clamp(0.0, 100.0) / 100.0);
+        return format!(
+            "<span class=\"ring{}\" title=\"{}%\"><svg viewBox=\"0 0 20 20\" width=\"18\" height=\"18\" aria-hidden=\"true\"><circle class=\"ring-track\" cx=\"10\" cy=\"10\" r=\"8\"/><circle class=\"ring-fill\" cx=\"10\" cy=\"10\" r=\"8\" stroke-dasharray=\"{:.2} 50.27\" transform=\"rotate(-90 10 10)\"/></svg> {}</span>",
+            if pct > 100.0 { " over" } else { "" }, fmt_num(pct), dash, esc(&format_number(n, schema))
+        );
+    }
     if let (Some("progress"), Some(s)) = (format, schema) {
         let (lo, hi) = (s.min.unwrap_or(0.0), s.max.unwrap_or(100.0));
         let pct = if hi > lo { ((n - lo) / (hi - lo) * 100.0).clamp(0.0, 100.0) } else { 0.0 };
@@ -736,7 +742,7 @@ fn summary_html(v: &serde_json::Value, func: &str, schema: Option<&crate::schema
         "percent_checked" => format!("{}%", fmt_num(n)),
         "count" | "empty" | "not_empty" => fmt_num(n),
         _ => match schema.and_then(|s| s.format.as_deref()) {
-            Some("stars") | Some("progress") | None => fmt_num(n),
+            Some("stars") | Some("progress") | Some("ring") | None => fmt_num(n),
             Some(_) => esc(&format_number(n, schema)),
         },
     }
@@ -986,6 +992,9 @@ article.home{margin-bottom:2.5em}#none{color:var(--muted)}
 .view-table tr.group-row th{padding-top:18px;color:var(--fg);border-bottom-width:2px}.view-table .count{color:var(--muted);font-weight:400;margin-left:6px}
 .view-table tfoot td{color:var(--muted);border-bottom:0;font-size:13px}.summary-label{text-transform:uppercase;letter-spacing:.05em;font-size:11px;margin-right:4px}
 .stars{letter-spacing:1px;color:#d9a520;white-space:nowrap}
+.ring{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.ring circle{fill:none;stroke-width:3}.ring-track{stroke:var(--line)}.ring-fill{stroke:var(--accent)}.ring.over .ring-fill{stroke:#d64545}
+.stats{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0}.stat{flex:1 1 140px;padding:14px 16px;border:1px solid var(--line);border-radius:10px}.stat-value{font-size:26px;font-weight:600;line-height:1.1}.stat-label{margin-top:6px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.view-table tr.group-summary td{color:var(--muted);font-size:13px;border-bottom-width:2px}
 .progress{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}.progress-track{display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}.progress-fill{display:block;height:100%;background:var(--accent)}
 "#;
 
@@ -1415,13 +1424,18 @@ mod tests {
 
     #[test]
     fn groups_follow_option_order_then_alpha_then_empty() {
-        use crate::data::ResolvedRow;
-        let row = |id: &str, status: serde_json::Value| ResolvedRow { id: id.into(), cells: [("status".to_string(), status)].into_iter().collect() };
-        let rows = vec![row("a", serde_json::json!("zeta")), row("b", serde_json::json!(null)), row("c", serde_json::json!("done")), row("d", serde_json::json!("alpha")), row("e", serde_json::json!("todo"))];
-        let groups = group_rows(&rows, "status", &["todo".into(), "done".into()]);
-        let keys: Vec<&str> = groups.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, ["todo", "done", "alpha", "zeta", "—"]);
-        assert_eq!(groups[4].1[0].id, "b");
+        use crate::data::{group_table, CellValue, Column, ColumnType, Row, Table};
+        let row = |id: &str, status: CellValue| Row { id: id.into(), cells: [("status".to_string(), status)].into_iter().collect() };
+        let t = Table { name: "t".into(), columns: vec![Column { key: "status".into(), ty: ColumnType::Text }], rows: vec![
+            row("a", CellValue::Text("zeta".into())), row("b", CellValue::Null), row("c", CellValue::Text("done".into())),
+            row("d", CellValue::Text("alpha".into())), row("e", CellValue::Text("todo".into())),
+        ] };
+        let orders = [("status".to_string(), vec!["todo".to_string(), "done".to_string()])].into_iter().collect();
+        let groups = group_table(&t, "status", None, &orders, &BTreeMap::new(), false);
+        let keys: Vec<&str> = groups.iter().map(|g| g.key.as_str()).collect();
+        assert_eq!(keys, ["todo", "done", "alpha", "zeta", ""]);
+        assert_eq!(groups[4].label, "—");
+        assert_eq!(groups[4].row_ids, vec!["b"]);
     }
 
     #[test]

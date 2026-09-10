@@ -149,6 +149,7 @@ pub fn run() {
             commands::git::discard_agent_branch,
             commands::data::run_view,
             commands::data::run_chart,
+            commands::data::run_stats,
             commands::data::set_cell,
             commands::data::add_row,
             commands::data::delete_row,

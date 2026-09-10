@@ -30,9 +30,13 @@ export const VIEW_TYPES: { type: ViewType; label: string }[] = [
   { type: "gallery", label: "Gallery" },
   { type: "list", label: "List" },
   { type: "chart", label: "Chart" },
+  { type: "stats", label: "Stats" },
   { type: "tracker", label: "Tracker" },
   { type: "timeline", label: "Timeline" },
 ];
+
+/** What a fresh stats view counts: its own rows. */
+export const DEFAULT_STATS = '[{"label": "Rows", "agg": "count"}]';
 
 export function isDatabaseNote(note: Note | null): boolean {
   return !!note && note.frontmatter["type"] === "database";
@@ -53,6 +57,7 @@ export function defaultViewOfType(type: ViewType, name: string): ViewDef {
     case "board": return { name, type, group: "status" };
     case "calendar": return { name, type, date: "created" };
     case "chart": return { name, type, chartType: "line", x: "created", y: "" };
+    case "stats": return { name, type, stats: DEFAULT_STATS };
     // The log collection is picked in the view's setup state.
     case "tracker": return { name, type, log: "", date: "date", done: "done", range: "week" };
     // Field names are resolved at render time (`start`/`end`, else the date columns).
@@ -80,6 +85,19 @@ function asStringArray(v: unknown): string[] | undefined {
  *  serializer emits, so both round-trip. */
 const MAP_KEYS = ["summary"] as const;
 
+/** List-of-maps keys (`stats:`): a real YAML list in `_index.md`, carried in a
+ *  ViewDef as JSON text — which is valid YAML flow style, so a spec line
+ *  `stats: [{"label": …}]` parses on the Rust side as is. */
+const JSON_KEYS = ["stats"] as const;
+
+function jsonList(v: unknown): string | undefined {
+  return Array.isArray(v) && v.length ? JSON.stringify(v) : undefined;
+}
+
+function parseJsonList(s: string): unknown[] | undefined {
+  try { const v = JSON.parse(s); return Array.isArray(v) && v.length ? v : undefined; } catch { return undefined; }
+}
+
 function flowMapToObject(s: string): Record<string, string> | undefined {
   const m = s.trim().match(/^\{(.*)\}$/);
   if (!m) return undefined;
@@ -103,7 +121,7 @@ function objectToFlowMap(v: unknown): string | undefined {
 
 /** Keys with a fixed place in a spec; every other option follows alphabetically. */
 const LIST_KEYS = ["sort", "columns"] as const;
-const KEY_ORDER = ["filter", "sort", "columns", "group", "date", "mode", "limit", "summary", "x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range", "start", "end"];
+const KEY_ORDER = ["filter", "sort", "columns", "group", "bucket", "date", "mode", "limit", "summary", "layout", "size", "x", "y", "agg", "chartType", "series", "stack", "labels", "legend", "height", "log", "done", "range", "start", "end", "stats"];
 const orderOf = (k: string) => { const i = KEY_ORDER.indexOf(k); return i < 0 ? KEY_ORDER.length : i; };
 const optionKeys = (v: ViewDef) =>
   Object.keys(v).filter((k) => k !== "name" && k !== "type").sort((p, q) => orderOf(p) - orderOf(q) || p.localeCompare(q));
@@ -123,6 +141,7 @@ export function parseViews(frontmatter: Record<string, unknown>): ViewDef[] {
       if (k === "name" || k === "type") continue;
       if ((LIST_KEYS as readonly string[]).includes(k)) { const arr = asStringArray(val); if (arr) v[k] = arr; }
       else if ((MAP_KEYS as readonly string[]).includes(k)) { const flow = objectToFlowMap(val); if (flow) v[k] = flow; }
+      else if ((JSON_KEYS as readonly string[]).includes(k)) { const list = jsonList(val); if (list) v[k] = list; }
       else if (typeof val === "string" && val !== "") v[k] = val;
       else if (typeof val === "number" || typeof val === "boolean") v[k] = String(val);
     }
@@ -139,6 +158,9 @@ export function viewToFrontmatter(v: ViewDef): Record<string, unknown> {
     if ((MAP_KEYS as readonly string[]).includes(k) && typeof val === "string") {
       const obj = flowMapToObject(val);
       if (obj) o[k] = obj;
+    } else if ((JSON_KEYS as readonly string[]).includes(k) && typeof val === "string") {
+      const list = parseJsonList(val);
+      if (list) o[k] = list;
     } else if (Array.isArray(val) ? val.length : val) o[k] = val;
   }
   return o;

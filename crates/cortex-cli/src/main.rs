@@ -160,12 +160,21 @@ enum Cmd {
     },
     /// List collections (databases)
     Collections,
-    /// Query a collection the way the app's table view does
+    /// Query a collection the way the app's views do (a table, or a saved chart / stats view)
     View {
         collection: String,
+        /// Run one of the collection's saved views by name (its keys, overridden by the flags below)
+        #[arg(long)]
+        view: Option<String>,
         /// e.g. 'status == active and priority > 2'
         #[arg(long)]
         filter: Option<String>,
+        /// Section the rows by a property; with a date property, --bucket folds them
+        #[arg(long)]
+        group: Option<String>,
+        /// day | week | month | quarter | year — how a date group folds
+        #[arg(long)]
+        bucket: Option<String>,
         /// field, or 'field desc' (repeatable)
         #[arg(long = "sort")]
         sort: Vec<String>,
@@ -524,27 +533,71 @@ fn run() -> Result<()> {
             let names = v.collections();
             if out.json { out.emit(&names) } else { for n in names { println!("{n}"); } Ok(()) }
         }
-        Cmd::View { collection, filter, sort, columns, limit, summary } => {
+        Cmd::View { collection, view, filter, sort, columns, group, bucket, limit, summary } => {
             let summary: Vec<(String, String)> = summary.iter().map(|s| match s.split_once('=') {
                 Some((f, func)) if !f.trim().is_empty() && !func.trim().is_empty() => Ok((f.trim().to_string(), func.trim().to_string())),
                 _ => Err(format!("--summary expects field=function, got '{s}'")),
             }).collect::<std::result::Result<_, _>>()?;
-            let t = v.view(&collection, filter.as_deref(), &sort, columns.as_deref(), limit, &summary)?;
-            if out.json { return out.emit(&t); }
-            let headers: Vec<&str> = std::iter::once("ID").chain(t.columns.iter().map(|c| c.key.as_str())).collect();
-            let mut rows: Vec<Vec<String>> = t.rows.iter().map(|r| {
-                std::iter::once(r.id.clone())
-                    .chain(t.columns.iter().map(|c| r.cells.get(&c.key).map(json_text).unwrap_or_default()))
-                    .collect()
-            }).collect();
-            // The summary row sits under the columns it summarises, labelled by function.
-            if !t.summary.is_empty() {
-                let label = |key: &str| summary.iter().find(|(f, _)| f == key)
-                    .and_then(|(_, func)| t.summary.get(key).map(|v| format!("{func}: {}", json_text(v))))
-                    .unwrap_or_default();
-                rows.push(std::iter::once(String::new()).chain(t.columns.iter().map(|c| label(&c.key))).collect());
+            let run = v.view(&collection, &ops::ViewQuery { view, filter, sort, columns, group, bucket, limit, summary })?;
+            if out.json { return out.emit(&run); }
+            match run {
+                ops::ViewRun::Stats(s) => {
+                    let rows = s.stats.iter().map(|st| vec![st.label.clone(), stat_text(st), st.error.clone().unwrap_or_default()]).collect();
+                    table(&["Stat", "Value", ""], rows);
+                }
+                ops::ViewRun::Chart(c) => {
+                    if c.series.is_empty() {
+                        let round = matches!(c.chart_type.as_str(), "donut" | "pie");
+                        let total: f64 = c.points.iter().map(|p| p.y.max(0.0)).sum();
+                        let rows = c.points.iter().map(|p| {
+                            let mut r = vec![p.x.clone(), num_text(p.y)];
+                            if round { r.push(if total > 0.0 { format!("{}%", num_text(p.y.max(0.0) / total * 100.0)) } else { "—".into() }); }
+                            r
+                        }).collect();
+                        let mut headers = vec![c.x_label.as_str(), c.y_label.as_str()];
+                        if round { headers.push("Share"); }
+                        table(&headers, rows);
+                    } else {
+                        let mut xs: Vec<&str> = Vec::new();
+                        for s in &c.series { for p in &s.points { if !xs.contains(&p.x.as_str()) { xs.push(&p.x); } } }
+                        let headers: Vec<&str> = std::iter::once(c.x_label.as_str()).chain(c.series.iter().map(|s| s.name.as_str())).collect();
+                        let rows = xs.iter().map(|x| std::iter::once(x.to_string()).chain(c.series.iter().map(|s| s.points.iter().find(|p| p.x == *x).map(|p| num_text(p.y)).unwrap_or_default())).collect()).collect();
+                        table(&headers, rows);
+                    }
+                }
+                ops::ViewRun::Table(t) => {
+                    let headers: Vec<&str> = std::iter::once("ID").chain(t.columns.iter().map(|c| c.key.as_str())).collect();
+                    let row_line = |r: &cortex_core::data::ResolvedRow| -> Vec<String> {
+                        std::iter::once(r.id.clone())
+                            .chain(t.columns.iter().map(|c| r.cells.get(&c.key).map(|v| cell_text(v, c)).unwrap_or_default()))
+                            .collect()
+                    };
+                    // A summary row sits under the columns it summarises, labelled by function.
+                    let summary_line = |values: &std::collections::BTreeMap<String, serde_json::Value>| -> Vec<String> {
+                        std::iter::once(String::new()).chain(t.columns.iter().map(|c| {
+                            t_summary_func(&t, &c.key).and_then(|func| values.get(&c.key).map(|v| format!("{func}: {}", json_text(v)))).unwrap_or_default()
+                        })).collect()
+                    };
+                    if t.groups.is_empty() {
+                        let mut rows: Vec<Vec<String>> = t.rows.iter().map(row_line).collect();
+                        if !t.summary.is_empty() { rows.push(summary_line(&t.summary)); }
+                        table(&headers, rows);
+                    } else {
+                        // One section per group, newest bucket or first option first, each with its own summary.
+                        let by_id: std::collections::BTreeMap<&str, &cortex_core::data::ResolvedRow> = t.rows.iter().map(|r| (r.id.as_str(), r)).collect();
+                        for g in &t.groups {
+                            println!("── {} ({})", g.label, g.row_ids.len());
+                            let mut rows: Vec<Vec<String>> = g.row_ids.iter().filter_map(|id| by_id.get(id.as_str())).map(|r| row_line(r)).collect();
+                            if !g.summary.is_empty() { rows.push(summary_line(&g.summary)); }
+                            table(&headers, rows);
+                        }
+                        if !t.summary.is_empty() {
+                            println!("── all ({})", t.rows.len());
+                            table(&headers, vec![summary_line(&t.summary)]);
+                        }
+                    }
+                }
             }
-            table(&headers, rows);
             Ok(())
         }
         Cmd::Schema { key, action } => match (action, key) {
@@ -1077,6 +1130,38 @@ fn read_stdin() -> Result<String> {
     let mut s = String::new();
     std::io::stdin().read_to_string(&mut s)?;
     Ok(s)
+}
+
+/// `12` / `3.5` — an integer plainly, anything else to one decimal.
+fn num_text(n: f64) -> String {
+    if !n.is_finite() { return "—".into(); }
+    if n.fract() == 0.0 { format!("{}", n as i64) } else { format!("{n:.1}") }
+}
+
+/// The function a resolved table's `summary` was asked for on a column — the
+/// engine keeps only values, so read it back from the spec the CLI knows: the
+/// column's presence in the summary map.
+fn t_summary_func<'a>(t: &'a cortex_core::data::ResolvedTable, key: &str) -> Option<&'a str> {
+    t.summary_functions.get(key).map(String::as_str)
+}
+
+/// A stat tile's value as text, in its format: `◑ 64%` for a ring, `1,200` grouped, `—` for none.
+fn stat_text(s: &cortex_core::data::Stat) -> String {
+    let Some(n) = s.value else { return s.text.clone() };
+    match s.format.as_deref() {
+        Some("ring") => format!("{} {}%", cortex_core::data::ring_glyph(n), num_text(n)),
+        Some("progress") | Some("percent") => format!("{}%", num_text(n)),
+        _ => num_text(n),
+    }
+}
+
+/// A cell as the terminal shows it: a ring as its glyph and share, else the raw text.
+fn cell_text(v: &serde_json::Value, c: &cortex_core::data::ResolvedColumn) -> String {
+    if let (Some("ring"), Some(n)) = (c.schema.as_ref().and_then(|s| s.format.as_deref()), v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))) {
+        let pct = cortex_core::data::percent_of(n, c.schema.as_ref());
+        return format!("{} {}%", cortex_core::data::ring_glyph(pct), num_text(pct));
+    }
+    json_text(v)
 }
 
 fn json_text(v: &serde_json::Value) -> String {

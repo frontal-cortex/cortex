@@ -121,8 +121,11 @@ tags: [journal]
 A folder under `collections/` is a database: every note in it is a row, its
 frontmatter the row's properties, typed by `.cortex/schemas/<name>.yaml`. The
 folder's `_index.md` is the collection's own page — its `views:` (table,
-board, calendar, gallery, chart, timeline, tracker) plus any prose you write
-around them. Rollups, formulas and streaks are computed when read and never
+board, calendar, gallery, chart, stats, timeline, tracker) plus any prose you
+write around them. A view's `group:` on a date plus `bucket: month` (or day,
+week, quarter, year) sections rows by period with per-section summaries;
+`type: stats` lists `stats:` tiles (`{label, agg, field}` or `{label, expr}`);
+charts take `chartType: line | bar | area | donut | pie`. Rollups, formulas and streaks are computed when read and never
 written into files.
 
 Template packs from the marketplace (**Browse templates** in the app,
@@ -222,7 +225,7 @@ The `cortex` CLI works from anywhere inside the vault (or `--vault DIR` / `CORTE
     cortex tags                              tags with counts, nested by /
     cortex show <note> [--body]              print a note          cortex new <title> [--dir d] [--tag t] [--template x] [--body -]
     cortex set <note> key=value [key=]       edit properties       cortex write <note> < body.md
-    cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--filter ..] [--sort f] [--summary f=sum]
+    cortex links <note> / backlinks <note>   the link graph        cortex collections / view <coll> [--view NAME] [--filter ..] [--group f --bucket month] [--summary f=sum]
     cortex comments <note> [--all]           comment threads       cortex comment <note> [--quote "…"] "text" | --reply ID "text" | --resolve ID
     cortex mv <note> <path-or-dir/> [--title t]   rename/move; inbound [[links]] are rewritten to follow
     cortex schema [key]                      typed properties      cortex status

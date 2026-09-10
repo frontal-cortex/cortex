@@ -42,7 +42,7 @@ cd ~/my-vault                              # or: --vault DIR / CORTEX_VAULT=DIR
 | `cortex comment <note> [--quote "…" [--occurrence n]] "text"` / `--reply ID "text"` / `--resolve ID` / `--reopen ID` | open a thread anchored to a passage of the body (the quote must be in it) or about the whole note, reply in one, or resolve it; author is the git identity; one commit when `auto_commit` is on |
 | `cortex assets [--unused]` | every file under `assets/` with its size, type and how many notes reference it; `--unused` keeps only the orphans. A report, never a delete |
 | `cortex mv <note> <dest> [--title t]` | rename or move a note — `dest` is a new path (`notes/x/plan.md`) or a folder (`notes/x/`) — and rewrite every inbound `[[link]]` to follow it, aliases / sections / embeds kept; one commit when `auto_commit` is on. `cortex set <note> title=…` relinks the same way |
-| `cortex collections` / `cortex view <coll> [--filter ..] [--sort f] [--columns a,b] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty) |
+| `cortex collections` / `cortex view <coll> [--view NAME] [--filter ..] [--sort f] [--columns a,b] [--group f --bucket month] [--limit n] [--summary f=sum,g=count]` | query a database like the app's table; `--summary` adds the footer's calculations (count, sum, avg, min, max, percent_checked, empty, not_empty); `--group` sections the rows (`--bucket day\|week\|month\|quarter\|year` folds a date group, each section with its own summary); `--view` runs one of the collection's saved views by name — a chart prints its points, a stats view its tiles, `format: ring` cells print as `◑ 64%` |
 | `cortex schema [key]` | typed properties for a collection or note type |
 | `cortex schema rename <key> <old> <new>` / `cortex schema rm <key> <name>` | rename or delete a property everywhere at once: the schema, the key in every row, the collection's views, and the rollups / formulas (in any schema) that reference it. `rm` is refused while a rollup or formula still depends on the property, and says which |
 | `cortex status` | changed files, sync counts, recent commits, proposals |
@@ -154,7 +154,8 @@ than `or`, parentheses group, `not` negates what follows:
 `d w m y`). Strings in single quotes; on a list property `contains` and `==`
 mean "has that item". Values may be **relative dates**: `@today`, `@today-7`,
 `@today+30`, `@tomorrow`, `@yesterday`, `@monday` (this week's), `@monday-1`,
-`@sunday`, `@month` (`YYYY-MM`), `@month-1`, `@year`, `@week` (`YYYY-Www`), and
+`@sunday`, `@month` (`YYYY-MM`), `@month-1`, `@quarter` (the quarter's first
+day; `@quarter+1` the next), `@year`, `@week` (`YYYY-Www`), and
 `@me` (the current member). An empty cell equals `''` and satisfies no ordering
 comparison, so `due <= @today` never sweeps in undated rows.
 
@@ -166,19 +167,49 @@ filter and limit): `count`, `sum`, `avg`, `min`, `max`, `percent_checked`
 `query_collection`; the app's footer shows the same numbers. A table with
 `group: status` folds into one section per value, in option order.
 
+**Period grouping.** `group: <date property>` plus `bucket: day | week | month
+| quarter | year` folds a table, list or board into one section per period,
+newest first — `September 2026`, `Week 37 · 8–14 Sep`, `Q3 2026`. The result
+carries `groups`: each with `key` (`2026-09`, `2026-Q3`, a week's Monday),
+`label`, `rowIds`, and the view's `summary:` computed over that section alone.
+`cortex view spend --group date --bucket month --summary amount=sum`, MCP
+`query_collection {group, bucket}` / `run_view`, and the published site all
+show the same sections. Rows without the date land in a last `—` section.
+
+**Stats views.** `type: stats` draws a few numbers as tiles instead of rows:
+
+```yaml
+- name: Month
+  type: stats
+  filter: date >= @month
+  stats:
+    - {label: Spent, agg: sum, field: amount}
+    - {label: Budget, source: budgets, agg: sum, field: limit}
+    - {label: Used, expr: spent / budget * 100, format: ring}
+```
+
+Each entry is `{label, agg, field, filter?, source?, format?}` — one summary
+function (the `summary:` set) over one source's rows, the view's own `filter:`
+narrowing entries on its source — or `{label, expr}`, a formula over the tiles
+before it, by label or its underscore form (`Total spent` → `total_spent`).
+`format:` defaults to the field's schema format. Nothing is stored:
+`cortex view <coll> --view Month` and MCP `run_view` return the same
+`stats: [{label, value, text, format}]`.
+
 **View types.** `type:` picks how the app draws the same rows; the engine
 returns the same table whatever it says, so `cortex view` and `run_view` never
 care. Beyond the query keys every view shares, each type reads its own:
 
 | `type` | Shows | Keys it reads |
 |---|---|---|
-| `table` | editable grid | `columns`, `group` (sections), `summary` |
-| `list` | one line per row: title and up to three property chips | `columns` (which chips) |
-| `board` | cards in columns by a select / status | `group` (required) |
+| `table` | editable grid | `columns`, `group` (sections), `bucket` (a date group by period), `summary` |
+| `list` | one line per row: title and up to three property chips | `columns` (which chips), `group`, `bucket` |
+| `board` | cards in columns by a select / status — or by period with a date `group` | `group` (required), `bucket` |
 | `calendar` | rows on a month, week or day grid | `date` (the day), `mode: month \| week \| day`, `end` (a span's last day — default `end` when `date: start`; a cell holding `2026-09-01/2026-09-05` spans on its own) |
-| `gallery` | cards with a `cover` image | `columns` |
+| `gallery` | cards with a `cover` image; `layout: compact` makes KPI cards (no cover, one labelled line per shown property, the first large) | `columns`, `layout: compact`, `size: small \| medium \| large` |
 | `timeline` | bars from a start to an end date on a week axis | `start`, `end` |
-| `chart` | a line or bar chart | `x`, `y`, `agg`, `chartType`, `bucket`, `series` |
+| `chart` | a line, bar, area, donut or pie chart | `x`, `y`, `agg`, `chartType: line \| bar \| area \| donut \| pie`, `bucket` (adds `quarter`), `series` (a relation groups by the related title), `stack: true` (bar/area series piled up), `labels: name \| value \| name_value \| none` (donut/pie slices), `legend: false`, `height: small \| medium \| large` |
+| `stats` | number tiles — one per `stats:` entry (see above) | `stats`, `filter` |
 | `tracker` | items × days with streaks | `log`, `date`, `done`, `range` |
 
 The app's search box above a view narrows the rows on show without touching
@@ -217,7 +248,7 @@ properties:
     auto: status == done
   - name: spent
     type: number
-    format: currency          # percent | progress (a 0–100 bar) | currency | stars | integer | decimal
+    format: currency          # percent | progress (a 0–100 bar) | ring (an arc; red past 100%) | currency | stars | integer | decimal
     unit: "€"
   - name: added               # from git history, never written: when the row's
     type: created_time        # file was first committed (created_by: by whom),

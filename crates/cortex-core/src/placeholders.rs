@@ -25,6 +25,11 @@ pub fn resolve(name: &str, base: NaiveDate) -> Option<String> {
         "sunday" => monday(base) + Duration::days(6 + 7 * offset),
         "month" => return Some(shift_month(base, offset as i32).format("%Y-%m").to_string()),
         "year" => return Some(format!("{}", base.year() + offset as i32)),
+        // The quarter's first day, so `date >= @quarter and date < @quarter+1` reads naturally.
+        "quarter" => {
+            let q0 = shift_month(NaiveDate::from_ymd_opt(base.year(), base.month0() / 3 * 3 + 1, 1).unwrap(), 3 * offset as i32);
+            return Some(q0.format("%Y-%m-%d").to_string());
+        }
         "week" => {
             let m = monday(base) + Duration::days(7 * offset);
             let iso = m.iso_week();
@@ -155,5 +160,16 @@ mod tests {
         assert_eq!(resolve_in_filter("due <= @today and owner == @me", base), "due <= 2026-09-09 and owner == @me");
         assert_eq!(resolve_in_filter("date >= @today-7 and date < @monday+1", base), "date >= 2026-09-02 and date < 2026-09-14");
         assert_eq!(resolve_in_filter("a == 'x@y'", base), "a == 'x@y'");
+    }
+
+    #[test]
+    fn quarter_word() {
+        let base = d("2026-09-09");
+        assert_eq!(resolve("quarter", base).unwrap(), "2026-07-01");
+        assert_eq!(resolve("quarter+1", base).unwrap(), "2026-10-01");
+        assert_eq!(resolve("quarter-1", base).unwrap(), "2026-04-01");
+        assert_eq!(resolve("quarter-3", base).unwrap(), "2025-10-01");
+        assert_eq!(resolve("quarter", d("2026-01-15")).unwrap(), "2026-01-01");
+        assert!(is_date_word("quarter"));
     }
 }

@@ -912,6 +912,68 @@ pub struct ResolvedTable {
     /// Absent when the spec asks for none.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub summary: BTreeMap<String, serde_json::Value>,
+    /// Which function produced each `summary` value (field → `sum`, …), so a
+    /// consumer that only has the table can still label it.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub summary_functions: BTreeMap<String, String>,
+    /// `group:` sections in display order — option order for a select, newest
+    /// first for a date (`bucket: day | week | month | quarter | year` folds
+    /// days together), every other value sorted, rows without one last. Each
+    /// carries the spec's `summary:` over its own rows. Empty without `group`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<ResolvedGroup>,
+}
+
+/// One `group:` section of a resolved view.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedGroup {
+    /// The raw value — a select option, a bucket key (`2026-09`, `2026-Q3`,
+    /// a week's Monday), or empty for rows without one.
+    pub key: String,
+    /// The heading to print: `September 2026`, `Week 37 · 8–14 Sep`,
+    /// `Q3 2026`, `Wed 9 Sep`; the value itself otherwise; `—` for empty.
+    pub label: String,
+    pub row_ids: Vec<String>,
+    /// The spec's `summary:` functions over this section's rows.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub summary: BTreeMap<String, serde_json::Value>,
+}
+
+/// Split a table's rows into `group:` sections. `bucket` folds a date group
+/// into `day | week | month | quarter | year`; a list-valued cell (multi-select,
+/// relation) puts the row in every value's section; a range groups by its start.
+pub fn group_table(table: &Table, group: &str, bucket: Option<&str>, orders: &BTreeMap<String, Vec<String>>, summary: &BTreeMap<String, String>, date_hint: bool) -> Vec<ResolvedGroup> {
+    let is_date = date_hint || table.columns.iter().any(|c| c.key == group && matches!(c.ty, ColumnType::Date | ColumnType::DateRange));
+    let bucket = bucket.filter(|b| *b != "none" && is_date);
+    let mut by: BTreeMap<String, Vec<&Row>> = BTreeMap::new();
+    for r in &table.rows {
+        let keys: Vec<String> = match r.cells.get(group) {
+            Some(CellValue::List(items)) if !items.is_empty() => items.clone(),
+            Some(CellValue::Range(start, _)) => vec![start.clone()],
+            Some(c) => vec![c.as_text()],
+            None => vec![String::new()],
+        };
+        for k in keys {
+            let k = match bucket { Some(b) if !k.is_empty() => bucket_key(&k, b), _ => k };
+            by.entry(k).or_default().push(r);
+        }
+    }
+    let mut keys: Vec<String> = by.keys().cloned().collect();
+    match orders.get(group) {
+        Some(opts) => keys.sort_by_cached_key(|k| (k.is_empty(), opts.iter().position(|o| o == k).unwrap_or(opts.len()), k.clone())),
+        None if is_date => keys.sort_by(|a, b| a.is_empty().cmp(&b.is_empty()).then_with(|| b.cmp(a))),
+        None => keys.sort_by(|a, b| a.is_empty().cmp(&b.is_empty()).then_with(|| a.cmp(b))),
+    }
+    keys.into_iter().map(|k| {
+        let rows = &by[&k];
+        let label = if k.is_empty() { "—".to_string() } else if is_date { bucket_label(&k, bucket.unwrap_or("day")) } else { k.clone() };
+        let summary = summary.iter()
+            .filter(|(_, f)| !f.trim().is_empty())
+            .map(|(field, f)| (field.clone(), rollup_value(rows, field, f.trim()).to_json()))
+            .collect();
+        ResolvedGroup { row_ids: rows.iter().map(|r| r.id.clone()).collect(), key: k, label, summary }
+    }).collect()
 }
 
 /// Column type label for a schema-only property (one with no row values yet).
@@ -946,23 +1008,32 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
         });
     // Computed columns first, then the query — so a view may filter or sort
     // on a rollup or a formula (`progress < 100`, `sort: [days_left]`).
-    let mut table = resolve_source(root, &spec.source)?;
-    if let Some(s) = &schema {
-        if let Some(name) = spec.source.strip_prefix("collections/") {
-            apply_authorship(root, &mut table, name.trim_end_matches('/'), s);
-        }
-        apply_rollups(root, &mut table, s);
-        apply_formulas(&mut table, s);
-    }
+    let full = computed_table(root, &spec.source, schema.as_ref())?;
+    let orders = option_order(schema.as_ref());
     let query = Query {
         filter: match &spec.filter { Some(f) if !f.trim().is_empty() => Some(parse_filter(f)?), _ => None },
         sort: spec.sort.clone().unwrap_or_default().iter().map(|s| parse_sort(s)).collect(),
         columns: spec.columns.clone(),
         limit: spec.limit,
-        option_order: option_order(schema.as_ref()),
+        option_order: orders.clone(),
     };
-    let table = query.apply(&table);
+    let table = query.apply(&full);
     let summary = summarize_table(&table, &spec.summary).into_iter().map(|(k, v)| (k, v.to_json())).collect();
+    // Sections come from the rows the query kept, in its order, but with every
+    // cell — the group field need not be a shown column.
+    let groups = match spec.group.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+        Some(g) => {
+            let by_id: BTreeMap<&str, &Row> = full.rows.iter().map(|r| (r.id.as_str(), r)).collect();
+            let kept = Table {
+                name: full.name.clone(),
+                columns: full.columns.clone(),
+                rows: table.rows.iter().filter_map(|r| by_id.get(r.id.as_str()).map(|r| (*r).clone())).collect(),
+            };
+            let date_hint = schema.as_ref().and_then(|s| s.property(g)).map_or(false, |p| matches!(p.ty, crate::schema::PropType::Date | crate::schema::PropType::DateRange | crate::schema::PropType::CreatedTime | crate::schema::PropType::EditedTime));
+            group_table(&kept, g, spec.option("bucket").as_deref(), &orders, &spec.summary, date_hint)
+        }
+        None => vec![],
+    };
     let all_columns = if all_columns.is_empty() { table.columns.iter().map(|c| c.key.clone()).collect() } else {
         // Computed properties are fields too, for the toolbar's pickers.
         let mut all = all_columns;
@@ -987,8 +1058,24 @@ pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
         all_columns,
         columns,
         rows: table.rows.into_iter().map(|r| ResolvedRow { id: r.id, cells: r.cells.into_iter().map(|(k, v)| (k, v.to_json())).collect() }).collect(),
+        summary_functions: spec.summary.iter().filter(|(_, f)| !f.trim().is_empty()).map(|(k, f)| (k.clone(), f.trim().to_string())).collect(),
         summary,
+        groups,
     })
+}
+
+/// A source with its computed columns filled in — authorship, rollups,
+/// formulas — the table every view runs its query over.
+fn computed_table(root: &Path, source: &str, schema: Option<&crate::schema::TypeSchema>) -> Result<Table> {
+    let mut table = resolve_source(root, source)?;
+    if let Some(s) = schema {
+        if let Some(name) = source.strip_prefix("collections/") {
+            apply_authorship(root, &mut table, name.trim_end_matches('/'), s);
+        }
+        apply_rollups(root, &mut table, s);
+        apply_formulas(&mut table, s);
+    }
+    Ok(table)
 }
 
 /// The functions a view's `summary:` (and a schema's rollup) may name.
@@ -2152,7 +2239,18 @@ pub struct ChartResult {
     /// `points` is the one series; with series, `points` is their sum per x).
     #[serde(default)]
     pub series: Vec<ChartSeries>,
+    /// `stack: true` — series pile up (bar/area) instead of sitting side by side.
+    pub stack: bool,
+    /// Slice labels for donut/pie: `name | value | name_value | none`.
+    pub labels: String,
+    /// `legend: false` hides the series/slice legend.
+    pub legend: bool,
+    /// `height: small | medium | large`.
+    pub height: String,
 }
+
+/// The chart types `chartType:` may name.
+pub const CHART_TYPES: &[&str] = &["line", "bar", "area", "donut", "pie"];
 
 #[derive(Default)]
 struct Acc {
@@ -2160,19 +2258,47 @@ struct Acc {
     rows: usize,
 }
 
-/// Fold an ISO date into its `day | week | month | year` bucket: the week is
-/// its Monday, so buckets stay sortable dates. Non-dates pass through.
+/// The buckets a date may be folded into.
+pub const BUCKETS: &[&str] = &["day", "week", "month", "quarter", "year"];
+
+/// Fold an ISO date into its `day | week | month | quarter | year` bucket: the
+/// week is its Monday and the quarter `YYYY-Qn`, so buckets stay sortable.
+/// Non-dates pass through.
 pub(crate) fn bucket_key(value: &str, bucket: &str) -> String {
+    use chrono::Datelike;
     let Ok(d) = chrono::NaiveDate::parse_from_str(&value[..value.len().min(10)], "%Y-%m-%d") else { return value.to_string() };
     match bucket {
-        "week" => {
-            use chrono::Datelike;
-            (d - chrono::Duration::days(d.weekday().num_days_from_monday() as i64)).format("%Y-%m-%d").to_string()
-        }
+        "week" => (d - chrono::Duration::days(d.weekday().num_days_from_monday() as i64)).format("%Y-%m-%d").to_string(),
         "month" => d.format("%Y-%m").to_string(),
+        "quarter" => format!("{}-Q{}", d.year(), d.month0() / 3 + 1),
         "year" => d.format("%Y").to_string(),
         _ => d.format("%Y-%m-%d").to_string(),
     }
+}
+
+/// A bucket key as a heading: `September 2026`, `Week 37 · 8–14 Sep`,
+/// `Q3 2026`, `2026`, `Wed 9 Sep` (the year added when it is not this one).
+pub fn bucket_label(key: &str, bucket: &str) -> String {
+    use chrono::Datelike;
+    let this_year = crate::placeholders::today().year();
+    let day = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+    match bucket {
+        "month" => day(&format!("{key}-01")).map(|d| d.format("%B %Y").to_string()),
+        "quarter" => key.split_once("-Q").map(|(y, q)| format!("Q{q} {y}")),
+        "year" => Some(key.to_string()),
+        "week" => day(key).map(|mon| {
+            let sun = mon + chrono::Duration::days(6);
+            let range = if mon.month() == sun.month() {
+                format!("{}–{} {}", mon.day(), sun.day(), sun.format("%b"))
+            } else {
+                format!("{} {}–{} {}", mon.day(), mon.format("%b"), sun.day(), sun.format("%b"))
+            };
+            let iso = mon.iso_week();
+            let year = if iso.year() == this_year { String::new() } else { format!(" {}", iso.year()) };
+            format!("Week {}{year} · {range}", iso.week())
+        }),
+        _ => day(key).map(|d| if d.year() == this_year { d.format("%a %-d %b").to_string() } else { d.format("%a %-d %b %Y").to_string() }),
+    }.unwrap_or_else(|| key.to_string())
 }
 
 fn aggregate(table: &Table, x: &str, y: &str, agg: &str, bucket: Option<&str>) -> Result<Vec<ChartPoint>> {
@@ -2214,6 +2340,14 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let x = spec.option("x").ok_or_else(|| AppError::Other("Chart requires an `x` field".into()))?;
     let y = spec.option("y").ok_or_else(|| AppError::Other("Chart requires a `y` field".into()))?;
     let chart_type = spec.option("chartType").unwrap_or_else(|| "line".into());
+    if !CHART_TYPES.contains(&chart_type.as_str()) {
+        return Err(AppError::Other(format!("Unknown chartType '{chart_type}' ({})", CHART_TYPES.join("|"))));
+    }
+    let round = matches!(chart_type.as_str(), "donut" | "pie");
+    let stack = spec.option("stack").map_or(false, |s| s == "true");
+    let labels = spec.option("labels").unwrap_or_else(|| if round { "name".into() } else { "none".into() });
+    let legend = spec.option("legend").map_or(true, |s| s != "false");
+    let height = spec.option("height").unwrap_or_else(|| "medium".into());
     let agg = spec.option("agg");
     let bucket_opt = spec.option("bucket").filter(|b| b != "none");
     let bucket = bucket_opt.as_deref();
@@ -2262,6 +2396,14 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let series: Vec<ChartSeries> = match series_field.as_deref() {
         None => vec![],
         Some(field) => {
+            // A series over a relation groups by the related row's title, like a select by its option.
+            let title_of: BTreeMap<String, String> = schema.as_ref()
+                .and_then(|s| s.property(field))
+                .filter(|p| p.ty == crate::schema::PropType::Relation)
+                .and_then(|p| p.collection.as_deref())
+                .and_then(|c| read_collection(root, c).ok())
+                .map(|t| t.rows.iter().filter_map(|r| r.cells.get("title").map(|t| (r.id.clone(), t.as_text()))).filter(|(_, t)| !t.is_empty()).collect())
+                .unwrap_or_default();
             let mut by: BTreeMap<String, Vec<Row>> = BTreeMap::new();
             for r in &filtered.rows {
                 // A list-valued series field (e.g. a tracker log's `done`) puts the row in every value's series.
@@ -2270,19 +2412,172 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
                     Some(c) => vec![c.as_text()],
                     None => vec![String::new()],
                 };
-                for k in keys { by.entry(k).or_default().push(r.clone()); }
+                for k in keys { by.entry(title_of.get(&k).cloned().unwrap_or(k)).or_default().push(r.clone()); }
             }
             let mut out = Vec::new();
             for (name, rows) in by {
                 let t = Table { name: filtered.name.clone(), columns: filtered.columns.clone(), rows };
                 out.push(ChartSeries { name, points: series_of(&t)? });
             }
+            // A select's option order, when it has one.
+            if let Some(opts) = orders.get(field) {
+                out.sort_by_cached_key(|s| (opts.iter().position(|o| *o == s.name).unwrap_or(opts.len()), s.name.clone()));
+            }
             out
         }
     };
     let points = if series.is_empty() { series_of(&filtered)? } else { series.iter().flat_map(|s| s.points.iter().cloned()).fold(BTreeMap::<String, f64>::new(), |mut m, p| { *m.entry(p.x).or_default() += p.y; m }).into_iter().map(|(x, y)| ChartPoint { x, y }).collect() };
 
-    Ok(ChartResult { chart_type, x_label: x, y_label: y, points, series })
+    Ok(ChartResult { chart_type, x_label: x, y_label: y, points, series, stack, labels, legend, height })
+}
+
+// ── Saved views and shared display helpers ────────────────────────────────────
+
+/// The `type:` a spec names, `table` when it names none or does not parse.
+pub fn spec_kind(spec_yaml: &str) -> String {
+    serde_yaml::from_str::<ViewSpec>(spec_yaml).ok()
+        .and_then(|s| s.kind).map(|k| k.trim().to_string()).filter(|k| !k.is_empty())
+        .unwrap_or_else(|| "table".into())
+}
+
+/// The views a collection's `_index.md` declares: `(name, type, spec YAML)`,
+/// the spec with `source: collections/<coll>` injected so it runs as is. The
+/// CLI's `view --view <name>`, MCP and `cortex publish` all read them here.
+pub fn collection_view_specs(root: &Path, coll: &str) -> Vec<(String, String, String)> {
+    let Ok(text) = std::fs::read_to_string(root.join("collections").join(coll).join("_index.md")) else { return vec![] };
+    let Ok(note) = crate::note::parse_note("_index.md", &text) else { return vec![] };
+    let Some(views) = note.frontmatter.get("views").and_then(|v| v.as_array()) else { return vec![] };
+    views.iter().filter_map(|v| {
+        let mut obj = v.as_object()?.clone();
+        let kind = obj.get("type").and_then(|t| t.as_str()).unwrap_or("table").to_string();
+        let name = obj.remove("name").and_then(|n| n.as_str().map(str::to_string)).unwrap_or_else(|| kind.clone());
+        obj.insert("source".into(), serde_json::Value::String(format!("collections/{coll}")));
+        let spec = serde_yaml::to_string(&serde_json::Value::Object(obj)).ok()?;
+        Some((name, kind, spec))
+    }).collect()
+}
+
+/// The glyph a terminal prints for a `format: ring` value: `○ ◔ ◑ ◕ ●` by
+/// quarter of the way round.
+pub fn ring_glyph(pct: f64) -> &'static str {
+    match pct {
+        p if !(p > 0.0) => "○",
+        p if p < 37.5 => "◔",
+        p if p < 62.5 => "◑",
+        p if p < 100.0 => "◕",
+        _ => "●",
+    }
+}
+
+/// Where a value sits between a property's `min`/`max` (0–100 by default),
+/// unclamped so a ring can show it ran past 100.
+pub fn percent_of(n: f64, schema: Option<&crate::schema::PropertyDef>) -> f64 {
+    let lo = schema.and_then(|s| s.min).unwrap_or(0.0);
+    let hi = schema.and_then(|s| s.max).unwrap_or(100.0);
+    if hi > lo { (n - lo) / (hi - lo) * 100.0 } else { 0.0 }
+}
+
+// ── Stats views: a few numbers, each its own query ────────────────────────────
+
+/// One tile of a `stats` view.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stat {
+    pub label: String,
+    /// The number, when the result is one; `None` for text (a `min` over
+    /// dates) or an empty result.
+    pub value: Option<f64>,
+    /// Display text — the number written plainly, a date, or `—`.
+    pub text: String,
+    /// `format:` from the entry, else the field's schema `format:`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// Why the tile is empty, when its entry could not run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StatsResult {
+    pub stats: Vec<Stat>,
+}
+
+/// A stat's label as a formula identifier: `Total spent` → `total_spent`.
+pub fn stat_ident(label: &str) -> String {
+    let mut s: String = label.trim().chars().map(|c| if c.is_alphanumeric() || c == '_' { c.to_ascii_lowercase() } else { '_' }).collect();
+    while s.contains("__") { s = s.replace("__", "_"); }
+    s.trim_matches('_').to_string()
+}
+
+/// Run a `stats` view: each entry of `stats:` is `{label, source?, agg, field,
+/// filter?, format?}` — one summary function over one source's rows — or
+/// `{label, expr}`, a formula over the tiles before it (by label or its
+/// underscore form: `spent / budget * 100`). The view's own `filter:` applies
+/// to entries on the view's source. Nothing here is written anywhere.
+pub fn run_stats(root: &Path, spec_yaml: &str) -> Result<StatsResult> {
+    let spec_text = crate::members::resolve_me(spec_yaml, root);
+    let spec: ViewSpec = serde_yaml::from_str(&spec_text)?;
+    let entries = match spec.options.get("stats") {
+        Some(serde_yaml::Value::Sequence(s)) => s.clone(),
+        _ => return Err(AppError::Other("A stats view needs a `stats:` list of {label, agg, field} or {label, expr} entries".into())),
+    };
+    let today = crate::placeholders::today();
+    let view_filter = match &spec.filter { Some(f) if !f.trim().is_empty() => Some(parse_filter(f)?), _ => None };
+    let mut tables: BTreeMap<String, (Table, Option<crate::schema::TypeSchema>)> = BTreeMap::new();
+    let mut env: BTreeMap<String, CellValue> = BTreeMap::new();
+    let mut stats = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let get = |key: &str| -> Option<String> {
+            let v = entry.get(key)?;
+            let s = match v {
+                serde_yaml::Value::String(s) => s.clone(),
+                serde_yaml::Value::Number(n) => n.to_string(),
+                serde_yaml::Value::Bool(b) => b.to_string(),
+                _ => return None,
+            };
+            let s = s.trim().to_string();
+            if s.is_empty() { None } else { Some(s) }
+        };
+        let label = get("label").or_else(|| get("field")).or_else(|| get("expr")).or_else(|| get("agg")).unwrap_or_else(|| "Stat".into());
+        let mut format = get("format");
+        let mut error = None;
+        let cell = if let Some(expr) = get("expr") {
+            match crate::formula::Formula::parse(&expr) {
+                Ok(f) => f.eval(&env, today).to_cell(),
+                Err(e) => { error = Some(e); CellValue::Null }
+            }
+        } else {
+            let source = get("source").map(|s| if s.contains('/') { s } else { format!("collections/{s}") }).unwrap_or_else(|| spec.source.clone());
+            let agg = get("agg").unwrap_or_else(|| "count".into());
+            let field = get("field").unwrap_or_else(|| "title".into());
+            if !SUMMARY_FUNCTIONS.contains(&agg.as_str()) {
+                error = Some(format!("Unknown agg '{agg}' ({})", SUMMARY_FUNCTIONS.join("|")));
+                CellValue::Null
+            } else {
+                if !tables.contains_key(&source) {
+                    let schema = schema_for_source(root, &source);
+                    let table = computed_table(root, &source, schema.as_ref())?;
+                    tables.insert(source.clone(), (table, schema));
+                }
+                let (table, schema) = &tables[&source];
+                if format.is_none() {
+                    format = schema.as_ref().and_then(|s| s.property(&field)).and_then(|p| p.format.clone());
+                }
+                let own = match get("filter") { Some(f) => Some(parse_filter(&crate::members::resolve_me(&f, root))?), None => None };
+                let view = if source == spec.source { view_filter.as_ref() } else { None };
+                let rows: Vec<&Row> = table.rows.iter()
+                    .filter(|r| own.as_ref().map_or(true, |c| c.eval(r)) && view.map_or(true, |c| c.eval(r)))
+                    .collect();
+                rollup_value(&rows, &field, &agg)
+            }
+        };
+        env.insert(label.clone(), cell.clone());
+        env.insert(stat_ident(&label), cell.clone());
+        let value = match &cell { CellValue::Num(n) if n.is_finite() => Some(*n), _ => None };
+        let text = match &cell { CellValue::Null => "—".to_string(), c => c.as_text() };
+        stats.push(Stat { label, value, text, format, error });
+    }
+    Ok(StatsResult { stats })
 }
 
 // ── Tests: the contract — one Query type, two sources ──────────────────────────
@@ -3106,6 +3401,104 @@ mod tests {
 
         // The table's CSV export and a schema-less collection are untouched: nothing is written.
         assert!(!std::fs::read_to_string(root.join("collections/tasks/b.md")).unwrap().contains("touched"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn donut_chart_aggregates_by_category_and_carries_options() {
+        let root = scratch("donut");
+        write(&root.join("data/spend.csv"),
+            "id,category,amount\na,food,30\nb,rent,900\nc,food,20\nd,fun,50\n");
+        let donut = run_chart(&root, "source: data/spend.csv\ntype: chart\nchartType: donut\nx: category\ny: amount\nagg: sum\nlegend: false\nheight: small\n").unwrap();
+        assert_eq!(donut.chart_type, "donut");
+        assert_eq!(donut.points.len(), 3);
+        let food = donut.points.iter().find(|p| p.x == "food").unwrap();
+        assert_eq!(food.y, 50.0);
+        assert_eq!(donut.labels, "name"); // the round default
+        assert!(!donut.legend);
+        assert_eq!(donut.height, "small");
+        assert!(!donut.stack);
+        // Line charts default to no slice labels, stack on request.
+        let line = run_chart(&root, "source: data/spend.csv\ntype: chart\nchartType: area\nx: category\ny: amount\nstack: true\n").unwrap();
+        assert_eq!(line.labels, "none");
+        assert!(line.stack && line.legend);
+        assert!(run_chart(&root, "source: data/spend.csv\ntype: chart\nchartType: radar\nx: category\ny: amount\n").is_err());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn quarter_bucket_and_labels() {
+        assert_eq!(bucket_key("2026-09-10", "quarter"), "2026-Q3");
+        assert_eq!(bucket_key("2026-01-01", "quarter"), "2026-Q1");
+        assert_eq!(bucket_key("2026-12-31", "quarter"), "2026-Q4");
+        assert_eq!(bucket_label("2026-Q3", "quarter"), "Q3 2026");
+        assert_eq!(bucket_label("2026-09", "month"), "September 2026");
+        assert_eq!(bucket_label("2026", "year"), "2026");
+        assert!(bucket_label("2026-09-07", "week").starts_with("Week 37"));
+        assert!(bucket_label("2026-09-07", "week").ends_with("· 7–13 Sep"));
+        assert!(bucket_label("2026-08-31", "week").ends_with("· 31 Aug–6 Sep"));
+        assert!(bucket_label("2025-09-10", "day").ends_with("Sep 2025"));
+    }
+
+    #[test]
+    fn bucketed_groups_with_per_group_summaries() {
+        let root = gap_root("groups");
+        put(&root, ".cortex/schemas/spend.yaml", "properties:\n  - name: date\n    type: date\n  - name: amount\n    type: number\n  - name: kind\n    type: select\n    options:\n      - name: need\n      - name: want\n");
+        put(&root, "collections/spend/a.md", "---\ntitle: A\ndate: 2026-09-02\namount: 10\nkind: want\n---\n");
+        put(&root, "collections/spend/b.md", "---\ntitle: B\ndate: 2026-09-20\namount: 5\nkind: need\n---\n");
+        put(&root, "collections/spend/c.md", "---\ntitle: C\ndate: 2026-08-30\namount: 7\nkind: want\n---\n");
+        put(&root, "collections/spend/d.md", "---\ntitle: D\namount: 1\n---\n");
+        let t = resolve_view(&root, "source: collections/spend\ngroup: date\nbucket: month\nsummary: {amount: sum}\n").unwrap();
+        let keys: Vec<&str> = t.groups.iter().map(|g| g.key.as_str()).collect();
+        assert_eq!(keys, vec!["2026-09", "2026-08", ""]); // newest first, empties last
+        assert_eq!(t.groups[0].label, "September 2026");
+        assert_eq!(t.groups[0].row_ids, vec!["a", "b"]);
+        assert_eq!(t.groups[0].summary["amount"], serde_json::json!(15.0));
+        assert_eq!(t.groups[1].summary["amount"], serde_json::json!(7.0));
+        assert_eq!(t.groups[2].label, "—");
+        assert_eq!(t.summary["amount"], serde_json::json!(23.0));
+        // Quarter and week buckets fold the same rows differently.
+        let q = resolve_view(&root, "source: collections/spend\ngroup: date\nbucket: quarter\n").unwrap();
+        assert_eq!(q.groups[0].key, "2026-Q3");
+        assert_eq!(q.groups[0].row_ids.len(), 3);
+        let w = resolve_view(&root, "source: collections/spend\ngroup: date\nbucket: week\n").unwrap();
+        assert_eq!(w.groups.iter().map(|g| g.key.as_str()).collect::<Vec<_>>(), vec!["2026-09-14", "2026-08-31", "2026-08-24", ""]);
+        // A select groups in option order; bucket is ignored for non-dates.
+        let s = resolve_view(&root, "source: collections/spend\ngroup: kind\nbucket: month\nsummary: {amount: count}\n").unwrap();
+        assert_eq!(s.groups.iter().map(|g| g.label.as_str()).collect::<Vec<_>>(), vec!["need", "want", "—"]);
+        assert_eq!(s.groups[1].summary["amount"], serde_json::json!(2.0));
+        assert!(resolve_view(&root, "source: collections/spend\n").unwrap().groups.is_empty());
+        // The group field need not be a shown column.
+        let p = resolve_view(&root, "source: collections/spend\ngroup: date\nbucket: month\ncolumns: [title, amount]\n").unwrap();
+        assert_eq!(p.groups.iter().map(|g| g.key.as_str()).collect::<Vec<_>>(), vec!["2026-09", "2026-08", ""]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn stats_view_runs_aggregates_and_expressions() {
+        let root = gap_root("stats");
+        put(&root, ".cortex/schemas/spend.yaml", "properties:\n  - name: amount\n    type: number\n    format: currency\n  - name: paid\n    type: checkbox\n");
+        put(&root, "collections/spend/a.md", "---\ntitle: A\namount: 10\npaid: true\n---\n");
+        put(&root, "collections/spend/b.md", "---\ntitle: B\namount: 30\npaid: false\n---\n");
+        put(&root, "collections/budget/x.md", "---\ntitle: Sept\nlimit: 100\n---\n");
+        let spec = "source: collections/spend\ntype: stats\nstats:\n  - label: Spent\n    agg: sum\n    field: amount\n  - label: Paid\n    agg: sum\n    field: amount\n    filter: paid == true\n  - label: Budget\n    source: budget\n    agg: sum\n    field: limit\n  - label: Used\n    expr: spent / budget * 100\n    format: ring\n  - label: Items\n    agg: count\n  - label: Bad\n    agg: median\n    field: amount\n";
+        let r = run_stats(&root, spec).unwrap();
+        let by: BTreeMap<&str, &Stat> = r.stats.iter().map(|s| (s.label.as_str(), s)).collect();
+        assert_eq!(by["Spent"].value, Some(40.0));
+        assert_eq!(by["Spent"].format.as_deref(), Some("currency")); // from the schema
+        assert_eq!(by["Paid"].value, Some(10.0));
+        assert_eq!(by["Budget"].value, Some(100.0));
+        assert_eq!(by["Used"].value, Some(40.0));
+        assert_eq!(by["Used"].format.as_deref(), Some("ring"));
+        assert_eq!(by["Items"].value, Some(2.0));
+        assert_eq!(by["Bad"].text, "—");
+        assert!(by["Bad"].error.is_some());
+        // The view's own filter narrows entries on its source.
+        let r = run_stats(&root, &format!("{spec}filter: amount > 20\n")).unwrap();
+        assert_eq!(r.stats[0].value, Some(30.0));
+        assert_eq!(r.stats[2].value, Some(100.0)); // other source: untouched
+        assert!(run_stats(&root, "source: collections/spend\ntype: stats\n").is_err());
+        assert_eq!(stat_ident("Total spent (€)"), "total_spent");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

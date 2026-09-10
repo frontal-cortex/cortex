@@ -542,8 +542,8 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                                 err(&mut out, Some(&schema_path), format!("rollup `{}` needs `relation:` (and `from:` for the reverse side)", p.name));
                             }
                             if let Some(f) = p.format.as_deref() {
-                                if !["percent", "progress", "currency", "stars", "integer", "decimal"].contains(&f) {
-                                    err(&mut out, Some(&schema_path), format!("`{}`: unknown format `{f}` (percent, progress, currency, stars, integer, decimal)", p.name));
+                                if !["percent", "progress", "ring", "currency", "stars", "integer", "decimal"].contains(&f) {
+                                    err(&mut out, Some(&schema_path), format!("`{}`: unknown format `{f}` (percent, progress, ring, currency, stars, integer, decimal)", p.name));
                                 }
                             }
                             if let Some(a) = p.auto.as_deref() {
@@ -601,6 +601,59 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                                 match v.get("date").and_then(|x| x.as_str()) {
                                     Some(p) if props.get(p).map(String::as_str) == Some("date") => {}
                                     _ => err(&mut out, Some(&index_path), "a calendar view needs `date:` naming a date property".into()),
+                                }
+                            }
+                            // `bucket:` folds a date group (or a chart's date x) — nothing else.
+                            if let Some(b) = v.get("bucket").and_then(|x| x.as_str()) {
+                                if !crate::data::BUCKETS.contains(&b) && b != "none" {
+                                    err(&mut out, Some(&index_path), format!("view `bucket: {b}` is not one of {}", crate::data::BUCKETS.join(", ")));
+                                }
+                                if kind != "chart" {
+                                    match v.get("group").and_then(|x| x.as_str()) {
+                                        Some(g) if matches!(props.get(g).map(String::as_str), Some("date" | "daterange" | "createdtime" | "editedtime")) => {}
+                                        _ => err(&mut out, Some(&index_path), "`bucket:` only folds a date `group:` — set `group:` to a date property or drop `bucket:`".into()),
+                                    }
+                                }
+                            }
+                            if kind == "chart" {
+                                if let Some(ct) = v.get("chartType").and_then(|x| x.as_str()) {
+                                    if !crate::data::CHART_TYPES.contains(&ct) {
+                                        err(&mut out, Some(&index_path), format!("chart `chartType: {ct}` is not one of {}", crate::data::CHART_TYPES.join(", ")));
+                                    }
+                                }
+                            }
+                            if v.get("layout").is_some() && kind != "gallery" {
+                                err(&mut out, Some(&index_path), format!("`layout:` belongs to gallery views, not a {kind}"));
+                            }
+                            if kind == "gallery" {
+                                if let Some(l) = v.get("layout").and_then(|x| x.as_str()) { if l != "compact" { err(&mut out, Some(&index_path), format!("gallery `layout: {l}` — the only layout besides the default is `compact`")); } }
+                                if let Some(s) = v.get("size").and_then(|x| x.as_str()) { if !["small", "medium", "large"].contains(&s) { err(&mut out, Some(&index_path), format!("gallery `size: {s}` is not small, medium or large")); } }
+                            }
+                            if kind == "stats" {
+                                match v.get("stats").and_then(|x| x.as_sequence()) {
+                                    None => err(&mut out, Some(&index_path), "a stats view needs a `stats:` list — entries of {label, agg, field} or {label, expr}".into()),
+                                    Some(entries) => for e in entries {
+                                        let label = e.get("label").and_then(|x| x.as_str()).unwrap_or("?");
+                                        let has_expr = e.get("expr").and_then(|x| x.as_str()).map_or(false, |x| !x.trim().is_empty());
+                                        let agg = e.get("agg").and_then(|x| x.as_str());
+                                        let field = e.get("field").and_then(|x| x.as_str());
+                                        if has_expr {
+                                            if let Err(msg) = crate::formula::Formula::parse(e.get("expr").and_then(|x| x.as_str()).unwrap_or("")) {
+                                                err(&mut out, Some(&index_path), format!("stat `{label}`: expr does not parse: {msg}"));
+                                            }
+                                        } else {
+                                            match agg {
+                                                None => err(&mut out, Some(&index_path), format!("stat `{label}` needs `agg:` and `field:` (or `expr:`)")),
+                                                Some(a) if !crate::data::SUMMARY_FUNCTIONS.contains(&a) => err(&mut out, Some(&index_path), format!("stat `{label}`: unknown agg `{a}` ({})", crate::data::SUMMARY_FUNCTIONS.join(", "))),
+                                                Some(a) if a != "count" && field.is_none() => err(&mut out, Some(&index_path), format!("stat `{label}`: `agg: {a}` needs a `field:`")),
+                                                _ => {}
+                                            }
+                                            // A field on this collection must exist; another source's is that pack's business.
+                                            if e.get("source").is_none() {
+                                                if let Some(f) = field { if !props.contains_key(f) && f != "title" { err(&mut out, Some(&index_path), format!("stat `{label}`: field `{f}` is not in the schema")); } }
+                                            }
+                                        }
+                                    },
                                 }
                             }
                         }
@@ -1750,7 +1803,7 @@ mod tests {
         p.manifest.version = "one".into();
         p.manifest.summary = "Like Notion but better".into();
         let idx = p.files.iter_mut().find(|f| f.path == "index.md").unwrap();
-        idx.contents = b"---\ncreated: {{today}}\ntitle: T\ntype: database\nviews:\n- name: Cal\n  type: calendar\n  date: nope\n---\n<script>alert(1)</script>\n".to_vec();
+        idx.contents = b"---\ncreated: {{today}}\ntitle: T\ntype: database\nviews:\n- name: Cal\n  type: calendar\n  date: nope\n- name: Bad chart\n  type: chart\n  x: status\n  y: title\n  chartType: radar\n- name: Bad group\n  type: table\n  group: status\n  bucket: month\n- name: Bad layout\n  type: list\n  layout: compact\n- name: Bad stats\n  type: stats\n  stats:\n  - label: Open\n    field: status\n  - label: Share\n    expr: open /\n---\n<script>alert(1)</script>\n".to_vec();
         let f = lint(&p);
         let msgs: Vec<&str> = f.iter().map(|x| x.message.as_str()).collect();
         assert!(msgs.iter().any(|m| m.contains("not semver")), "{msgs:?}");
@@ -1758,6 +1811,11 @@ mod tests {
         assert!(msgs.iter().any(|m| m.contains("unquoted placeholder")), "{msgs:?}");
         assert!(msgs.iter().any(|m| m.contains("calendar view")), "{msgs:?}");
         assert!(msgs.iter().any(|m| m.contains("raw HTML")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("chartType: radar")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("only folds a date")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("`layout:` belongs to gallery")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("stat `Open` needs `agg:`")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("stat `Share`: expr does not parse")), "{msgs:?}");
     }
 
     #[test]
