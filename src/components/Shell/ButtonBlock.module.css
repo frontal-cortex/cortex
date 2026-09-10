@@ -1,0 +1,99 @@
+/* A button block: an accent pill, a small edit affordance on hover, and an
+   inline settings panel. Consecutive button blocks flow in one row — see the
+   `.bn-block-outer:has(… cortexButton)` rule in index.css. */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0;
+  user-select: none;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-inverse);
+  background: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 75%, var(--text-primary));
+  border-radius: 999px;
+  cursor: pointer;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+.pill:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+.pill:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.pill:disabled { opacity: 0.6; cursor: default; }
+.pillBroken { background: var(--bg-hover); color: var(--text-secondary); border-style: dashed; border-color: var(--danger); }
+
+.edit {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.wrap:hover .edit, .wrap:focus-within .edit { opacity: 1; }
+.edit:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.editor {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  font-size: var(--text-sm);
+  user-select: text;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.field > span { color: var(--text-tertiary); font-size: var(--text-xs); }
+.field input, .field select, .field textarea {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  min-width: 0;
+}
+.field textarea { font-family: var(--font-mono, monospace); font-size: var(--text-xs); resize: vertical; }
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+
+.check { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.check input { accent-color: var(--accent); }
+
+.actions { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+.save, .cancel {
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.save { background: var(--accent); color: var(--text-inverse); border: 1px solid var(--accent); }
+.cancel { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+.hint { color: var(--text-tertiary); font-size: var(--text-xs); }

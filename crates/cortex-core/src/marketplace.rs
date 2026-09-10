@@ -428,6 +428,8 @@ pub fn gallery(pack: &Pack) -> Vec<String> {
 const TEMPLATE_VARS: [&str; 4] = ["date", "time", "title", "uuid"];
 const RAW_HTML_OK: [&str; 6] = ["<br", "<sub", "</sub", "<sup", "</sup", "<!--"];
 const PRODUCT_WORDS: [&str; 6] = ["notion", "obsidian", "evernote", "roam", "logseq", "craft"];
+const BUTTON_ACTIONS: [&str; 5] = ["add-row", "open", "log", "set", "url"];
+const BUTTON_KEYS: [&str; 10] = ["label", "action", "collection", "values", "template", "open", "target", "view", "item", "url"];
 
 /// Every rule from the format spec. Errors block; warnings are advice.
 pub fn lint(pack: &Pack) -> Vec<Finding> {
@@ -435,6 +437,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
     let err = |out: &mut Vec<Finding>, file: Option<&str>, m: String| out.push(Finding { severity: Severity::Error, file: file.map(Into::into), message: m });
     let warn = |out: &mut Vec<Finding>, file: Option<&str>, m: String| out.push(Finding { severity: Severity::Warning, file: file.map(Into::into), message: m });
     let m = &pack.manifest;
+    let pack_colls = m.collections();
 
     // Identity and versioning.
     if m.id.is_empty() || !m.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
@@ -508,6 +511,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
         if ext == "md" {
             let text = String::from_utf8_lossy(&f.contents);
             lint_markdown(&f.path, &text, &mut out);
+            lint_buttons(&f.path, &text, &pack_colls, &mut out);
         }
     }
     if total > 2 * 1024 * 1024 { err(&mut out, None, "pack is larger than 2 MB (screenshots in preview/ not counted)".into()); }
@@ -704,6 +708,51 @@ fn lint_markdown(path: &str, text: &str, out: &mut Vec<Finding>) {
         if looks_like_tag && !RAW_HTML_OK.iter().any(|ok| tail.to_lowercase().starts_with(ok)) {
             err(out, format!("raw HTML is not allowed: `{}`", tail.chars().take(20).collect::<String>().replace('\n', " ")));
             break;
+        }
+    }
+}
+
+/// ```cortex-button fences: a known action with what it needs, and the
+/// collection it names is one the pack installs (a warning otherwise — the
+/// vault may have it). Mirrored in the marketplace repo's tools/packlib.py.
+fn lint_buttons(path: &str, text: &str, colls: &[String], out: &mut Vec<Finding>) {
+    let err = |out: &mut Vec<Finding>, m: String| out.push(Finding { severity: Severity::Error, file: Some(path.into()), message: m });
+    let warn = |out: &mut Vec<Finding>, m: String| out.push(Finding { severity: Severity::Warning, file: Some(path.into()), message: m });
+    let mut lines = text.lines();
+    while let Some(l) = lines.next() {
+        if l.trim() != "```cortex-button" { continue; }
+        let mut keys: Vec<(String, String)> = Vec::new();
+        for l in lines.by_ref() {
+            if l.trim_start().starts_with("```") { break; }
+            if l.starts_with(' ') || l.starts_with('\t') || l.trim().is_empty() { continue; }
+            if let Some((k, v)) = l.split_once(':') {
+                keys.push((k.trim().to_string(), v.trim().trim_matches(|c| c == '"' || c == '\'').to_string()));
+            }
+        }
+        let get = |k: &str| keys.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.as_str()).filter(|v| !v.is_empty());
+        let label = get("label").unwrap_or("(no label)").to_string();
+        if get("label").is_none() { err(out, "a button needs `label:`".into()); }
+        let action = get("action").unwrap_or("").to_string();
+        if !BUTTON_ACTIONS.contains(&action.as_str()) {
+            err(out, format!("button `{label}`: unknown action `{action}` (add-row, open, log, set, url)"));
+            continue;
+        }
+        let coll = get("collection").map(|c| c.trim_start_matches("collections/").trim_end_matches('/').to_string());
+        if matches!(action.as_str(), "add-row" | "log") && coll.is_none() { err(out, format!("button `{label}`: `{action}` needs `collection:`")); }
+        if action == "open" && coll.is_none() && get("target").is_none() { err(out, format!("button `{label}`: `open` needs `collection:` or `target:`")); }
+        if let Some(c) = &coll {
+            if !colls.iter().any(|x| x == c) { warn(out, format!("button `{label}` names collection `{c}`, which this pack does not install — fine when the vault has it")); }
+        }
+        if action == "log" && get("item").is_none() { err(out, format!("button `{label}`: `log` needs `item:`")); }
+        if action == "set" && !keys.iter().any(|(k, _)| k == "values") { err(out, format!("button `{label}`: `set` needs `values:`")); }
+        if action == "url" {
+            match get("url") {
+                Some(u) if u.starts_with("http://") || u.starts_with("https://") || u.starts_with("mailto:") => {}
+                _ => err(out, format!("button `{label}`: `url` must be an http(s) or mailto link")),
+            }
+        }
+        for (k, _) in &keys {
+            if !BUTTON_KEYS.contains(&k.as_str()) { warn(out, format!("button `{label}`: unknown key `{k}` is ignored")); }
         }
     }
 }
@@ -1507,6 +1556,35 @@ mod tests {
 
     fn pack(id: &str) -> Pack {
         bundled().into_iter().find(|p| p.manifest.id == id).unwrap_or_else(|| panic!("bundled pack {id}"))
+    }
+
+    #[test]
+    fn button_fences_are_linted() {
+        let colls = vec!["budget".to_string()];
+        let run = |md: &str| { let mut out = Vec::new(); lint_buttons("index.md", md, &colls, &mut out); out };
+        let errors = |out: &[Finding]| out.iter().filter(|f| f.severity == Severity::Error).map(|f| f.message.clone()).collect::<Vec<_>>();
+        let warns = |out: &[Finding]| out.iter().filter(|f| f.severity == Severity::Warning).map(|f| f.message.clone()).collect::<Vec<_>>();
+
+        let ok = run("Text\n\n```cortex-button\nlabel: New expense\naction: add-row\ncollection: budget\nvalues: {kind: expense, date: \"{{today}}\"}\nopen: true\n```\n\n```cortex-button\nlabel: Docs\naction: url\nurl: https://example.com\n```\n");
+        assert!(ok.is_empty(), "{ok:?}");
+
+        let bad = run("```cortex-button\nlabel: Odd\naction: teleport\n```\n");
+        assert_eq!(errors(&bad), vec!["button `Odd`: unknown action `teleport` (add-row, open, log, set, url)"]);
+
+        let other = run("```cortex-button\nlabel: Tick\naction: log\ncollection: collections/habits/\nitem: Read\ncolour: red\n```\n");
+        assert!(errors(&other).is_empty(), "{other:?}");
+        assert_eq!(warns(&other), vec![
+            "button `Tick` names collection `habits`, which this pack does not install — fine when the vault has it",
+            "button `Tick`: unknown key `colour` is ignored",
+        ]);
+
+        let missing = run("```cortex-button\naction: open\n```\n\n```cortex-button\nlabel: Pay\naction: set\n```\n\n```cortex-button\nlabel: Bad link\naction: url\nurl: file:///etc/passwd\n```\n");
+        assert_eq!(errors(&missing), vec![
+            "a button needs `label:`",
+            "button `(no label)`: `open` needs `collection:` or `target:`",
+            "button `Pay`: `set` needs `values:`",
+            "button `Bad link`: `url` must be an http(s) or mailto link",
+        ]);
     }
 
     #[test]

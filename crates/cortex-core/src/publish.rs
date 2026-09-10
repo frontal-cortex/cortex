@@ -415,7 +415,7 @@ fn render_body(
     }
     let mut body = String::new();
     html::push_html(&mut body, events.into_iter());
-    out.push_str(&highlights(&callouts(&body)));
+    out.push_str(&columns(&highlights(&callouts(&body))));
     Ok(out)
 }
 
@@ -428,7 +428,7 @@ fn render_body(
 // view they were. Rows link to their own page when that row is published.
 
 fn is_view_fence(lang: &str) -> bool {
-    matches!(lang.trim(), "cortex-view" | "cortex-views" | "cortex-chart")
+    matches!(lang.trim(), "cortex-view" | "cortex-views" | "cortex-chart" | "cortex-button")
 }
 
 /// `collections/<name>/_index.md` → `<name>`.
@@ -445,6 +445,7 @@ fn render_fence(root: &Path, lang: &str, spec: &str, note_path: &str, depth: usi
                 None => String::new(),
             }
         }
+        "cortex-button" => render_button(spec),
         "cortex-chart" if !spec.lines().any(|l| l.starts_with("type:")) => {
             render_view(root, &format!("type: chart\n{spec}"), None, depth, by_path)
         }
@@ -852,6 +853,58 @@ fn mark_spans(prose: &str) -> String {
     out
 }
 
+/// A `cortex-button` fence: the site has no vault to act on, so the button
+/// is its label as a disabled pill — the reader sees what the page offers.
+fn render_button(spec: &str) -> String {
+    let label = spec.lines()
+        .find_map(|l| l.trim().strip_prefix("label:"))
+        .map(|s| s.trim().trim_matches(|c| c == '"' || c == '\''))
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Button");
+    format!("<span class=\"button-pill\" aria-disabled=\"true\">{}</span>", esc(label))
+}
+
+/// `::: columns 1 2 1` … `:::` … `::: end` paragraphs (the editor's column
+/// layout) → a CSS grid, one `.column` per `:::`-separated run; the ratios
+/// become `grid-template-columns`, equal when absent. Under 700px the site's
+/// CSS stacks them again.
+fn columns(html: &str) -> String {
+    const OPEN: &str = "<p>::: columns";
+    const SEP: &str = "<p>:::</p>";
+    const END: &str = "<p>::: end</p>";
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find(OPEN) {
+        let after = &rest[i + OPEN.len()..];
+        let Some(close) = after.find("</p>") else { break };
+        let ratios: Vec<f64> = after[..close].split_whitespace().filter_map(|t| t.parse().ok()).collect();
+        let body = &after[close + "</p>".len()..];
+        let (inner, tail) = match body.find(END) {
+            Some(e) => (&body[..e], &body[e + END.len()..]),
+            None => (body, ""),
+        };
+        let cols: Vec<&str> = inner.split(SEP).collect();
+        let template = (0..cols.len())
+            .map(|k| {
+                let r = ratios.get(k).copied().filter(|r| *r > 0.0).unwrap_or(1.0);
+                if r.fract() == 0.0 { format!("{}fr", r as i64) } else { format!("{r}fr") }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        out.push_str(&rest[..i]);
+        out.push_str(&format!("<div class=\"columns\" style=\"grid-template-columns:{template}\">"));
+        for c in cols {
+            out.push_str("<div class=\"column\">");
+            out.push_str(c.trim_matches('\n'));
+            out.push_str("</div>");
+        }
+        out.push_str("</div>\n");
+        rest = tail.trim_start_matches('\n');
+    }
+    out.push_str(rest);
+    out
+}
+
 /// `> [!tip] text` blockquotes (the editor's callout syntax) → a styled aside.
 fn callouts(html: &str) -> String {
     const KINDS: [&str; 8] = ["note", "tip", "info", "warning", "caution", "important", "question", "example"];
@@ -986,6 +1039,8 @@ article.home{margin-bottom:2.5em}#none{color:var(--muted)}
 .view-table tr.group-row th{padding-top:18px;color:var(--fg);border-bottom-width:2px}.view-table .count{color:var(--muted);font-weight:400;margin-left:6px}
 .view-table tfoot td{color:var(--muted);border-bottom:0;font-size:13px}.summary-label{text-transform:uppercase;letter-spacing:.05em;font-size:11px;margin-right:4px}
 .stars{letter-spacing:1px;color:#d9a520;white-space:nowrap}
+.columns{display:grid;gap:24px;margin:1.2em 0;align-items:start}.column>:first-child{margin-top:0}@media(max-width:700px){.columns{grid-template-columns:1fr!important}}
+.button-pill{display:inline-block;font-family:var(--sans);font-size:14px;font-weight:600;padding:6px 14px;border-radius:999px;background:var(--accent);color:var(--bg);opacity:.7;margin:2px 8px 2px 0;cursor:default}
 .progress{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}.progress-track{display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}.progress-fill{display:block;height:100%;background:var(--accent)}
 "#;
 
@@ -1131,6 +1186,28 @@ pub fn write_github_action(root: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn columns_render_as_a_grid() {
+        let html = "<p>Intro</p>\n<p>::: columns 1 2</p>\n<p>Left</p>\n<p>:::</p>\n<p>Right</p>\n<ul>\n<li>a</li>\n</ul>\n<p>::: end</p>\n<p>After</p>\n";
+        assert_eq!(
+            columns(html),
+            "<p>Intro</p>\n<div class=\"columns\" style=\"grid-template-columns:1fr 2fr\"><div class=\"column\"><p>Left</p></div><div class=\"column\"><p>Right</p>\n<ul>\n<li>a</li>\n</ul></div></div>\n<p>After</p>\n"
+        );
+        // No ratios → equal tracks; no `::: end` → the columns run to the end.
+        assert_eq!(
+            columns("<p>::: columns</p>\n<p>A</p>\n<p>:::</p>\n<p>B</p>\n<p>:::</p>\n<p>C</p>\n"),
+            "<div class=\"columns\" style=\"grid-template-columns:1fr 1fr 1fr\"><div class=\"column\"><p>A</p></div><div class=\"column\"><p>B</p></div><div class=\"column\"><p>C</p></div></div>\n"
+        );
+        assert_eq!(columns("<p>no columns here</p>"), "<p>no columns here</p>");
+    }
+
+    #[test]
+    fn buttons_publish_as_disabled_pills() {
+        assert_eq!(render_button("label: New <expense>\naction: add-row\ncollection: budget\n"), "<span class=\"button-pill\" aria-disabled=\"true\">New &lt;expense&gt;</span>");
+        assert_eq!(render_button("action: url\nurl: https://x\n"), "<span class=\"button-pill\" aria-disabled=\"true\">Button</span>");
+        assert!(is_view_fence("cortex-button"));
+    }
 
     #[test]
     fn highlights_render_as_mark() {

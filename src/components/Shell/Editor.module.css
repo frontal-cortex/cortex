@@ -127,6 +127,9 @@
   scrollbar-color: var(--bg-active) transparent;
 }
 
+/* `width: full` in frontmatter: the page column stretches to the pane. */
+.docFull { max-width: none !important; padding-left: 24px; padding-right: 24px; }
+
 .docInner {
   width: 100%;
   max-width: 740px;
