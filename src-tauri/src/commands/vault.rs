@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 use cortex_core::db::Db;
 use cortex_core::error::{AppError, Result};
@@ -49,13 +49,17 @@ pub struct VaultInfo {
     pub has_remote: bool,
 }
 
+/// Open a vault: make sure its skeleton, docs and settings exist, bring the
+/// search index up to date, start following the folder. Off the main thread —
+/// the index pass is the one thing here that scales with the vault.
 #[tauri::command]
-pub fn open_vault(
-    app: tauri::AppHandle,
-    path: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<VaultInfo> {
+pub async fn open_vault(app: tauri::AppHandle, path: String) -> Result<VaultInfo> {
+    super::off_thread(move || open_vault_blocking(&app, path)).await
+}
+
+fn open_vault_blocking(app: &tauri::AppHandle, path: String) -> Result<VaultInfo> {
+    let state = app.state::<VaultState>();
+    let db_state = app.state::<DbState>();
     let vault_path = PathBuf::from(&path);
     if !vault_path.exists() {
         return Err(AppError::Other(format!("Path does not exist: {path}")));
@@ -105,10 +109,10 @@ pub fn open_vault(
         .map(|r| r.find_remote("origin").is_ok())
         .unwrap_or(false);
 
-    crate::commands::recent::record_recent(&app, &vault_path);
+    crate::commands::recent::record_recent(app, &vault_path);
 
     // Follow external edits (agents, editors, git) for as long as the vault is open.
-    crate::watcher::start(&app, vault_path.clone())?;
+    crate::watcher::start(app, vault_path.clone())?;
 
     *state.0.lock().unwrap() = Some(vault_path);
 
@@ -123,7 +127,11 @@ pub fn open_vault(
 /// is expected to follow up with `open_vault(path)`, which adds `VAULT.md`,
 /// `AGENTS.md` and `.cortex/settings.yaml`.
 #[tauri::command]
-pub fn create_vault_from_template(path: String, template: Option<String>) -> Result<()> {
+pub async fn create_vault_from_template(path: String, template: Option<String>) -> Result<()> {
+    super::off_thread(move || create_vault_blocking(path, template)).await
+}
+
+fn create_vault_blocking(path: String, template: Option<String>) -> Result<()> {
     use cortex_core::template::{self, TemplateSource};
     let target = PathBuf::from(&path);
 

@@ -18,12 +18,7 @@ fn cache_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_cache_dir().ok().map(|d| d.join("marketplace"))
 }
 
-/// Every marketplace operation reads a dozen files, hashes them, and may fetch
-/// a pack over the network. A synchronous command runs on the main thread and
-/// freezes the window for that long; these run on the blocking pool instead.
-async fn off_thread<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| AppError::Other(format!("marketplace task failed: {e}")))?
-}
+use super::off_thread;
 
 /// Everything the user can browse. `refresh` re-fetches the remote index.
 #[tauri::command]

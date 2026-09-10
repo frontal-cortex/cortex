@@ -21,14 +21,16 @@ pub fn publish_preview(state: State<'_, VaultState>) -> Result<Vec<PublishEntry>
 
 /// Build the site into a folder the user picked.
 #[tauri::command]
-pub fn publish_to_dir(dir: String, force: bool, state: State<'_, VaultState>) -> Result<Report> {
-    publish::build(&root(&state)?, std::path::Path::new(&dir), force)
+pub async fn publish_to_dir(dir: String, force: bool, state: State<'_, VaultState>) -> Result<Report> {
+    let root = root(&state)?;
+    super::off_thread(move || publish::build(&root, std::path::Path::new(&dir), force)).await
 }
 
 /// Build and force-push the site as an orphan branch on the vault's remote.
 #[tauri::command]
-pub fn publish_gh_pages(remote: String, branch: String, state: State<'_, VaultState>) -> Result<PagesPush> {
-    publish::push_gh_pages(&root(&state)?, &remote, &branch)
+pub async fn publish_gh_pages(remote: String, branch: String, state: State<'_, VaultState>) -> Result<PagesPush> {
+    let root = root(&state)?;
+    super::off_thread(move || publish::push_gh_pages(&root, &remote, &branch)).await
 }
 
 /// Write the manual-trigger GitHub Pages workflow into the vault.

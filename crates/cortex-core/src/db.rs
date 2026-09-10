@@ -20,9 +20,30 @@ impl Db {
         let db_path = vault_path.join(".brain").join("index.db");
         std::fs::create_dir_all(db_path.parent().unwrap())?;
         let conn = Connection::open(db_path)?;
+        // A rebuildable cache: write-ahead logging and a normal sync level make
+        // each write cheap without risking anything that cannot be re-derived.
+        let _ = conn.pragma_update(None, "journal_mode", "WAL");
+        let _ = conn.pragma_update(None, "synchronous", "NORMAL");
         let db = Self { conn };
         db.migrate()?;
         Ok(db)
+    }
+
+    /// Run `f` inside one transaction — a full reindex is hundreds of
+    /// statements, and each one committed alone costs an fsync.
+    pub fn with_transaction<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
+        self.conn.execute_batch("BEGIN")?;
+        match f() {
+            Ok(v) => { self.conn.execute_batch("COMMIT")?; Ok(v) }
+            Err(e) => { let _ = self.conn.execute_batch("ROLLBACK"); Err(e) }
+        }
+    }
+
+    /// Every indexed path with the file mtime it was indexed at.
+    pub fn paths_with_modified(&self) -> Result<Vec<(String, u64)>> {
+        let mut stmt = self.conn.prepare("SELECT path, modified FROM notes")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
     #[cfg(test)]
