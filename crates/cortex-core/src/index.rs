@@ -77,6 +77,17 @@ fn is_note(p: &Path) -> bool {
                 Some(".brain") | Some(".git") | Some(".trash") | Some(".cortex")
             )
         })
+        && !is_row_template(p)
+}
+
+/// A collection's row template (`collections/<c>/_template-<slug>.md`) is a
+/// shape for new rows, not a note: its title is a `{{placeholder}}`, so it
+/// must not appear in search, the graph or the quick switcher. `_index.md`
+/// is the collection page and stays indexed.
+fn is_row_template(p: &Path) -> bool {
+    let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    name.starts_with('_') && name != "_index.md"
+        && p.components().any(|c| c.as_os_str().to_str() == Some("collections"))
 }
 
 #[cfg(test)]
@@ -96,12 +107,14 @@ mod tests {
         w("notes/edit.md", "---\ntitle: Edit\n---\ngamma\n");
         w(".git/objects/note.md", "---\ntitle: Not a note\n---\nzeta\n");
         w(".trash/old.md", "---\ntitle: Trashed\n---\neta\n");
+        w("collections/tasks/_template-tasks.md", "---\ntitle: '{{title}}'\n---\nshape\n");
+        w("collections/tasks/_index.md", "---\ntitle: Tasks\ntype: database\n---\n");
 
         let db = Db::open(&root).unwrap();
         index_vault(&root, &db).unwrap();
         let mut paths: Vec<String> = db.list_notes().unwrap().into_iter().map(|n| n.path).collect();
         paths.sort();
-        assert_eq!(paths, ["notes/edit.md", "notes/gone.md", "notes/keep.md"], "hidden folders are never indexed");
+        assert_eq!(paths, ["collections/tasks/_index.md", "notes/edit.md", "notes/gone.md", "notes/keep.md"], "hidden folders and row templates are never indexed; the collection page is");
 
         // Second pass: one file deleted, one changed with a newer mtime, one untouched.
         std::fs::remove_file(root.join("notes/gone.md")).unwrap();
@@ -112,7 +125,7 @@ mod tests {
         index_vault(&root, &db).unwrap();
         let mut paths: Vec<String> = db.list_notes().unwrap().into_iter().map(|n| n.path).collect();
         paths.sort();
-        assert_eq!(paths, ["notes/edit.md", "notes/keep.md"], "a deleted note leaves the index");
+        assert_eq!(paths, ["collections/tasks/_index.md", "notes/edit.md", "notes/keep.md"], "a deleted note leaves the index");
         assert!(db.search("delta").unwrap().iter().any(|h| h.entry.path == "notes/edit.md"), "a changed note is re-read");
         assert!(db.search("beta").unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&root);
