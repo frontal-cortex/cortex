@@ -20,6 +20,7 @@ import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
 import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
+import { ChartSettings, ChartOptions } from "./ChartSettings";
 import { useViewport } from "../../hooks/useViewport";
 import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
 import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
@@ -2888,89 +2889,27 @@ export function BoardSetup({ table, onPick }: { table: ViewTable | null; onPick:
   );
 }
 
-const CHART_AGGS = ["", "sum", "avg", "count", "min", "max"];
-const CHART_BUCKETS = ["", "day", "week", "month", "quarter", "year"];
-/** The chart types the engine draws (`cortex_core::data::CHART_TYPES`). */
-export const CHART_TYPES = ["line", "bar", "area", "donut", "pie"];
-export const CHART_LABELS = ["name", "value", "name_value", "none"];
-export const CHART_HEIGHTS = ["small", "medium", "large"];
-
-/** Inline chart configuration, so charts never need raw spec editing. */
+/** A chart block's options, through the shared settings panel: read out of the
+ *  spec, written straight back into it. */
 function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string) => void }) {
-  const [x, setX] = useState(peek(spec, "x") ?? "");
-  const [y, setY] = useState(peek(spec, "y") ?? "");
-  const agg = peek(spec, "agg") ?? "";
-  const ct = peek(spec, "chartType") ?? "line";
-  const commit = (key: string, value: string) =>
-    onChange(value ? specSet(spec, key, value) : specRemove(spec, key));
+  const get = (key: string) => peek(spec, key) ?? "";
+  const value: ChartOptions = {
+    x: get("x"),
+    y: get("y"),
+    agg: get("agg"),
+    chartType: get("chartType") || "line",
+    bucket: get("bucket"),
+    series: get("series"),
+    stack: get("stack"),
+    labels: get("labels"),
+    legend: get("legend"),
+    height: get("height"),
+  };
   return (
-    <div className={styles.chartConfig}>
-      <label className={styles.chartField}>X
-        <input className={styles.chartInput} value={x} placeholder="date field"
-          onChange={(e) => setX(e.target.value)} onBlur={() => commit("x", x.trim())} />
-      </label>
-      <label className={styles.chartField}>Y
-        <input className={styles.chartInput} value={y} placeholder="number field"
-          onChange={(e) => setY(e.target.value)} onBlur={() => commit("y", y.trim())} />
-      </label>
-      <label className={styles.chartField}>Aggregate
-        <Dropdown
-          value={agg}
-          options={CHART_AGGS.map((a) => ({ value: a, label: a || "none" }))}
-          onChange={(v) => commit("agg", v)}
-        />
-      </label>
-      <label className={styles.chartField}>Type
-        <Dropdown
-          value={ct}
-          options={CHART_TYPES.map((t) => ({ value: t, label: t }))}
-          onChange={(v) => commit("chartType", v)}
-        />
-      </label>
-      <label className={styles.chartField}>By
-        <Dropdown
-          value={peek(spec, "bucket") ?? ""}
-          options={CHART_BUCKETS.map((b) => ({ value: b, label: b || "exact x" }))}
-          onChange={(v) => commit("bucket", v)}
-        />
-      </label>
-      <label className={styles.chartField}>Series
-        <input className={styles.chartInput} defaultValue={peek(spec, "series") ?? ""} placeholder="field (one line each)"
-          onBlur={(e) => commit("series", e.target.value.trim())} />
-      </label>
-      {(ct === "bar" || ct === "area") && (
-        <label className={styles.chartField}>Stack
-          <Dropdown
-            value={peek(spec, "stack") === "true" ? "true" : ""}
-            options={[{ value: "", label: "no" }, { value: "true", label: "yes" }]}
-            onChange={(v) => commit("stack", v)}
-          />
-        </label>
-      )}
-      {(ct === "donut" || ct === "pie") && (
-        <label className={styles.chartField}>Labels
-          <Dropdown
-            value={peek(spec, "labels") ?? "name"}
-            options={CHART_LABELS.map((l) => ({ value: l, label: l.replace("_", " + ") }))}
-            onChange={(v) => commit("labels", v === "name" ? "" : v)}
-          />
-        </label>
-      )}
-      <label className={styles.chartField}>Legend
-        <Dropdown
-          value={peek(spec, "legend") === "false" ? "false" : ""}
-          options={[{ value: "", label: "shown" }, { value: "false", label: "hidden" }]}
-          onChange={(v) => commit("legend", v)}
-        />
-      </label>
-      <label className={styles.chartField}>Height
-        <Dropdown
-          value={peek(spec, "height") ?? "medium"}
-          options={CHART_HEIGHTS.map((h) => ({ value: h, label: h }))}
-          onChange={(v) => commit("height", v === "medium" ? "" : v)}
-        />
-      </label>
-    </div>
+    <ChartSettings
+      value={value}
+      onChange={(key, v) => onChange(v ? specSet(spec, key, v) : specRemove(spec, key))}
+    />
   );
 }
 
@@ -3097,7 +3036,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
         <BoardSetup table={table} onPick={(f) => applySpec(specSet(spec, "group", f))} />
       )}
       {!editing && needsChartFields && (
-        <div className={styles.stub}>Set the X and Y fields above to draw the chart.</div>
+        <div className={styles.stub}>Name the fields to plot in Chart settings, above.</div>
       )}
 
       {!editing && error && (missingCollection(error)

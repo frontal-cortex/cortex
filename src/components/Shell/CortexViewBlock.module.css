@@ -1196,40 +1196,6 @@
   color: var(--accent);
 }
 
-/* Inline chart configuration */
-.chartConfig {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: 4px 0 var(--space-2);
-}
-
-.chartField {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-
-.chartInput,
-.chartSelect {
-  font-size: var(--text-sm);
-  font-family: var(--font-sans);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-app);
-  color: var(--text-primary);
-  padding: 3px 7px;
-  max-width: 130px;
-}
-
-.chartInput:focus,
-.chartSelect:focus {
-  outline: none;
-  border-color: var(--border-focus);
-}
-
 /* Softer error (real failures only — config gaps now use setup states) */
 .errorSoft {
   font-family: var(--font-sans);

@@ -10,18 +10,16 @@ import { commands, ViewTable, ChartResult, StatsResult, ViewDef, ViewType } from
 import { VIEW_TYPES, defaultViewOfType, viewFromSpec, specFromView } from "../../lib/database";
 import {
   DataTable, BoardView, CalendarView, GalleryView, ListView, MiniChart, StatsView, BoardSetup, MissingCollection, missingCollection,
-  newRowId, today, seedFromFilter, searchRows, CHART_TYPES, CHART_LABELS, CHART_HEIGHTS,
+  newRowId, today, seedFromFilter, searchRows,
 } from "./CortexViewBlock";
 import { ViewToolbar } from "./ViewToolbar";
+import { ChartSettings, ChartOptions } from "./ChartSettings";
 import { TrackerView, TrackerRange } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
-import { Dropdown } from "./Dropdown";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon } from "./icons";
 import styles from "./DatabaseView.module.css";
 
-const AGGS = ["", "sum", "avg", "count", "min", "max"];
-const BUCKETS = ["", "day", "week", "month", "quarter", "year"];
 
 export function viewIcon(type: ViewType, size = 14) {
   switch (type) {
@@ -306,77 +304,25 @@ function ViewTab({ view, active, onClick, onToggleMenu }: {
   );
 }
 
-/** Minimal chart configuration: the fields, the type, and its polish. */
+/** A saved chart view's options, through the shared settings panel (the same
+ *  panel a chart block in a note shows). */
 function ChartConfigBar({ view, onChange }: { view: ViewDef; onChange: (v: ViewDef) => void }) {
-  const set = (patch: Partial<ViewDef>) => onChange({ ...view, ...patch });
-  const ct = view.chartType ?? "line";
+  const value: ChartOptions = {
+    x: view.x ?? "",
+    y: view.y ?? "",
+    agg: view.agg ?? "",
+    chartType: view.chartType ?? "line",
+    bucket: view.bucket ?? "",
+    series: view.series ?? "",
+    stack: view.stack ?? "",
+    labels: view.labels ?? "",
+    legend: view.legend ?? "",
+    height: view.height ?? "",
+  };
   return (
-    <div className={styles.chartBar}>
-      <label className={styles.chartField}>X
-        <input className={styles.chartInput} value={view.x ?? ""} placeholder="date field"
-          onChange={(e) => set({ x: e.target.value })} />
-      </label>
-      <label className={styles.chartField}>Y
-        <input className={styles.chartInput} value={view.y ?? ""} placeholder="number field"
-          onChange={(e) => set({ y: e.target.value })} />
-      </label>
-      <label className={styles.chartField}>Aggregate
-        <Dropdown
-          value={view.agg ?? ""}
-          options={AGGS.map((a) => ({ value: a, label: a || "none" }))}
-          onChange={(v) => set({ agg: v || undefined })}
-        />
-      </label>
-      <label className={styles.chartField}>Type
-        <Dropdown
-          value={ct}
-          options={CHART_TYPES.map((t) => ({ value: t, label: t }))}
-          onChange={(v) => set({ chartType: v })}
-        />
-      </label>
-      <label className={styles.chartField}>By
-        <Dropdown
-          value={view.bucket ?? ""}
-          options={BUCKETS.map((b) => ({ value: b, label: b || "exact x" }))}
-          onChange={(v) => set({ bucket: v || undefined })}
-        />
-      </label>
-      <label className={styles.chartField}>Series
-        <input className={styles.chartInput} value={view.series ?? ""} placeholder="field (one line each)"
-          onChange={(e) => set({ series: e.target.value || undefined })} />
-      </label>
-      {(ct === "bar" || ct === "area") && (
-        <label className={styles.chartField}>Stack
-          <Dropdown
-            value={view.stack === "true" ? "true" : ""}
-            options={[{ value: "", label: "no" }, { value: "true", label: "yes" }]}
-            onChange={(v) => set({ stack: v || undefined })}
-          />
-        </label>
-      )}
-      {(ct === "donut" || ct === "pie") && (
-        <label className={styles.chartField}>Labels
-          <Dropdown
-            value={view.labels ?? "name"}
-            options={CHART_LABELS.map((l) => ({ value: l, label: l.replace("_", " + ") }))}
-            onChange={(v) => set({ labels: v === "name" ? undefined : v })}
-          />
-        </label>
-      )}
-      <label className={styles.chartField}>Legend
-        <Dropdown
-          value={view.legend === "false" ? "false" : ""}
-          options={[{ value: "", label: "shown" }, { value: "false", label: "hidden" }]}
-          onChange={(v) => set({ legend: v || undefined })}
-        />
-      </label>
-      <label className={styles.chartField}>Height
-        <Dropdown
-          value={view.height ?? "medium"}
-          options={CHART_HEIGHTS.map((h) => ({ value: h, label: h }))}
-          onChange={(v) => set({ height: v === "medium" ? undefined : v })}
-        />
-      </label>
-    </div>
+    <ChartSettings
+      value={value}
+      onChange={(key, v) => onChange({ ...view, [key]: v || undefined })}
+    />
   );
 }
