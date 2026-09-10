@@ -2,6 +2,8 @@
 
 A local-first, Notion-style knowledge base where your data is a plain git repository.
 
+![A task board in Cortex: a collection page with Today, This week, Board and chart views, grouped by status](docs/screenshots/hero-board.png)
+
 ## What makes this different
 
 - **Your data is a git repo.** Every note is a Markdown file. Open the vault in any text editor and it makes sense. Push it to GitHub, a self-hosted Gitea instance, or a bare repo on a NAS — your choice.
@@ -13,6 +15,15 @@ A local-first, Notion-style knowledge base where your data is a plain git reposi
 ## Status
 
 Usable daily. Notes, wiki links, backlinks, graph, databases with typed properties and views, templates, history and restore, trash, git sync with conflict resolution, team members, live collaboration over an optional relay, a filesystem watcher, desktop-palette theming, a CLI, an MCP server, publishing chosen notes as a static site (see [docs/publishing.md](docs/publishing.md)), and a template marketplace — note templates and databases installed as plain files, from the app, the CLI or an agent (see [docs/marketplace.md](docs/marketplace.md)).
+
+## A look around
+
+| | |
+|---|---|
+| ![The editor: syntax-highlighted code, KaTeX math, highlights, underline and a toggle](docs/screenshots/editor.png) | ![Search with operators and snippets: borrow tag:rust](docs/screenshots/search.png) |
+| **The editor.** Blocks, code with highlighting, math, callouts, toggles, `==highlights==`; everything round-trips to plain Markdown. | **Search.** `"phrases"`, `-word`, `OR`, `tag:` / `type:` / `path:`, with a snippet per hit. |
+| ![A template pack page: screenshot gallery, at-a-glance chips, typed properties](docs/screenshots/pack.png) | ![Phone width: the same collection page and the sidebar as a drawer](docs/screenshots/phone-pair.png) |
+| **The marketplace.** Template packs are plain Markdown and YAML; install, update and remove never touch a file you edited. | **Any width.** The same shell folds to a phone layout: drawer sidebar, card tables, week strips. |
 
 ## Tech stack
 
