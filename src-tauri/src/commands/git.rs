@@ -18,9 +18,12 @@ pub fn git_status(state: State<'_, VaultState>) -> Result<VaultStatus> {
 }
 
 #[tauri::command]
-pub fn git_commit(message: String, state: State<'_, VaultState>) -> Result<()> {
-    let repo = open_repo(&state)?;
-    git::stage_all_and_commit(&repo, &message)
+pub async fn git_commit(message: String, state: State<'_, VaultState>) -> Result<()> {
+    let root = vault_dir(&state)?;
+    super::off_thread(move || {
+        let repo = git2::Repository::open(&root).map_err(AppError::Git)?;
+        git::stage_all_and_commit(&repo, &message)
+    }).await
 }
 
 fn vault_dir(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
@@ -31,8 +34,9 @@ fn vault_dir(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
 /// structured outcome — `conflicts` means the repo is mid-merge with marker'd
 /// files awaiting resolution (see `git_resolve_conflict` / `git_complete_merge`).
 #[tauri::command]
-pub fn git_sync(state: State<'_, VaultState>) -> Result<git::SyncOutcome> {
-    git::sync_vault(&vault_dir(&state)?)
+pub async fn git_sync(state: State<'_, VaultState>) -> Result<git::SyncOutcome> {
+    let root = vault_dir(&state)?;
+    super::off_thread(move || git::sync_vault(&root)).await
 }
 
 /// Files currently conflicted (e.g. to recover the resolution UI after a restart).

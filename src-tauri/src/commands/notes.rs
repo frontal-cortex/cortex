@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{Manager, State};
 use walkdir::WalkDir;
 
 use crate::commands::vault::{DbState, VaultState};
@@ -241,15 +241,15 @@ pub fn delete_note(
 /// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
 /// `type:`, `path:`); see `cortex_core::search`. Each hit carries a snippet.
 #[tauri::command]
-pub fn search_notes(
-    query: String,
-    db_state: State<'_, DbState>,
-) -> Result<Vec<SearchHit>> {
-    let guard = db_state.0.lock().unwrap();
-    match guard.as_ref() {
-        Some(db) => db.search(&query),
-        None => Ok(vec![]),
-    }
+pub async fn search_notes(query: String, app: tauri::AppHandle) -> Result<Vec<SearchHit>> {
+    super::off_thread(move || {
+        let db_state = app.state::<DbState>();
+        let guard = db_state.0.lock().unwrap();
+        match guard.as_ref() {
+            Some(db) => db.search(&query),
+            None => Ok(vec![]),
+        }
+    }).await
 }
 
 // ── Folders ──────────────────────────────────────────────────────────────────
