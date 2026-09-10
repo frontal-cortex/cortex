@@ -94,7 +94,27 @@ relation, with a **sum footer** on Amount, and Q1–Q4 galleries of the month
 cards filtered by name. It models periods as rows because Notion has no
 period grouping with per-group totals; Cortex does not need that.
 
-### 1.6 What makes it good, in one list
+### 1.6 Your installed copy, as rendered
+
+Read from the browser (workspace 4) on 2026-09-10: the page's text and DOM
+through the DevTools console, and screenshots. It is the Sentele template
+unchanged, with its example data:
+
+- **Quick Actions**: New Income, New Expense, New Transfer — three buttons in the left column.
+- **This Month** (Categories, gallery): Shopping $0 of $600 · Entertainment $0 of $300 · Bills & Utilities $50 of $400 (13%) · Transportation $0 of $400 · Food & Dining $0 of $800 · Healthcare $0 of $250 — each card: name, spent, budget, a percent with a ring.
+- **Expenses ▸ Recent**: ten rows newest first (Recurring Expense $50 Savings Account, Doctor Visit $150, Internet Bill $79.99 …), columns Expense · Amount · Account · Date, a horizontal scrollbar under the table.
+- **Incomes ▸ Recent**: Affiliate Commission $450, October Salary $6,500, Freelance $2,200, Monthly Salary $6,500, Rental Income $1,500, E-commerce Sales $1,850, columns Income · Amount · Accounts · Date.
+- **Account Transfers ▸ Recent Transfers** (list): Credit Card Payment $500 Checking → Credit Card; Move to Savings $1,000 Checking → Savings; Withdraw Cash $200 Checking → Cash Wallet.
+- **Expense chart**: a donut, drawn by **Highcharts 11.4** (Notion's chart library), one slice for the one category with spend; a toggle "Would you like to use this widget instead?" offers an alternative.
+- **Accounts** (gallery): Savings $700 · Credit Card $74.52 · Cash Wallet $655 · Savings Account $17,550 · Checking Account $19,724.51 — each "Current Balance:" in bold above the figure.
+- A **Database** sub-page holds the five raw tables; a footer credits Sentele.
+
+Nothing beyond the public template: same five databases, same views,
+same buttons. The Highcharts detail matters for step 1 of the plan — the
+donut has hover values, data labels and animation; the dependency-free
+SVG charts should match that without the dependency.
+
+### 1.7 What makes it good, in one list
 
 1. Capture is one click and one number (the buttons).
 2. Everything on the dashboard is *this month* without anyone editing a filter.
