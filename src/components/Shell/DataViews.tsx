@@ -100,9 +100,16 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
       const i = Number(e.key) - 1;
       if (i < views.length) { e.preventDefault(); setActiveIdx(i); }
     };
+    // A button (`action: open` with `view:`) asks the page's views for a tab by name.
+    const onSelect = (e: Event) => {
+      const name = String((e as CustomEvent).detail?.name ?? "").trim().toLowerCase();
+      const i = views.findIndex((v) => v.name.trim().toLowerCase() === name);
+      if (i >= 0) setActiveIdx(i);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hotkeys, views.length]);
+    window.addEventListener("cortex:select-view", onSelect);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("cortex:select-view", onSelect); };
+  }, [hotkeys, views]);
   const active = views[Math.min(activeIdx, views.length - 1)] ?? views[0];
   const activeSpec = useMemo(() => specFromView(active, source), [active, source]);
   const isChart = active.type === "chart";

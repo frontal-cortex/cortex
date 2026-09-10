@@ -39,6 +39,10 @@ import { webEmbedSlashItem } from "./WebEmbedBlock";
 import { extractEmbedLines, inflateWebBlocks, flattenWebBlocks, isWebUrl } from "../../lib/webBlocks";
 import { extractMath, inflateMath, flattenMath, restoreMath } from "../../lib/math";
 import { inflateRichFormats, flattenRichFormats } from "./richFormats";
+import { NotePathContext, inflateButtons, flattenButtons, buttonSlashItem } from "./ButtonBlock";
+import { columnsSlashItems } from "./ColumnBlocks";
+import { inflateColumns, flattenColumns } from "../../lib/columns";
+import { collectButtons, setNoteButtons } from "../../lib/buttons";
 import { collectAssetRefs, assetsToDisplayUrls, displayUrlsToAssets, inflateFileBlocks } from "../../lib/assets";
 import { shortcutFor } from "../../lib/keymap";
 import { findInNoteExtension, setFindQuery, stepFind, clearFind, FindState } from "../../lib/findInNote";
@@ -133,6 +137,8 @@ export interface EditorHandle {
   toggleProperties(): void;
   /** Flip `publish: true` on the note — marks it for the site, publishes nothing. */
   togglePublic(): void;
+  /** Flip `width: full` on the note — the page column widens to the pane. */
+  toggleFullWidth(): void;
   /** Open (or refocus) the find-in-note bar. */
   openFind(): void;
   /** Show or hide the outline pane beside the page. */
@@ -171,6 +177,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
     focusBody: () => inner.current?.focusBody(),
     toggleProperties: () => inner.current?.toggleProperties(),
     togglePublic: () => inner.current?.togglePublic(),
+    toggleFullWidth: () => inner.current?.toggleFullWidth(),
     openFind: () => inner.current?.openFind(),
     toggleOutline,
     scrollToHeading: (section) => inner.current?.scrollToHeading(section),
@@ -471,6 +478,7 @@ function NoteEditor({
       },
       toggleProperties,
       togglePublic: () => togglePublicRef.current(),
+      toggleFullWidth: () => toggleFullWidthRef.current(),
       openFind: () => openFindRef.current(),
       toggleOutline: onToggleOutline,
       commentOnSelection: () => commentOnSelectionRef.current(),
@@ -486,6 +494,7 @@ function NoteEditor({
   }, [handleRef, toggleProperties, onToggleOutline]);
   // Assigned once their dependencies exist (they are declared further down).
   const togglePublicRef = useRef<() => void>(() => {});
+  const toggleFullWidthRef = useRef<() => void>(() => {});
   const openFindRef = useRef<() => void>(() => {});
   const commentOnSelectionRef = useRef<() => void>(() => {});
 
@@ -706,7 +715,10 @@ function NoteEditor({
     const doc = editor._tiptapEditor.state.doc;
     setStats(textStats(doc.textBetween(0, doc.content.size, "\n", " ")));
     setDocTick((n) => n + 1);
+    // The palette lists this note's buttons by label while it is open.
+    setNoteButtons(noteRef.current.path, collectButtons(blocks));
   }, [editor, cursorBlockId]);
+  useEffect(() => () => setNoteButtons("", []), []);
   useEffect(() => editor.onSelectionChange(() => {
     setActiveHeadingId(activeHeading(outlineRef.current, orderRef.current, cursorBlockId()));
   }), [editor, cursorBlockId]);
@@ -806,7 +818,9 @@ function NoteEditor({
             // `[title](url)` bookmarks and `<url>` web embeds, `[!callout]`
             // blockquotes, `==highlights==`, math and `[file](assets/…)` links
             // into live blocks on load.
-            const inflated = inflateMath(inflateRichFormats(inflateCallouts(inflateWebBlocks(inflateEmbeds(inflateCollectionViews(inflateViewBlocks(inflateFileBlocks(blocks))))))), math.spans);
+            // Columns fold last so every other inflater sees a flat document;
+            // button fences become pills.
+            const inflated = inflateColumns(inflateMath(inflateRichFormats(inflateCallouts(inflateWebBlocks(inflateEmbeds(inflateCollectionViews(inflateButtons(inflateViewBlocks(inflateFileBlocks(blocks)))))))), math.spans));
             editor.replaceBlocks(editor.document, inflated as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
@@ -862,7 +876,8 @@ function NoteEditor({
         // richFormats runs last so toggles, underline, highlight and image
         // width reach the exporter in a form it writes verbatim; math is
         // flattened first so its nodes are plain text by then.
-        const doc = flattenRichFormats(flattenCallouts(flattenWebBlocks(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenMath(editor.document))))))) as typeof editor.document;
+        // Columns unfold first so the rest work on a flat document.
+        const doc = flattenRichFormats(flattenCallouts(flattenWebBlocks(flattenEmbeds(flattenCollectionViews(flattenViewBlocks(flattenButtons(flattenMath(flattenColumns(editor.document))))))))) as typeof editor.document;
         const md = await editor.blocksToMarkdownLossy(doc);
         pendingMd.current = restoreMath(displayUrlsToAssets(md, dataUriToRelPath));
         if (bodyTimer.current) clearTimeout(bodyTimer.current);
@@ -916,6 +931,12 @@ function NoteEditor({
     if (fm["publish"] === true) delete fm["publish"]; else fm["publish"] = true;
     handleFrontmatterChange(fm);
   };
+  toggleFullWidthRef.current = () => {
+    const fm = { ...noteRef.current.frontmatter };
+    if (fm["width"] === "full") delete fm["width"]; else fm["width"] = "full";
+    handleFrontmatterChange(fm);
+  };
+  const fullWidth = note.frontmatter["width"] === "full";
 
   const title =
     typeof note.frontmatter["title"] === "string"
@@ -946,11 +967,12 @@ function NoteEditor({
 
   return (
     <CollectionPageContext.Provider value={page}>
+    <NotePathContext.Provider value={note.path}>
     <div className={styles.root}>
      <div className={styles.main}>
      <div className={styles.column}>
       <div className={styles.docWrap}>
-        <div className={styles.docInner}>
+        <div className={`${styles.docInner} ${fullWidth ? styles.docFull : ""}`}>
           {/* Everything above the body. Its affordances — add cover, history,
               delete, add a property — show only while the pointer (or focus)
               is here, so a note at rest is a title, one quiet line, and prose. */}
@@ -1046,7 +1068,7 @@ function NoteEditor({
                 triggerCharacter="/"
                 getItems={async (query) =>
                   filterSuggestionItems(
-                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor), mathSlashItem(editor), bookmarkSlashItem(editor), webEmbedSlashItem(editor)],
+                    [...getDefaultReactSlashMenuItems(editor), ...cortexSlashItems(editor), collectionViewsSlashItem(editor), noteEmbedSlashItem(editor), calloutSlashItem(editor), mathSlashItem(editor), bookmarkSlashItem(editor), webEmbedSlashItem(editor), buttonSlashItem(editor), ...columnsSlashItems(editor)],
                     query,
                   )
                 }
@@ -1115,6 +1137,7 @@ function NoteEditor({
         />
       )}
     </div>
+    </NotePathContext.Provider>
     </CollectionPageContext.Provider>
   );
 }

@@ -774,6 +774,8 @@ export function Shell({
           onCheckForUpdates={() => setShowUpdate(true)}
           onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
           isPublic={note?.frontmatter["publish"] === true}
+          onToggleFullWidth={note ? () => editorRef.current?.toggleFullWidth() : undefined}
+          isFullWidth={note?.frontmatter["width"] === "full"}
           hasRemote={vault.has_remote}
         />
       )}

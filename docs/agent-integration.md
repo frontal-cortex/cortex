@@ -266,6 +266,46 @@ done creates next week's task.
 `{{today+7}}`, `{{monday}}`, `{{month}}`, `{{week}}`; row templates also get
 `{{date}}` (the row's day) with offsets, `{{time}}`, `{{title}}`, `{{uuid}}`.
 
+## Buttons and columns
+
+A page can carry **buttons** — one press does one thing. On disk a button is a
+`cortex-button` fence with a small YAML map; the site publishes it as a
+disabled pill with its label, and the command palette lists a page's buttons
+by label while it is open.
+
+    ```cortex-button
+    label: New expense
+    action: add-row
+    collection: budget
+    values: {kind: expense, date: "{{today}}"}
+    template: quick        # optional row template
+    open: true             # open the new row
+    ```
+
+Actions: `add-row` (a `collection`, preset `values` with `{{today±n}}`,
+`{{date±n}}`, `{{time}}`, optional `template`, optional `open`); `open` (a
+`target` note by title or path, or a `collection` with an optional `view`
+tab name); `log` (a tracker `collection` and the `item` to tick today); `set`
+(`values` applied to the row whose page holds the button — refused
+elsewhere); `url` (an http, https or mailto `url`). Anything else is ignored
+and shown as a broken pill.
+
+**Columns** are directive lines around ordinary blocks; the numbers are width
+ratios and may be left out for equal columns. Narrow windows stack them.
+
+    ::: columns 1 2
+
+    Left column blocks.
+
+    :::
+
+    Right column blocks.
+
+    ::: end
+
+`width: full` in a note's frontmatter widens the page to the pane (the palette
+has "Full width: on/off").
+
 ## Importing
 
 Three importers, in `cortex-core` like everything else, so the app's Import
