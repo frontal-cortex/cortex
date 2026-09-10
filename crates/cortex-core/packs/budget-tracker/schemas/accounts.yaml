@@ -1,0 +1,66 @@
+properties:
+  - name: kind
+    type: select
+    options:
+      - name: current
+        color: blue
+      - name: savings
+        color: green
+      - name: cash
+        color: yellow
+      - name: credit
+        color: red
+  # What the account held on the day you started logging. Everything after
+  # that comes from the ledger.
+  - name: initial
+    type: number
+    format: currency
+  - name: active
+    type: checkbox
+  # Computed on read from the ledger rows that name this account. A transfer
+  # is one ledger row with `account` (from) and `to_account` (to), so it
+  # leaves one balance and lands in another without being counted twice.
+  - name: income
+    type: rollup
+    from: budget
+    relation: account
+    function: sum
+    property: amount
+    where: kind == 'income'
+    format: currency
+  - name: spent
+    type: rollup
+    from: budget
+    relation: account
+    function: sum
+    property: amount
+    where: kind == 'expense'
+    format: currency
+  - name: moved_in
+    type: rollup
+    from: budget
+    relation: to_account
+    function: sum
+    property: amount
+    where: kind == 'transfer'
+    format: currency
+  - name: moved_out
+    type: rollup
+    from: budget
+    relation: account
+    function: sum
+    property: amount
+    where: kind == 'transfer'
+    format: currency
+  - name: balance
+    type: formula
+    expr: coalesce(initial, 0) + coalesce(income, 0) - coalesce(spent, 0) + coalesce(moved_in, 0) - coalesce(moved_out, 0)
+    format: currency
+  - name: this_month
+    type: rollup
+    from: budget
+    relation: account
+    function: sum
+    property: amount
+    where: kind == 'expense' and date >= @month
+    format: currency

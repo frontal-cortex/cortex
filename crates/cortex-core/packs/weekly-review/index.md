@@ -4,6 +4,7 @@ icon: 🗓️
 tags: []
 title: Weekly review
 type: database
+width: full
 views:
 - name: To review
   type: table
@@ -35,6 +36,94 @@ views:
   agg: sum
   bucket: week
 ---
+
+::: columns 1 2 1
+
+## This week
+
+```cortex-button
+label: Start this week
+action: add-row
+collection: weeks
+values: {week: "{{monday}}", status: planned}
+open: true
+```
+
+```cortex-button
+label: Open the review list
+action: open
+collection: weeks
+view: To review
+```
+
+## The last quarter
+
+```cortex-view
+source: collections/weeks
+type: stats
+stats:
+  - {label: Reviewed, source: collections/weeks, agg: count, filter: "status == 'reviewed' and week >= @today-91"}
+  - {label: Skipped, source: collections/weeks, agg: count, filter: "status == 'skipped' and week >= @today-91"}
+  - {label: Average rating, source: collections/weeks, agg: avg, field: rating, filter: "status == 'reviewed' and week >= @today-91", format: decimal}
+  - {label: Carried over, source: collections/weeks, agg: sum, field: carried_over, filter: "week >= @today-91"}
+```
+
+:::
+
+## To review
+
+```cortex-view
+source: collections/weeks
+type: table
+columns: [title, focus, days_written, carried_over]
+filter: status == 'planned' and week <= @today-4
+sort: [week]
+```
+
+## Weeks by month
+
+```cortex-view
+source: collections/weeks
+type: list
+columns: [title, status, rating, focus]
+sort: [week desc]
+group: week
+bucket: month
+limit: 26
+```
+
+:::
+
+## Rating
+
+```cortex-view
+source: collections/weeks
+type: chart
+chartType: line
+x: week
+y: rating
+agg: avg
+bucket: week
+height: small
+filter: status == 'reviewed'
+```
+
+## What the weeks touched
+
+```cortex-view
+source: collections/weeks
+type: chart
+chartType: donut
+x: areas
+y: title
+agg: count
+labels: name
+legend: false
+height: small
+filter: week >= @today-91
+```
+
+::: end
 
 One row per week. `week` is its Monday, `status` says whether you have done
 the review yet, `rating` is the week out of ten, `focus` is the one sentence

@@ -1,28 +1,34 @@
 # Budget Tracker
 
-A ledger of transactions, a monthly limit per category, a calendar of bills.
-Every total — this month's spend, what is left of a limit, when a bill was
-last paid — is computed from the rows when you look, so there is nothing to
-recalculate and nothing to reset at the start of a month.
+A finance dashboard on one page — buttons to log a transaction, this month's
+spent, earned and net, budgets as cards with a ring each, spending by month,
+a donut of where it went, every account's balance — over one ledger, a
+monthly limit per category, accounts with opening balances, and a calendar of
+bills. Every number is computed from the rows when you look, so there is
+nothing to recalculate and nothing to reset at the start of a month.
 
 ## What it installs
 
 | File | Lands at | What it is |
 |---|---|---|
-| `schemas/budget.yaml` | `.cortex/schemas/budget.yaml` | date, amount, kind, category, account, payee, `bill` — a relation to the bills |
+| `schemas/budget.yaml` | `.cortex/schemas/budget.yaml` | date, amount, kind, category, `account` and `to_account` — relations to the accounts — payee, `bill` — a relation to the bills |
+| `schemas/accounts.yaml` | `.cortex/schemas/accounts.yaml` | kind, initial, active; computed from the ledger: `income`, `spent`, `moved_in`, `moved_out`, `this_month`, `balance` |
 | `schemas/budget-limits.yaml` | `.cortex/schemas/budget-limits.yaml` | monthly_limit, bucket (need / want / saving), active; computed: `spent`, `last_month`, `remaining`, `used` |
 | `schemas/budget-bills.yaml` | `.cortex/schemas/budget-bills.yaml` | amount, repeat, repeat_mode, next_due, paid, category, account, active, url; computed: `last_paid`, `total_paid`, `monthly`, `due_in` |
-| `index.md` | `collections/budget/_index.md` | views: Ledger, This month, This month by category, By category, Month by month, Categories over time, Calendar |
+| `index.md` | `collections/budget/_index.md` | the dashboard (buttons, tiles, budget cards, spending and income by month, the donut, account balances) above the views: Ledger, This month, By month, Summary, This month by category, By category, Month by month, Categories over time, Calendar |
+| `index/accounts.md` | `collections/accounts/_index.md` | views: Balances (with a total), Cards, By kind |
 | `index/budget-limits.md` | `collections/budget-limits/_index.md` | views: This month (the budget check), Needs, wants, savings (board) |
 | `index/budget-bills.md` | `collections/budget-bills/_index.md` | views: Upcoming, Overdue, Per month, Calendar, By cycle |
 | `templates/budget.md` | `collections/budget/_template-budget.md` | New row's shape for a transaction |
+| `templates/accounts.md` | `collections/accounts/_template-accounts.md` | an account whose page lists its movements and charts them by month |
 | `templates/budget-limits.md` | `collections/budget-limits/_template-budget-limits.md` | a limit whose page charts the spend against it |
 | `templates/budget-bills.md` | `collections/budget-bills/_template-budget-bills.md` | a bill that advances when you tick `paid`, with its payment list and a cancel-or-keep checklist |
-| `seed/budget/*.md` | `collections/budget/` | seven example rows spread over the last five weeks: two weekly shops, a coffee, two salaries, two rent payments linked to their bill |
+| `seed/budget/*.md` | `collections/budget/` | eleven example rows over the last five weeks: two weekly shops, a coffee, a bus pass, a streaming payment linked to its bill, two salaries, two rent payments linked to their bill, a transfer to savings and a cash withdrawal |
+| `seed/accounts/*.md` | `collections/accounts/` | checking, savings, cash, with opening balances |
 | `seed/budget-limits/*.md` | `collections/budget-limits/` | groceries, dining, subscriptions |
 | `seed/budget-bills/*.md` | `collections/budget-bills/` | Rent (due in four weeks), Music streaming (three days overdue) |
 
-The two extra databases nest under Budget in the sidebar. The seeds are dated
+The three extra databases nest under Budget in the sidebar. The seeds are dated
 relative to the day you install, so This month, Overdue, Month by month and
 the limits table all show something straight away.
 
@@ -106,7 +112,37 @@ the limits table all show something straight away.
   same way the app does; `cortex set paid=true` writes the file directly and
   does not.
 
-## Upgrading
+## What is new in 3.0
+
+- **The Budget page is a dashboard.** Three buttons (New expense, New income,
+  New transfer) make a row with the kind and today's date filled in and open
+  it; tiles show this month's spent, earned and net; the budgets are cards
+  with a ring each; spending and income are folded by month with a total
+  under each; a donut shows where this month went; every account shows its
+  balance. It is all `cortex-view` blocks and three `cortex-button` blocks in
+  a `::: columns` layout at the top of `collections/budget/_index.md`, so it
+  is yours to rearrange.
+- **Accounts.** `collections/accounts/`: one row per account with an opening
+  balance; income, spending, transfers in and out and the balance are rollups
+  and a formula over the ledger. The ledger's `account` is now a relation to
+  it, and a transfer is one ledger row with `account` (from) and `to_account`
+  (to) — no separate transfers database, nothing counted twice.
+- **Rings.** A limit's `used` shows as a ring instead of a bar.
+
+## Upgrading from 2.x
+
+`account` in the ledger and in bills was a select with the options
+`checking`, `savings`, `credit`, `cash`; it is a relation to the new
+`accounts` collection now, whose seeded rows carry exactly those titles, so
+existing rows keep working as they are. To see balances, set each account's
+`initial` to what it held on the day of your first ledger row. Add
+`to_account` to any transfer you logged before (the ledger's row template
+now includes it). The dashboard replaces the old page body — if you wrote
+notes on the Budget page, they are kept: update keeps a file you edited and
+tells you so; copy the new `_index.md` body in by hand if you want the
+dashboard too.
+
+## Upgrading (older)
 
 **From 2.0.** Bills renamed `cycle` to `repeat` (same options) so the app's
 recurrence reads it, and added `repeat_mode` and `paid`. On an existing

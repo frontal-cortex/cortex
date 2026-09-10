@@ -914,9 +914,34 @@ fn today() -> String {
 
 /// A pack file with placeholders that install expands (`{{today}}` in seeds
 /// and index.md); templates are written verbatim.
+/// Placeholders are stamped at install everywhere except inside a
+/// ```cortex-button fence, where `{{today}}` means the day the button is
+/// pressed and is expanded then (src/lib/buttons.ts).
+fn expand_outside_buttons(text: &str, today: chrono::NaiveDate) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chunk = String::new();
+    let mut in_button = false;
+    for line in text.split_inclusive('\n') {
+        let t = line.trim_end();
+        if !in_button && t.starts_with("```cortex-button") {
+            out.push_str(&crate::placeholders::expand(&chunk, today));
+            chunk.clear();
+            in_button = true;
+            out.push_str(line);
+        } else if in_button {
+            out.push_str(line);
+            if t == "```" { in_button = false; }
+        } else {
+            chunk.push_str(line);
+        }
+    }
+    out.push_str(&crate::placeholders::expand(&chunk, today));
+    out
+}
+
 fn rendered(m: &Manifest, pack_path: &str, contents: &[u8]) -> Vec<u8> {
     if pack_path.starts_with("seed/") || is_index(pack_path) {
-        let mut text = crate::placeholders::expand(&String::from_utf8_lossy(contents), crate::placeholders::today());
+        let mut text = expand_outside_buttons(&String::from_utf8_lossy(contents), crate::placeholders::today());
         // A pack's extra collections (a habit tracker's daily log) nest under the
         // primary one in the sidebar, as a child database sits inside its page —
         // unless the pack's own index.md places them elsewhere with `parent:`.
@@ -1894,6 +1919,16 @@ mod tests {
         assert!(msgs.iter().any(|m| m.contains("`layout:` belongs to gallery")), "{msgs:?}");
         assert!(msgs.iter().any(|m| m.contains("stat `Open` needs `agg:`")), "{msgs:?}");
         assert!(msgs.iter().any(|m| m.contains("stat `Share`: expr does not parse")), "{msgs:?}");
+    }
+
+    #[test]
+    fn install_keeps_placeholders_inside_buttons() {
+        let m = pack("tasks").manifest;
+        let src = "---\ntitle: T\ntype: database\ncreated: \"{{today}}\"\n---\n\n```cortex-button\nlabel: New\naction: add-row\ncollection: tasks\nvalues: {due: \"{{today+7}}\"}\n```\n\nSeeded on {{today}}.\n";
+        let out = String::from_utf8(rendered(&m, "index.md", src.as_bytes())).unwrap();
+        assert!(out.contains("values: {due: \"{{today+7}}\"}"), "{out}");
+        assert!(!out.contains("Seeded on {{today}}"), "{out}");
+        assert!(!out.contains("created: \"{{today}}\""), "{out}");
     }
 
     #[test]

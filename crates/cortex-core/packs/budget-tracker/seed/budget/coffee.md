@@ -6,7 +6,8 @@ date: "{{today}}"
 amount: 3.8
 kind: expense
 category: dining
-account: cash
+account: ["cash"]
+to_account: []
 payee: "Cafe"
 bill: []
 created: "{{today}}"

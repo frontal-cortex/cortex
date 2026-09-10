@@ -6,7 +6,8 @@ date: "{{today-33}}"
 amount: 3200
 kind: income
 category: income
-account: checking
+account: ["checking"]
+to_account: []
 payee: "Employer"
 bill: []
 created: "{{today}}"

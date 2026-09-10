@@ -74,3 +74,11 @@ the old folder — `collections/habits` → `collections/habits-old` and the
 schema `.cortex/schemas/habits.yaml` → `habits-old.yaml` — to keep the history
 readable, or install into a fresh vault. `cortex packs remove habit-tracker`
 on the old install deletes only the files it wrote and never your rows.
+
+## What is new in 2.1.0
+
+The collection's page opens on a dashboard: quick-add buttons, a row of
+tiles, and the views that matter most laid out in columns. It is `cortex-button`
+and `cortex-view` blocks inside a `::: columns` layout at the top of the page's
+body — rearrange or delete them as you like; the saved views underneath are
+unchanged.

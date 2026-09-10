@@ -10,7 +10,14 @@ can render today, and lays out the work that closes the gap — as
 capabilities any template can use (layout, actions, period grouping, KPI
 cards, chart types), not as finance code.
 
-Status 2026-09-10: plan. Nothing in sections 4–6 is built.
+Status 2026-09-10: built, on `feat/dashboards`. Steps 1–8 of section 4
+landed the same day: chart types and the ring format, period grouping with
+per-group totals and `@quarter`, compact galleries and the `stats` view,
+the `cortex-button` block with five actions, `::: columns` and
+`width: full`, the formula functions and the translation table, Budget
+Tracker 3.0 with accounts and the dashboard page, and dashboards on Habit
+Tracker, Project Tracker and Weekly Review. Verified through the CLI on a
+fresh vault; not yet clicked through in the running app.
 
 Source material: the page you installed (`app.notion.com/p/Finance-Tracker-2dc9…`)
 is in your own workspace with public access off, so it cannot be read from

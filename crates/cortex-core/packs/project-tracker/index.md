@@ -4,6 +4,7 @@ icon: 🗂️
 tags: []
 title: Projects
 type: database
+width: full
 views:
 - name: Open
   type: table
@@ -36,6 +37,94 @@ views:
   bucket: month
   filter: status == 'done' and completed != ''
 ---
+
+::: columns 1 2 1
+
+## Quick add
+
+```cortex-button
+label: New project
+action: add-row
+collection: projects
+values: {status: active, priority: p2, start: "{{today}}"}
+open: true
+```
+
+```cortex-button
+label: New milestone
+action: add-row
+collection: milestones
+values: {date: "{{today+7}}"}
+open: true
+```
+
+## At a glance
+
+```cortex-view
+source: collections/projects
+type: stats
+stats:
+  - {label: Active, source: collections/projects, agg: count, filter: "status == 'active'"}
+  - {label: Due in 30 days, source: collections/projects, agg: count, filter: "deadline <= @today+30 and status != 'done' and status != 'dropped'"}
+  - {label: Milestones this month, source: collections/milestones, agg: count, filter: "date >= @month and date < @month+1"}
+  - {label: Finished this year, source: collections/projects, agg: count, filter: "status == 'done' and completed >= @year"}
+```
+
+:::
+
+## Open
+
+```cortex-view
+source: collections/projects
+type: table
+columns: [title, priority, deadline, days_left, progress, next_action]
+filter: status != 'done' and status != 'dropped'
+sort: [priority asc, deadline asc]
+limit: 15
+```
+
+## Milestones by week
+
+```cortex-view
+source: collections/milestones
+type: list
+columns: [title, project, date]
+filter: done != true and date >= @today-7
+sort: [date asc]
+group: date
+bucket: week
+limit: 30
+```
+
+:::
+
+## Open by area
+
+```cortex-view
+source: collections/projects
+type: chart
+chartType: donut
+x: area
+y: title
+agg: count
+labels: name_value
+legend: false
+height: medium
+filter: status != 'done' and status != 'dropped'
+```
+
+## Stalled
+
+```cortex-view
+source: collections/projects
+type: list
+columns: [title, priority, deadline]
+filter: status == 'active' and next_action == ''
+sort: [priority asc]
+limit: 10
+```
+
+::: end
 
 One row per project — anything with an outcome and more than one step. A
 project has a `status`, a `priority` (p1 first), an `area`, a `start` and a

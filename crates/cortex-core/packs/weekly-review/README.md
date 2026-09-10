@@ -120,3 +120,11 @@ is a collection: weeks live in `collections/weeks/` and are created with New
 row. If you edited the old template, the update keeps it; notes you wrote
 from it are untouched. There is no automatic import of old reviews into the
 collection.
+
+## What is new in 2.2.0
+
+The collection's page opens on a dashboard: quick-add buttons, a row of
+tiles, and the views that matter most laid out in columns. It is `cortex-button`
+and `cortex-view` blocks inside a `::: columns` layout at the top of the page's
+body — rearrange or delete them as you like; the saved views underneath are
+unchanged.

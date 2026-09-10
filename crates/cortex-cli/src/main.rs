@@ -592,7 +592,7 @@ fn run() -> Result<()> {
                             table(&headers, rows);
                         }
                         if !t.summary.is_empty() {
-                            println!("── all ({})", t.rows.len());
+                            println!("── total ({})", t.rows.len());
                             table(&headers, vec![summary_line(&t.summary)]);
                         }
                     }

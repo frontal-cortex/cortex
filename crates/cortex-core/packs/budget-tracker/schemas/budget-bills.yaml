@@ -42,16 +42,8 @@ properties:
       - name: other
         color: gray
   - name: account
-    type: select
-    options:
-      - name: checking
-        color: blue
-      - name: savings
-        color: green
-      - name: credit
-        color: red
-      - name: cash
-        color: yellow
+    type: relation
+    collection: accounts
   - name: active
     type: checkbox
   - name: url

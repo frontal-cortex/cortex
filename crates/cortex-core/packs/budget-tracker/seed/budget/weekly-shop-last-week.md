@@ -6,7 +6,8 @@ date: "{{today-8}}"
 amount: 76.9
 kind: expense
 category: groceries
-account: checking
+account: ["checking"]
+to_account: []
 payee: "Supermarket"
 bill: []
 created: "{{today}}"

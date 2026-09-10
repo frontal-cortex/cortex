@@ -9,7 +9,7 @@ repeat_mode: advance
 next_due: "{{today-3}}"
 paid: false
 category: subscriptions
-account: credit
+account: ["credit"]
 url:
 active: true
 created: "{{today}}"

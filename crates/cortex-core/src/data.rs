@@ -1084,6 +1084,12 @@ pub const SUMMARY_FUNCTIONS: &[&str] = &["count", "sum", "avg", "min", "max", "p
 /// One summary value over a set of rows: the same arithmetic a rollup uses, so
 /// a table's footer, `cortex view --summary` and MCP `run_view` agree. An
 /// unknown function yields `Null` rather than an error, like a rollup.
+/// Sums of decimals pick up binary noise (1323.0900000000001); six places is
+/// past any currency and well inside f64.
+fn tidy(v: f64) -> f64 {
+    (v * 1e6).round() / 1e6
+}
+
 pub fn summarize(rows: &[Row], field: &str, func: &str) -> CellValue {
     let refs: Vec<&Row> = rows.iter().collect();
     rollup_value(&refs, field, func.trim())
@@ -2008,7 +2014,7 @@ fn rollup_value(rows: &[&Row], prop: &str, func: &str) -> CellValue {
                 return CellValue::Null;
             }
             let v = match func {
-                "sum" => nums.iter().sum(),
+                "sum" => tidy(nums.iter().sum()),
                 "avg" => nums.iter().sum::<f64>() / nums.len() as f64,
                 "min" => nums.iter().cloned().fold(f64::INFINITY, f64::min),
                 _ => nums.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
@@ -2319,7 +2325,7 @@ fn aggregate(table: &Table, x: &str, y: &str, agg: &str, bucket: Option<&str>) -
     for (x, acc) in groups {
         let y = match agg {
             "count" => acc.rows as f64,
-            "sum" => acc.vals.iter().sum(),
+            "sum" => tidy(acc.vals.iter().sum()),
             "avg" => if acc.vals.is_empty() { 0.0 } else { acc.vals.iter().sum::<f64>() / acc.vals.len() as f64 },
             "min" => acc.vals.iter().cloned().fold(f64::INFINITY, f64::min),
             "max" => acc.vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
