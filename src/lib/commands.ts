@@ -171,7 +171,7 @@ export interface SortClause {
   desc: boolean;
 }
 
-export type ViewType = "table" | "board" | "calendar" | "gallery" | "list" | "chart" | "tracker" | "timeline";
+export type ViewType = "table" | "board" | "calendar" | "gallery" | "list" | "chart" | "tracker" | "timeline" | "stats";
 
 /** One named view in a database / embedded data block.
  *
@@ -197,10 +197,26 @@ export interface ViewDef {
   y?: string;
   agg?: string;
   chartType?: string;
-  /** Chart: fold a date-valued x by day | week | month | year. */
+  /** Chart: fold a date-valued x by day | week | month | quarter | year.
+   *  Table / list / board: how a date `group` folds into sections. */
   bucket?: string;
   /** Chart: one series per distinct value of this field. */
   series?: string;
+  /** Chart: `true` piles series up (bar/area) instead of side by side. */
+  stack?: string;
+  /** Chart (donut/pie): slice labels — name | value | name_value | none. */
+  labels?: string;
+  /** Chart: `false` hides the legend. */
+  legend?: string;
+  /** Chart: small | medium | large. */
+  height?: string;
+  /** Gallery: `compact` — no cover, one labelled line per shown property. */
+  layout?: string;
+  /** Gallery: small | medium | large cards. */
+  size?: string;
+  /** Stats: the tiles, a JSON list of `{label, agg, field, filter, format}` or `{label, expr}`
+   *  (a real YAML list in `_index.md`; `database.ts` converts). */
+  stats?: string;
   /** Tracker: the collection with one row per day. */
   log?: string;
   /** Tracker: the log's list property naming the items done (default `done`). */
@@ -258,6 +274,22 @@ export interface ViewTable {
   /** The spec's `summary:` functions evaluated by the engine over `rows`, field → value.
    *  Absent when the spec asks for none. */
   summary?: Record<string, string | number | boolean | string[] | null>;
+  /** Which function produced each `summary` value, field → `sum`, …. */
+  summaryFunctions?: Record<string, string>;
+  /** `group:` sections in display order — option order for a select, newest
+   *  first for a date (`bucket:` folds days into weeks, months, quarters or
+   *  years) — each with its rows and its own summary. Absent without `group`. */
+  groups?: ViewGroup[];
+}
+
+/** One `group:` section of a resolved view. */
+export interface ViewGroup {
+  /** The raw value — a select option, a bucket key (`2026-09`, `2026-Q3`, a week's Monday), or `` for rows without one. */
+  key: string;
+  /** The heading: `September 2026`, `Week 37 · 8–14 Sep`, `Q3 2026`, `Wed 9 Sep`; the value itself otherwise; `—` for empty. */
+  label: string;
+  rowIds: string[];
+  summary?: Record<string, string | number | boolean | string[] | null>;
 }
 
 export interface ChartPoint {
@@ -278,6 +310,33 @@ export interface ChartResult {
   points: ChartPoint[];
   /** Per-value series when the spec sets `series:`; empty otherwise. */
   series: ChartSeries[];
+  /** `stack: true` — series pile up (bar/area). */
+  stack: boolean;
+  /** Slice labels for donut/pie: name | value | name_value | none. */
+  labels: string;
+  /** `legend: false` hides the legend. */
+  legend: boolean;
+  /** small | medium | large. */
+  height: string;
+}
+
+// ── Stats view (see cortex_core::data::run_stats) ──
+
+/** One tile of a `stats` view. */
+export interface Stat {
+  label: string;
+  /** The number, when the result is one; null for text or nothing. */
+  value: number | null;
+  /** Display text — the number plainly, a date, or `—`. */
+  text: string;
+  /** `format:` from the entry, else the field's schema format. */
+  format?: string;
+  /** Why the tile is empty, when its entry could not run. */
+  error?: string;
+}
+
+export interface StatsResult {
+  stats: Stat[];
 }
 
 // ── Tracker view (see cortex_core::tracker) ──
@@ -777,6 +836,10 @@ export const commands = {
 
   runChart: (spec: string) =>
     invoke<ChartResult>("run_chart", { spec }),
+
+  /** A `stats` view: one tile per `stats:` entry. Reading only. */
+  runStats: (spec: string) =>
+    invoke<StatsResult>("run_stats", { spec }),
 
   // ── Tracker view — reading computes; the only write is a toggle ──
   runTracker: (spec: string, anchor?: string) =>

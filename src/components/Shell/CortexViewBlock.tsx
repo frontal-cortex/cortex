@@ -11,8 +11,8 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, ReactNode } from "react";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
-import { commands, ViewTable, ViewColumn, PropType, PropertyDef, ChartResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, TrackerIcon, TimelineIcon, CheckIcon } from "./icons";
+import { commands, ViewTable, ViewColumn, ViewGroup, PropType, PropertyDef, ChartResult, Stat, StatsResult } from "../../lib/commands";
+import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon, CheckIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
@@ -22,7 +22,8 @@ import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
 import { useViewport } from "../../hooks/useViewport";
 import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
-import { DateRangeInput, FilesInput, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
+import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
+import { DEFAULT_STATS } from "../../lib/database";
 import styles from "./CortexViewBlock.module.css";
 
 /** Select-like columns render as colored pills (incl. person + relation). The
@@ -438,6 +439,7 @@ const NUMBER_FORMATS: { value: string; label: string }[] = [
   { value: "decimal", label: "Decimal" },
   { value: "percent", label: "Percent" },
   { value: "progress", label: "Progress bar" },
+  { value: "ring", label: "Ring" },
   { value: "currency", label: "Currency" },
   { value: "stars", label: "Stars" },
 ];
@@ -462,7 +464,8 @@ export function formatNumber(n: number, schema: PropertyDef | undefined): string
     case "currency": return `${unit}${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
     case "integer": return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
     case "decimal": return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
-    case "progress": {
+    case "progress":
+    case "ring": {
       // A bare 0–100 bar is a share, so it reads as one; a custom range or unit reads as itself.
       const bare = schema.min === undefined && schema.max === undefined && !unit;
       return `${fmtNum(n)}${bare ? "%" : unit}`;
@@ -493,6 +496,10 @@ function FormattedNumber({ value, schema, onSet }: { value: unknown; schema: Pro
     );
   }
   if (n === null) return <>{formatCell(value)}</>;
+  if (schema.format === "ring") {
+    const lo = schema.min ?? 0, hi = schema.max ?? 100;
+    return <Ring pct={hi > lo ? ((n - lo) / (hi - lo)) * 100 : 0} text={formatNumber(n, schema)} />;
+  }
   if (schema.format === "progress") {
     const lo = schema.min ?? 0, hi = schema.max ?? 100;
     const pct = hi > lo ? Math.min(100, Math.max(0, ((n - lo) / (hi - lo)) * 100)) : 0;
@@ -573,9 +580,16 @@ end: end`;
 /** Series colours: the accent first, then the tag palette — theme tokens, never hex. */
 const SERIES_COLORS = ["var(--accent)", "var(--tag-green-fg)", "var(--tag-orange-fg)", "var(--tag-purple-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-brown-fg)", "var(--tag-red-fg)", "var(--tag-blue-fg)"];
 
-/** Dependency-free SVG line/bar chart. One series, or several when the spec
- *  sets `series:` (lines overlaid, bars grouped). Responsive via viewBox. */
+/** The wrapper class for a chart's `height:`. */
+function chartHeightClass(chart: ChartResult): string {
+  return chart.height === "small" ? styles.chartSmall : chart.height === "large" ? styles.chartLarge : "";
+}
+
+/** Dependency-free SVG chart: line, bar, area, donut or pie. One series, or
+ *  several when the spec sets `series:` (lines overlaid, bars grouped or
+ *  stacked). Responsive via viewBox. */
 export function MiniChart({ chart }: { chart: ChartResult }) {
+  if (chart.chartType === "donut" || chart.chartType === "pie") return <RoundChart chart={chart} />;
   if (chart.series && chart.series.length > 1) return <MultiChart chart={chart} />;
   const W = 640, H = 240;
   const padL = 46, padR = 16, padT = 14, padB = 38;
@@ -595,12 +609,13 @@ export function MiniChart({ chart }: { chart: ChartResult }) {
   const yAt = (v: number) => padT + innerH - ((v - min) / (max - min)) * innerH;
 
   const isBar = chart.chartType === "bar";
+  const isArea = chart.chartType === "area";
   const ticks = [max, (min + max) / 2, min];
   const baseY = yAt(Math.max(0, min));
   const labelEvery = Math.ceil(n / 6);
 
   return (
-    <div className={styles.chartWrap}>
+    <div className={`${styles.chartWrap} ${chartHeightClass(chart)}`}>
       <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} preserveAspectRatio="xMidYMid meet">
         {ticks.map((t, i) => {
           const y = yAt(t);
@@ -630,6 +645,12 @@ export function MiniChart({ chart }: { chart: ChartResult }) {
             })
           : (
             <>
+              {isArea && n > 1 && (
+                <polygon
+                  points={`${xAt(0)},${baseY} ${chart.points.map((p, i) => `${xAt(i)},${yAt(p.y)}`).join(" ")} ${xAt(n - 1)},${baseY}`}
+                  className={styles.area}
+                />
+              )}
               <polyline
                 points={chart.points.map((p, i) => `${xAt(i)},${yAt(p.y)}`).join(" ")}
                 className={styles.line}
@@ -661,20 +682,28 @@ function MultiChart({ chart }: { chart: ChartResult }) {
     const [p, q] = [parseFloat(a), parseFloat(b)];
     return !isNaN(p) && !isNaN(q) ? p - q : a.localeCompare(b);
   });
-  const ys = chart.series.flatMap((s) => s.points.map((p) => p.y));
+  const isBar = chart.chartType === "bar";
+  const isArea = chart.chartType === "area";
+  // Stacked: each series sits on the sum of those before it, so the top of the
+  // last one is the total per x.
+  const stacked = chart.stack && (isBar || isArea);
+  const byXs = chart.series.map((s) => new Map(s.points.map((p) => [p.x, p.y])));
+  const base = (si: number, x: string) => stacked ? byXs.slice(0, si).reduce((acc, m) => acc + Math.max(0, m.get(x) ?? 0), 0) : 0;
+  const top = (si: number, x: string) => base(si, x) + (byXs[si].get(x) ?? 0);
+  const ys = chart.series.flatMap((_, si) => xs.map((x) => top(si, x)));
   let min = Math.min(0, ...ys), max = Math.max(...ys);
   if (min === max) { max = min + 1; }
   const span = max - min; max += span * 0.06;
   const n = xs.length;
-  const isBar = chart.chartType === "bar";
   const xAt = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
   const yAt = (v: number) => padT + innerH - ((v - min) / (max - min)) * innerH;
   const slot = innerW / Math.max(1, n);
-  const bw = Math.max(1, (slot * 0.7) / chart.series.length);
+  const perSlot = stacked ? 1 : chart.series.length;
+  const bw = Math.max(1, (slot * 0.7) / perSlot);
   const ticks = 3;
   const labelEvery = Math.max(1, Math.ceil(n / 6));
   return (
-    <div className={styles.chartWrap}>
+    <div className={`${styles.chartWrap} ${chartHeightClass(chart)}`}>
       <svg className={styles.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         {Array.from({ length: ticks + 1 }, (_, i) => {
           const v = min + ((max - min) * i) / ticks;
@@ -685,29 +714,196 @@ function MultiChart({ chart }: { chart: ChartResult }) {
             </g>
           );
         })}
-        {chart.series.map((s, si) => {
-          const byX = new Map(s.points.map((p) => [p.x, p.y]));
+        {chart.series.map((_, si) => {
           const color = SERIES_COLORS[si % SERIES_COLORS.length];
           if (isBar) {
             return xs.map((x, i) => {
-              const y = byX.get(x) ?? 0;
-              const x0 = padL + i * slot + (slot - bw * chart.series.length) / 2 + si * bw;
-              return <rect key={`${si}-${x}`} x={x0} y={yAt(y)} width={bw} height={Math.max(0, yAt(min) - yAt(y))} fill={color} opacity={0.9} rx={1} />;
+              const y0 = base(si, x), y1 = top(si, x);
+              const x0 = padL + i * slot + (slot - bw * perSlot) / 2 + (stacked ? 0 : si * bw);
+              return <rect key={`${si}-${x}`} x={x0} y={yAt(Math.max(y0, y1))} width={bw} height={Math.max(0, Math.abs(yAt(y0) - yAt(y1)))} fill={color} opacity={0.9} rx={1} />;
             });
           }
-          const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yAt(byX.get(x) ?? 0)}`).join(" ");
-          return <path key={si} d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />;
+          const line = xs.map((x, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yAt(top(si, x))}`).join(" ");
+          if (isArea) {
+            // The band between this series' baseline and its top.
+            const back = [...xs].reverse().map((x, j) => `L${xAt(n - 1 - j)},${yAt(base(si, x))}`).join(" ");
+            return (
+              <g key={si}>
+                <path d={`${line} ${back} Z`} fill={color} opacity={0.22} />
+                <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+              </g>
+            );
+          }
+          return <path key={si} d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />;
         })}
         {xs.map((x, i) => (i % labelEvery === 0 || i === n - 1) && (
           <text key={x} x={isBar ? padL + i * slot + slot / 2 : xAt(i)} y={H - padB + 16} textAnchor="middle" className={styles.axisLabel}>{x}</text>
         ))}
-        {chart.series.map((s, si) => (
+        {chart.legend && chart.series.map((s, si) => (
           <g key={`l${si}`} transform={`translate(${padL + si * 100}, ${H - 14})`}>
             <rect width={10} height={10} rx={2} fill={SERIES_COLORS[si % SERIES_COLORS.length]} />
             <text x={14} y={9} className={styles.axisLabel}>{s.name.length > 12 ? s.name.slice(0, 11) + "…" : s.name}</text>
           </g>
         ))}
       </svg>
+    </div>
+  );
+}
+
+/** A donut or pie: one slice per point, tag-palette colours, the slice's
+ *  value on hover, and the keyboard cycles slices (arrows) once the chart has
+ *  focus. `labels:` picks what each slice says; `legend: false` hides the key. */
+function RoundChart({ chart }: { chart: ChartResult }) {
+  const [focus, setFocus] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const donut = chart.chartType === "donut";
+  const slices = chart.points.filter((p) => p.y > 0);
+  const total = slices.reduce((s, p) => s + p.y, 0);
+  const S = 220, cx = S / 2, cy = S / 2, R = 100, r = donut ? 62 : 0;
+  const arcs: { i: number; x: string; y: number; a0: number; a1: number }[] = [];
+  let a = -Math.PI / 2;
+  slices.forEach((p, i) => { const a1 = a + (p.y / total) * 2 * Math.PI; arcs.push({ i, x: p.x, y: p.y, a0: a, a1 }); a = a1; });
+  const pt = (rad: number, ang: number) => `${(cx + rad * Math.cos(ang)).toFixed(2)},${(cy + rad * Math.sin(ang)).toFixed(2)}`;
+  const path = (a0: number, a1: number) => {
+    // A lone slice is the whole ring: two half arcs, since one arc cannot close on itself.
+    if (a1 - a0 >= 2 * Math.PI - 1e-6) {
+      const mid = a0 + Math.PI;
+      const outer = `M${pt(R, a0)} A${R},${R} 0 1 1 ${pt(R, mid)} A${R},${R} 0 1 1 ${pt(R, a0)}`;
+      return donut ? `${outer} M${pt(r, a0)} A${r},${r} 0 1 0 ${pt(r, mid)} A${r},${r} 0 1 0 ${pt(r, a0)} Z` : `${outer} Z`;
+    }
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    return donut
+      ? `M${pt(R, a0)} A${R},${R} 0 ${large} 1 ${pt(R, a1)} L${pt(r, a1)} A${r},${r} 0 ${large} 0 ${pt(r, a0)} Z`
+      : `M${cx},${cy} L${pt(R, a0)} A${R},${R} 0 ${large} 1 ${pt(R, a1)} Z`;
+  };
+  const active = hover ?? focus;
+  const pct = (y: number) => `${fmtNum((y / total) * 100)}%`;
+  const labelText = (arc: { x: string; y: number }) => {
+    switch (chart.labels) {
+      case "value": return fmtNum(arc.y);
+      case "name_value": return `${arc.x} ${fmtNum(arc.y)}`;
+      case "none": return "";
+      default: return arc.x;
+    }
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (arcs.length === 0) return;
+    const step = (d: number) => { e.preventDefault(); setFocus((f) => (f === null ? (d > 0 ? 0 : arcs.length - 1) : (f + d + arcs.length) % arcs.length)); };
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") step(1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") step(-1);
+    else if (e.key === "Home") { e.preventDefault(); setFocus(0); }
+    else if (e.key === "End") { e.preventDefault(); setFocus(arcs.length - 1); }
+    else if (e.key === "Escape") setFocus(null);
+  };
+  const current = active !== null ? arcs[active] : null;
+  const caption = current
+    ? `${current.x}: ${fmtNum(current.y)} · ${pct(current.y)}`
+    : `${chart.yLabel} by ${chart.xLabel} · ${slices.length} slice${slices.length === 1 ? "" : "s"} · total ${fmtNum(total)}`;
+  if (arcs.length === 0) return <div className={styles.stub}>Nothing to draw — every value is zero or empty.</div>;
+  return (
+    <div className={`${styles.chartWrap} ${styles.roundWrap} ${chartHeightClass(chart)}`}>
+      <svg
+        viewBox={`0 0 ${S} ${S}`}
+        className={`${styles.chart} ${styles.roundChart}`}
+        preserveAspectRatio="xMidYMid meet"
+        tabIndex={0}
+        role="img"
+        aria-label={caption}
+        onKeyDown={onKey}
+        onBlur={() => setFocus(null)}
+        onMouseLeave={() => setHover(null)}
+      >
+        {arcs.map((arc) => {
+          const on = active === arc.i;
+          const mid = (arc.a0 + arc.a1) / 2;
+          const shift = on ? 4 : 0;
+          return (
+            <path
+              key={arc.i}
+              d={path(arc.a0, arc.a1)}
+              fill={SERIES_COLORS[arc.i % SERIES_COLORS.length]}
+              className={`${styles.slice} ${on ? styles.sliceOn : ""}`}
+              transform={shift ? `translate(${(shift * Math.cos(mid)).toFixed(2)} ${(shift * Math.sin(mid)).toFixed(2)})` : undefined}
+              onMouseEnter={() => setHover(arc.i)}
+              onClick={() => setFocus(arc.i)}
+            >
+              <title>{`${arc.x}: ${fmtNum(arc.y)} (${pct(arc.y)})`}</title>
+            </path>
+          );
+        })}
+        {chart.labels !== "none" && arcs.map((arc) => {
+          if (arc.y / total < 0.06) return null;
+          const mid = (arc.a0 + arc.a1) / 2;
+          const rad = donut ? (R + r) / 2 : R * 0.62;
+          const text = labelText(arc);
+          return text ? (
+            <text key={`t${arc.i}`} x={cx + rad * Math.cos(mid)} y={cy + rad * Math.sin(mid)} textAnchor="middle" dominantBaseline="central" className={styles.sliceLabel}>
+              {text.length > 14 ? text.slice(0, 13) + "…" : text}
+            </text>
+          ) : null;
+        })}
+        {donut && (
+          <>
+            <text x={cx} y={cy - 6} textAnchor="middle" className={styles.roundValue}>{current ? fmtNum(current.y) : fmtNum(total)}</text>
+            <text x={cx} y={cy + 12} textAnchor="middle" className={styles.roundSub}>{current ? `${current.x} · ${pct(current.y)}` : "total"}</text>
+          </>
+        )}
+      </svg>
+      {chart.legend && (
+        <ul className={styles.legend}>
+          {arcs.map((arc) => (
+            <li
+              key={arc.i}
+              className={`${styles.legendItem} ${active === arc.i ? styles.legendOn : ""}`}
+              onMouseEnter={() => setHover(arc.i)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => setFocus(arc.i)}
+            >
+              <span className={styles.legendSwatch} style={{ background: SERIES_COLORS[arc.i % SERIES_COLORS.length] }} />
+              <span className={styles.legendName}>{arc.x}</span>
+              <span className={styles.legendValue}>{fmtNum(arc.y)} · {pct(arc.y)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className={styles.count}>{caption}</div>
+    </div>
+  );
+}
+
+// ── Stats view: a few numbers, each its own query ────────────────────────────
+
+/** A stat's value as text, in its format: a share with `%`, money grouped to
+ *  two decimals, `—` for nothing. */
+function statText(s: Stat): string {
+  if (s.value === null) return s.text;
+  const n = s.value;
+  switch (s.format) {
+    case "percent": case "progress": case "ring": return `${fmtNum(n)}%`;
+    case "currency": return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+    case "integer": return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
+    case "decimal": return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
+    default: return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+  }
+}
+
+/** The tiles of a `stats` view: the value large, its label under it, a ring
+ *  when the entry asks for one. Read-only — every number comes from the engine. */
+export function StatsView({ stats }: { stats: StatsResult }) {
+  if (stats.stats.length === 0) return <div className={styles.stub}>Add a `stats:` entry — a label, an aggregate and a field, or an expression over other tiles.</div>;
+  return (
+    <div className={styles.stats}>
+      {stats.stats.map((s, i) => (
+        <div key={`${s.label}-${i}`} className={`${styles.statTile} ${s.error ? styles.statError : ""}`} title={s.error ?? undefined}>
+          <div className={styles.statValue}>
+            {s.format === "ring" && s.value !== null
+              ? <Ring inside size={56} pct={s.value} text={`${fmtNum(s.value)}%`} />
+              : statText(s)}
+          </div>
+          <div className={styles.statLabel}>{s.label}</div>
+          {s.error && <div className={styles.statNote}>{s.error}</div>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -951,7 +1147,7 @@ function formatSummary(c: ViewColumn, func: string, v: unknown): string {
   if (n === null) return formatCell(v);
   if (func === "percent_checked") return `${fmtNum(n)}%`;
   if (func === "count" || func === "empty" || func === "not_empty") return fmtNum(n);
-  return c.schema && numberFormat(c) && c.schema.format !== "stars" && c.schema.format !== "progress"
+  return c.schema && numberFormat(c) && !["stars", "progress", "ring"].includes(c.schema.format ?? "")
     ? formatNumber(n, c.schema)
     : fmtNum(n);
 }
@@ -995,8 +1191,62 @@ function SummaryCell({ col, func, value, onPick }: {
 }
 
 /** One `group:` section of the table: its rows, and where they start in the
- *  flat display order the keyboard navigates. */
-type GroupSection = { key: string; rows: ViewTable["rows"]; start: number; folded: boolean };
+ *  flat display order the keyboard navigates. `label` is the heading (a bucket
+ *  such as `September 2026`, else the value); `summary` the engine's numbers
+ *  over this section's rows. */
+type GroupSection = { key: string; label: string; rows: ViewTable["rows"]; start: number; folded: boolean; summary?: ViewGroup["summary"] };
+
+/** The sections of a grouped table, in display order: the engine's `groups`
+ *  when the table carries them (option order, or newest bucket first, each
+ *  with its own summary), narrowed to the rows on show — a search may have
+ *  dropped some; else the same buckets computed here. `""` keys become `—`. */
+function groupSections(table: ViewTable, groupField: string, groupCol: ViewColumn | undefined): { key: string; label: string; rows: ViewTable["rows"]; summary?: ViewGroup["summary"] }[] {
+  if (table.groups && table.groups.length) {
+    const byId = new Map(table.rows.map((r) => [r.id, r]));
+    return table.groups
+      .map((g) => ({ key: g.key || "—", label: g.label, rows: g.rowIds.map((id) => byId.get(id)).filter((r): r is ViewTable["rows"][number] => !!r), summary: g.summary }))
+      .filter((g) => g.rows.length > 0);
+  }
+  const groups = new Map<string, ViewTable["rows"]>();
+  for (const row of table.rows) {
+    const key = toInput(row.cells[groupField]) || "—";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+  const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
+  const present = [...groups.keys()];
+  const keys = [
+    ...optionOrder.filter((o) => groups.has(o)),
+    ...present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort(),
+    ...(groups.has("—") ? ["—"] : []),
+  ];
+  return keys.map((k) => ({ key: k, label: k, rows: groups.get(k) ?? [] }));
+}
+
+/** Whether a `group:` is a date folded by `bucket:` — its keys are months or
+ *  weeks, not values a new row could carry. */
+function isBucketed(spec: string, groupCol: ViewColumn | undefined): boolean {
+  return !!peek(spec, "bucket") && peek(spec, "bucket") !== "none" && (groupCol?.ty === "date" || groupCol?.ty === "date_range" || groupCol?.schema?.type === "date");
+}
+
+/** A bucket key's first day — what a row added to (or dropped into) a bucketed
+ *  section gets for its date: `2026-09` → `2026-09-01`, `2026-Q3` → `2026-07-01`. */
+function bucketStart(key: string): string {
+  const q = key.match(/^(\d{4})-Q([1-4])$/);
+  if (q) return `${q[1]}-${String((Number(q[2]) - 1) * 3 + 1).padStart(2, "0")}-01`;
+  if (/^\d{4}$/.test(key)) return `${key}-01-01`;
+  if (/^\d{4}-\d{2}$/.test(key)) return `${key}-01`;
+  return key;
+}
+
+/** One section's summary as text: `Sum 15 · Checked 40%`. */
+function groupSummaryText(cols: ViewColumn[], funcs: Record<string, string> | undefined, values: ViewGroup["summary"]): string {
+  if (!values || !funcs) return "";
+  return cols
+    .filter((c) => funcs[c.key] && values[c.key] !== undefined)
+    .map((c) => `${SUMMARY_FUNCTIONS.find((f) => f.value === funcs[c.key])?.label ?? funcs[c.key]} ${formatSummary(c, funcs[c.key], values[c.key])}`)
+    .join(" · ");
+}
 
 export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind }: {
   table: ViewTable; spec: string; source: string; onChanged: () => void;
@@ -1042,41 +1292,31 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   // `rows` is the table as shown, top to bottom — group by group, a folded
   // group left out. The keyboard's row index is an index into this list, so
   // arrows, Tab and the focus effect see one flat grid across every <tbody>.
+  const bucketed = isBucketed(spec, groupCol);
   const { groupKeys, sections, rows } = useMemo(() => {
-    const groups = new Map<string, ViewTable["rows"]>();
-    if (groupField) {
-      for (const row of table.rows) {
-        const key = toInput(row.cells[groupField]) || "—";
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(row);
-      }
-    }
-    const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
-    const present = [...groups.keys()];
-    const groupKeys = [
-      ...optionOrder.filter((o) => groups.has(o)),
-      ...present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort(),
-      ...(groups.has("—") ? ["—"] : []),
-    ];
+    const base = groupField ? groupSections(table, groupField, groupCol) : [];
+    const groupKeys = base.map((g) => g.key);
     const sections: GroupSection[] = [];
     let start = 0;
-    for (const g of groupKeys) {
-      const folded = collapsed.has(g);
-      const rs = groups.get(g) ?? [];
-      sections.push({ key: g, rows: rs, start, folded });
-      if (!folded) start += rs.length;
+    for (const g of base) {
+      const folded = collapsed.has(g.key);
+      sections.push({ ...g, start, folded });
+      if (!folded) start += g.rows.length;
     }
     const rows = groupField ? sections.flatMap((s) => (s.folded ? [] : s.rows)) : table.rows;
     return { groupKeys, sections, rows };
-  }, [table.rows, groupField, groupCol, collapsed]);
+  }, [table, groupField, groupCol, collapsed]);
   const toggleGroup = (g: string) =>
     setCollapsed((prev) => { const next = new Set(prev); if (next.has(g)) next.delete(g); else next.add(g); return next; });
   // A computed group value can't be seeded into a new row.
   const canAddInGroup = !!groupField && !(groupCol && isComputedColumn(groupCol));
+  /** What a row added to section `key` carries: the value, or a bucket's first day. */
+  const groupSeed = (key: string): Record<string, string> =>
+    groupField ? { [groupField]: key === "—" ? "" : bucketed ? bucketStart(key) : key } : {};
   const colCount = cols.length + (schemaKey ? 1 : 0) + 1;
   /** The seed that lands a new row in the same group as `row`. */
   const groupSeedOf = (row: ViewTable["rows"][number] | undefined): Record<string, string> | undefined =>
-    row && groupField && canAddInGroup ? { [groupField]: toInput(row.cells[groupField]) } : undefined;
+    row && groupField && canAddInGroup && !bucketed ? { [groupField]: toInput(row.cells[groupField]) } : undefined;
 
   const cellKey = (p: CellPos) => `${rows[p.r]?.id}:${cols[p.c]?.key}`;
 
@@ -1489,15 +1729,16 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
             <div key={s.key} className={styles.cardGroup}>
               <button className={styles.groupToggle} onClick={() => toggleGroup(s.key)} aria-expanded={!s.folded}>
                 <span className={`${styles.groupChevron} ${s.folded ? styles.groupChevronFolded : ""}`}>▾</span>
-                <span className={styles.groupTitle}>{s.key === "—" ? `No ${groupField}` : s.key}</span>
+                <span className={styles.groupTitle}>{s.key === "—" ? `No ${groupField}` : s.label}</span>
                 <span className={styles.groupCount}>{s.rows.length}</span>
+                {s.summary && <span className={styles.groupSummaryInline}>{groupSummaryText(cols, table.summaryFunctions, s.summary)}</span>}
               </button>
               {!s.folded && s.rows.map(renderCard)}
               {!s.folded && canAddInGroup && (
                 <NewRowButton
                   source={source} spec={spec} onChanged={onChanged} onError={setErr}
-                  extra={{ [groupField]: s.key === "—" ? "" : s.key }}
-                  onAddBlank={() => addBlank({ [groupField]: s.key === "—" ? "" : s.key })}
+                  extra={groupSeed(s.key)}
+                  onAddBlank={() => addBlank(groupSeed(s.key))}
                   templatesVersion={templatesVersion}
                   compact
                 />
@@ -1555,8 +1796,9 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
               <td colSpan={colCount}>
                 <button className={styles.groupToggle} onClick={() => toggleGroup(s.key)} aria-expanded={!s.folded}>
                   <span className={`${styles.groupChevron} ${s.folded ? styles.groupChevronFolded : ""}`}>▾</span>
-                  <span className={styles.groupTitle}>{s.key === "—" ? `No ${groupField}` : s.key}</span>
+                  <span className={styles.groupTitle}>{s.key === "—" ? `No ${groupField}` : s.label}</span>
                   <span className={styles.groupCount}>{s.rows.length}</span>
+                  {s.folded && s.summary && <span className={styles.groupSummaryInline}>{groupSummaryText(cols, table.summaryFunctions, s.summary)}</span>}
                 </button>
               </td>
             </tr>
@@ -1566,12 +1808,23 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
                 <td colSpan={colCount}>
                   <NewRowButton
                     source={source} spec={spec} onChanged={onChanged} onError={setErr}
-                    extra={{ [groupField]: s.key === "—" ? "" : s.key }}
-                    onAddBlank={() => addBlank({ [groupField]: s.key === "—" ? "" : s.key })}
+                    extra={groupSeed(s.key)}
+                    onAddBlank={() => addBlank(groupSeed(s.key))}
                     templatesVersion={templatesVersion}
                     compact
                   />
                 </td>
+              </tr>
+            )}
+            {!s.folded && s.summary && hasSummary && (
+              <tr className={styles.groupSummaryRow}>
+                {cols.map((c) => (
+                  <td key={c.key}>
+                    {summarySpec[c.key] && <SummaryCell col={c} func={summarySpec[c.key]} value={s.summary?.[c.key]} />}
+                  </td>
+                ))}
+                {schemaKey && <td className={styles.addPropCol} />}
+                <td className={styles.rowActionCol} />
               </tr>
             )}
           </tbody>
@@ -1748,22 +2001,36 @@ export function BoardView({ table, spec, source, onChanged }: {
     return <div className={styles.stub}>A board can't group by <code>{groupField}</code> — it is computed. Pick another property under Group.</div>;
   }
 
+  // A date group folded by `bucket:` takes the engine's sections (newest
+  // first, labelled `September 2026`); a card dropped there gets the bucket's
+  // first day. Otherwise the board buckets by value here — the optimistic
+  // `rows` move a dropped card before the reload.
+  const bucketed = isBucketed(spec, groupCol);
   const groups = new Map<string, ViewTable["rows"]>();
-  for (const row of rows) {
-    const key = toInput(row.cells[groupField]) || "—";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(row);
+  const labels = new Map<string, string>();
+  let groupKeys: string[];
+  if (bucketed) {
+    for (const g of groupSections({ ...table, rows }, groupField, groupCol)) {
+      groups.set(g.key, g.rows);
+      labels.set(g.key, g.label);
+    }
+    groupKeys = [...groups.keys()];
+  } else {
+    for (const row of rows) {
+      const key = toInput(row.cells[groupField]) || "—";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row);
+    }
+    // Column order: the group property's defined options first — so a status board
+    // reads in the workflow order you chose, not alphabetically — then any other
+    // present values, then the "no value" column. Defined options always appear as
+    // a column (even when empty) so they're valid drop targets.
+    const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
+    const present = [...groups.keys()];
+    const extras = present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort();
+    const none = groups.has("—") ? ["—"] : [];
+    groupKeys = [...new Set([...optionOrder, ...extras, ...none])];
   }
-
-  // Column order: the group property's defined options first — so a status board
-  // reads in the workflow order you chose, not alphabetically — then any other
-  // present values, then the "no value" column. Defined options always appear as
-  // a column (even when empty) so they're valid drop targets.
-  const optionOrder = groupCol?.schema?.options?.map((o) => o.name) ?? [];
-  const present = [...groups.keys()];
-  const extras = present.filter((p) => p !== "—" && !optionOrder.includes(p)).sort();
-  const none = groups.has("—") ? ["—"] : [];
-  const groupKeys = [...new Set([...optionOrder, ...extras, ...none])];
 
   // Groups with no rows fold into one strip at the end (still drop targets), so
   // a board of eight aisles with two items doesn't scroll past six empty
@@ -1771,6 +2038,7 @@ export function BoardView({ table, spec, source, onChanged }: {
   const anyRows = rows.length > 0;
   const shown = anyRows ? groupKeys.filter((g) => (groups.get(g) ?? []).length > 0) : groupKeys;
   const folded = anyRows ? groupKeys.filter((g) => (groups.get(g) ?? []).length === 0) : [];
+  const valueOf = (group: string) => group === "—" ? "" : bucketed ? bucketStart(group) : group;
 
   const titleField =
     table.columns.find((c) => c.key === "title")?.key ??
@@ -1783,7 +2051,7 @@ export function BoardView({ table, spec, source, onChanged }: {
       title: "Untitled",
       created: today(),
       ...seedFromFilter(spec),
-      [groupField]: value === "—" ? "" : value,
+      [groupField]: valueOf(value),
     };
     commands.addRow(source, newRowId(), fields).then(onChanged).catch((e) => window.alert(String(e)));
   };
@@ -1795,9 +2063,9 @@ export function BoardView({ table, spec, source, onChanged }: {
 
   // Drop a card into a column → write its group field (e.g. status).
   const moveCard = (rowId: string, group: string) => {
-    const value = group === "—" ? "" : group;
+    const value = valueOf(group);
     const row = rows.find((r) => r.id === rowId);
-    if (!row || (toInput(row.cells[groupField]) || "—") === group) return;
+    if (!row || toInput(row.cells[groupField]) === value) return;
     setRows((rs) => rs.map((r) => (r.id === rowId ? { ...r, cells: { ...r.cells, [groupField]: value } } : r)));
     const ty = groupCol?.ty ?? "text";
     commands.setCell(source, rowId, groupField, value, ty)
@@ -1812,7 +2080,7 @@ export function BoardView({ table, spec, source, onChanged }: {
       {shown.map((g) => (
         <BoardColumn key={g} group={g} onDrop={(id) => moveCard(id, g)}>
           <div className={styles.boardColHeader}>
-            <span className={styles.boardColTitle}>{g}</span>
+            <span className={styles.boardColTitle}>{labels.get(g) ?? g}</span>
             <span className={styles.boardColCount}>{(groups.get(g) ?? []).length}</span>
           </div>
           <div className={styles.boardCards}>
@@ -2275,17 +2543,80 @@ export function GalleryView({ table, spec, source, onChanged }: {
 }) {
   const canOpen = source.startsWith("collections/");
   const titleField = table.columns.find((c) => c.key === "title") ? "title" : "id";
-  // Up to three non-title, non-cover fields shown under the card.
-  const fieldCols = cardFields(table, spec, [titleField], 3);
+  // `layout: compact` — a KPI card: no cover, one labelled line per shown
+  // property, the first one large. `size:` picks the card width.
+  const compact = peek(spec, "layout") === "compact";
+  const size = peek(spec, "size");
+  // Up to three non-title, non-cover fields shown under the card (every listed one in compact).
+  const fieldCols = cardFields(table, spec, [titleField], compact ? 6 : 3);
 
   const del = (rowId: string) => {
     if (!window.confirm("Delete this row?")) return;
     commands.deleteRow(source, rowId).then(onChanged).catch((e) => window.alert(String(e)));
   };
 
+  if (compact) {
+    return (
+      <div className={styles.galleryWrap}>
+        <div className={`${styles.gallery} ${size === "small" ? styles.gallerySmall : size === "large" ? styles.galleryLarge : ""}`}>
+          {table.rows.map((row) => {
+            const shown = fieldCols.filter((c) => hasValue(row.cells[c.key]));
+            const [big, ...rest] = shown;
+            return (
+              <div key={row.id} className={`${styles.galleryCard} ${styles.galleryCompact}`}>
+                <div className={styles.cardActions}>
+                  {canOpen && (
+                    <button className={styles.cardOpen} title="Open note" onClick={() => openRow(source, row.id)}>
+                      <OpenIcon size={12} />
+                    </button>
+                  )}
+                  <button className={styles.cardDelete} title="Delete row" onClick={() => del(row.id)}>
+                    <CloseIcon size={12} />
+                  </button>
+                </div>
+                <div className={styles.galleryBody}>
+                  <div
+                    className={`${styles.galleryKicker} ${canOpen ? styles.galleryTitleOpen : ""}`}
+                    onClick={canOpen ? () => openRow(source, row.id) : undefined}
+                  >
+                    {formatCell(row.cells[titleField])}
+                  </div>
+                  {big && (
+                    <div className={styles.galleryBig} title={big.key}>
+                      {isSelectColumn(big)
+                        ? <SelectCell value={row.cells[big.key]} options={big.schema!.options ?? []}
+                            multi={big.schema!.type === "multi_select"} editable={false} onChange={() => {}} />
+                        : displayCell(big, row.cells[big.key])}
+                    </div>
+                  )}
+                  {rest.map((c) => (
+                    <div key={c.key} className={`${styles.galleryField} ${styles.galleryLine}`}>
+                      <span className={styles.galleryKey}>{c.key}</span>
+                      {isSelectColumn(c)
+                        ? <SelectCell value={row.cells[c.key]} options={c.schema!.options ?? []}
+                            multi={c.schema!.type === "multi_select"} editable={false} onChange={() => {}} />
+                        : <span>{displayCell(c, row.cells[c.key])}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          className={styles.newRowBtn}
+          onClick={() => commands.addRow(source, newRowId(), { title: "Untitled", created: today(), ...seedFromFilter(spec) })
+            .then(onChanged).catch((e) => window.alert(String(e)))}
+        >
+          + New card
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.galleryWrap}>
-      <div className={styles.gallery}>
+      <div className={`${styles.gallery} ${size === "small" ? styles.gallerySmall : size === "large" ? styles.galleryLarge : ""}`}>
         {table.rows.map((row) => (
           <div key={row.id} className={styles.galleryCard}>
             <div className={styles.cardActions}>
@@ -2351,6 +2682,13 @@ export function ListView({ table, spec, source, onChanged, onFind }: {
   const [menuRow, setMenuRow] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [templatesVersion, setTemplatesVersion] = useState(0);
+  // `group:` sections — the engine's, newest bucket first when `bucket:` folds a date.
+  const groupField = peek(spec, "group");
+  const groupCol = groupField ? table.columns.find((c) => c.key === groupField) : undefined;
+  const sections = useMemo(() => (groupField ? groupSections(table, groupField, groupCol) : null), [table, groupField, groupCol]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const toggleGroup = (g: string) =>
+    setCollapsed((prev) => { const next = new Set(prev); if (next.has(g)) next.delete(g); else next.add(g); return next; });
 
   const del = (rowId: string) => {
     if (!window.confirm("Delete this row?")) return;
@@ -2366,9 +2704,7 @@ export function ListView({ table, spec, source, onChanged, onFind }: {
       .catch((e) => setErr(String(e)));
   };
 
-  return (
-    <div className={styles.list} data-find-scope={onFind ? "" : undefined} onKeyDown={(e) => { findKey(e, onFind); }}>
-      {table.rows.map((row) => (
+  const renderRow = (row: ViewTable["rows"][number]) => (
         <div key={row.id} className={styles.listRow}>
           {canOpen ? (
             <button type="button" className={styles.listTitleOpen} title="Open note" onClick={() => openRow(source, row.id)}>
@@ -2407,11 +2743,31 @@ export function ListView({ table, spec, source, onChanged, onFind }: {
             />
           </div>
         </div>
-      ))}
+  );
+
+  return (
+    <div className={styles.list} data-find-scope={onFind ? "" : undefined} onKeyDown={(e) => { findKey(e, onFind); }}>
+      {!sections && table.rows.map(renderRow)}
+      {sections && sections.map((s) => {
+        const folded = collapsed.has(s.key);
+        const summary = groupSummaryText(table.columns, table.summaryFunctions, s.summary);
+        return (
+          <div key={s.key} className={styles.listGroup}>
+            <button className={styles.groupToggle} onClick={() => toggleGroup(s.key)} aria-expanded={!folded}>
+              <span className={`${styles.groupChevron} ${folded ? styles.groupChevronFolded : ""}`}>▾</span>
+              <span className={styles.groupTitle}>{s.key === "—" ? `No ${groupField}` : s.label}</span>
+              <span className={styles.groupCount}>{s.rows.length}</span>
+              {summary && <span className={styles.groupSummaryInline}>{summary}</span>}
+            </button>
+            {!folded && s.rows.map(renderRow)}
+          </div>
+        );
+      })}
       <div className={styles.footer}>
         <NewRowButton source={source} spec={spec} onChanged={onChanged} onError={setErr} templatesVersion={templatesVersion} />
         <span className={styles.count}>
           {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
+          {sections && ` · ${sections.length} group${sections.length === 1 ? "" : "s"}`}
           {err && <span className={styles.error}> · {err}</span>}
         </span>
       </div>
@@ -2455,6 +2811,7 @@ function specWithType(spec: string, newType: string, table: ViewTable | null): s
   let s = specSet(spec, "type", newType);
   if (newType === "board" && !peek(s, "group")) s = specSet(s, "group", pickGroupField(table));
   if (newType === "chart" && !peek(s, "chartType")) s = specSet(s, "chartType", "line");
+  if (newType === "stats" && !peek(s, "stats")) s = specSet(s, "stats", DEFAULT_STATS);
   if (newType === "tracker" && !peek(s, "range")) s = specSet(s, "range", "week");
   return s;
 }
@@ -2470,6 +2827,7 @@ const VIEW_TYPE_OPTIONS: { type: string; label: string; render: (s: number) => R
   { type: "gallery", label: "Gallery", render: (s) => <GalleryIcon size={s} /> },
   { type: "list", label: "List", render: (s) => <ListIcon size={s} /> },
   { type: "chart", label: "Chart", render: (s) => <ChartIcon size={s} /> },
+  { type: "stats", label: "Stats", render: (s) => <StatsIcon size={s} /> },
   { type: "tracker", label: "Tracker", render: (s) => <TrackerIcon size={s} /> },
   { type: "timeline", label: "Timeline", render: (s) => <TimelineIcon size={s} /> },
 ];
@@ -2531,7 +2889,11 @@ export function BoardSetup({ table, onPick }: { table: ViewTable | null; onPick:
 }
 
 const CHART_AGGS = ["", "sum", "avg", "count", "min", "max"];
-const CHART_BUCKETS = ["", "day", "week", "month", "year"];
+const CHART_BUCKETS = ["", "day", "week", "month", "quarter", "year"];
+/** The chart types the engine draws (`cortex_core::data::CHART_TYPES`). */
+export const CHART_TYPES = ["line", "bar", "area", "donut", "pie"];
+export const CHART_LABELS = ["name", "value", "name_value", "none"];
+export const CHART_HEIGHTS = ["small", "medium", "large"];
 
 /** Inline chart configuration, so charts never need raw spec editing. */
 function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string) => void }) {
@@ -2561,7 +2923,7 @@ function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string
       <label className={styles.chartField}>Type
         <Dropdown
           value={ct}
-          options={[{ value: "line", label: "line" }, { value: "bar", label: "bar" }]}
+          options={CHART_TYPES.map((t) => ({ value: t, label: t }))}
           onChange={(v) => commit("chartType", v)}
         />
       </label>
@@ -2575,6 +2937,38 @@ function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string
       <label className={styles.chartField}>Series
         <input className={styles.chartInput} defaultValue={peek(spec, "series") ?? ""} placeholder="field (one line each)"
           onBlur={(e) => commit("series", e.target.value.trim())} />
+      </label>
+      {(ct === "bar" || ct === "area") && (
+        <label className={styles.chartField}>Stack
+          <Dropdown
+            value={peek(spec, "stack") === "true" ? "true" : ""}
+            options={[{ value: "", label: "no" }, { value: "true", label: "yes" }]}
+            onChange={(v) => commit("stack", v)}
+          />
+        </label>
+      )}
+      {(ct === "donut" || ct === "pie") && (
+        <label className={styles.chartField}>Labels
+          <Dropdown
+            value={peek(spec, "labels") ?? "name"}
+            options={CHART_LABELS.map((l) => ({ value: l, label: l.replace("_", " + ") }))}
+            onChange={(v) => commit("labels", v === "name" ? "" : v)}
+          />
+        </label>
+      )}
+      <label className={styles.chartField}>Legend
+        <Dropdown
+          value={peek(spec, "legend") === "false" ? "false" : ""}
+          options={[{ value: "", label: "shown" }, { value: "false", label: "hidden" }]}
+          onChange={(v) => commit("legend", v)}
+        />
+      </label>
+      <label className={styles.chartField}>Height
+        <Dropdown
+          value={peek(spec, "height") ?? "medium"}
+          options={CHART_HEIGHTS.map((h) => ({ value: h, label: h }))}
+          onChange={(v) => commit("height", v === "medium" ? "" : v)}
+        />
       </label>
     </div>
   );
@@ -2593,8 +2987,10 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   const isList = declaredType === "list";
   const isTracker = declaredType === "tracker";
   const isTimeline = declaredType === "timeline";
+  const isStats = declaredType === "stats";
 
   const [table, setTable] = useState<ViewTable | null>(null);
+  const [stats, setStats] = useState<StatsResult | null>(null);
   // The toolbar's search: narrows the rows on show, client-side, never written.
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -2621,12 +3017,14 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
     setLoading(true);
     setError(null);
     const p = isChart
-      ? commands.runChart(spec).then((c) => { setChart(c); setTable(null); })
-      : commands.runView(spec).then((t) => { setTable(t); setChart(null); });
+      ? commands.runChart(spec).then((c) => { setChart(c); setTable(null); setStats(null); })
+      : isStats
+        ? commands.runStats(spec).then((s) => { setStats(s); setTable(null); setChart(null); })
+        : commands.runView(spec).then((t) => { setTable(t); setChart(null); setStats(null); });
     return p
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [spec, isChart, isTracker]);
+  }, [spec, isChart, isStats, isTracker]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -2680,7 +3078,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
           onLogChange={(l) => applySpec(specSet(spec, "log", l))}
         />
       )}
-      {!editing && !isChart && !isTracker && !needsGroup && (
+      {!editing && !isChart && !isTracker && !isStats && !needsGroup && (
         <ViewToolbar
           spec={spec}
           fields={table?.allColumns ?? []}
@@ -2708,7 +3106,8 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
 
       {/* Keep the last-loaded data mounted across a refresh so add/remove/drag
           update in place instead of flashing a "Loading…" stub. */}
-      {!editing && !error && !needsGroup && !needsChartFields && !isTracker && (isChart
+      {!editing && !error && isStats && (stats ? <StatsView stats={stats} /> : loading ? <div className={styles.stub}>Loading…</div> : null)}
+      {!editing && !error && !needsGroup && !needsChartFields && !isTracker && !isStats && (isChart
         ? (chart
             ? (chart.points.length === 0
                 ? <div className={styles.stub}>No data points yet.</div>

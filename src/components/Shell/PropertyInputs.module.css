@@ -105,3 +105,41 @@
   font-size: var(--text-xs);
   color: var(--danger);
 }
+
+/* ── Ring (format: ring) ───────────────────────────────────────────────────── */
+.ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.ring circle {
+  fill: none;
+}
+.ringTrack {
+  stroke: var(--bg-active);
+}
+.ringFill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.2s ease;
+}
+.ringOver .ringFill {
+  stroke: var(--danger);
+}
+.ringNum {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.ringInside {
+  gap: 0;
+}
+.ringText {
+  fill: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}

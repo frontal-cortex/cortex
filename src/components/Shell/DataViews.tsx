@@ -6,22 +6,22 @@
 // this component owns which tab is active and renders it.
 
 import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from "react";
-import { commands, ViewTable, ChartResult, ViewDef, ViewType } from "../../lib/commands";
+import { commands, ViewTable, ChartResult, StatsResult, ViewDef, ViewType } from "../../lib/commands";
 import { VIEW_TYPES, defaultViewOfType, viewFromSpec, specFromView } from "../../lib/database";
 import {
-  DataTable, BoardView, CalendarView, GalleryView, ListView, MiniChart, BoardSetup, MissingCollection, missingCollection,
-  newRowId, today, seedFromFilter, searchRows,
+  DataTable, BoardView, CalendarView, GalleryView, ListView, MiniChart, StatsView, BoardSetup, MissingCollection, missingCollection,
+  newRowId, today, seedFromFilter, searchRows, CHART_TYPES, CHART_LABELS, CHART_HEIGHTS,
 } from "./CortexViewBlock";
 import { ViewToolbar } from "./ViewToolbar";
 import { TrackerView, TrackerRange } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
 import { Dropdown } from "./Dropdown";
 import { ErrorBoundary } from "../ErrorBoundary";
-import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, TrackerIcon, TimelineIcon } from "./icons";
+import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon } from "./icons";
 import styles from "./DatabaseView.module.css";
 
 const AGGS = ["", "sum", "avg", "count", "min", "max"];
-const BUCKETS = ["", "day", "week", "month", "year"];
+const BUCKETS = ["", "day", "week", "month", "quarter", "year"];
 
 export function viewIcon(type: ViewType, size = 14) {
   switch (type) {
@@ -30,6 +30,7 @@ export function viewIcon(type: ViewType, size = 14) {
     case "gallery": return <GalleryIcon size={size} />;
     case "list": return <ListIcon size={size} />;
     case "chart": return <ChartIcon size={size} />;
+    case "stats": return <StatsIcon size={size} />;
     case "tracker": return <TrackerIcon size={size} />;
     case "timeline": return <TimelineIcon size={size} />;
     default: return <TableIcon size={size} />;
@@ -114,10 +115,12 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
   const activeSpec = useMemo(() => specFromView(active, source), [active, source]);
   const isChart = active.type === "chart";
   const isTracker = active.type === "tracker";
+  const isStats = active.type === "stats";
 
   // ── data load ──
   const [table, setTable] = useState<ViewTable | null>(null);
   const [chart, setChart] = useState<ChartResult | null>(null);
+  const [stats, setStats] = useState<StatsResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The toolbar's search: narrows the rows on show, per view, never written.
@@ -129,14 +132,16 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
 
   const reload = useCallback(() => {
     // The tracker loads its own data (items + log, computed streaks).
-    if (isTracker) { setTable(null); setChart(null); setError(null); return Promise.resolve(); }
+    if (isTracker) { setTable(null); setChart(null); setStats(null); setError(null); return Promise.resolve(); }
     setLoading(true);
     setError(null);
     const p = isChart
-      ? commands.runChart(activeSpec).then((c) => { setChart(c); setTable(null); })
-      : commands.runView(activeSpec).then((t) => { setTable(t); setChart(null); });
+      ? commands.runChart(activeSpec).then((c) => { setChart(c); setTable(null); setStats(null); })
+      : isStats
+        ? commands.runStats(activeSpec).then((s) => { setStats(s); setTable(null); setChart(null); })
+        : commands.runView(activeSpec).then((t) => { setTable(t); setChart(null); setStats(null); });
     return p.catch((e) => setError(String(e))).finally(() => setLoading(false));
-  }, [activeSpec, isChart, isTracker]);
+  }, [activeSpec, isChart, isStats, isTracker]);
   useEffect(() => { reload(); }, [reload]);
 
   // Re-run when a sync pulls teammate changes.
@@ -220,7 +225,7 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
 
       {isChart ? (
         <ChartConfigBar view={active} onChange={updateActive} />
-      ) : isTracker ? null : (
+      ) : isTracker || isStats ? null : (
         <ViewToolbar
           spec={activeSpec}
           fields={table?.allColumns ?? []}
@@ -247,7 +252,9 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
             onRangeChange={(r: TrackerRange) => updateActive({ ...active, range: r })}
             onLogChange={(l) => updateActive({ ...active, log: l })}
           />
-        ) : isChart
+        ) : isStats
+          ? (stats ? <StatsView stats={stats} /> : loading ? <div className={styles.stub}>Loading…</div> : null)
+          : isChart
           ? (chart
               ? (chart.points.length === 0
                   ? <div className={styles.stub}>Set the chart's X and Y fields above.</div>
@@ -299,9 +306,10 @@ function ViewTab({ view, active, onClick, onToggleMenu }: {
   );
 }
 
-/** Minimal single-series chart configuration. */
+/** Minimal chart configuration: the fields, the type, and its polish. */
 function ChartConfigBar({ view, onChange }: { view: ViewDef; onChange: (v: ViewDef) => void }) {
   const set = (patch: Partial<ViewDef>) => onChange({ ...view, ...patch });
+  const ct = view.chartType ?? "line";
   return (
     <div className={styles.chartBar}>
       <label className={styles.chartField}>X
@@ -321,8 +329,8 @@ function ChartConfigBar({ view, onChange }: { view: ViewDef; onChange: (v: ViewD
       </label>
       <label className={styles.chartField}>Type
         <Dropdown
-          value={view.chartType ?? "line"}
-          options={[{ value: "line", label: "line" }, { value: "bar", label: "bar" }]}
+          value={ct}
+          options={CHART_TYPES.map((t) => ({ value: t, label: t }))}
           onChange={(v) => set({ chartType: v })}
         />
       </label>
@@ -336,6 +344,38 @@ function ChartConfigBar({ view, onChange }: { view: ViewDef; onChange: (v: ViewD
       <label className={styles.chartField}>Series
         <input className={styles.chartInput} value={view.series ?? ""} placeholder="field (one line each)"
           onChange={(e) => set({ series: e.target.value || undefined })} />
+      </label>
+      {(ct === "bar" || ct === "area") && (
+        <label className={styles.chartField}>Stack
+          <Dropdown
+            value={view.stack === "true" ? "true" : ""}
+            options={[{ value: "", label: "no" }, { value: "true", label: "yes" }]}
+            onChange={(v) => set({ stack: v || undefined })}
+          />
+        </label>
+      )}
+      {(ct === "donut" || ct === "pie") && (
+        <label className={styles.chartField}>Labels
+          <Dropdown
+            value={view.labels ?? "name"}
+            options={CHART_LABELS.map((l) => ({ value: l, label: l.replace("_", " + ") }))}
+            onChange={(v) => set({ labels: v === "name" ? undefined : v })}
+          />
+        </label>
+      )}
+      <label className={styles.chartField}>Legend
+        <Dropdown
+          value={view.legend === "false" ? "false" : ""}
+          options={[{ value: "", label: "shown" }, { value: "false", label: "hidden" }]}
+          onChange={(v) => set({ legend: v || undefined })}
+        />
+      </label>
+      <label className={styles.chartField}>Height
+        <Dropdown
+          value={view.height ?? "medium"}
+          options={CHART_HEIGHTS.map((h) => ({ value: h, label: h }))}
+          onChange={(v) => set({ height: v === "medium" ? undefined : v })}
+        />
       </label>
     </div>
   );
