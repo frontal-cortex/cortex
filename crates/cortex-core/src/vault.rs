@@ -247,6 +247,16 @@ ends_with`, `is_empty` / `is_not_empty`, `in [a, b]`, or `within 7d` for
 dates (`-7d` = the past week; units d w m y). Values: `'quoted'`, numbers,
 `true`, `@today`, `@today-7`, `@monday`, `@month`, `@me`.
 
+Formulas (`type: formula`, `expr:`) know `+ - * / %`, comparisons, `and or
+not`, and: `days_until(d)` `days_since(d)` `days_between(a, b)` `today()`
+`year(d)` `month(d)` `quarter(d)` `week(d)` `date_add(d, n, unit)` (unit day
+| week | month | quarter | year; negative n goes back) `format_date(d,
+"MMM Do, YYYY")` (tokens YYYY YY MMMM MMM MM M DD D Do W Q)
+`format_number(x, "$", 2)` (separators; a symbol is a prefix, a word a
+suffix) `round(x, n)` `abs` `min` `max` `if(c, a, b)` `coalesce` `len`
+`contains` `concat` `lower` `upper` `empty`. A date minus a date is days. A
+sum over related rows is a rollup with `where:`, not a formula.
+
 ## Settings
 
 `.cortex/settings.yaml` is the one config file; every key is always present

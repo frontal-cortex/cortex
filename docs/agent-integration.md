@@ -249,8 +249,36 @@ git user as the last edit.
 
 Formulas know `+ - * / %`, comparisons, `and or not`, and `days_until(d)`,
 `days_since(d)`, `days_between(a, b)`, `today()`, `year(d)`, `month(d)`,
-`round(x, n)`, `abs`, `min`, `max`, `if(c, a, b)`, `coalesce`, `len`, `contains`,
-`concat`, `lower`, `upper`, `empty`. A date minus a date is a number of days.
+`quarter(d)`, `week(d)` (ISO week), `date_add(d, n, unit)` (unit `day | week |
+month | quarter | year`; a negative `n` goes back; months clamp to the last
+day, so Jan 31 + 1 month is Feb 28), `format_date(d, pattern)` (tokens
+`YYYY YY MMMM MMM MM M DD D Do W Q`, anything else copied through),
+`format_number(x, unit?, decimals?)` (thousands separators, 2 decimals by
+default; a symbol unit is a prefix, `"$"` → `$1,234.50`, a word unit a
+suffix, `"kg"` → `12.00 kg`), `round(x, n)`, `abs`, `min`, `max`, `if(c, a,
+b)`, `coalesce`, `len`, `contains`, `concat`, `lower`, `upper`, `empty`. A
+date minus a date is a number of days; a formatted result is text. A
+formula property takes the same `format:` / `unit:` as a number, so
+`format: currency` on a numeric formula is the usual way to show money —
+`format_number` is for text that mixes words and figures.
+
+**Notion formula → Cortex.** For packs and imports written against Notion:
+
+| Notion | Cortex |
+|---|---|
+| `prop("Amount")` | `amount` — the property key, bare |
+| `if(c, a, b)` | `if(c, a, b)` |
+| `formatDate(d, "MMM YYYY")` | `format_date(d, "MMM YYYY")` |
+| `dateAdd(d, 1, "months")` / `dateSubtract(d, 1, "months")` | `date_add(d, 1, "month")` / `date_add(d, -1, "month")` |
+| `now()`, `today()` | `today()` (a day; there is no time of day in a vault) |
+| `dateBetween(a, b, "days")` | `days_between(a, b)` |
+| `format(x)`, `x.formatNumber("usd")` | `format_number(x, "$")`; or `format: currency` on the property |
+| `round(x)`, `abs`, `min`, `max`, `empty` | the same names |
+| `x.length`, `length(x)` | `len(x)` |
+| `contains(a, b)`, `test()` | `contains(a, b)` (substring or list membership; no regex) |
+| `prop("Expenses").filter(current.prop("Date") >= …).map(current.prop("Amount")).sum()` | not a formula: a **rollup** with `where:` — `type: rollup, relation: expenses, property: amount, function: sum, where: "date >= @month"` (or the reverse side with `from:`) |
+| `style("b")`, colours, `.link()` | not supported; put the label in the card or the column name |
+| `let`, `lets`, lambdas | not supported; split into two formula properties |
 
 **Recurrence.** A row with `repeat: weekly` (`daily`, `biweekly`, `monthly`,
 `quarterly`, `yearly`, `every 3 days`, `every 2 weeks`) comes back when it is

@@ -16,10 +16,18 @@
 //! Values: numbers, text, booleans, dates (ISO text), lists, null. Operators:
 //! `+ - * / %`, `== != < <= > >=`, `and or not`, parentheses. Functions:
 //! `days_until(d)`, `days_since(d)`, `days_between(a, b)`, `today()`,
-//! `year(d)`, `month(d)`, `round(x, n?)`, `abs`, `min`, `max`, `if(c, a, b)`,
-//! `coalesce(a, b, …)`, `len(x)`, `contains(list_or_text, v)`, `concat(…)`,
-//! `lower`, `upper`, `empty(x)`. Property names are bare identifiers; a
-//! missing property is null; anything with null in arithmetic is null.
+//! `year(d)`, `month(d)`, `quarter(d)`, `week(d)` (ISO week),
+//! `date_add(d, n, unit)` with unit `day | week | month | quarter | year`
+//! (negative n goes back; month arithmetic clamps to the month's last day),
+//! `format_date(d, pattern)` with tokens `YYYY YY MMMM MMM MM M DD D Do W Q`
+//! (anything else is copied through — `format_date(due, "MMM Do")` → "Sep 9th"),
+//! `format_number(x, unit?, decimals?)` — thousands separators, `decimals`
+//! places (default 2); a symbol unit is a prefix (`"$"` → `$1,234.50`), a
+//! word unit a suffix (`"kg"` → `1,234.50 kg`), `round(x, n?)`, `abs`, `min`,
+//! `max`, `if(c, a, b)`, `coalesce(a, b, …)`, `len(x)`, `contains(list_or_text,
+//! v)`, `concat(…)`, `lower`, `upper`, `empty(x)`. Property names are bare
+//! identifiers; a missing property is null; anything with null in arithmetic
+//! is null. A formatted result is text.
 
 use std::collections::BTreeMap;
 
@@ -307,6 +315,20 @@ fn eval(e: &Expr, cells: &BTreeMap<String, CellValue>, today: NaiveDate) -> Valu
                 "days_between" => match (a.first().and_then(Value::date), a.get(1).and_then(Value::date)) { (Some(x), Some(y)) => Value::Num((y - x).num_days() as f64), _ => Value::Null },
                 "year" => a.first().and_then(Value::date).map(|d| Value::Num(chrono::Datelike::year(&d) as f64)).unwrap_or(Value::Null),
                 "month" => a.first().and_then(Value::date).map(|d| Value::Num(chrono::Datelike::month(&d) as f64)).unwrap_or(Value::Null),
+                "quarter" => a.first().and_then(Value::date).map(|d| Value::Num(((chrono::Datelike::month(&d) - 1) / 3 + 1) as f64)).unwrap_or(Value::Null),
+                "week" => a.first().and_then(Value::date).map(|d| Value::Num(chrono::Datelike::iso_week(&d).week() as f64)).unwrap_or(Value::Null),
+                "date_add" => match (a.first().and_then(Value::date), n(1), a.get(2).map(Value::text)) {
+                    (Some(d), Some(k), Some(unit)) => date_add(d, k.round() as i64, &unit).map(|r| Value::Text(r.format("%Y-%m-%d").to_string())).unwrap_or(Value::Null),
+                    _ => Value::Null,
+                },
+                "format_date" => match (a.first().and_then(Value::date), a.get(1).map(Value::text)) {
+                    (Some(d), Some(p)) => Value::Text(format_date(d, &p)),
+                    _ => Value::Null,
+                },
+                "format_number" => match n(0) {
+                    Some(x) => Value::Text(format_number(x, a.get(1).map(Value::text).as_deref(), n(2).map(|p| p.max(0.0) as usize))),
+                    None => Value::Null,
+                },
                 "round" => match (n(0), n(1)) { (Some(x), Some(p)) => { let f = 10f64.powi(p as i32); Value::Num((x * f).round() / f) } (Some(x), None) => Value::Num(x.round()), _ => Value::Null },
                 "abs" => n(0).map(|x| Value::Num(x.abs())).unwrap_or(Value::Null),
                 "min" => a.iter().filter_map(Value::num).reduce(f64::min).map(Value::Num).unwrap_or(Value::Null),
@@ -326,6 +348,82 @@ fn eval(e: &Expr, cells: &BTreeMap<String, CellValue>, today: NaiveDate) -> Valu
                 _ => Value::Null,
             }
         }
+    }
+}
+
+/// `d` moved by `n` units. Months and years land on the same day of month,
+/// clamped to the target month's last day (Jan 31 + 1 month = Feb 28/29).
+fn date_add(d: NaiveDate, n: i64, unit: &str) -> Option<NaiveDate> {
+    use chrono::{Duration, Months};
+    let u = unit.trim().to_lowercase();
+    let u = u.trim_end_matches('s');
+    match u {
+        "day" => d.checked_add_signed(Duration::days(n)),
+        "week" => d.checked_add_signed(Duration::weeks(n)),
+        "month" | "quarter" | "year" => {
+            let months = n * match u { "month" => 1, "quarter" => 3, _ => 12 };
+            if months >= 0 { d.checked_add_months(Months::new(months as u32)) } else { d.checked_sub_months(Months::new((-months) as u32)) }
+        }
+        _ => None,
+    }
+}
+
+/// `pattern` with the date tokens filled in; every other character is kept.
+fn format_date(d: NaiveDate, pattern: &str) -> String {
+    use chrono::Datelike;
+    const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    let day = d.day();
+    let ordinal = match day { 11 | 12 | 13 => "th", _ => match day % 10 { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" } };
+    // Longest tokens first so `MMMM` is not read as two `MM`s.
+    let tokens: [(&str, String); 11] = [
+        ("YYYY", format!("{}", d.year())),
+        ("MMMM", MONTHS[(d.month() - 1) as usize].to_string()),
+        ("MMM", MONTHS[(d.month() - 1) as usize][..3].to_string()),
+        ("YY", format!("{:02}", d.year() % 100)),
+        ("MM", format!("{:02}", d.month())),
+        ("DD", format!("{:02}", day)),
+        ("Do", format!("{day}{ordinal}")),
+        ("M", format!("{}", d.month())),
+        ("D", format!("{day}")),
+        ("W", format!("{}", d.iso_week().week())),
+        ("Q", format!("{}", (d.month() - 1) / 3 + 1)),
+    ];
+    let mut out = String::new();
+    let mut rest = pattern;
+    'outer: while !rest.is_empty() {
+        for (tok, val) in &tokens {
+            if let Some(after) = rest.strip_prefix(tok) { out.push_str(val); rest = after; continue 'outer; }
+        }
+        let ch = rest.chars().next().unwrap();
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+    out
+}
+
+/// `x` with thousands separators and `decimals` places (default 2). A unit
+/// made of letters is a suffix with a space (`12.50 kg`); anything else — a
+/// currency symbol — is a prefix (`$12.50`, `-$12.50`).
+fn format_number(x: f64, unit: Option<&str>, decimals: Option<usize>) -> String {
+    let decimals = decimals.unwrap_or(2);
+    let neg = x < 0.0;
+    // Half away from zero, as people expect of money; `{:.n}` alone rounds half to even.
+    let factor = 10f64.powi(decimals as i32);
+    let fixed = format!("{:.*}", decimals, (x.abs() * factor).round() / factor);
+    let (int, frac) = fixed.split_once('.').map(|(i, f)| (i.to_string(), Some(f.to_string()))).unwrap_or((fixed.clone(), None));
+    let mut grouped = String::new();
+    for (i, ch) in int.chars().enumerate() {
+        if i > 0 && (int.len() - i) % 3 == 0 { grouped.push(','); }
+        grouped.push(ch);
+    }
+    let mut body = grouped;
+    if let Some(f) = frac { body.push('.'); body.push_str(&f); }
+    let unit = unit.map(str::trim).filter(|u| !u.is_empty());
+    let sign = if neg { "-" } else { "" };
+    match unit {
+        Some(u) if u.chars().all(char::is_alphabetic) => format!("{sign}{body} {u}"),
+        Some(u) => format!("{sign}{u}{body}"),
+        None => format!("{sign}{body}"),
     }
 }
 
@@ -368,5 +466,47 @@ mod tests {
         assert_eq!(ev("(limit - spent) / limit >= 0.5"), Value::Bool(true));
         assert!(Formula::parse("1 +").is_err());
         assert!(Formula::parse("foo(").is_err());
+    }
+
+    #[test]
+    fn date_functions_add_format_quarter_week() {
+        let c = cells(&[("due", CellValue::Date("2026-01-31".into())), ("start", CellValue::Date("2026-09-09".into())), ("amount", CellValue::Num(1234.5)), ("neg", CellValue::Num(-7.0)), ("kg", CellValue::Num(12.0))]);
+        let ev = |s: &str| Formula::parse(s).unwrap().eval(&c, t());
+        // Month arithmetic clamps to the last day; negative offsets go back.
+        assert_eq!(ev("date_add(due, 1, 'month')"), Value::Text("2026-02-28".into()));
+        assert_eq!(ev("date_add(due, 1, 'months')"), Value::Text("2026-02-28".into()));
+        assert_eq!(ev("date_add(due, -1, 'day')"), Value::Text("2026-01-30".into()));
+        assert_eq!(ev("date_add(start, 2, 'week')"), Value::Text("2026-09-23".into()));
+        assert_eq!(ev("date_add(start, -1, 'quarter')"), Value::Text("2026-06-09".into()));
+        assert_eq!(ev("date_add(due, 1, 'year')"), Value::Text("2027-01-31".into()));
+        assert_eq!(ev("date_add(due, 1, 'fortnight')"), Value::Null);
+        assert_eq!(ev("date_add(missing, 1, 'day')"), Value::Null);
+        // The result is a date again: it feeds the other date functions.
+        assert_eq!(ev("days_between(start, date_add(start, 10, 'day'))"), Value::Num(10.0));
+        // Formatting tokens, longest first; other characters copied through.
+        assert_eq!(ev("format_date(start, 'YYYY-MM')"), Value::Text("2026-09".into()));
+        assert_eq!(ev("format_date(start, 'MMM Do, YYYY')"), Value::Text("Sep 9th, 2026".into()));
+        assert_eq!(ev("format_date(due, 'MMMM D (Q) W YY')"), Value::Text("January 31 (1) 5 26".into()));
+        assert_eq!(ev("format_date(start, 'Do')"), Value::Text("9th".into()));
+        assert_eq!(ev("format_date(missing, 'YYYY')"), Value::Null);
+        assert_eq!(ev("quarter(start)"), Value::Num(3.0));
+        assert_eq!(ev("quarter(due)"), Value::Num(1.0));
+        assert_eq!(ev("week(start)"), Value::Num(37.0));
+        // Numbers: separators, decimals, symbol prefix, word suffix, sign.
+        assert_eq!(ev("format_number(amount)"), Value::Text("1,234.50".into()));
+        assert_eq!(ev("format_number(amount, '$')"), Value::Text("$1,234.50".into()));
+        assert_eq!(ev("format_number(amount, '€', 0)"), Value::Text("€1,235".into()));
+        assert_eq!(ev("format_number(kg, 'kg', 1)"), Value::Text("12.0 kg".into()));
+        assert_eq!(ev("format_number(neg, '$')"), Value::Text("-$7.00".into()));
+        assert_eq!(ev("format_number(1234567.891, '', 3)"), Value::Text("1,234,567.891".into()));
+        assert_eq!(ev("concat('Balance: ', format_number(amount, '$'))"), Value::Text("Balance: $1,234.50".into()));
+        assert_eq!(ev("format_number(missing)"), Value::Null);
+        // Ordinal suffixes around the teens.
+        let one = cells(&[("d", CellValue::Date("2026-03-01".into())), ("e", CellValue::Date("2026-03-12".into())), ("f", CellValue::Date("2026-03-22".into())), ("g", CellValue::Date("2026-03-23".into()))]);
+        let ev1 = |s: &str| Formula::parse(s).unwrap().eval(&one, t());
+        assert_eq!(ev1("format_date(d, 'Do')"), Value::Text("1st".into()));
+        assert_eq!(ev1("format_date(e, 'Do')"), Value::Text("12th".into()));
+        assert_eq!(ev1("format_date(f, 'Do')"), Value::Text("22nd".into()));
+        assert_eq!(ev1("format_date(g, 'Do')"), Value::Text("23rd".into()));
     }
 }
