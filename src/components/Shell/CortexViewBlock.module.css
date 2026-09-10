@@ -15,12 +15,19 @@
      below its widest row and slides under the next column of a layout. */
   min-width: 0;
   max-width: 100%;
+  /* What the rows inside can ask about: how much room this view actually has,
+     which in a dashboard column is far less than the window. */
+  container-type: inline-size;
 }
 
+/* `container-type` makes a card a stacking context, so a card in use has to be
+   lifted for its floating chrome and settings panel to stay above the blocks
+   that follow it. */
 .card:hover,
 .card:focus-within,
 .cardActive {
   border-color: var(--border);
+  z-index: 5;
 }
 
 .chrome {
@@ -1168,6 +1175,15 @@
   opacity: 1;
 }
 
+/* In a narrow column the row gives up its properties before its title: a
+   half-named row is worse than a row with fewer chips on it. Below a column's
+   width the key/value chips go entirely — a chip reading "a…" says nothing —
+   and the coloured select pills, which are readable at any size, stay. */
+@container (max-width: 340px) {
+  .listChip {
+    display: none;
+  }
+}
 .listTitle,
 .listTitleOpen {
   font: inherit;
@@ -1199,21 +1215,24 @@
   outline-offset: -2px;
 }
 
+/* The chips keep their own width and the strip is cut off, fading out, rather
+   than every chip being squeezed down to one letter. */
 .listChips {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1 1 auto;
+  flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
 .listChip {
+  flex: 0 0 auto;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   padding: 1px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1226,6 +1245,7 @@
 }
 
 .listPills {
+  flex: 0 0 auto;
   display: inline-flex;
   white-space: nowrap;
 }
