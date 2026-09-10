@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { commands, StructuredSpec, FilterClause } from "../../lib/commands";
 import { isMac } from "../../lib/keymap";
 import { Dropdown } from "./Dropdown";
-import { CloseIcon, GearIcon, SearchIcon } from "./icons";
+import { CloseIcon, SearchIcon } from "./icons";
 import styles from "./ViewToolbar.module.css";
 
 const OPS: { value: string; label: string }[] = [
@@ -69,18 +69,9 @@ interface Props {
   onSearchChange?: (query: string) => void;
   /** So a data view can hand focus here on mod+f. */
   searchRef?: RefObject<HTMLInputElement | null>;
-  /** Keep the controls behind a Settings chip until they are asked for. A view
-   *  block on a page is there to show its rows, not the knobs that shaped
-   *  them; a collection's own page leaves this off, since working the database
-   *  is what that page is for. */
-  collapsible?: boolean;
-  /** The chip's state, held by the parent so mod+f can open the bar to reach
-   *  the search box. Only read when `collapsible`. */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
 }
 
-export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, onSpecChange, search, onSearchChange, searchRef, collapsible, open, onOpenChange }: Props) {
+export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, onSpecChange, search, onSearchChange, searchRef }: Props) {
   const [s, setS] = useState<StructuredSpec | null>(null);
 
   useEffect(() => {
@@ -197,36 +188,9 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
   const setBucket = (b: string) => { commit({ ...s, bucket: b || undefined }); bucketPop.setOpen(false); };
 
   const filterCount = s.filterComplex ? 1 : s.filters.length;
-  // Tinted while something is narrowing the rows, so a filtered view never
-  // looks like a short one.
-  const shaping = filterCount > 0 || s.sort.length > 0 || !!s.group || !!(search ?? "").trim();
-
-  if (collapsible && !open) {
-    return (
-      <div className={styles.bar}>
-        <button
-          className={`${styles.chip} ${styles.settingsChip} ${shaping ? styles.chipActive : ""}`}
-          onClick={() => onOpenChange?.(true)}
-          title="Filter, sort, properties and search"
-        >
-          <GearIcon size={12} /> Settings
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className={styles.bar}>
-      {collapsible && (
-        <button
-          className={`${styles.chip} ${styles.settingsChip} ${styles.chipActive}`}
-          onClick={() => onOpenChange?.(false)}
-          title="Hide these controls"
-        >
-          <GearIcon size={12} /> Settings
-        </button>
-      )}
-
       {/* Filter */}
       <div className={styles.control} ref={filterPop.ref}>
         <button

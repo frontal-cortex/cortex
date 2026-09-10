@@ -1,8 +1,14 @@
+/* A view block at rest is its rows and nothing else: no frame, no toolbar. Its
+   chrome — the view type, where the rows come from, the settings, the raw spec
+   — floats in over the top-right corner while the pointer is inside the block,
+   and stays while it is in use. A hairline shows the block's extent at the
+   same time. A phone has no hover, so there the chrome is an ordinary row
+   above the view. */
 .card {
-  border: 1px solid var(--border);
+  position: relative;
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
-  background: var(--bg-panel);
-  padding: var(--space-3);
+  padding: var(--space-2);
   margin: var(--space-2) 0;
   user-select: none;
   /* A flex item of BlockNote's block content: without this it cannot shrink
@@ -11,11 +17,84 @@
   max-width: 100%;
 }
 
-.header {
+.card:hover,
+.card:focus-within,
+.cardActive {
+  border-color: var(--border);
+}
+
+.chrome {
+  position: absolute;
+  /* Straddling the top edge, in the gap between blocks: a toolbar that covers
+     the first row of the data it belongs to is worse than no toolbar. */
+  top: -13px;
+  right: 6px;
+  z-index: 25;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
+  padding: 3px 5px;
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.card:hover > .chrome,
+.card:focus-within > .chrome,
+.cardActive > .chrome {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+:root[data-viewport="phone"] .chrome {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
   margin-bottom: var(--space-2);
+}
+
+.chromeCtl {
+  position: relative;
+  display: flex;
+}
+
+.chromeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.chromeBtn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.chromeBtnOn {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* Something is narrowing the rows (a filter, a sort, a live search), so the
+   gear says so — a short view is never a mystery. */
+.chromeBtnShaped {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* View-type dropdown */
@@ -85,8 +164,12 @@
 }
 
 .sourceLabel {
-  flex: 1;
-  font-size: var(--text-sm);
+  flex: 0 1 auto;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 

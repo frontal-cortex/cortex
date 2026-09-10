@@ -12,7 +12,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, Rea
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, ViewGroup, PropType, PropertyDef, ChartResult, Stat, StatsResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon, CheckIcon } from "./icons";
+import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon, CheckIcon, GearIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
@@ -20,7 +20,7 @@ import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
 import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
-import { ChartSettings, ChartOptions } from "./ChartSettings";
+import { ChartSettingsPanel, ChartOptions } from "./ChartSettings";
 import { useViewport } from "../../hooks/useViewport";
 import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
 import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
@@ -2889,11 +2889,10 @@ export function BoardSetup({ table, onPick }: { table: ViewTable | null; onPick:
   );
 }
 
-/** A chart block's options, through the shared settings panel: read out of the
- *  spec, written straight back into it. */
-function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string) => void }) {
+/** A chart block's options, read out of its spec for the settings panel. */
+function chartOptions(spec: string): ChartOptions {
   const get = (key: string) => peek(spec, key) ?? "";
-  const value: ChartOptions = {
+  return {
     x: get("x"),
     y: get("y"),
     agg: get("agg"),
@@ -2905,12 +2904,6 @@ function ChartConfig({ spec, onChange }: { spec: string; onChange: (spec: string
     legend: get("legend"),
     height: get("height"),
   };
-  return (
-    <ChartSettings
-      value={value}
-      onChange={(key, v) => onChange(v ? specSet(spec, key, v) : specRemove(spec, key))}
-    />
-  );
 }
 
 function CortexView({ block, editor }: { block: any; editor: any }) {
@@ -2933,11 +2926,11 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   // The toolbar's search: narrows the rows on show, client-side, never written.
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  // The controls live behind the toolbar's Settings chip here; mod+f in the
-  // rows opens them so the search box exists to take the focus.
-  const [toolbarOpen, setToolbarOpen] = useState(false);
+  // The controls live behind the chrome's gear here; mod+f in the rows opens
+  // them so the search box exists to take the focus.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const focusSearch = () => {
-    setToolbarOpen(true);
+    setSettingsOpen(true);
     requestAnimationFrame(() => searchRef.current?.focus());
   };
   const shown = useMemo(() => (table ? searchRows(table, search) : null), [table, search]);
@@ -2982,11 +2975,36 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
     return () => window.removeEventListener("cortex:data-changed", onChanged);
   }, [reload]);
 
+  // What a block shows about itself at rest: nothing. The chrome — what kind
+  // of view this is, where its rows come from, its settings, the raw spec —
+  // floats in on hover, or stays while it is being used, so a page of views
+  // reads as its data and not as ten toolbars.
+  const chromeStuck = editing || settingsOpen || !!error || needsGroup || needsChartFields;
+  const hasSettings = isChart || (!isTracker && !isStats && !needsGroup);
+  const shaped = !!peek(spec, "filter") || !!peek(spec, "sort") || !!search.trim();
+
   return (
-    <div className={styles.card} contentEditable={false}>
-      <div className={styles.header}>
+    <div className={`${styles.card} ${chromeStuck ? styles.cardActive : ""}`} contentEditable={false}>
+      <div className={styles.chrome}>
         <ViewTypeSwitcher current={declaredType} onChange={(t) => applySpec(specWithType(spec, t, table))} />
         <span className={styles.sourceLabel}>{sourceLabel(source)}</span>
+        {!editing && hasSettings && (
+          <div className={styles.chromeCtl}>
+            <button
+              className={`${styles.chromeBtn} ${settingsOpen ? styles.chromeBtnOn : ""} ${!settingsOpen && shaped ? styles.chromeBtnShaped : ""}`}
+              title={isChart ? "Chart settings" : "Filter, sort, properties and search"}
+              onClick={() => setSettingsOpen((o) => !o)}
+            >
+              <GearIcon size={13} />
+            </button>
+            {settingsOpen && isChart && (
+              <ChartSettingsPanel
+                value={chartOptions(spec)}
+                onChange={(key, v) => applySpec(v ? specSet(spec, key, v) : specRemove(spec, key))}
+              />
+            )}
+          </div>
+        )}
         <button
           className={styles.editBtn}
           title="Edit the raw spec (advanced)"
@@ -3012,9 +3030,8 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
         </div>
       )}
 
-      {/* Per-type controls: table/board/calendar/gallery get the filter toolbar;
-          charts get the inline X/Y config. */}
-      {!editing && isChart && <ChartConfig spec={spec} onChange={applySpec} />}
+      {/* Per-type controls: table/board/calendar/gallery get the filter toolbar
+          when the gear is on; a chart's settings are a panel under the gear. */}
       {!editing && isTracker && (
         <TrackerView
           spec={spec}
@@ -3023,7 +3040,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
           onLogChange={(l) => applySpec(specSet(spec, "log", l))}
         />
       )}
-      {!editing && !isChart && !isTracker && !isStats && !needsGroup && (
+      {!editing && settingsOpen && !isChart && !isTracker && !isStats && !needsGroup && (
         <ViewToolbar
           spec={spec}
           fields={table?.allColumns ?? []}
@@ -3034,9 +3051,6 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
           search={search}
           onSearchChange={setSearch}
           searchRef={searchRef}
-          collapsible
-          open={toolbarOpen}
-          onOpenChange={setToolbarOpen}
         />
       )}
 
@@ -3045,7 +3059,7 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
         <BoardSetup table={table} onPick={(f) => applySpec(specSet(spec, "group", f))} />
       )}
       {!editing && needsChartFields && (
-        <div className={styles.stub}>Name the fields to plot in Chart settings, above.</div>
+        <div className={styles.stub}>Name the fields to plot in the chart's settings.</div>
       )}
 
       {!editing && error && (missingCollection(error)

@@ -30,28 +30,11 @@ const SPEC = "source: collections/budget\ntype: list\nfilter: kind == 'expense'\
 const FIELDS = ["title", "date", "amount", "kind", "category", "account"];
 
 function App() {
-  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
       <div>
-        <div style={{ fontSize: 12, opacity: 0.6 }}>a view block on a page (collapsible)</div>
-        <ViewToolbar
-          spec={SPEC} fields={FIELDS} visibleColumns={FIELDS} isBoard={false} isTable={false}
-          onSpecChange={() => {}} search={search} onSearchChange={setSearch}
-          collapsible open={open} onOpenChange={setOpen}
-        />
-      </div>
-      <div>
-        <div style={{ fontSize: 12, opacity: 0.6 }}>the same block, opened</div>
-        <ViewToolbar
-          spec={SPEC} fields={FIELDS} visibleColumns={FIELDS} isBoard={false} isTable={false}
-          onSpecChange={() => {}} search={search} onSearchChange={setSearch}
-          collapsible open onOpenChange={() => {}}
-        />
-      </div>
-      <div>
-        <div style={{ fontSize: 12, opacity: 0.6 }}>a collection's own page (always open)</div>
+        <div style={{ fontSize: 12, opacity: 0.6 }}>the view toolbar</div>
         <ViewToolbar
           spec={SPEC} fields={FIELDS} visibleColumns={FIELDS} isBoard={false} isTable
           onSpecChange={() => {}} search={search} onSearchChange={setSearch}

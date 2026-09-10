@@ -23,11 +23,6 @@
   background: var(--bg-hover);
 }
 
-.settingsChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
 
 .chipActive {
   color: var(--accent);
