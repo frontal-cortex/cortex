@@ -497,6 +497,8 @@ export interface Settings {
   auto_sync_minutes: number;
   /** Seconds of typing after which the sidebar steps aside. 0 = never. */
   typing_focus_seconds: number;
+  /** Panels slide and controls fade. False = instant. */
+  animations: boolean;
   /** Yjs websocket relay for presence + co-editing. Empty = off. */
   collab_url: string;
   /** Palette file to follow (Omarchy `colors.toml` shape). Empty = use `theme`. */

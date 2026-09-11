@@ -71,6 +71,11 @@ export function useLayout(drawer = false) {
   }, [drawer]);
   const toggleRight = useCallback(() => setLayout((l) => ({ ...l, right: l.monk ? true : !l.right, monk: false })), []);
   const toggleMonk = useCallback(() => { setTypingHidden(false); setLayout((l) => ({ ...l, monk: !l.monk })); }, []);
+  const openLeft = useCallback(() => {
+    setTypingHidden(false);
+    if (drawer) setDrawerOpen(true);
+    else setLayout((l) => ({ ...l, left: true, monk: false }));
+  }, [drawer]);
   const hideForTyping = useCallback(() => setTypingHidden(true), []);
   const showAfterTyping = useCallback(() => setTypingHidden(false), []);
 
@@ -83,6 +88,7 @@ export function useLayout(drawer = false) {
     /** The sidebar is away because of typing, not because of a choice. */
     typingHidden,
     toggleLeft,
+    openLeft,
     closeLeft,
     toggleRight,
     toggleMonk,

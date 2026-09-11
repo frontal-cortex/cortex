@@ -9,7 +9,7 @@
   height: 0;
   overflow: visible;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--motion-fast) ease;
   user-select: none;
 }
 .listBar { justify-content: flex-end; }

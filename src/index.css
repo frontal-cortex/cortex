@@ -86,7 +86,7 @@ a:focus-visible,
   margin-left: 0;
   padding-left: 0;
   border-left: 1px dashed transparent;
-  transition: border-color 0.12s ease;
+  transition: border-color var(--motion-fast) ease;
 }
 .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"]):hover > .bn-block > .bn-block-group {
   border-color: var(--border);

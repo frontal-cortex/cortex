@@ -238,6 +238,14 @@ const SECTIONS: SectionDef[] = [
         ),
       },
       {
+        key: "animations", label: "Animations", keywords: "motion transition animate reduced accessibility jarring",
+        hint: "Panels slide and controls fade in. Off = instant. A system set to reduced motion is honoured either way.",
+        render: ({ settings, update }) => (
+          <input type="checkbox" className={styles.toggle} checked={settings.animations !== false}
+            onChange={(e) => update({ animations: e.target.checked })} />
+        ),
+      },
+      {
         key: "typing_focus_seconds", label: "Sidebar while writing", keywords: "focus typing distraction hide sidebar zen monk",
         hint: "Once you have been typing this long the sidebar steps aside. It comes back on the toggle, on Escape, when the pointer reaches the left edge, or when you click away.",
         render: ({ settings, update }) => {
@@ -611,7 +619,7 @@ export function SettingsView({ vault, onClose, onLeaveVault }: Props) {
       const next = { ...s, ...patch };
       lastWrite.current = Date.now();
       commands.setSettings(next).catch(() => {});
-      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined || patch.accent !== undefined) syncTheme(next);
+      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined || patch.accent !== undefined || patch.animations !== undefined) syncTheme(next);
       return next;
     });
   }, []);

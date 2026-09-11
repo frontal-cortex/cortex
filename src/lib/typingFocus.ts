@@ -20,9 +20,6 @@ export interface TypingRun {
 /** A pause longer than this ends a run; the next key starts a fresh one. */
 export const IDLE_MS = 2500;
 
-/** How far from the window's left edge counts as reaching for the sidebar. */
-export const EDGE_PX = 16;
-
 /** Fold a keystroke into the current run, starting one when the last is
  *  stale. */
 export function noteKey(run: TypingRun | null, at: number, idleMs = IDLE_MS): TypingRun {

@@ -95,6 +95,10 @@ pub struct Settings {
     /// preference is not touched either way.
     #[serde(default = "default_typing_focus")]
     pub typing_focus_seconds: u32,
+    /// Whether panels slide and controls fade in, or simply appear. A system
+    /// asking for reduced motion is honoured whatever this says.
+    #[serde(default = "default_true")]
+    pub animations: bool,
 }
 
 fn default_note_type() -> String { "note".into() }
@@ -103,6 +107,7 @@ fn default_theme() -> String { "system".into() }
 fn default_trash_retention() -> u32 { 30 }
 fn default_explorer_sort() -> String { "name-asc".into() }
 fn default_typing_focus() -> u32 { 5 }
+fn default_true() -> bool { true }
 
 /// The explorer's sort fields and directions, in the order a menu lists them.
 pub const EXPLORER_SORT_FIELDS: [&str; 4] = ["name", "modified", "created", "type"];
@@ -149,6 +154,7 @@ impl Default for Settings {
             marketplace_tiers: String::new(),
             explorer_sort: default_explorer_sort(),
             typing_focus_seconds: default_typing_focus(),
+            animations: true,
         }
     }
 }
@@ -177,7 +183,8 @@ pub fn describe() -> Vec<(&'static str, &'static str)> {
         ("marketplace_extra", "Additional marketplace index URLs, comma-separated, merged with the first (default empty)."),
         ("marketplace_tiers", "Trust tiers shown in the marketplace: official, verified, community (comma-separated); empty = all (default empty)."),
         ("explorer_sort", "Order of notes in the sidebar tree: name | modified | created | type, with -asc or -desc (default name-asc). Folders stay alphabetical."),
-        ("typing_focus_seconds", "Seconds of typing after which the sidebar steps aside; it returns on the toggle, Escape, the pointer at the left edge, or when you click away. 0 = never (default 5)."),
+        ("typing_focus_seconds", "Seconds of typing after which the sidebar steps aside; it returns on the chevron tab at the left edge, the toggle, Escape, or when you click away. 0 = never (default 5)."),
+        ("animations", "Panels slide and controls fade in. true | false (default true); a system asking for reduced motion is honoured either way."),
     ]
 }
 
@@ -234,6 +241,7 @@ pub fn set_field(settings: &mut Settings, key: &str, raw: &str) -> Result<()> {
         "trash_retention_days" => settings.trash_retention_days = parse_u32(key, raw)?,
         "auto_sync_minutes" => settings.auto_sync_minutes = parse_u32(key, raw)?,
         "typing_focus_seconds" => settings.typing_focus_seconds = parse_u32(key, raw)?,
+        "animations" => settings.animations = parse_bool(key, raw)?,
         "collab_url" => settings.collab_url = parse_string(raw),
         "theme_file" => settings.theme_file = parse_string(raw),
         "accent" => {

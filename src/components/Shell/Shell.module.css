@@ -17,8 +17,64 @@
 
 /* Side panes are hidden, not unmounted, so the sidebar keeps its scroll and
    open folders and the terminal keeps its session. */
+/* The sidebar's slot is a real box, not `display: contents`, so it can move:
+   collapsing pulls it out to the left by its own width — `.body` clips it and
+   the page takes the space as it goes. `visibility` flips at the end of the
+   slide out and at the start of the slide in, so a sidebar that is away is
+   out of the tab order without the animation being cut short. */
 .leftSlot {
-  display: contents;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  transition: margin-left var(--motion-slow) ease, visibility 0s;
+}
+
+.leftHidden {
+  margin-left: calc(-1 * var(--left-panel-width));
+  visibility: hidden;
+  transition: margin-left var(--motion-slow) ease, visibility 0s var(--motion-slow);
+}
+
+/* The way back: a sliver pinned to the left edge, wider under the pointer.
+   It is there whenever the sidebar is not, so closing it by hand and writing
+   it away have the same way back. */
+.sidebarTab {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  z-index: 30;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--bg-panel);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.55;
+  transition:
+    width var(--motion-fast) ease,
+    opacity var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    background var(--motion-fast) ease;
+}
+
+.sidebarTab:hover,
+.sidebarTab:focus-visible {
+  width: 22px;
+  opacity: 1;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.sidebarTab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* The sidebar's draggable edge: a 6px strip straddling the border, invisible

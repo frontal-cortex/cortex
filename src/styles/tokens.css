@@ -51,6 +51,13 @@
   --text-lg:   18px;
   --text-xl:   24px;
 
+  /* Motion. Every transition in the app is one of these two, so turning
+     animation off is one switch rather than a hunt: `data-animations="off"`
+     is stamped on <html> from the `animations` setting (lib/theme.ts), and a
+     system that asks for reduced motion is honoured on top of it. */
+  --motion-fast: 120ms;
+  --motion-slow: 200ms;
+
   /* Radii */
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -250,4 +257,19 @@
 :root[data-viewport="phone"] {
   --left-panel-width: min(300px, 85vw);
   --page-inset: 20px;
+}
+
+/* ── Motion off ─────────────────────────────────────────────────────────────
+   Either the setting or the system asking. Zeroed rather than removed, so a
+   transition still fires its end event and nothing waits on it forever. */
+:root[data-animations="off"] {
+  --motion-fast: 0s;
+  --motion-slow: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0s;
+    --motion-slow: 0s;
+  }
 }

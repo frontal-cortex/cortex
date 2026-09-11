@@ -2,13 +2,13 @@
 // Owns the timer and the listeners; the rule itself is lib/typingFocus.ts.
 //
 // It hides nothing you chose: the remembered sidebar preference is untouched,
-// this is a session-only overlay (useLayout's `typingHidden`). Three things
-// bring it straight back — the pointer at the left edge, Escape, and the focus
-// leaving the page — on top of the toggle and its shortcut, which are always
-// on screen.
+// this is a session-only overlay (useLayout's `typingHidden`). Escape and the
+// focus leaving the page bring it straight back, on top of the chevron tab at
+// the left edge, the toggle and its shortcut — all of them visible, none of
+// them a hot zone that opens a panel you only meant to reach past.
 
 import { useEffect, useRef } from "react";
-import { EDGE_PX, TypingRun, isTypingKey, nextCheckIn, noteKey, shouldHide } from "../lib/typingFocus";
+import { TypingRun, isTypingKey, nextCheckIn, noteKey, shouldHide } from "../lib/typingFocus";
 
 export interface TypingFocusOptions {
   /** Seconds of typing before the sidebar goes; 0 = off. */
@@ -65,11 +65,6 @@ export function useTypingFocus({ seconds, enabled, hidden, onHide, onShow, selec
       }, wait);
     };
 
-    // Reaching for the sidebar: the pointer at the window's left edge.
-    const onPointerMove = (e: PointerEvent) => {
-      if (latest.current.hidden && e.clientX <= EDGE_PX) reveal();
-    };
-
     // Moving on: the focus lands outside the page (a view block, the
     // terminal, a dialog).
     const onFocusIn = (e: FocusEvent) => {
@@ -77,12 +72,10 @@ export function useTypingFocus({ seconds, enabled, hidden, onHide, onShow, selec
     };
 
     document.addEventListener("keydown", onKeyDown, true);
-    document.addEventListener("pointermove", onPointerMove, { passive: true });
     document.addEventListener("focusin", onFocusIn, true);
     return () => {
       clear();
       document.removeEventListener("keydown", onKeyDown, true);
-      document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("focusin", onFocusIn, true);
     };
   }, []);
