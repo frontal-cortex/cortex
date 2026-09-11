@@ -24,6 +24,7 @@ screen but the Markdown save path throws it away.
 | Table | partial | M | Default table block with handles. Saved as GFM, so cell colours, column widths, header column and merged cells are lost. |
 | Image: paste, drop, upload | done | — | Custom paste/drop plugin (`Editor.tsx:389-431`), stored in `assets/` (`commands/notes.rs:772`). |
 | Image: resize | done | — | A resized image is saved as `<img src="assets/…" alt="…" width="480">` (inside `<figure>` when captioned); an unsized one stays `![alt](assets/…)`. GitHub and Obsidian honour the width. |
+| Image: alignment | done | — | A centred or right-aligned image is wrapped in `<p align="center" style="text-align: center">` (a `<div>` when captioned, since a `<figure>` may not sit in a `<p>`). `align` is the half GitHub renders, `style` the half BlockNote reads back; its image parser ignores both, so the alignment is collected from the markdown and put back on the blocks (`lib/alignment.ts`). |
 | Image: caption | done | — | Serialised as `<figure>`; asset rehydration now matches `<img src="assets/…">` as well as `![](assets/…)`. |
 | File attachment | done | — | Uploads to `assets/`, saved as `[name](assets/x.pdf)`; that link is inflated back into a file block on load (`src/lib/assets.ts`), and `read_asset` serves every asset with the MIME type its extension implies (`cortex_core::assets::mime_for_path`). `cortex assets --unused` lists orphaned files (never deletes). No inline PDF preview. |
 | Video / audio | partial | S | Local files in `assets/` render and round-trip: `![name](assets/clip.mp4)`, `<audio src="assets/x.mp3" controls>`, and the captioned `<figure>` forms are all rehydrated on load. No YouTube/Vimeo player or oEmbed. |
@@ -52,6 +53,7 @@ screen but the Markdown save path throws it away.
 | Highlight | partial | S | Saved as `==text==` (Obsidian's syntax; rendered as `<mark>` by `cortex publish`). The highlight *colour* is not stored — every highlight reopens as the default yellow. |
 | Text colour | non-goal | — | Applies on screen only; the span is dropped on save. There is no legible Markdown form for a coloured run and inline `<span style>` would fail principle 3, so this stays a deliberate non-goal (see below). |
 | Inline math | done | — | `$E = mc^2$` typed in a paragraph becomes a KaTeX node; click to edit the source. Stored as plain `$…$`. |
+| Block alignment | done | — | An aligned paragraph or heading is written as its own HTML tag carrying both `align` and `style="text-align: …"` (`richFormats.ts`, `lib/alignment.ts`); BlockNote's parser reads the `style` half back. List items and quotes are not wrapped, so aligning one of those is still lost. |
 | `Ctrl+B` | note | S | Bound to toggle-sidebar in capture phase (`keymap.ts:49`), so bold is toolbar or `**` only. |
 
 ## 3. Page level and editor chrome
@@ -254,7 +256,7 @@ by inferring column types (`data.rs:128`).
 ## Notable gaps, ranked
 
 1. **Evernote / HTML have no import path.** Notion exports, CSV and Markdown folders all import (§8).
-2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow. Underline, highlight, toggles and image width now survive.
+2. **Text colour is dropped on save** (a deliberate non-goal, below); the highlight colour collapses to yellow, and an aligned list item or quote loses its alignment. Underline, highlight, toggles, image width and the alignment of images, paragraphs and headings now survive.
 3. **No columns, TOC, synced blocks, buttons.** (Math, bookmark cards and web embeds landed.)
 4. ~~**Property rename and delete do not exist.**~~ Done: `rename_property` / `delete_property` rewrite the schema, every row and the views, and refuse a delete that a rollup still depends on.
 5. **Table editing stops at one row**: no bulk edit, column resize / reorder. (Keyboard cell navigation, a date picker and duplicate row landed.)

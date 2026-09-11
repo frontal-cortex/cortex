@@ -9,12 +9,16 @@
 //   underline          <u>…</u>
 //   highlight          ==…==      (Obsidian's syntax; the colour collapses to yellow)
 //   image width        <img src="…" alt="…" width="480">   (inside <figure> when captioned)
+//   alignment          <p align="center" style="text-align: center">…</p>  (see lib/alignment.ts)
 //
 // GitHub and Obsidian render every one of these. The HTML forms need no
 // parse-side work: BlockNote's Markdown parser passes inline and block HTML
 // through, and its HTML parser already understands <details>, <u> and
-// <img width>. Only ==highlight== is inflated here. Text colour has no
+// <img width>, and it reads alignment back from `style`. Only ==highlight==
+// and an image's alignment are inflated here. Text colour has no
 // Markdown form and is a non-goal (docs/parity/notion-parity.md §2).
+
+import { alignOf, imageAlignOf, alignedHtml, applyImageAlignments, type Align } from "../../lib/alignment.ts";
 
 const HIGHLIGHT_COLOR = "yellow";
 
@@ -123,7 +127,9 @@ function inlineToHtml(content: Inline[]): string {
 
 function imgHtml(props: Record<string, any>): string {
   const alt = props.name ? ` alt="${escapeAttr(String(props.name))}"` : "";
-  return `<img src="${escapeAttr(String(props.url ?? ""))}"${alt} width="${Math.round(Number(props.previewWidth))}">`;
+  // An image can reach this path for its alignment alone, with no width set.
+  const width = props.previewWidth ? ` width="${Math.round(Number(props.previewWidth))}"` : "";
+  return `<img src="${escapeAttr(String(props.url ?? ""))}"${alt}${width}>`;
 }
 
 function mapCells(content: any, f: (c: Inline[]) => Inline[]): any {
@@ -155,11 +161,25 @@ export function flattenRichFormats(blocks: any[]): any[] {
       out.push({ type: "paragraph", content: [plain("</details>")] });
       continue;
     }
-    if (b?.type === "image" && b.props?.previewWidth) {
+    const imageAlign = b?.type === "image" ? imageAlignOf(b.props) : "";
+    if (b?.type === "image" && (b.props?.previewWidth || imageAlign)) {
       const img = imgHtml(b.props);
       const caption = String(b.props.caption ?? "");
-      const html = caption ? `<figure>${img}<figcaption>${escapeText(caption)}</figcaption></figure>` : img;
+      const inner = caption ? `<figure>${img}<figcaption>${escapeText(caption)}</figcaption></figure>` : img;
+      // A <figure> may not sit inside a <p>, so a captioned image is wrapped
+      // in a <div>; both are block containers GitHub and Obsidian align.
+      const html = imageAlign ? alignedHtml(caption ? "div" : "p", imageAlign, inner) : inner;
       out.push({ type: "paragraph", content: [plain(html)], children });
+      continue;
+    }
+    // A paragraph or heading the user aligned, written as the HTML tag it
+    // already is. An empty one is left alone: there is nothing to see aligned,
+    // and an empty tag would not survive the round trip.
+    const textAlign: Align | "" =
+      b?.type === "paragraph" || (b?.type === "heading" && !b.props?.isToggleable) ? alignOf(b.props) : "";
+    if (textAlign && Array.isArray(b.content) && b.content.length) {
+      const tag = b.type === "heading" ? `h${Number(b.props?.level ?? 1)}` : "p";
+      out.push({ type: "paragraph", content: [plain(alignedHtml(tag, textAlign, inlineToHtml(b.content)))], children });
       continue;
     }
     const content = Array.isArray(b?.content) ? flattenInline(b.content)
@@ -240,12 +260,17 @@ function inflateHighlights(content: Inline[]): Inline[] {
 /** Markdown → blocks: turn `==highlight==` markers into the highlight style.
  *  Toggles, underline and image width need nothing: the parser already reads
  *  their HTML forms. */
-export function inflateRichFormats(blocks: any[]): any[] {
+export function inflateRichFormats(blocks: any[], imageAligns?: Map<string, Align[]>): any[] {
+  const out = inflateHighlightsIn(blocks);
+  return imageAligns ? applyImageAlignments(out, imageAligns) : out;
+}
+
+function inflateHighlightsIn(blocks: any[]): any[] {
   return blocks.map((b) => {
     const content = Array.isArray(b?.content) ? inflateHighlights(b.content)
       : b?.type === "table" ? mapCells(b.content, inflateHighlights)
       : b?.content;
-    const children = Array.isArray(b?.children) && b.children.length ? inflateRichFormats(b.children) : b?.children;
+    const children = Array.isArray(b?.children) && b.children.length ? inflateHighlightsIn(b.children) : b?.children;
     return content === b?.content && children === b?.children ? b : { ...b, content, children };
   });
 }
