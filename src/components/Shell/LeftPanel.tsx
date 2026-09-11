@@ -3,15 +3,14 @@ import {
   KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, Fragment,
 } from "react";
 import { shortcutFor, SHORTCUTS, ShortcutId, isMac } from "../../lib/keymap";
-import { NoteEntry, SearchHit, VaultStatus, AgentBranch, CommitEntry, TrashEntry, TagNode } from "../../lib/commands";
+import { NoteEntry, SearchHit, AgentBranch, TrashEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
 import {
-  buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, relativeTime,
+  buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle,
   ExplorerSort, SORT_FIELDS,
 } from "../../lib/fileTree";
 import { useDropTarget } from "../../hooks/usePointerDrag";
-import { FileTree, LeafRow, BranchRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
-import { flattenTags } from "../../lib/tags";
+import { FileTree, LeafRow, ActionRow, TreeActions, A11yFor, NEW_NOTE_HINT, COLLECTION_DRAG } from "./FileTree";
 import { CommitDiffModal } from "./CommitDiffModal";
 import { Snippet } from "./Snippet";
 import {
@@ -19,8 +18,8 @@ import {
 } from "./GettingStarted";
 import { TreeRow, useRovingRows, useTypeAhead } from "./treeRows";
 import {
-  CloseIcon, MinusIcon, StarFilledIcon, PlusIcon, SearchIcon, GraphIcon, GearIcon, ChevronRightIcon,
-  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon, SparkleIcon, TagIcon, SortIcon,
+  CloseIcon, StarFilledIcon, PlusIcon, SearchIcon, GraphIcon, GearIcon, ChevronRightIcon,
+  FolderPlusIcon, FileIcon, DatabaseIcon, TrashIcon, SparkleIcon, SortIcon,
 } from "./icons";
 import styles from "./LeftPanel.module.css";
 // The sort menu borrows the context menu's look, so every popover in the tree matches.
@@ -29,19 +28,15 @@ import menuStyles from "./FileTree.module.css";
 interface Props {
   notes: NoteEntry[];
   dirs: string[];
-  /** The vault's tag tree (frontmatter + inline `#tags`, nested by `/`). */
-  tags: TagNode[];
+
   /** Open the tag page — every note carrying the tag or one of its children. */
-  onOpenTag: (tag: string) => void;
   /** Recently opened note paths, most recent first (the Recent section). */
   recent: string[];
   /** Order of notes in the tree — `explorer_sort` in settings, set from the Notes header. */
   explorerSort: ExplorerSort;
   onSetExplorerSort: (sort: ExplorerSort) => void;
   selectedPath: string | null;
-  status: VaultStatus | null;
   agentBranches: AgentBranch[];
-  commits: CommitEntry[];
   favorites: string[];
   onSelect: (path: string) => void;
   onNewNote: (parentFolder?: string) => void;
@@ -56,7 +51,6 @@ interface Props {
   onOpenSettings: () => void;
   /** Opens the template marketplace (the Templates section's "Get more" and the Getting-started step). */
   onOpenMarketplace?: () => void;
-  onCommit: (message: string) => Promise<void>;
   onApplyBranch: (name: string) => void;
   onDiscardBranch: (name: string) => void;
   onRefresh: () => void;
@@ -77,18 +71,18 @@ export interface LeftPanelHandle {
   focus(): void;
 }
 
-type SectionId = "favorites" | "recent" | "notes" | "tags" | "templates" | "trash";
+type SectionId = "favorites" | "recent" | "notes" | "templates" | "trash";
 
 const SECTION_DEFAULT_OPEN: Record<SectionId, boolean> = {
-  favorites: true, recent: false, notes: true, tags: true, templates: false, trash: false,
+  favorites: true, recent: false, notes: true, templates: false, trash: false,
 };
 
 export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
-  notes, dirs, tags, onOpenTag, recent, explorerSort, onSetExplorerSort,
-  selectedPath, status, agentBranches, commits, favorites,
+  notes, dirs, recent, explorerSort, onSetExplorerSort,
+  selectedPath, agentBranches, favorites,
   onSelect, onNewNote, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite, onOpenGraph,
   onNewFromTemplate, onNewCollection, onOpenCollection, onOpenSettings, onOpenMarketplace,
-  onCommit, onApplyBranch, onDiscardBranch, onRefresh,
+  onApplyBranch, onDiscardBranch, onRefresh,
   trash, onRestoreTrashed, onDeleteTrashed, onEmptyTrash,
   onEscape, onOpenCommandPalette,
 }, ref) {
@@ -98,7 +92,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   const searchRef = useRef<HTMLInputElement>(null);
 
   const [newFolderIn, setNewFolderIn] = useState<string | null>(null);
-  const [diffHash, setDiffHash] = useState<string | null>(null);
   // Proposal under review — its diff is shown before Apply/Discard are offered.
   const [review, setReview] = useState<AgentBranch | null>(null);
   // The explorer sort menu, anchored where the header's sort button was clicked.
@@ -109,12 +102,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   // list has to be derived from the same state the renderer reads.
   const [sectionOpen, setSectionOpen] = useState<Record<SectionId, boolean>>(SECTION_DEFAULT_OPEN);
   const [dirOpen, setDirOpen] = useState<Record<string, boolean>>({});
-  // Nested tags fold like folders; every tag starts closed.
-  const [tagOpen, setTagOpen] = useState<Record<string, boolean>>({});
   const [gettingStartedDismissed, setGettingStartedDismissed] = useState(loadGettingStartedDismissed);
-
-  const changedCount = (status?.staged.length ?? 0) + (status?.unstaged.length ?? 0) + (status?.untracked.length ?? 0);
-  const isDirty = changedCount > 0;
 
   // Debounced backend search
   useEffect(() => {
@@ -147,12 +135,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       const current = prev[path] ?? depth === 0;
       const next = open ?? !current;
       return next === current ? prev : { ...prev, [path]: next };
-    });
-  }, []);
-  const toggleTag = useCallback((path: string, open?: boolean) => {
-    setTagOpen((prev) => {
-      const next = open ?? !prev[path];
-      return next === !!prev[path] ? prev : { ...prev, [path]: next };
     });
   }, []);
   const toggleSection = useCallback((id: SectionId, open?: boolean) => {
@@ -317,7 +299,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   }), [treeActions]);
 
   const notesCount = useMemo(() => notes.filter((n) => n.path.startsWith("notes/")).length, [notes]);
-  const tagCount = useMemo(() => flattenTags(tags).length, [tags]);
 
   // ── Getting started ────────────────────────────────────────────────────
 
@@ -427,23 +408,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       }
     }
 
-    if (tagCount > 0) {
-      const pid = section("tags", "Tags");
-      const pushTags = (nodes: TagNode[], parentId: string, depth: number) => {
-        for (const t of nodes) {
-          const id = `tag:${t.path}`;
-          const nested = t.children.length > 0;
-          out.push({
-            id, kind: "tag", label: t.name, depth, parentId, path: t.path,
-            expanded: nested ? !!tagOpen[t.path] : undefined,
-            run: () => onOpenTag(t.path),
-          });
-          if (nested && tagOpen[t.path]) pushTags(t.children, id, depth + 1);
-        }
-      };
-      if (pid) pushTags(tags, pid, 1);
-    }
-
     {
       const pid = section("templates", "Templates", "templates/");
       if (pid) {
@@ -471,7 +435,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     return out;
   }, [searchResults, sectionOpen, isDirOpen, favorites, recentNotes, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
       notesTree, newFolderIn, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection, handleDeleteCollection,
-      onRestoreTrashed, onDeleteTrashed, onEmptyTrash, tags, tagCount, tagOpen, onOpenTag]);
+      onRestoreTrashed, onDeleteTrashed, onEmptyTrash]);
 
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const { containerRef, activeId, focusRow, rowA11y } = useRovingRows(rows, selectedPath);
@@ -502,9 +466,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
   const setExpanded = useCallback((row: TreeRow, open: boolean) => {
     if (row.kind === "section") toggleSection(row.id.slice("section:".length) as SectionId, open);
-    else if (row.kind === "tag" && row.expanded !== undefined) toggleTag(row.path!, open);
     else if (row.kind === "dir" || (row.kind === "collection" && row.expanded !== undefined)) toggleDir(row.path!, open);
-  }, [toggleSection, toggleDir, toggleTag]);
+  }, [toggleSection, toggleDir]);
 
   const handleTreeKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     // App-level chords belong to Shell; typing in an inline input is typing.
@@ -732,11 +695,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                   />}
             </Section>
 
-            {tagCount > 0 && (
-              <Section {...sectionProps("tags")} label="Tags" count={tagCount}>
-                <TagTree nodes={tags} depth={0} tagOpen={tagOpen} onToggle={toggleTag} onOpen={onOpenTag} a11y={a11y} />
-              </Section>
-            )}
 
             <Section
               {...sectionProps("templates")}
@@ -821,16 +779,10 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
         )}
       </div>
 
-      {/* ── Git ─────────────────────────────────────────────────── */}
-      <GitSection
-        status={status}
-        isDirty={isDirty}
-        changedCount={changedCount}
-        commits={commits}
+      {/* ── Proposals ───────────────────────────────────────────── */}
+      <ProposalsSection
         agentBranches={agentBranches}
-        onCommit={onCommit}
         onDiscardBranch={onDiscardBranch}
-        onCommitClick={setDiffHash}
         onReviewBranch={setReview}
       />
 
@@ -868,9 +820,6 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
           onApply={() => onApplyBranch(review.name)}
           onDiscard={() => onDiscardBranch(review.name)}
         />
-      )}
-      {diffHash && (
-        <CommitDiffModal hash={diffHash} onClose={() => setDiffHash(null)} />
       )}
     </div>
   );
@@ -991,102 +940,20 @@ function SortMenu({ x, y, sort, onChange, onClose }: {
 // `project/alpha` nests under `project`; a parent's count includes its
 // children. Enter or a click opens the tag page; the chevron (or Space) folds.
 
-function TagTree({ nodes, depth, tagOpen, onToggle, onOpen, a11y }: {
-  nodes: TagNode[];
-  depth: number;
-  tagOpen: Record<string, boolean>;
-  onToggle: (path: string) => void;
-  onOpen: (path: string) => void;
-  a11y: A11yFor;
-}) {
-  return (
-    <>
-      {nodes.map((t) => (
-        <BranchRow
-          key={t.path}
-          id={`tag:${t.path}`}
-          a11y={a11y}
-          depth={depth}
-          open={!!tagOpen[t.path]}
-          hasChildren={t.children.length > 0}
-          icon={<TagIcon size={13} />}
-          label={t.name}
-          count={t.count}
-          title={`#${t.path} · ${t.count} note${t.count === 1 ? "" : "s"} · Enter opens`}
-          onToggle={() => onToggle(t.path)}
-          onActivate={() => onOpen(t.path)}
-        >
-          <TagTree nodes={t.children} depth={depth + 1} tagOpen={tagOpen} onToggle={onToggle} onOpen={onOpen} a11y={a11y} />
-        </BranchRow>
-      ))}
-    </>
-  );
-}
 
-// ── Git section ───────────────────────────────────────────────────────────────
+// ── Proposals ─────────────────────────────────────────────────────────────────
+// What an agent has left for review. The repository's own state — what has
+// changed, what was committed — lives in Settings → Git; a proposal is not
+// that. It is work waiting on a person, so it stays where it will be seen.
 
-function GitSection({
-  status, isDirty, changedCount, commits, agentBranches,
-  onCommit, onDiscardBranch, onCommitClick, onReviewBranch,
-}: {
-  status: VaultStatus | null;
-  isDirty: boolean;
-  changedCount: number;
-  commits: CommitEntry[];
+function ProposalsSection({ agentBranches, onDiscardBranch, onReviewBranch }: {
   agentBranches: AgentBranch[];
-  onCommit: (msg: string) => Promise<void>;
   onDiscardBranch: (name: string) => void;
-  onCommitClick: (hash: string) => void;
   onReviewBranch: (branch: AgentBranch) => void;
 }) {
-  const [msg, setMsg] = useState("");
-  const [committing, setCommitting] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
-  const handleCommit = async () => {
-    setCommitting(true);
-    try { await onCommit(msg.trim() || "Update notes"); setMsg(""); setExpanded(false); }
-    finally { setCommitting(false); }
-  };
-
+  if (agentBranches.length === 0) return null;
   return (
     <div className={styles.gitSection}>
-      <div className={styles.gitStatus}>
-        <span className={styles.statusDot} style={{ background: isDirty ? "var(--git-dirty)" : "var(--git-clean)" }} />
-        <span className={styles.statusText}>{isDirty ? `${changedCount} changed` : "Clean"}</span>
-        {(status?.ahead ?? 0) > 0 && <span className={styles.pill}>{status!.ahead}↑</span>}
-        {(status?.behind ?? 0) > 0 && <span className={styles.pill}>{status!.behind}↓</span>}
-        {isDirty && (
-          <button className={styles.commitToggle} onClick={() => setExpanded((x) => !x)}>
-            {expanded ? <MinusIcon size={12} /> : "Commit"}
-          </button>
-        )}
-      </div>
-
-      {isDirty && expanded && (
-        <div className={styles.commitForm}>
-          <input
-            className={styles.commitInput}
-            placeholder="Commit message…"
-            value={msg}
-            onChange={(e) => setMsg(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCommit()}
-            autoFocus
-          />
-          {status && (
-            <div className={styles.changedFiles}>
-              {[...status.staged, ...status.unstaged, ...status.untracked].slice(0, 4).map((f) => (
-                <span key={f} className={styles.changedFile}>{f.split("/").pop()}</span>
-              ))}
-              {changedCount > 4 && <span className={styles.changedFile}>+{changedCount - 4} more</span>}
-            </div>
-          )}
-          <button className={styles.commitBtn} onClick={handleCommit} disabled={committing}>
-            {committing ? "Committing…" : "Commit all"}
-          </button>
-        </div>
-      )}
-
       {agentBranches.map((b) => (
         <div key={b.name} className={styles.agentBranch} title={`${b.name}${b.remote ? " (on origin)" : ""} · ${b.commit_count} commit${b.commit_count === 1 ? "" : "s"}`}>
           <span className={styles.agentDot}>●</span>
@@ -1095,23 +962,6 @@ function GitSection({
           <button className={styles.discardBtn} onClick={() => onDiscardBranch(b.name)} title="Discard proposal"><CloseIcon size={12} /></button>
         </div>
       ))}
-
-      {commits.length > 0 && (
-        <div className={styles.commitLog}>
-          {commits.map((c) => (
-            <button
-              key={c.hash}
-              className={styles.commitRow}
-              onClick={() => onCommitClick(c.hash)}
-              title="View diff"
-            >
-              <span className={styles.commitHash}>{c.hash.slice(0, 7)}</span>
-              <span className={styles.commitMsg}>{c.message}</span>
-              <span className={styles.commitTime}>{relativeTime(c.timestamp)}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

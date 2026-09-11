@@ -104,6 +104,8 @@ interface Props {
   allNotes: NoteEntry[];
   /** The vault's tag tree — what `#` autocompletes from. */
   tags?: TagNode[];
+  /** Open a tag's notes (Shell's tag view). */
+  onOpenTag?: (tag: string) => void;
   vaultPath?: string;
   /** Bumped by the shell when the note's file changed on disk (e.g. a sync
    *  pulled teammate edits) — remounts the editor so it re-parses content. */
@@ -153,7 +155,7 @@ export interface EditorHandle {
 const OUTLINE_OPEN_KEY = "cortex.outlineOpen";
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor({
-  note, saving, allNotes, tags = [], reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
+  note, saving, allNotes, tags = [], onOpenTag, reloadToken = 0, collab = null, monk = false, onSave, onDelete, onNavigate, onApplyNote, onConvertToNote,
   comments, commentsOpen, onToggleComments, onAddComment, onReplyComment, onResolveComment, onDeleteComment,
 }, ref) {
   const [showHistory, setShowHistory] = useState(false);
@@ -206,6 +208,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({
         saving={saving}
         allNotes={allNotes}
         tags={tags}
+        onOpenTag={onOpenTag}
         collab={collab}
         monk={monk}
         outlineOpen={outlineOpen}
@@ -321,13 +324,14 @@ function personItems(members: Member[], query: string): MentionItem[] {
 const PROPS_EXPANDED_KEY = "cortex.propertiesExpanded";
 
 function NoteEditor({
-  note, saving, allNotes, tags, collab, monk, outlineOpen, onToggleOutline, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
+  note, saving, allNotes, tags, onOpenTag, collab, monk, outlineOpen, onToggleOutline, handleRef, onSave, onDelete, onNavigate, onShowHistory, onConvertToNote,
   comments, commentsOpen, onToggleComments, onAddComment, onReplyComment, onResolveComment, onDeleteComment,
 }: {
   note: Note;
   saving: boolean;
   allNotes: NoteEntry[];
   tags: TagNode[];
+  onOpenTag?: (tag: string) => void;
   collab: CollabConfig | null;
   monk: boolean;
   outlineOpen: boolean;
@@ -1040,6 +1044,7 @@ function NoteEditor({
               expanded={propsExpanded}
               onToggle={toggleProperties}
               onChange={handleFrontmatterChange}
+              onOpenTag={onOpenTag}
             />
           )}
           </div>

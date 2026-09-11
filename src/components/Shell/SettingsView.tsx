@@ -18,6 +18,7 @@ import {
 import { Dropdown } from "./Dropdown";
 import { AgentIcon } from "./agentIcons";
 import { UpdateChecker } from "./UpdateModal";
+import { GitSummary } from "./GitSummary";
 import {
   CloseIcon, SearchIcon, FolderIcon, ThemeIcon, TextLinesIcon, FileIcon, SyncIcon, TerminalIcon,
   PersonIcon, LinkIcon, OpenIcon, GlobeIcon, TemplateIcon, SparkleIcon, DownloadIcon,
@@ -26,6 +27,7 @@ import styles from "./SettingsView.module.css";
 
 interface Props {
   vault: VaultInfo;
+  onCommit: (message: string) => Promise<void>;
   onClose: () => void;
   onLeaveVault: () => void;
 }
@@ -38,6 +40,8 @@ interface Props {
 
 interface Ctx {
   vault: VaultInfo;
+  /** Commit the working tree — the repository row's button, and auto-commit. */
+  onCommit: (message: string) => Promise<void>;
   settings: Settings;
   update: (patch: Partial<Settings>) => void;
   desktopTheme: string | null;
@@ -404,6 +408,11 @@ const SECTIONS: SectionDef[] = [
     icon: <SyncIcon size={14} />,
     rows: [
       {
+        label: "Repository", wide: true, keywords: "git status commit history log changes push pull ahead behind diff",
+        hint: "What has changed since the last commit, and the commits behind you. This used to sit at the foot of the sidebar.",
+        render: ({ onCommit }) => <GitSummary onCommit={onCommit} />,
+      },
+      {
         key: "auto_commit", label: "Auto-commit on save", keywords: "git commit history automatic",
         hint: "Commit a little after the last save, so a burst of edits becomes one commit. Off = commit by hand or when syncing.",
         render: ({ settings, update }) => (
@@ -572,7 +581,7 @@ function rowMatches(section: SectionDef, row: RowDef, q: string): boolean {
 
 // ── The page ──────────────────────────────────────────────────────────────────
 
-export function SettingsView({ vault, onClose, onLeaveVault }: Props) {
+export function SettingsView({ vault, onCommit, onClose, onLeaveVault }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [desktopTheme, setDesktopTheme] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentCli[]>([]);
@@ -648,7 +657,7 @@ export function SettingsView({ vault, onClose, onLeaveVault }: Props) {
   };
 
   const ctx: Ctx | null = settings
-    ? { vault, settings, update, desktopTheme, agents, customCommand, setCustomCommand, onLeaveVault, onClose }
+    ? { vault, onCommit, settings, update, desktopTheme, agents, customCommand, setCustomCommand, onLeaveVault, onClose }
     : null;
 
   return (

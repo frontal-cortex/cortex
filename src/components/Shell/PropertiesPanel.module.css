@@ -38,6 +38,16 @@
 }
 
 /* A property with a value: coloured pill for select-like values, name + value otherwise. */
+.chipLink {
+  font: inherit;
+  border: none;
+  cursor: pointer;
+}
+
+.chipLink:hover {
+  filter: brightness(1.12);
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
