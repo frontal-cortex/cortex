@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, CSSProperties, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
+import { commands, VaultInfo, VaultStatus, AgentBranch, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
 import { parseWikiLink } from "../../lib/wikiLink";
 import { findShortcut, applyKeymapOverrides, shortcutFor, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
@@ -40,7 +40,6 @@ interface Props {
   vault: VaultInfo;
   status: VaultStatus | null;
   agentBranches: AgentBranch[];
-  commits: CommitEntry[];
   syncing: boolean;
   onSync: () => Promise<SyncOutcome | null>;
   onCommit: (message: string) => Promise<void>;
@@ -51,7 +50,7 @@ interface Props {
 }
 
 export function Shell({
-  vault, status, agentBranches, commits, syncing, onSync,
+  vault, status, agentBranches, syncing, onSync,
   onCommit, onApplyBranch, onDiscardBranch, onLeaveVault, onRefreshStatus,
 }: Props) {
   // Quick switcher: null = closed; "actions" opens it straight into `>` mode.
@@ -672,15 +671,11 @@ export function Shell({
           onOpenCommandPalette={() => setSwitcher("actions")}
           notes={notes}
           dirs={dirs}
-          tags={tags}
           recent={recentNotes}
           explorerSort={explorerSort}
           onSetExplorerSort={handleSetExplorerSort}
-          onOpenTag={setOpenTag}
           selectedPath={selectedPath}
-          status={status}
           agentBranches={agentBranches}
-          commits={commits}
           favorites={favorites}
           onSelect={(p) => { openNote(p); if (drawer) closeLeft(); }}
           onNewNote={handleNewNote}
@@ -694,7 +689,6 @@ export function Shell({
           onOpenCollection={handleOpenCollection}
           onOpenSettings={() => setShowSettings(true)}
           onOpenMarketplace={() => setShowMarketplace(true)}
-          onCommit={onCommit}
           onApplyBranch={onApplyBranch}
           onDiscardBranch={onDiscardBranch}
           onRefresh={refresh}
@@ -732,6 +726,7 @@ export function Shell({
           reloadToken={reloadToken}
           collab={collab}
           monk={monk}
+          onOpenTag={setOpenTag}
           onSave={async (updated) => { await save(updated); refresh(); scheduleAutoCommit(); }}
           onDelete={handleDelete}
           onNavigate={handleNavigate}
@@ -755,6 +750,7 @@ export function Shell({
         {showSettings && (
           <SettingsView
             vault={vault}
+            onCommit={onCommit}
             onClose={() => { setShowSettings(false); loadSettings(); focusEditor(); }}
             onLeaveVault={onLeaveVault}
           />

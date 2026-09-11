@@ -29,6 +29,8 @@ interface Props {
   expanded: boolean;
   onToggle: () => void;
   onChange: (updated: Record<string, unknown>) => void;
+  /** Open everything under a tag. Absent = the chips are not links. */
+  onOpenTag?: (tag: string) => void;
 }
 
 // App-internal frontmatter that isn't a user-facing property.
@@ -144,7 +146,7 @@ interface Item {
   def?: PropertyDef;
 }
 
-export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onToggle, onChange }: Props) {
+export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onToggle, onChange, onOpenTag }: Props) {
   const [schema, setSchema] = useState<TypeSchema | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authorship, setAuthorship] = useState<Authorship | null>(null);
@@ -254,7 +256,11 @@ export function PropertiesPanel({ frontmatter, notePath, lastEdit, expanded, onT
     if (Array.isArray(v)) {
       for (const entry of v) {
         const name = String(entry);
-        chips.push(<span key={`${item.name}:${name}`} className={styles.chip} style={tagStyle(colorFor(name))} title={item.name}>{name}</span>);
+        // A tag is the one chip that leads somewhere: everything filed under it.
+        chips.push(item.name === "tags" && onOpenTag
+          ? <button key={`${item.name}:${name}`} className={`${styles.chip} ${styles.chipLink}`} style={tagStyle(colorFor(name))}
+              title={`Everything tagged #${name}`} onClick={() => onOpenTag(name)}>{name}</button>
+          : <span key={`${item.name}:${name}`} className={styles.chip} style={tagStyle(colorFor(name))} title={item.name}>{name}</span>);
       }
     } else if (isSelectType(item.type)) {
       const name = String(v);
