@@ -206,6 +206,15 @@ Checkout for cards, Lightning if true micropayments are wanted. Server state
 is just repo, build output, paid-until. Depends on the generator; not
 started. · L
 
+## Assist — inline autocomplete (planned 2026-09-11)
+
+A grey continuation of the sentence you are typing, accepted with Tab, from a
+model you bring. Off by default; a vault with it off makes no network calls.
+The design, the measured reason the agent CLI cannot serve it, the privacy
+contract and the work in order are in [docs/autocomplete.md](autocomplete.md).
+The same provider seam is what a later "rewrite this paragraph" command and a
+local (Ollama / llama.cpp) provider would use. · L
+
 ## Suggested sequencing
 
 1. **Prerequisite** — `.gitignore` + `.cortex/` config split. Unblocks portable
