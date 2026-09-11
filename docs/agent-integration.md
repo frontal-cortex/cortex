@@ -126,6 +126,7 @@ exits.
 | `theme` | `light` / `dark` / `system` (default `system`) |
 | `trash_retention_days` | days before trashed notes are pruned, `0` = never (default `30`) |
 | `auto_sync_minutes` | minutes between automatic git syncs, `0` = off (default `0`) |
+| `typing_focus_seconds` | seconds of typing after which the sidebar steps aside; back on the toggle, Escape, the left edge, or clicking away. `0` = never (default `5`) |
 | `collab_url` | Yjs websocket relay for presence and co-editing, empty = off |
 | `theme_file` | palette file to follow (Omarchy `colors.toml` shape, `~` expands), empty = use `theme` |
 | `accent` | action colour: empty = the theme's accent; a palette colour name (`blue`, `yellow`, …) or a `#hex` |

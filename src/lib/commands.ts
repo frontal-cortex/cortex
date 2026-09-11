@@ -495,6 +495,8 @@ export interface Settings {
   trash_retention_days: number;
   /** Minutes between automatic syncs (plus on-launch and on-focus). 0 = off. */
   auto_sync_minutes: number;
+  /** Seconds of typing after which the sidebar steps aside. 0 = never. */
+  typing_focus_seconds: number;
   /** Yjs websocket relay for presence + co-editing. Empty = off. */
   collab_url: string;
   /** Palette file to follow (Omarchy `colors.toml` shape). Empty = use `theme`. */

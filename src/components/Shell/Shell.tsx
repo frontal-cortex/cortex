@@ -8,6 +8,7 @@ import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
+import { useTypingFocus } from "../../hooks/useTypingFocus";
 import { useViewport } from "../../hooks/useViewport";
 import { useSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX } from "../../hooks/useSidebarWidth";
 import { useRecentNotes } from "../../hooks/useRecentNotes";
@@ -56,7 +57,7 @@ export function Shell({
   const [switcher, setSwitcher] = useState<null | "notes" | "actions">(null);
   // At phone widths the sidebar is an overlay drawer (see useLayout).
   const { isPhone: drawer } = useViewport();
-  const { leftVisible, rightVisible, monk, toggleLeft, closeLeft, toggleRight, toggleMonk } = useLayout(drawer);
+  const { leftVisible, rightVisible, monk, typingHidden, toggleLeft, closeLeft, toggleRight, toggleMonk, hideForTyping, showAfterTyping } = useLayout(drawer);
   // The terminal mounts the first time its pane opens and then stays mounted
   // (hidden) so the session survives toggling.
   const [terminalMounted, setTerminalMounted] = useState(false);
@@ -106,6 +107,8 @@ export function Shell({
   // (a sync pulled teammate edits, a merge was completed/aborted, …).
   const [reloadToken, setReloadToken] = useState(0);
   const [autoSyncMinutes, setAutoSyncMinutes] = useState(0);
+  // Seconds of typing after which the sidebar steps aside; 0 = never.
+  const [typingFocusSeconds, setTypingFocusSeconds] = useState(0);
   const [autoCommit, setAutoCommit] = useState(false);
   // Agent CLI the terminal pane launches on open (Settings → Terminal agent).
   const [terminalCommand, setTerminalCommand] = useState("");
@@ -133,6 +136,7 @@ export function Shell({
       setTerminalCommand(s.terminal_command ?? "");
       setAutoSyncMinutes(s.auto_sync_minutes);
       setAutoCommit(s.auto_commit);
+      setTypingFocusSeconds(s.typing_focus_seconds ?? 0);
     }).catch(() => {});
     loadCollabConfig(vault.name).then(setCollab).catch(() => setCollab(null));
   }, [vault.name]);
@@ -165,6 +169,16 @@ export function Shell({
   /** Heading to scroll to once a `[[Note#Section]]` target has opened. */
   const pendingSection = useRef<string | null>(null);
   const focusEditor = useCallback(() => { editorRef.current?.focusBody(); }, []);
+
+  // While you write, the sidebar steps aside (Settings → Appearance). The
+  // pointer at the left edge, Escape, the toggle or moving on brings it back.
+  useTypingFocus({
+    seconds: typingFocusSeconds,
+    enabled: !drawer && !monk,
+    hidden: typingHidden,
+    onHide: hideForTyping,
+    onShow: showAfterTyping,
+  });
 
   // The drawer gets out of the way once you have picked something — a note, a
   // tag page, a full-window page — and Escape (or a tap on the backdrop)

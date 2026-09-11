@@ -237,6 +237,29 @@ const SECTIONS: SectionDef[] = [
           />
         ),
       },
+      {
+        key: "typing_focus_seconds", label: "Sidebar while writing", keywords: "focus typing distraction hide sidebar zen monk",
+        hint: "Once you have been typing this long the sidebar steps aside. It comes back on the toggle, on Escape, when the pointer reaches the left edge, or when you click away.",
+        render: ({ settings, update }) => {
+          const n = settings.typing_focus_seconds ?? 0;
+          const presets = [0, 3, 5, 10, 20];
+          return (
+            <Dropdown
+              fullWidth
+              value={String(n)}
+              options={[
+                { value: "0", label: "Always shown" },
+                { value: "3", label: "Hide after 3 seconds" },
+                { value: "5", label: "Hide after 5 seconds" },
+                { value: "10", label: "Hide after 10 seconds" },
+                { value: "20", label: "Hide after 20 seconds" },
+                ...(presets.includes(n) ? [] : [{ value: String(n), label: `Hide after ${n} seconds` }]),
+              ]}
+              onChange={(v) => update({ typing_focus_seconds: Number(v) })}
+            />
+          );
+        },
+      },
     ],
   },
   {
