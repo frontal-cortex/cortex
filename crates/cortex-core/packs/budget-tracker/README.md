@@ -14,19 +14,23 @@ nothing to recalculate and nothing to reset at the start of a month.
 | `schemas/budget.yaml` | `.cortex/schemas/budget.yaml` | date, amount, kind, category, `account` and `to_account` — relations to the accounts — payee, `bill` — a relation to the bills |
 | `schemas/accounts.yaml` | `.cortex/schemas/accounts.yaml` | kind, initial, active; computed from the ledger: `income`, `spent`, `moved_in`, `moved_out`, `this_month`, `balance` |
 | `schemas/budget-limits.yaml` | `.cortex/schemas/budget-limits.yaml` | monthly_limit, bucket (need / want / saving), active; computed: `spent`, `last_month`, `remaining`, `used` |
+| `schemas/budget-wishlist.yaml` | `.cortex/schemas/budget-wishlist.yaml` | price, priority (must / want / someday), category, url, target, active; computed from the ledger: `put_by`, `paid`, `bought_on`, `left`, `saved` (the bar), `status` |
 | `schemas/budget-bills.yaml` | `.cortex/schemas/budget-bills.yaml` | amount, repeat, repeat_mode, next_due, paid, category, account, active, url; computed: `last_paid`, `total_paid`, `monthly`, `due_in` |
 | `index.md` | `collections/budget/_index.md` | the dashboard (buttons, tiles, budget cards, spending and income by month, the donut, account balances) above the views: Ledger, This month, By month, Summary, This month by category, By category, Month by month, Categories over time, Calendar |
 | `index/accounts.md` | `collections/accounts/_index.md` | views: Balances (with a total), Cards, By kind |
 | `index/budget-limits.md` | `collections/budget-limits/_index.md` | views: This month (the budget check), Needs, wants, savings (board) |
 | `index/budget-bills.md` | `collections/budget-bills/_index.md` | views: Upcoming, Overdue, Per month, Calendar, By cycle |
+| `index/budget-wishlist.md` | `collections/budget-wishlist/_index.md` | views: Wishlist, Cards, By priority, Bought, Total |
 | `templates/budget.md` | `collections/budget/_template-budget.md` | New row's shape for a transaction |
 | `templates/accounts.md` | `collections/accounts/_template-accounts.md` | an account whose page lists its movements and charts them by month |
 | `templates/budget-limits.md` | `collections/budget-limits/_template-budget-limits.md` | a limit whose page charts the spend against it |
 | `templates/budget-bills.md` | `collections/budget-bills/_template-budget-bills.md` | a bill that advances when you tick `paid`, with its payment list and a cancel-or-keep checklist |
-| `seed/budget/*.md` | `collections/budget/` | eleven example rows over the last five weeks: two weekly shops, a coffee, a bus pass, a streaming payment linked to its bill, two salaries, two rent payments linked to their bill, a transfer to savings and a cash withdrawal |
+| `templates/budget-wishlist.md` | `collections/budget-wishlist/_template-budget-wishlist.md` | a wish whose page lists the money put aside for it, what it cost, and a think-twice checklist |
+| `seed/budget/*.md` | `collections/budget/` | twelve example rows over the last five weeks: two weekly shops, a coffee, a bus pass, a streaming payment linked to its bill, two salaries, two rent payments linked to their bill, a transfer to savings, a cash withdrawal and a purchase linked to a wish |
 | `seed/accounts/*.md` | `collections/accounts/` | checking, savings, cash, with opening balances |
 | `seed/budget-limits/*.md` | `collections/budget-limits/` | groceries, dining, subscriptions |
 | `seed/budget-bills/*.md` | `collections/budget-bills/` | Rent (due in four weeks), Music streaming (three days overdue) |
+| `seed/budget-wishlist/*.md` | `collections/budget-wishlist/` | Trip to Lisbon (part saved), Headphones (bought), Standing desk (untouched) |
 
 The three extra databases nest under Budget in the sidebar. The seeds are dated
 relative to the day you install, so This month, Overdue, Month by month and
@@ -128,6 +132,24 @@ the limits table all show something straight away.
   it, and a transfer is one ledger row with `account` (from) and `to_account`
   (to) — no separate transfers database, nothing counted twice.
 - **Rings.** A limit's `used` shows as a ring instead of a bar.
+
+## What is new in 3.1
+
+A fifth database, `budget-wishlist`: one row per thing you are saving up
+for, with a price, a priority and an optional target date. The ledger gains
+a `wish` relation, and that one relation does all the work — a transfer
+tagged with a wish counts towards it, an expense tagged with a wish buys it.
+Each row shows how much is put by, how much is left and the share saved as a
+bar, and moves itself to Bought, on the day it was bought, for what it
+actually cost rather than what you guessed.
+
+The dashboard gains a New wish button and a "Saving up for" strip under the
+budgets, closest to affordable first. Nothing on the wishlist is ticked or
+typed twice: the money either moved between your accounts or it did not.
+
+**Upgrading from 3.0.** Update the pack. The new schema, page, template and
+three example rows are added; your ledger rows are untouched and their
+`wish` is simply empty until you tag one.
 
 ## Upgrading from 2.x
 

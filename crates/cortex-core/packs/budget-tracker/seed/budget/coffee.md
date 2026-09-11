@@ -10,6 +10,7 @@ account: ["cash"]
 to_account: []
 payee: "Cafe"
 bill: []
+wish: []
 created: "{{today}}"
 ---
 

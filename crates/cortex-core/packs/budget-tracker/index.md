@@ -95,6 +95,13 @@ values: {kind: transfer, category: savings, date: "{{today}}"}
 open: true
 ```
 
+```cortex-button
+label: New wish
+action: add-row
+collection: budget-wishlist
+open: true
+```
+
 ## Budgets
 
 ```cortex-view
@@ -105,6 +112,19 @@ size: small
 columns: [title, spent, monthly_limit, used]
 filter: active == true
 sort: [used desc]
+```
+
+## Saving up for
+
+```cortex-view
+source: collections/budget-wishlist
+type: gallery
+layout: compact
+size: small
+columns: [title, price, saved]
+filter: active == true and status != 'bought'
+sort: [saved desc]
+limit: 4
 ```
 
 :::
@@ -210,8 +230,11 @@ are the same rows as pictures; By category is a board you can drag a row
 across when it was filed wrong; the calendar shows paydays and the days the
 bills land.
 
-Three databases nest under this one: `accounts` (opening balance in, live
+Four databases nest under this one: `accounts` (opening balance in, live
 balance out), `budget-limits` (the monthly amount per category, with spent,
-remaining and the ring) and `budget-bills` (recurring charges that advance
+remaining and the ring), `budget-bills` (recurring charges that advance
 themselves when you tick `paid`; link a payment with the `bill` property and
-the bill knows when it was last paid and what it has cost).
+the bill knows when it was last paid and what it has cost) and
+`budget-wishlist` (what you are saving up for; tag a transfer with `wish`
+and the item fills its bar, tag the purchase and it moves to Bought at what
+it really cost).

@@ -10,6 +10,7 @@ account: ["checking"]
 to_account: ["cash"]
 payee: "ATM"
 bill: []
+wish: []
 created: "{{today}}"
 ---
 

@@ -60,3 +60,8 @@ properties:
   - name: bill
     type: relation
     collection: budget-bills
+  # What this row is for, when it is for something on the wishlist: a
+  # transfer puts money aside for it, an expense buys it.
+  - name: wish
+    type: relation
+    collection: budget-wishlist

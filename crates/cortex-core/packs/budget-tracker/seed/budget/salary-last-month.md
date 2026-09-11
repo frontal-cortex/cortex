@@ -10,6 +10,7 @@ account: ["checking"]
 to_account: []
 payee: "Employer"
 bill: []
+wish: []
 created: "{{today}}"
 ---
 

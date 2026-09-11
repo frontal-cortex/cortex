@@ -10,6 +10,7 @@ account: ["checking"]
 to_account: []
 payee: "Streaming Co"
 bill: ["Music streaming"]
+wish: []
 created: "{{today}}"
 ---
 

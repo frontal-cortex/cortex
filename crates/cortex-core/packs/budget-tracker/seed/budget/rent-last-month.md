@@ -10,6 +10,7 @@ account: ["checking"]
 to_account: []
 payee: "Landlord"
 bill: ["Rent"]
+wish: []
 created: "{{today}}"
 ---
 

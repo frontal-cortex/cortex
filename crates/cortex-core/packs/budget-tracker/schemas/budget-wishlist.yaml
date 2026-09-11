@@ -1,0 +1,80 @@
+properties:
+  - name: price
+    type: number
+    format: currency
+  - name: priority
+    type: select
+    options:
+      - name: must
+        color: red
+      - name: want
+        color: orange
+      - name: someday
+        color: gray
+  - name: category
+    type: select
+    options:
+      - name: shopping
+        color: pink
+      - name: leisure
+        color: red
+      - name: travel
+        color: blue
+      - name: health
+        color: green
+      - name: education
+        color: purple
+      - name: gifts
+        color: pink
+      - name: transport
+        color: gray
+      - name: housing
+        color: blue
+      - name: other
+        color: gray
+  - name: url
+    type: url
+  # When you want it by. Empty means no date on it.
+  - name: target
+    type: date
+  - name: active
+    type: checkbox
+  # Computed on read from the ledger rows whose `wish` points here: money
+  # moved towards it, money spent on it, the day it was bought. Nothing below
+  # is written to a file.
+  - name: put_by
+    type: rollup
+    from: budget
+    relation: wish
+    function: sum
+    property: amount
+    where: kind == 'transfer'
+    format: currency
+  - name: paid
+    type: rollup
+    from: budget
+    relation: wish
+    function: sum
+    property: amount
+    where: kind == 'expense'
+    format: currency
+  - name: bought_on
+    type: rollup
+    from: budget
+    relation: wish
+    function: max
+    property: date
+    where: kind == 'expense'
+  - name: left
+    type: formula
+    expr: max(price - coalesce(put_by, 0), 0)
+    format: currency
+  - name: saved
+    type: formula
+    expr: if(price > 0, round(100 * coalesce(put_by, 0) / price, 0), empty)
+    format: ring
+  # Three states, none of them typed in: bought once an expense points here,
+  # saving once a transfer does, wanted until then.
+  - name: status
+    type: formula
+    expr: if(coalesce(paid, 0) > 0, 'bought', if(coalesce(put_by, 0) > 0, 'saving', 'wanted'))
