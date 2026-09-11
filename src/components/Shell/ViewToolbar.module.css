@@ -23,6 +23,7 @@
   background: var(--bg-hover);
 }
 
+
 .chipActive {
   color: var(--accent);
   border-color: var(--accent);

@@ -428,6 +428,8 @@ pub fn gallery(pack: &Pack) -> Vec<String> {
 const TEMPLATE_VARS: [&str; 4] = ["date", "time", "title", "uuid"];
 const RAW_HTML_OK: [&str; 6] = ["<br", "<sub", "</sub", "<sup", "</sup", "<!--"];
 const PRODUCT_WORDS: [&str; 6] = ["notion", "obsidian", "evernote", "roam", "logseq", "craft"];
+const BUTTON_ACTIONS: [&str; 5] = ["add-row", "open", "log", "set", "url"];
+const BUTTON_KEYS: [&str; 10] = ["label", "action", "collection", "values", "template", "open", "target", "view", "item", "url"];
 
 /// Every rule from the format spec. Errors block; warnings are advice.
 pub fn lint(pack: &Pack) -> Vec<Finding> {
@@ -435,6 +437,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
     let err = |out: &mut Vec<Finding>, file: Option<&str>, m: String| out.push(Finding { severity: Severity::Error, file: file.map(Into::into), message: m });
     let warn = |out: &mut Vec<Finding>, file: Option<&str>, m: String| out.push(Finding { severity: Severity::Warning, file: file.map(Into::into), message: m });
     let m = &pack.manifest;
+    let pack_colls = m.collections();
 
     // Identity and versioning.
     if m.id.is_empty() || !m.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
@@ -508,6 +511,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
         if ext == "md" {
             let text = String::from_utf8_lossy(&f.contents);
             lint_markdown(&f.path, &text, &mut out);
+            lint_buttons(&f.path, &text, &pack_colls, &mut out);
         }
     }
     if total > 2 * 1024 * 1024 { err(&mut out, None, "pack is larger than 2 MB (screenshots in preview/ not counted)".into()); }
@@ -542,8 +546,8 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                                 err(&mut out, Some(&schema_path), format!("rollup `{}` needs `relation:` (and `from:` for the reverse side)", p.name));
                             }
                             if let Some(f) = p.format.as_deref() {
-                                if !["percent", "progress", "currency", "stars", "integer", "decimal"].contains(&f) {
-                                    err(&mut out, Some(&schema_path), format!("`{}`: unknown format `{f}` (percent, progress, currency, stars, integer, decimal)", p.name));
+                                if !["percent", "progress", "ring", "currency", "stars", "integer", "decimal"].contains(&f) {
+                                    err(&mut out, Some(&schema_path), format!("`{}`: unknown format `{f}` (percent, progress, ring, currency, stars, integer, decimal)", p.name));
                                 }
                             }
                             if let Some(a) = p.auto.as_deref() {
@@ -601,6 +605,59 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                                 match v.get("date").and_then(|x| x.as_str()) {
                                     Some(p) if props.get(p).map(String::as_str) == Some("date") => {}
                                     _ => err(&mut out, Some(&index_path), "a calendar view needs `date:` naming a date property".into()),
+                                }
+                            }
+                            // `bucket:` folds a date group (or a chart's date x) — nothing else.
+                            if let Some(b) = v.get("bucket").and_then(|x| x.as_str()) {
+                                if !crate::data::BUCKETS.contains(&b) && b != "none" {
+                                    err(&mut out, Some(&index_path), format!("view `bucket: {b}` is not one of {}", crate::data::BUCKETS.join(", ")));
+                                }
+                                if kind != "chart" {
+                                    match v.get("group").and_then(|x| x.as_str()) {
+                                        Some(g) if matches!(props.get(g).map(String::as_str), Some("date" | "daterange" | "createdtime" | "editedtime")) => {}
+                                        _ => err(&mut out, Some(&index_path), "`bucket:` only folds a date `group:` — set `group:` to a date property or drop `bucket:`".into()),
+                                    }
+                                }
+                            }
+                            if kind == "chart" {
+                                if let Some(ct) = v.get("chartType").and_then(|x| x.as_str()) {
+                                    if !crate::data::CHART_TYPES.contains(&ct) {
+                                        err(&mut out, Some(&index_path), format!("chart `chartType: {ct}` is not one of {}", crate::data::CHART_TYPES.join(", ")));
+                                    }
+                                }
+                            }
+                            if v.get("layout").is_some() && kind != "gallery" {
+                                err(&mut out, Some(&index_path), format!("`layout:` belongs to gallery views, not a {kind}"));
+                            }
+                            if kind == "gallery" {
+                                if let Some(l) = v.get("layout").and_then(|x| x.as_str()) { if l != "compact" { err(&mut out, Some(&index_path), format!("gallery `layout: {l}` — the only layout besides the default is `compact`")); } }
+                                if let Some(s) = v.get("size").and_then(|x| x.as_str()) { if !["small", "medium", "large"].contains(&s) { err(&mut out, Some(&index_path), format!("gallery `size: {s}` is not small, medium or large")); } }
+                            }
+                            if kind == "stats" {
+                                match v.get("stats").and_then(|x| x.as_sequence()) {
+                                    None => err(&mut out, Some(&index_path), "a stats view needs a `stats:` list — entries of {label, agg, field} or {label, expr}".into()),
+                                    Some(entries) => for e in entries {
+                                        let label = e.get("label").and_then(|x| x.as_str()).unwrap_or("?");
+                                        let has_expr = e.get("expr").and_then(|x| x.as_str()).map_or(false, |x| !x.trim().is_empty());
+                                        let agg = e.get("agg").and_then(|x| x.as_str());
+                                        let field = e.get("field").and_then(|x| x.as_str());
+                                        if has_expr {
+                                            if let Err(msg) = crate::formula::Formula::parse(e.get("expr").and_then(|x| x.as_str()).unwrap_or("")) {
+                                                err(&mut out, Some(&index_path), format!("stat `{label}`: expr does not parse: {msg}"));
+                                            }
+                                        } else {
+                                            match agg {
+                                                None => err(&mut out, Some(&index_path), format!("stat `{label}` needs `agg:` and `field:` (or `expr:`)")),
+                                                Some(a) if !crate::data::SUMMARY_FUNCTIONS.contains(&a) => err(&mut out, Some(&index_path), format!("stat `{label}`: unknown agg `{a}` ({})", crate::data::SUMMARY_FUNCTIONS.join(", "))),
+                                                Some(a) if a != "count" && field.is_none() => err(&mut out, Some(&index_path), format!("stat `{label}`: `agg: {a}` needs a `field:`")),
+                                                _ => {}
+                                            }
+                                            // A field on this collection must exist; another source's is that pack's business.
+                                            if e.get("source").is_none() {
+                                                if let Some(f) = field { if !props.contains_key(f) && f != "title" { err(&mut out, Some(&index_path), format!("stat `{label}`: field `{f}` is not in the schema")); } }
+                                            }
+                                        }
+                                    },
                                 }
                             }
                         }
@@ -704,6 +761,51 @@ fn lint_markdown(path: &str, text: &str, out: &mut Vec<Finding>) {
         if looks_like_tag && !RAW_HTML_OK.iter().any(|ok| tail.to_lowercase().starts_with(ok)) {
             err(out, format!("raw HTML is not allowed: `{}`", tail.chars().take(20).collect::<String>().replace('\n', " ")));
             break;
+        }
+    }
+}
+
+/// ```cortex-button fences: a known action with what it needs, and the
+/// collection it names is one the pack installs (a warning otherwise — the
+/// vault may have it). Mirrored in the marketplace repo's tools/packlib.py.
+fn lint_buttons(path: &str, text: &str, colls: &[String], out: &mut Vec<Finding>) {
+    let err = |out: &mut Vec<Finding>, m: String| out.push(Finding { severity: Severity::Error, file: Some(path.into()), message: m });
+    let warn = |out: &mut Vec<Finding>, m: String| out.push(Finding { severity: Severity::Warning, file: Some(path.into()), message: m });
+    let mut lines = text.lines();
+    while let Some(l) = lines.next() {
+        if l.trim() != "```cortex-button" { continue; }
+        let mut keys: Vec<(String, String)> = Vec::new();
+        for l in lines.by_ref() {
+            if l.trim_start().starts_with("```") { break; }
+            if l.starts_with(' ') || l.starts_with('\t') || l.trim().is_empty() { continue; }
+            if let Some((k, v)) = l.split_once(':') {
+                keys.push((k.trim().to_string(), v.trim().trim_matches(|c| c == '"' || c == '\'').to_string()));
+            }
+        }
+        let get = |k: &str| keys.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.as_str()).filter(|v| !v.is_empty());
+        let label = get("label").unwrap_or("(no label)").to_string();
+        if get("label").is_none() { err(out, "a button needs `label:`".into()); }
+        let action = get("action").unwrap_or("").to_string();
+        if !BUTTON_ACTIONS.contains(&action.as_str()) {
+            err(out, format!("button `{label}`: unknown action `{action}` (add-row, open, log, set, url)"));
+            continue;
+        }
+        let coll = get("collection").map(|c| c.trim_start_matches("collections/").trim_end_matches('/').to_string());
+        if matches!(action.as_str(), "add-row" | "log") && coll.is_none() { err(out, format!("button `{label}`: `{action}` needs `collection:`")); }
+        if action == "open" && coll.is_none() && get("target").is_none() { err(out, format!("button `{label}`: `open` needs `collection:` or `target:`")); }
+        if let Some(c) = &coll {
+            if !colls.iter().any(|x| x == c) { warn(out, format!("button `{label}` names collection `{c}`, which this pack does not install — fine when the vault has it")); }
+        }
+        if action == "log" && get("item").is_none() { err(out, format!("button `{label}`: `log` needs `item:`")); }
+        if action == "set" && !keys.iter().any(|(k, _)| k == "values") { err(out, format!("button `{label}`: `set` needs `values:`")); }
+        if action == "url" {
+            match get("url") {
+                Some(u) if u.starts_with("http://") || u.starts_with("https://") || u.starts_with("mailto:") => {}
+                _ => err(out, format!("button `{label}`: `url` must be an http(s) or mailto link")),
+            }
+        }
+        for (k, _) in &keys {
+            if !BUTTON_KEYS.contains(&k.as_str()) { warn(out, format!("button `{label}`: unknown key `{k}` is ignored")); }
         }
     }
 }
@@ -812,9 +914,34 @@ fn today() -> String {
 
 /// A pack file with placeholders that install expands (`{{today}}` in seeds
 /// and index.md); templates are written verbatim.
+/// Placeholders are stamped at install everywhere except inside a
+/// ```cortex-button fence, where `{{today}}` means the day the button is
+/// pressed and is expanded then (src/lib/buttons.ts).
+fn expand_outside_buttons(text: &str, today: chrono::NaiveDate) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chunk = String::new();
+    let mut in_button = false;
+    for line in text.split_inclusive('\n') {
+        let t = line.trim_end();
+        if !in_button && t.starts_with("```cortex-button") {
+            out.push_str(&crate::placeholders::expand(&chunk, today));
+            chunk.clear();
+            in_button = true;
+            out.push_str(line);
+        } else if in_button {
+            out.push_str(line);
+            if t == "```" { in_button = false; }
+        } else {
+            chunk.push_str(line);
+        }
+    }
+    out.push_str(&crate::placeholders::expand(&chunk, today));
+    out
+}
+
 fn rendered(m: &Manifest, pack_path: &str, contents: &[u8]) -> Vec<u8> {
     if pack_path.starts_with("seed/") || is_index(pack_path) {
-        let mut text = crate::placeholders::expand(&String::from_utf8_lossy(contents), crate::placeholders::today());
+        let mut text = expand_outside_buttons(&String::from_utf8_lossy(contents), crate::placeholders::today());
         // A pack's extra collections (a habit tracker's daily log) nest under the
         // primary one in the sidebar, as a child database sits inside its page —
         // unless the pack's own index.md places them elsewhere with `parent:`.
@@ -1510,6 +1637,35 @@ mod tests {
     }
 
     #[test]
+    fn button_fences_are_linted() {
+        let colls = vec!["budget".to_string()];
+        let run = |md: &str| { let mut out = Vec::new(); lint_buttons("index.md", md, &colls, &mut out); out };
+        let errors = |out: &[Finding]| out.iter().filter(|f| f.severity == Severity::Error).map(|f| f.message.clone()).collect::<Vec<_>>();
+        let warns = |out: &[Finding]| out.iter().filter(|f| f.severity == Severity::Warning).map(|f| f.message.clone()).collect::<Vec<_>>();
+
+        let ok = run("Text\n\n```cortex-button\nlabel: New expense\naction: add-row\ncollection: budget\nvalues: {kind: expense, date: \"{{today}}\"}\nopen: true\n```\n\n```cortex-button\nlabel: Docs\naction: url\nurl: https://example.com\n```\n");
+        assert!(ok.is_empty(), "{ok:?}");
+
+        let bad = run("```cortex-button\nlabel: Odd\naction: teleport\n```\n");
+        assert_eq!(errors(&bad), vec!["button `Odd`: unknown action `teleport` (add-row, open, log, set, url)"]);
+
+        let other = run("```cortex-button\nlabel: Tick\naction: log\ncollection: collections/habits/\nitem: Read\ncolour: red\n```\n");
+        assert!(errors(&other).is_empty(), "{other:?}");
+        assert_eq!(warns(&other), vec![
+            "button `Tick` names collection `habits`, which this pack does not install — fine when the vault has it",
+            "button `Tick`: unknown key `colour` is ignored",
+        ]);
+
+        let missing = run("```cortex-button\naction: open\n```\n\n```cortex-button\nlabel: Pay\naction: set\n```\n\n```cortex-button\nlabel: Bad link\naction: url\nurl: file:///etc/passwd\n```\n");
+        assert_eq!(errors(&missing), vec![
+            "a button needs `label:`",
+            "button `(no label)`: `open` needs `collection:` or `target:`",
+            "button `Pay`: `set` needs `values:`",
+            "button `Bad link`: `url` must be an http(s) or mailto link",
+        ]);
+    }
+
+    #[test]
     fn multi_collection_packs_install_each_collection_and_row_templates() {
         let root = vault("multi");
         let mut m = Manifest { format: 1, id: "tracker-demo".into(), name: "Demo".into(), version: "1.0.0".into(), kind: Kind::Collection, summary: "s".into(), description: String::new(), tags: vec![], author: Author::default(), license: "CC0-1.0".into(), credits: String::new(), min_cortex: String::new(), collection: Some("habits".into()), collections: vec!["habit-log".into()], includes: vec![], files: vec![] };
@@ -1750,7 +1906,7 @@ mod tests {
         p.manifest.version = "one".into();
         p.manifest.summary = "Like Notion but better".into();
         let idx = p.files.iter_mut().find(|f| f.path == "index.md").unwrap();
-        idx.contents = b"---\ncreated: {{today}}\ntitle: T\ntype: database\nviews:\n- name: Cal\n  type: calendar\n  date: nope\n---\n<script>alert(1)</script>\n".to_vec();
+        idx.contents = b"---\ncreated: {{today}}\ntitle: T\ntype: database\nviews:\n- name: Cal\n  type: calendar\n  date: nope\n- name: Bad chart\n  type: chart\n  x: status\n  y: title\n  chartType: radar\n- name: Bad group\n  type: table\n  group: status\n  bucket: month\n- name: Bad layout\n  type: list\n  layout: compact\n- name: Bad stats\n  type: stats\n  stats:\n  - label: Open\n    field: status\n  - label: Share\n    expr: open /\n---\n<script>alert(1)</script>\n".to_vec();
         let f = lint(&p);
         let msgs: Vec<&str> = f.iter().map(|x| x.message.as_str()).collect();
         assert!(msgs.iter().any(|m| m.contains("not semver")), "{msgs:?}");
@@ -1758,6 +1914,21 @@ mod tests {
         assert!(msgs.iter().any(|m| m.contains("unquoted placeholder")), "{msgs:?}");
         assert!(msgs.iter().any(|m| m.contains("calendar view")), "{msgs:?}");
         assert!(msgs.iter().any(|m| m.contains("raw HTML")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("chartType: radar")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("only folds a date")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("`layout:` belongs to gallery")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("stat `Open` needs `agg:`")), "{msgs:?}");
+        assert!(msgs.iter().any(|m| m.contains("stat `Share`: expr does not parse")), "{msgs:?}");
+    }
+
+    #[test]
+    fn install_keeps_placeholders_inside_buttons() {
+        let m = pack("tasks").manifest;
+        let src = "---\ntitle: T\ntype: database\ncreated: \"{{today}}\"\n---\n\n```cortex-button\nlabel: New\naction: add-row\ncollection: tasks\nvalues: {due: \"{{today+7}}\"}\n```\n\nSeeded on {{today}}.\n";
+        let out = String::from_utf8(rendered(&m, "index.md", src.as_bytes())).unwrap();
+        assert!(out.contains("values: {due: \"{{today+7}}\"}"), "{out}");
+        assert!(!out.contains("Seeded on {{today}}"), "{out}");
+        assert!(!out.contains("created: \"{{today}}\""), "{out}");
     }
 
     #[test]

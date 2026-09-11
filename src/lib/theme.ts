@@ -96,11 +96,21 @@ export function applyPalette(palette: Palette | null) {
   applyAccent(lastAccent, palette);
 }
 
+/** Motion: `data-animations="off"` zeroes the motion tokens (styles/
+ *  tokens.css), which every transition in the app is written in terms of. A
+ *  system asking for reduced motion is honoured in CSS regardless. */
+export function applyAnimations(on: boolean) {
+  const root = document.documentElement;
+  if (on) root.removeAttribute("data-animations");
+  else root.dataset.animations = "off";
+}
+
 /** Apply a settings object: follow the palette file when set and readable,
  *  otherwise the light/dark preference. A missing file is silent — a vault
  *  whose settings name an Omarchy path still looks right on a Mac. */
-export async function syncTheme(settings: Pick<Settings, "theme" | "theme_file" | "prose_font" | "prose_slant"> & Partial<Pick<Settings, "accent">>) {
+export async function syncTheme(settings: Pick<Settings, "theme" | "theme_file" | "prose_font" | "prose_slant"> & Partial<Pick<Settings, "accent" | "animations">>) {
   lastPref = settings.theme;
+  applyAnimations(settings.animations ?? true);
   lastAccent = (settings.accent ?? "").trim().toLowerCase();
   applyProseFont(settings.prose_font ?? "");
   applyProseSlant(settings.prose_slant ?? "");

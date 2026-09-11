@@ -2,17 +2,19 @@ import { useState, useCallback, useEffect, useRef, CSSProperties, PointerEvent a
 import { listen } from "@tauri-apps/api/event";
 import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
 import { parseWikiLink } from "../../lib/wikiLink";
-import { findShortcut, applyKeymapOverrides, ShortcutId } from "../../lib/keymap";
+import { findShortcut, applyKeymapOverrides, shortcutFor, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
 import { useFavorites } from "../../hooks/useFavorites";
 import { useTrash } from "../../hooks/useTrash";
 import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
+import { useTypingFocus } from "../../hooks/useTypingFocus";
 import { useViewport } from "../../hooks/useViewport";
 import { useSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX } from "../../hooks/useSidebarWidth";
 import { useRecentNotes } from "../../hooks/useRecentNotes";
 import { ExplorerSort, DEFAULT_SORT, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
 import { useComments } from "../../hooks/useComments";
+import { ChevronRightIcon } from "./icons";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
 import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/database";
@@ -56,7 +58,7 @@ export function Shell({
   const [switcher, setSwitcher] = useState<null | "notes" | "actions">(null);
   // At phone widths the sidebar is an overlay drawer (see useLayout).
   const { isPhone: drawer } = useViewport();
-  const { leftVisible, rightVisible, monk, toggleLeft, closeLeft, toggleRight, toggleMonk } = useLayout(drawer);
+  const { leftVisible, rightVisible, monk, typingHidden, toggleLeft, openLeft, closeLeft, toggleRight, toggleMonk, hideForTyping, showAfterTyping } = useLayout(drawer);
   // The terminal mounts the first time its pane opens and then stays mounted
   // (hidden) so the session survives toggling.
   const [terminalMounted, setTerminalMounted] = useState(false);
@@ -106,6 +108,8 @@ export function Shell({
   // (a sync pulled teammate edits, a merge was completed/aborted, …).
   const [reloadToken, setReloadToken] = useState(0);
   const [autoSyncMinutes, setAutoSyncMinutes] = useState(0);
+  // Seconds of typing after which the sidebar steps aside; 0 = never.
+  const [typingFocusSeconds, setTypingFocusSeconds] = useState(0);
   const [autoCommit, setAutoCommit] = useState(false);
   // Agent CLI the terminal pane launches on open (Settings → Terminal agent).
   const [terminalCommand, setTerminalCommand] = useState("");
@@ -133,6 +137,7 @@ export function Shell({
       setTerminalCommand(s.terminal_command ?? "");
       setAutoSyncMinutes(s.auto_sync_minutes);
       setAutoCommit(s.auto_commit);
+      setTypingFocusSeconds(s.typing_focus_seconds ?? 0);
     }).catch(() => {});
     loadCollabConfig(vault.name).then(setCollab).catch(() => setCollab(null));
   }, [vault.name]);
@@ -165,6 +170,16 @@ export function Shell({
   /** Heading to scroll to once a `[[Note#Section]]` target has opened. */
   const pendingSection = useRef<string | null>(null);
   const focusEditor = useCallback(() => { editorRef.current?.focusBody(); }, []);
+
+  // While you write, the sidebar steps aside (Settings → Appearance). The
+  // pointer at the left edge, Escape, the toggle or moving on brings it back.
+  useTypingFocus({
+    seconds: typingFocusSeconds,
+    enabled: !drawer && !monk,
+    hidden: typingHidden,
+    onHide: hideForTyping,
+    onShow: showAfterTyping,
+  });
 
   // The drawer gets out of the way once you have picked something — a note, a
   // tag page, a full-window page — and Escape (or a tap on the backdrop)
@@ -638,7 +653,19 @@ export function Shell({
 
       <div className={styles.body} style={{ "--left-panel-width": `${sidebarWidth}px` } as CSSProperties}>
         {drawerOpen && <div className={styles.backdrop} onClick={() => { closeLeft(); focusEditor(); }} aria-hidden />}
-        <div className={`${styles.leftSlot} ${drawer ? styles.drawer : ""}`} style={leftVisible ? undefined : { display: "none" }}>
+        {/* The way back to a sidebar that is away, whether you closed it or
+            typing did: a sliver at the edge that widens under the pointer. */}
+        {!drawer && !monk && !leftVisible && (
+          <button
+            className={styles.sidebarTab}
+            onClick={openLeft}
+            aria-label="Show the sidebar"
+            title={`Show the sidebar (${shortcutFor("toggle-sidebar")})`}
+          >
+            <ChevronRightIcon size={14} />
+          </button>
+        )}
+        <div className={`${styles.leftSlot} ${drawer ? styles.drawer : ""} ${leftVisible ? "" : styles.leftHidden}`}>
         <LeftPanel
           ref={leftRef}
           onEscape={focusEditor}
@@ -774,6 +801,8 @@ export function Shell({
           onCheckForUpdates={() => setShowUpdate(true)}
           onTogglePublic={note ? () => editorRef.current?.togglePublic() : undefined}
           isPublic={note?.frontmatter["publish"] === true}
+          onToggleFullWidth={note ? () => editorRef.current?.toggleFullWidth() : undefined}
+          isFullWidth={note?.frontmatter["width"] === "full"}
           hasRemote={vault.has_remote}
         />
       )}

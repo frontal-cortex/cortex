@@ -85,6 +85,7 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
   const sortPop = usePopover();
   const colsPop = usePopover();
   const groupPop = usePopover();
+  const bucketPop = usePopover();
 
   // The search box: typed text is debounced into the parent's query; clearing
   // is immediate. The parent may reset it (a view switch) — follow that.
@@ -182,6 +183,9 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
 
   // ── Group (board: required; table: optional sections) ──
   const setGroup = (field: string | null) => { commit({ ...s, group: field }); groupPop.setOpen(false); };
+  // How a date group folds: day | week | month | quarter | year (the engine ignores it for non-dates).
+  const bucket = typeof s.bucket === "string" ? s.bucket : "";
+  const setBucket = (b: string) => { commit({ ...s, bucket: b || undefined }); bucketPop.setOpen(false); };
 
   const filterCount = s.filterComplex ? 1 : s.filters.length;
 
@@ -310,6 +314,27 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
                   className={`${styles.optionBtn} ${s.group === f ? styles.optionOn : ""}`}
                   onClick={() => setGroup(f)}>
                   {f}{s.group === f ? " ✓" : ""}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Bucket — how a date group folds into sections */}
+      {(isBoard || isTable) && s.group && (
+        <div className={styles.control} ref={bucketPop.ref}>
+          <button className={`${styles.chip} ${bucket ? styles.chipActive : ""}`}
+            onClick={() => bucketPop.setOpen((o) => !o)}>
+            By{bucket ? ` · ${bucket}` : ""}
+          </button>
+          {bucketPop.open && (
+            <div className={styles.popover}>
+              {["", "day", "week", "month", "quarter", "year"].map((b) => (
+                <button key={b}
+                  className={`${styles.optionBtn} ${bucket === b ? styles.optionOn : ""}`}
+                  onClick={() => setBucket(b)}>
+                  {b || "value"}{bucket === b ? " ✓" : ""}
                 </button>
               ))}
             </div>

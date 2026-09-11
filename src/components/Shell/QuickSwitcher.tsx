@@ -4,6 +4,8 @@ import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
 import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, ClockIcon, KeyboardIcon, CommentIcon, DownloadIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
+import { getNoteButtons, subscribeNoteButtons, describeButton } from "../../lib/buttons";
+import { pressButton } from "./ButtonBlock";
 
 interface Action {
   id: string;
@@ -55,6 +57,9 @@ interface Props {
   /** Absent when no note is open. */
   onTogglePublic?: () => void;
   isPublic: boolean;
+  /** Absent when no note is open. */
+  onToggleFullWidth?: () => void;
+  isFullWidth: boolean;
   hasRemote: boolean;
 }
 
@@ -65,7 +70,7 @@ export function QuickSwitcher({
   onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
   onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onShortcutHelp, onLogToday, onQuickCapture,
   onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
-  onToggleComments, onComment, onPublish, onImport, onCheckForUpdates, onTogglePublic, isPublic, hasRemote,
+  onToggleComments, onComment, onPublish, onImport, onCheckForUpdates, onTogglePublic, isPublic, onToggleFullWidth, isFullWidth, hasRemote,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -110,7 +115,17 @@ export function QuickSwitcher({
   const noteResults = needsFts ? ftsResults : substringResults;
 
   // ── Action results ──────────────────────────────────────────────────────────
+  // The open note's buttons, by label — re-read whenever the editor registers a new set.
+  const [noteButtons, setNoteButtonsState] = useState(getNoteButtons());
+  useEffect(() => subscribeNoteButtons(() => setNoteButtonsState(getNoteButtons())), []);
   const buildActions = useCallback((): Action[] => {
+    const buttonActions: Action[] = noteButtons.buttons.map((b, i) => ({
+      id: `button:${i}:${b.label}`,
+      label: b.label,
+      description: `Button on this page · ${describeButton(b)}`,
+      icon: <SparkleIcon size={14} />,
+      run: () => { void pressButton(b, noteButtons.path); onClose(); },
+    }));
     const base: Action[] = [
       {
         id: "new-note",
@@ -219,6 +234,15 @@ export function QuickSwitcher({
         icon: <GlobeIcon size={14} />,
         run: () => { onTogglePublic(); onClose(); },
       }] : []),
+      ...(onToggleFullWidth ? [{
+        id: "toggle-full-width",
+        label: isFullWidth ? "Full width: on" : "Full width: off",
+        description: isFullWidth
+          ? "Remove width: full — the page returns to the reading column"
+          : "Set width: full — the page stretches to the pane (dashboards, wide tables)",
+        icon: <PanelLeftIcon size={14} />,
+        run: () => { onToggleFullWidth(); onClose(); },
+      }] : []),
       {
         id: "toggle-properties",
         label: "Toggle properties",
@@ -309,11 +333,11 @@ export function QuickSwitcher({
       icon: <SparkleIcon size={14} />,
       run: () => { onOpenMarketplace(); onClose(); },
     }];
-    return [...base, ...tplActions, ...more];
+    return [...buttonActions, ...base, ...tplActions, ...more];
   }, [templates, hasRemote, onNewNote, onToday, onOpenGraph, onOpenLocalGraph, onNewFromTemplate,
       onNewCollection, onSync, onToggleTheme, onOpenSettings, onOpenMarketplace, onShortcutHelp, onLogToday, onQuickCapture,
       onToggleSidebar, onToggleTerminal, onToggleMonk, onFocusSidebar, onToggleProperties, onFindInNote, onToggleOutline,
-      onToggleComments, onComment, onPublish, onCheckForUpdates, onTogglePublic, isPublic, onClose]);
+      onToggleComments, onComment, onPublish, onCheckForUpdates, onTogglePublic, isPublic, onToggleFullWidth, isFullWidth, noteButtons, onClose]);
 
   const actionResults = isActionMode === "actions"
     ? buildActions().filter((a) =>

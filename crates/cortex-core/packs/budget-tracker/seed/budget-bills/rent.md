@@ -9,7 +9,7 @@ repeat_mode: advance
 next_due: "{{today+28}}"
 paid: false
 category: housing
-account: checking
+account: ["checking"]
 active: true
 url:
 created: "{{today}}"

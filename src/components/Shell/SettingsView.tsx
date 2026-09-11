@@ -237,6 +237,37 @@ const SECTIONS: SectionDef[] = [
           />
         ),
       },
+      {
+        key: "animations", label: "Animations", keywords: "motion transition animate reduced accessibility jarring",
+        hint: "Panels slide and controls fade in. Off = instant. A system set to reduced motion is honoured either way.",
+        render: ({ settings, update }) => (
+          <input type="checkbox" className={styles.toggle} checked={settings.animations !== false}
+            onChange={(e) => update({ animations: e.target.checked })} />
+        ),
+      },
+      {
+        key: "typing_focus_seconds", label: "Sidebar while writing", keywords: "focus typing distraction hide sidebar zen monk",
+        hint: "Once you have been typing this long the sidebar steps aside. It comes back on the toggle, on Escape, when the pointer reaches the left edge, or when you click away.",
+        render: ({ settings, update }) => {
+          const n = settings.typing_focus_seconds ?? 0;
+          const presets = [0, 3, 5, 10, 20];
+          return (
+            <Dropdown
+              fullWidth
+              value={String(n)}
+              options={[
+                { value: "0", label: "Always shown" },
+                { value: "3", label: "Hide after 3 seconds" },
+                { value: "5", label: "Hide after 5 seconds" },
+                { value: "10", label: "Hide after 10 seconds" },
+                { value: "20", label: "Hide after 20 seconds" },
+                ...(presets.includes(n) ? [] : [{ value: String(n), label: `Hide after ${n} seconds` }]),
+              ]}
+              onChange={(v) => update({ typing_focus_seconds: Number(v) })}
+            />
+          );
+        },
+      },
     ],
   },
   {
@@ -588,7 +619,7 @@ export function SettingsView({ vault, onClose, onLeaveVault }: Props) {
       const next = { ...s, ...patch };
       lastWrite.current = Date.now();
       commands.setSettings(next).catch(() => {});
-      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined || patch.accent !== undefined) syncTheme(next);
+      if (patch.theme !== undefined || patch.theme_file !== undefined || patch.prose_font !== undefined || patch.prose_slant !== undefined || patch.accent !== undefined || patch.animations !== undefined) syncTheme(next);
       return next;
     });
   }, []);

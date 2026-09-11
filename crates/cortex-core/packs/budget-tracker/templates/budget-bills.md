@@ -8,7 +8,7 @@ repeat_mode: advance
 next_due: "{{date}}"
 paid: false
 category: subscriptions
-account: checking
+account: ["checking"]
 active: true
 url:
 created: "{{date}}"

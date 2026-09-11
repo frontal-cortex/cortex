@@ -11,6 +11,8 @@ import { codeBlockSpec } from "./codeBlock";
 import { mathBlockSpec, inlineMathSpec } from "./MathBlock";
 import { bookmarkSpec } from "./BookmarkBlock";
 import { webEmbedSpec } from "./WebEmbedBlock";
+import { cortexButtonSpec } from "./ButtonBlock";
+import { columnListSpec, columnSpec } from "./ColumnBlocks";
 
 export const cortexSchema = BlockNoteSchema.create({
   blockSpecs: {
@@ -23,6 +25,9 @@ export const cortexSchema = BlockNoteSchema.create({
     mathBlock: mathBlockSpec,
     bookmark: bookmarkSpec,
     webEmbed: webEmbedSpec,
+    cortexButton: cortexButtonSpec,
+    columnList: columnListSpec,
+    column: columnSpec,
   },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,

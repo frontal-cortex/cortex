@@ -46,19 +46,22 @@ properties:
         color: green
       - name: other
         color: gray
+  # The account the money left (or arrived in, for income). A row in the
+  # `accounts` collection; its balance is computed from these rows.
   - name: account
-    type: select
-    options:
-      - name: checking
-        color: blue
-      - name: savings
-        color: green
-      - name: credit
-        color: red
-      - name: cash
-        color: yellow
+    type: relation
+    collection: accounts
+  # Transfers only: the account the money arrived in.
+  - name: to_account
+    type: relation
+    collection: accounts
   - name: payee
     type: text
   - name: bill
     type: relation
     collection: budget-bills
+  # What this row is for, when it is for something on the wishlist: a
+  # transfer puts money aside for it, an expense buys it.
+  - name: wish
+    type: relation
+    collection: budget-wishlist

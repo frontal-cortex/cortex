@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::commands::vault::{DbState, VaultState};
 use cortex_core::error::{AppError, Result};
-use cortex_core::data::{ChartResult, ResolvedTable, StructuredSpec};
+use cortex_core::data::{ChartResult, ResolvedTable, StatsResult, StructuredSpec};
 
 /// Resolve and run a `cortex-view` spec against the open vault, returning a
 /// display-ready table. The work lives in `cortex_core::data::resolve_view`,
@@ -108,6 +108,13 @@ pub fn run_chart(spec: String, state: State<'_, VaultState>) -> Result<ChartResu
     let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
     let spec = cortex_core::members::resolve_me(&spec, &root);
     cortex_core::data::run_chart(&root, &spec)
+}
+
+/// Run a `stats` view: one tile per `stats:` entry. Nothing is written.
+#[tauri::command]
+pub fn run_stats(spec: String, state: State<'_, VaultState>) -> Result<StatsResult> {
+    let root = state.0.lock().unwrap().clone().ok_or(AppError::NoVault)?;
+    cortex_core::data::run_stats(&root, &spec)
 }
 
 /// Write one edited cell back to its source (collection note frontmatter or CSV

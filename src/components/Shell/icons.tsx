@@ -150,6 +150,19 @@ export function ListIcon({ size = 14 }: IconProps) {
   );
 }
 
+/** Stats view: a few number tiles. */
+export function StatsIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="4" width="7.5" height="7" rx="1.5" />
+      <rect x="13" y="4" width="7.5" height="7" rx="1.5" />
+      <rect x="3.5" y="13" width="7.5" height="7" rx="1.5" />
+      <rect x="13" y="13" width="7.5" height="7" rx="1.5" />
+      <path d="M6 7.5h2.5M15.5 7.5h2.5" />
+    </svg>
+  );
+}
+
 export function ChartIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

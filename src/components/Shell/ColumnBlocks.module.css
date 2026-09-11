@@ -1,0 +1,37 @@
+/* The columnList and column blocks themselves are thin bars that show only on
+   hover; their children carry the content. The side-by-side layout lives in
+   index.css on BlockNote's block group. */
+
+.listBar, .colBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 0;
+  overflow: visible;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+  user-select: none;
+}
+.listBar { justify-content: flex-end; }
+
+:global(.bn-block-outer:hover) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .listBar,
+:global(.bn-block-outer:hover) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .colBar,
+:global(.bn-block-outer:focus-within) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .listBar,
+:global(.bn-block-outer:focus-within) > :global(.bn-block) > :global(.bn-react-node-view-renderer) > :global(.bn-block-content) > .colBar {
+  opacity: 1;
+}
+
+.label { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+.small {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+  transform: translateY(-10px);
+}
+.small:hover { color: var(--text-primary); border-color: var(--accent); }

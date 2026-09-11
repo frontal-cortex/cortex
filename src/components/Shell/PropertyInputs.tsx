@@ -17,6 +17,29 @@ import styles from "./PropertyInputs.module.css";
 
 /** A cell or frontmatter value as a range: the stored `{start, end}`, a plain
  *  day as a one-day range, else null. */
+/** A `format: ring` value: an arc round a circle, the accent colour, red once
+ *  past 100%. `pct` is where the value sits between the property's min and
+ *  max; `text` is what to print (beside it, or inside with `inside`). */
+export function Ring({ pct, text, inside, size }: { pct: number; text: string; inside?: boolean; size?: number }) {
+  const s = size ?? (inside ? 44 : 18);
+  const stroke = inside ? 4 : 3;
+  const r = (s - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const shown = Math.min(100, Math.max(0, pct));
+  const over = pct > 100;
+  return (
+    <span className={`${styles.ring} ${over ? styles.ringOver : ""} ${inside ? styles.ringInside : ""}`} title={`${Math.round(pct)}%`}>
+      <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} aria-hidden="true">
+        <circle className={styles.ringTrack} cx={s / 2} cy={s / 2} r={r} strokeWidth={stroke} />
+        <circle className={styles.ringFill} cx={s / 2} cy={s / 2} r={r} strokeWidth={stroke}
+          strokeDasharray={`${(c * shown) / 100} ${c}`} transform={`rotate(-90 ${s / 2} ${s / 2})`} />
+        {inside && <text className={styles.ringText} x="50%" y="50%" textAnchor="middle" dominantBaseline="central">{text}</text>}
+      </svg>
+      {!inside && <span className={styles.ringNum}>{text}</span>}
+    </span>
+  );
+}
+
 export function rangeOf(v: unknown): DateRange | null {
   if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as DateRange).start === "string") {
     const r = v as DateRange;

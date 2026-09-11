@@ -1,39 +1,56 @@
 format: 1
 id: budget-tracker
 name: "Budget Tracker"
-version: 2.1.1
+version: 3.1.0
 kind: collection
-summary: "A ledger of transactions, limits per category with spent and remaining computed, bills that advance when you tick paid."
+summary: "A finance dashboard: one-click capture, live balances, budgets with rings, this month at a glance — from one ledger."
 description: |
-  Three small databases that stay filled in. `budget` is the ledger: one row per transaction with a date, an amount, a kind (expense, income, transfer), a category and an account; This month and This month by category roll over on the 1st by themselves. `budget-limits` holds one row per category with the monthly amount you mean to spend; the table shows what this month's ledger rows add up to, what is left, the share used as a bar, and last month's figure, and each limit's page charts the category month by month. `budget-bills` is every recurring charge with its cycle and next due date: tick paid and the date moves forward one cycle in the same row; Upcoming, Overdue and a per-month cost list answer what is about to land, what you missed, and what everything costs. Link a transaction to its bill and the bill knows when it was last paid and what it has cost in total. Everything is computed from the rows when you open the page, nothing to update by hand.
-tags: [finance, budget, money, database]
+  Five small databases that stay filled in, and a dashboard that reads them. `budget` is the ledger: one row per transaction with a date, an amount, a kind (expense, income, transfer), a category and the account it hit — a transfer names both accounts. Its page is the dashboard: New expense / New income / New transfer buttons, this month's spent, earned and net as tiles, the budgets as cards with a ring each, spending grouped by month with totals, a donut of where the money went, and every account's balance. `accounts` holds one row per account with its opening balance; income, spending, transfers in and out and the balance are computed from the ledger. `budget-limits` holds one row per category with the monthly amount you mean to spend and shows spent, remaining and the share used as a ring. `budget-bills` is every recurring charge with its cycle and next due date: tick paid and the date moves forward one cycle in the same row. `budget-wishlist` is what you are saving up for: tag a transfer with `wish` and the item shows how much is put by and how much is left, tag the purchase and it moves to Bought at what it really cost. Everything is computed from the rows when you open the page; nothing is copied between databases and nothing needs resetting on the 1st.
+tags: [finance, budget, money, dashboard, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The transactions / limits / bills split and the budget-versus-actual page follow the budget trackers in Notion's gallery (Easlo, Thomas Frank, Matthias Frank) and the envelope spreadsheets they copy; the computed-on-read design is our own."
+credits: "The dashboard shape — quick-action buttons, budget rings, month-grouped lists, a donut and account balances — follows Sentele's Finance Tracker and Notion's Personal Finance Tracker; the single ledger with transfers as rows and everything computed on read is our own."
 min_cortex: 0.1.0
 collection: budget
-collections: [budget-limits, budget-bills]
+collections: [accounts, budget-limits, budget-bills, budget-wishlist]
 files:
   - schemas/budget.yaml
+  - schemas/accounts.yaml
   - schemas/budget-limits.yaml
   - schemas/budget-bills.yaml
+  - schemas/budget-wishlist.yaml
   - index.md
+  - index/accounts.md
   - index/budget-limits.md
   - index/budget-bills.md
+  - index/budget-wishlist.md
   - templates/budget.md
+  - templates/accounts.md
   - templates/budget-limits.md
   - templates/budget-bills.md
+  - templates/budget-wishlist.md
   - seed/budget/weekly-shop.md
   - seed/budget/weekly-shop-last-week.md
   - seed/budget/coffee.md
+  - seed/budget/bus-pass.md
+  - seed/budget/music-streaming.md
   - seed/budget/salary.md
   - seed/budget/salary-last-month.md
   - seed/budget/rent.md
   - seed/budget/rent-last-month.md
+  - seed/budget/move-to-savings.md
+  - seed/budget/cash-withdrawal.md
+  - seed/budget/headphones.md
+  - seed/accounts/checking.md
+  - seed/accounts/savings.md
+  - seed/accounts/cash.md
   - seed/budget-limits/groceries.md
   - seed/budget-limits/dining.md
   - seed/budget-limits/subscriptions.md
   - seed/budget-bills/rent.md
   - seed/budget-bills/music-streaming.md
+  - seed/budget-wishlist/trip-to-lisbon.md
+  - seed/budget-wishlist/headphones.md
+  - seed/budget-wishlist/standing-desk.md

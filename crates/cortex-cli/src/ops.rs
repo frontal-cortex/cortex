@@ -6,6 +6,29 @@ use cortex_core::agents::{self, AgentCli};
 use cortex_core::comments::{self, Anchor, Thread};
 use cortex_core::assets::AssetEntry;
 use cortex_core::data::{self};
+
+/// What `cortex view` / MCP `query_collection` ask for.
+#[derive(Debug, Default, Clone)]
+pub struct ViewQuery {
+    /// A saved view of the collection, by name.
+    pub view: Option<String>,
+    pub filter: Option<String>,
+    pub sort: Vec<String>,
+    pub columns: Option<Vec<String>>,
+    pub group: Option<String>,
+    pub bucket: Option<String>,
+    pub limit: Option<usize>,
+    pub summary: Vec<(String, String)>,
+}
+
+/// A view's result, by its type.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum ViewRun {
+    Table(data::ResolvedTable),
+    Chart(data::ChartResult),
+    Stats(data::StatsResult),
+}
 use cortex_core::db::Db;
 use cortex_core::git::{self, AgentBranch, CommitDiff, CommitEntry, VaultStatus};
 use cortex_core::note::{self, Note, NoteEntry};
@@ -560,28 +583,46 @@ impl Vault {
     }
 
     /// Query a collection with the same spec an embedded view block carries.
-    pub fn view(
-        &self,
-        collection: &str,
-        filter: Option<&str>,
-        sort: &[String],
-        columns: Option<&[String]>,
-        limit: Option<usize>,
-        summary: &[(String, String)],
-    ) -> Result<data::ResolvedTable> {
-        let mut spec = serde_json::Map::new();
-        spec.insert("source".into(), format!("collections/{}", collection.trim_end_matches('/')).into());
-        if let Some(f) = filter { spec.insert("filter".into(), f.into()); }
-        if !sort.is_empty() { spec.insert("sort".into(), sort.into()); }
-        if let Some(c) = columns { spec.insert("columns".into(), c.into()); }
-        if let Some(l) = limit { spec.insert("limit".into(), l.into()); }
-        if !summary.is_empty() {
-            let m: serde_json::Map<String, serde_json::Value> = summary.iter().map(|(f, func)| (f.clone(), func.clone().into())).collect();
-            spec.insert("summary".into(), serde_json::Value::Object(m));
+    /// Run a view: the ad-hoc query the flags describe, or with `view` one of
+    /// the collection's saved views by name (case-insensitive; a unique prefix
+    /// will do), the flags overriding its keys. A table view answers with the
+    /// resolved table (groups and summaries included), a chart with its
+    /// points, a stats view with its tiles.
+    pub fn view(&self, collection: &str, q: &ViewQuery) -> Result<ViewRun> {
+        let coll = collection.trim_end_matches('/');
+        let mut spec = match &q.view {
+            Some(name) => {
+                let views = data::collection_view_specs(&self.root, coll);
+                let want = name.trim().to_lowercase();
+                let found = views.iter().find(|(n, _, _)| n.to_lowercase() == want)
+                    .or_else(|| { let m: Vec<_> = views.iter().filter(|(n, _, _)| n.to_lowercase().starts_with(&want)).collect(); if m.len() == 1 { Some(m[0]) } else { None } });
+                let Some((_, _, yaml)) = found else {
+                    let names: Vec<&str> = views.iter().map(|(n, _, _)| n.as_str()).collect();
+                    return Err(format!("no view '{name}' in {coll} (have: {})", if names.is_empty() { "none".to_string() } else { names.join(", ") }).into());
+                };
+                match serde_yaml::from_str::<serde_yaml::Value>(yaml)? { serde_yaml::Value::Mapping(m) => m, _ => serde_yaml::Mapping::new() }
+            }
+            None => serde_yaml::Mapping::new(),
+        };
+        let mut set = |k: &str, v: serde_yaml::Value| { spec.insert(serde_yaml::Value::String(k.into()), v); };
+        set("source", format!("collections/{coll}").into());
+        if let Some(f) = &q.filter { set("filter", f.as_str().into()); }
+        if !q.sort.is_empty() { set("sort", serde_yaml::Value::Sequence(q.sort.iter().map(|s| s.as_str().into()).collect())); }
+        if let Some(c) = &q.columns { set("columns", serde_yaml::Value::Sequence(c.iter().map(|s| s.as_str().into()).collect())); }
+        if let Some(g) = &q.group { set("group", g.as_str().into()); }
+        if let Some(b) = &q.bucket { set("bucket", b.as_str().into()); }
+        if let Some(l) = q.limit { set("limit", (l as u64).into()); }
+        if !q.summary.is_empty() {
+            let m: serde_yaml::Mapping = q.summary.iter().map(|(f, func)| (serde_yaml::Value::String(f.clone()), serde_yaml::Value::String(func.clone()))).collect();
+            set("summary", serde_yaml::Value::Mapping(m));
         }
-        let yaml = serde_yaml::to_string(&serde_json::Value::Object(spec))?;
-        // The same table the app shows: schema attached, rollups and formulas computed.
-        Ok(data::resolve_view(&self.root, &yaml)?)
+        let yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(spec))?;
+        // The same results the app shows: schema attached, rollups and formulas computed.
+        Ok(match data::spec_kind(&yaml).as_str() {
+            "chart" => ViewRun::Chart(data::run_chart(&self.root, &cortex_core::members::resolve_me(&yaml, &self.root))?),
+            "stats" => ViewRun::Stats(data::run_stats(&self.root, &yaml)?),
+            _ => ViewRun::Table(data::resolve_view(&self.root, &yaml)?),
+        })
     }
 
     pub fn schema(&self, key: &str) -> Result<TypeSchema> {

@@ -6,9 +6,11 @@ date: "{{today-32}}"
 amount: 1150
 kind: expense
 category: housing
-account: checking
+account: ["checking"]
+to_account: []
 payee: "Landlord"
 bill: ["Rent"]
+wish: []
 created: "{{today}}"
 ---
 
