@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:lib": "node --test src/lib/*.test.ts",
+    "test:lib": "node --test src/lib/*.test.ts src/components/**/*.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {

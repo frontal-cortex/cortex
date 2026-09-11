@@ -44,6 +44,7 @@ import { columnsSlashItems } from "./ColumnBlocks";
 import { inflateColumns, flattenColumns } from "../../lib/columns";
 import { collectButtons, setNoteButtons } from "../../lib/buttons";
 import { collectAssetRefs, assetsToDisplayUrls, displayUrlsToAssets, inflateFileBlocks } from "../../lib/assets";
+import { imageAlignments } from "../../lib/alignment";
 import { shortcutFor } from "../../lib/keymap";
 import { findInNoteExtension, setFindQuery, stepFind, clearFind, FindState } from "../../lib/findInNote";
 import { textStats, formatStats, outlineOf, blockOrder, activeHeading, OutlineEntry, TextStats } from "../../lib/textStats";
@@ -811,6 +812,9 @@ function NoteEditor({
             // `$…$` / `$$…$$` are lifted out before parsing so the Markdown
             // parser never sees LaTeX (see src/lib/math.ts).
             const math = extractMath(displayBody);
+            // Alignment is read off the markdown: BlockNote parses it back for
+            // text blocks but not for images (see lib/alignment.ts).
+            const aligns = imageAlignments(displayBody);
             // An autolink alone on a line (`<https://…>`, a web embed) is
             // handed to the parser as a link so its URL is read verbatim.
             const blocks = editor.tryParseMarkdownToBlocks(extractEmbedLines(math.md));
@@ -820,7 +824,7 @@ function NoteEditor({
             // into live blocks on load.
             // Columns fold last so every other inflater sees a flat document;
             // button fences become pills.
-            const inflated = inflateColumns(inflateMath(inflateRichFormats(inflateCallouts(inflateWebBlocks(inflateEmbeds(inflateCollectionViews(inflateButtons(inflateViewBlocks(inflateFileBlocks(blocks)))))))), math.spans));
+            const inflated = inflateColumns(inflateMath(inflateRichFormats(inflateCallouts(inflateWebBlocks(inflateEmbeds(inflateCollectionViews(inflateButtons(inflateViewBlocks(inflateFileBlocks(blocks))))))), aligns), math.spans));
             editor.replaceBlocks(editor.document, inflated as typeof blocks);
           } finally {
             // Always clear the guard, even if parsing throws — otherwise saves
