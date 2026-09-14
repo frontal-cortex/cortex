@@ -13,6 +13,7 @@ import {
   newRowId, today, seedFromFilter, searchRows,
 } from "./CortexViewBlock";
 import { ViewToolbar } from "./ViewToolbar";
+import { openRow } from "../../lib/rows";
 import { ChartSettings, ChartOptions } from "./ChartSettings";
 import { TrackerView, TrackerRange } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
@@ -153,9 +154,15 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
   const updateActive = (v: ViewDef) => onViewsChange(views.map((x, i) => (i === activeIdx ? v : x)));
   const onSpecChange = (nextSpec: string) => updateActive(viewFromSpec(nextSpec, active.name));
 
-  const newRow = () =>
-    commands.addRow(source, newRowId(), { title: "Untitled", created: today(), ...seedFromFilter(activeSpec) })
-      .then(reload).catch((e) => setError(String(e)));
+  // A row made from here opens straight away with its title selected, so
+  // typing names it. Left in place, an Untitled row in a tracker or a gallery
+  // had no field to rename it from.
+  const newRow = () => {
+    const id = newRowId();
+    commands.addRow(source, id, { title: "Untitled", created: today(), ...seedFromFilter(activeSpec) })
+      .then(() => { reload(); openRow(source, id, "title"); })
+      .catch((e) => setError(String(e)));
+  };
 
   // ── view CRUD ──
   const [showAddView, setShowAddView] = useState(false);

@@ -20,6 +20,7 @@ import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
 import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
+import { openRow } from "../../lib/rows";
 import { ChartSettingsPanel, ChartOptions } from "./ChartSettings";
 import { useViewport } from "../../hooks/useViewport";
 import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
@@ -384,16 +385,6 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
 }
 
 /** Only collection rows are notes that can be opened in the full editor. */
-function rowNotePath(source: string, rowId: string): string | null {
-  if (!source.startsWith("collections/")) return null;
-  return `${source.replace(/\/$/, "")}/${rowId}.md`;
-}
-
-/** Ask the app shell to open a collection row as a full note (Notion-style). */
-function openRow(source: string, rowId: string) {
-  const path = rowNotePath(source, rowId);
-  if (path) window.dispatchEvent(new CustomEvent("cortex:open-note", { detail: { path } }));
-}
 
 export const VIEW_LANGUAGES = ["cortex-view", "cortex-chart"];
 

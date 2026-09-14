@@ -13,6 +13,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ViewTable, ViewColumn } from "../../lib/commands";
+import { openRow } from "../../lib/rows";
 import { DRAG_THRESHOLD_PX, Point, clamp, distance, pinchFactor, wheelZoomFactor, zoomAnchored } from "../../lib/gestures";
 import { rangeOf, rangeEnd } from "./PropertyInputs";
 import { TimelineIcon } from "./icons";
@@ -70,13 +71,6 @@ export function timelineFields(table: ViewTable, spec: string): { start: string 
   const rest = dateCols.filter((k) => k !== start);
   const end = has(declaredEnd) ? declaredEnd! : has("end") && "end" !== start ? "end" : rest[0] ?? null;
   return { start, end };
-}
-
-/** Ask the app shell to open a collection row as a full note. */
-function openRow(source: string, rowId: string) {
-  if (!source.startsWith("collections/")) return;
-  const path = `${source.replace(/\/$/, "")}/${rowId}.md`;
-  window.dispatchEvent(new CustomEvent("cortex:open-note", { detail: { path } }));
 }
 
 interface Item {

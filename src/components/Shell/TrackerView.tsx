@@ -14,6 +14,7 @@
 // 1–9 tick the n-th habit today.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { openRow } from "../../lib/rows";
 import { commands, TrackerResult, TrackerItem, TrackerCell } from "../../lib/commands";
 import { specFromView, viewFromSpec } from "../../lib/database";
 import { ChevronLeftIcon, ChevronRightIcon, CheckIcon, TrackerIcon } from "./icons";
@@ -107,6 +108,8 @@ export function TrackerView({ spec, source, onRangeChange, onLogChange, onChange
   const [busy, setBusy] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ row: number; col: number } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  // A title opens its item's row — the habit itself, to rename or edit it.
+  const openItem = (id: string) => openRow(source, id);
 
   // The range the user picked wins over the spec's until it is persisted.
   const runSpec = useMemo(() => specFromView({ ...view, range }, source), [view, range, source]);
@@ -234,9 +237,9 @@ export function TrackerView({ spec, source, onRangeChange, onLogChange, onChange
           onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocus(null); }}
           aria-label="Tracker grid — j k h l to move, Space to toggle"
         >
-          {range === "today" && <TodayList r={result} todayIdx={todayIdx} focus={focus} busy={busy} onToggle={toggle} onFocus={setFocus} />}
-          {(range === "week" || range === "month") && <DayGrid r={result} range={range} focus={focus} busy={busy} onToggle={toggle} onFocus={setFocus} />}
-          {range === "year" && <YearView r={result} focus={focus} onFocus={setFocus} />}
+          {range === "today" && <TodayList r={result} todayIdx={todayIdx} focus={focus} busy={busy} onToggle={toggle} onFocus={setFocus} onOpen={openItem} />}
+          {(range === "week" || range === "month") && <DayGrid r={result} range={range} focus={focus} busy={busy} onToggle={toggle} onFocus={setFocus} onOpen={openItem} />}
+          {range === "year" && <YearView r={result} focus={focus} onFocus={setFocus} onOpen={openItem} />}
         </div>
       )}
     </div>
@@ -245,9 +248,10 @@ export function TrackerView({ spec, source, onRangeChange, onLogChange, onChange
 
 // ── Today: a checklist ────────────────────────────────────────────────────────
 
-function TodayList({ r, todayIdx, focus, busy, onToggle, onFocus }: {
+function TodayList({ r, todayIdx, focus, busy, onToggle, onFocus, onOpen }: {
   r: TrackerResult; todayIdx: number; focus: { row: number; col: number } | null; busy: string | null;
   onToggle: (it: TrackerItem, dayIdx: number) => void; onFocus: (f: { row: number; col: number }) => void;
+  onOpen: (id: string) => void;
 }) {
   const dayIdx = todayIdx >= 0 ? todayIdx : 0;
   const day = r.days[dayIdx];
@@ -273,7 +277,7 @@ function TodayList({ r, todayIdx, focus, busy, onToggle, onFocus }: {
               {done && <CheckIcon size={13} />}
             </button>
             <span className={styles.todayIcon}>{it.icon ?? ""}</span>
-            <span className={styles.todayTitle}>{it.title}</span>
+            <button className={`${styles.titleLink} ${styles.todayTitle}`} onClick={() => onOpen(it.id)} title={`Open ${it.title}`}>{it.title}</button>
             <span className={styles.todayMeta}>
               {it.streakUnit === "weeks" && <span className={styles.weekly}>{it.weekDone}/{it.target} this week</span>}
               {streakLabel(it) && <span className={it.currentStreak > 0 ? styles.streak : styles.streakBest}>{streakLabel(it)}</span>}
@@ -288,9 +292,10 @@ function TodayList({ r, todayIdx, focus, busy, onToggle, onFocus }: {
 
 // ── Week / month: habits × days ──────────────────────────────────────────────
 
-function DayGrid({ r, range, focus, busy, onToggle, onFocus }: {
+function DayGrid({ r, range, focus, busy, onToggle, onFocus, onOpen }: {
   r: TrackerResult; range: "week" | "month"; focus: { row: number; col: number } | null; busy: string | null;
   onToggle: (it: TrackerItem, dayIdx: number) => void; onFocus: (f: { row: number; col: number }) => void;
+  onOpen: (id: string) => void;
 }) {
   const month = range === "month";
   return (
@@ -318,7 +323,7 @@ function DayGrid({ r, range, focus, busy, onToggle, onFocus }: {
             <tr key={it.id} className={focus?.row === row ? styles.rowFocus : ""} style={itemColor(it)}>
               <td className={styles.tdItem}>
                 <span className={styles.itemIcon}>{it.icon ?? ""}</span>
-                <span className={styles.itemTitle}>{it.title}</span>
+                <button className={`${styles.titleLink} ${styles.itemTitle}`} onClick={() => onOpen(it.id)} title={`Open ${it.title}`}>{it.title}</button>
               </td>
               {it.cells.map((cell, col) => {
                 const d = r.days[col];
@@ -374,7 +379,7 @@ function DayGrid({ r, range, focus, busy, onToggle, onFocus }: {
 
 // ── Year: a heatmap of day scores, then a strip per habit ────────────────────
 
-function YearView({ r, focus, onFocus }: { r: TrackerResult; focus: { row: number; col: number } | null; onFocus: (f: { row: number; col: number }) => void }) {
+function YearView({ r, focus, onFocus, onOpen }: { r: TrackerResult; focus: { row: number; col: number } | null; onFocus: (f: { row: number; col: number }) => void; onOpen: (id: string) => void }) {
   // Columns are weeks (Mon–Sun), rows weekdays — the range starts on a Monday.
   const weeks = Math.ceil(r.days.length / 7);
   const level = (done: number, expected: number) => expected === 0 ? 0 : Math.min(4, Math.ceil((4 * done) / expected));
@@ -416,7 +421,7 @@ function YearView({ r, focus, onFocus }: { r: TrackerResult; focus: { row: numbe
           return (
             <li key={it.id} className={`${styles.yearRow} ${focus?.row === row ? styles.rowFocus : ""}`} style={itemColor(it)} onMouseEnter={() => onFocus({ row, col: 0 })}>
               <span className={styles.itemIcon}>{it.icon ?? ""}</span>
-              <span className={styles.itemTitle}>{it.title}</span>
+              <button className={`${styles.titleLink} ${styles.itemTitle}`} onClick={() => onOpen(it.id)} title={`Open ${it.title}`}>{it.title}</button>
               <span className={styles.strip} style={{ gridTemplateColumns: `repeat(${weeks}, 1fr)` }}>
                 {cols.map((c, w) => (
                   <span key={w} className={styles.stripCell} style={{ opacity: c.days === 0 ? 0.12 : 0.18 + 0.82 * Math.min(1, c.done / Math.max(1, Math.min(it.target, 7))) }} title={`week of ${r.days[w * 7]?.date}: ${c.done} done`} />
