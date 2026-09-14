@@ -19,6 +19,7 @@ import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
 import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
 import { PropertiesPanel } from "./PropertiesPanel";
+import { isCollectionRow } from "../../lib/rows";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
 import { flattenTags } from "../../lib/tags";
@@ -458,15 +459,20 @@ function NoteEditor({
   // The property panel is collapsed to one quiet line by default; the choice
   // persists across notes and launches (it is a way of reading, not a per-note
   // fact, so it lives in localStorage rather than frontmatter).
-  const [propsExpanded, setPropsExpanded] = useState<boolean>(() => {
-    try { return localStorage.getItem(PROPS_EXPANDED_KEY) === "1"; } catch { return false; }
-  });
+  //
+  // A collection row is the exception: its properties are what you opened it
+  // for, so it opens with them showing, every time. Collapsing one lasts until
+  // you open another note, and never changes the preference for ordinary notes.
+  const isRow = isCollectionRow(note.path);
+  const storedExpanded = () => { try { return localStorage.getItem(PROPS_EXPANDED_KEY) === "1"; } catch { return false; } };
+  const [propsExpanded, setPropsExpanded] = useState<boolean>(() => isRow || storedExpanded());
+  useEffect(() => { setPropsExpanded(isRow || storedExpanded()); }, [note.path]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggleProperties = useCallback(() => {
     setPropsExpanded((v) => {
-      try { localStorage.setItem(PROPS_EXPANDED_KEY, v ? "0" : "1"); } catch { /* fine */ }
+      if (!isRow) { try { localStorage.setItem(PROPS_EXPANDED_KEY, v ? "0" : "1"); } catch { /* fine */ } }
       return !v;
     });
-  }, []);
+  }, [isRow]);
 
   // Register this note's focus targets with the shell (see EditorHandle).
   useEffect(() => {

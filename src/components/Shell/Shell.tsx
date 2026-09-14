@@ -396,8 +396,8 @@ export function Shell({
   // Embedded data views (collection rows) dispatch this to open a row as a note.
   useEffect(() => {
     function onOpenNote(e: Event) {
-      const path = (e as CustomEvent<{ path?: string }>).detail?.path;
-      if (typeof path === "string") openNote(path);
+      const detail = (e as CustomEvent<{ path?: string; focus?: "title" | "body" }>).detail;
+      if (typeof detail?.path === "string") openNote(detail.path, detail.focus === "title" ? "title" : "body");
     }
     window.addEventListener("cortex:open-note", onOpenNote);
     return () => window.removeEventListener("cortex:open-note", onOpenNote);
