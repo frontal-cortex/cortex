@@ -12,7 +12,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "../../lib/transport";
 import "@xterm/xterm/css/xterm.css";
 import { commands, TerminalData, TerminalExit } from "../../lib/commands";
 import styles from "./TerminalPane.module.css";

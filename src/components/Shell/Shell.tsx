@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, CSSProperties, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../../lib/transport";
 import { commands, VaultInfo, VaultStatus, AgentBranch, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
 import { parseWikiLink } from "../../lib/wikiLink";
 import { findShortcut, applyKeymapOverrides, shortcutFor, ShortcutId } from "../../lib/keymap";
@@ -10,11 +10,13 @@ import { useNavHistory } from "../../hooks/useNavHistory";
 import { useLayout } from "../../hooks/useLayout";
 import { useTypingFocus } from "../../hooks/useTypingFocus";
 import { useViewport } from "../../hooks/useViewport";
+import { useEdgeSwipe } from "../../hooks/useEdgeSwipe";
 import { useSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX } from "../../hooks/useSidebarWidth";
 import { useRecentNotes } from "../../hooks/useRecentNotes";
 import { ExplorerSort, DEFAULT_SORT, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
 import { useComments } from "../../hooks/useComments";
 import { ChevronRightIcon } from "./icons";
+import { capabilities } from "../../lib/host";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
 import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/database";
@@ -65,6 +67,8 @@ export function Shell({
   // Opening the terminal puts the cursor in it — that's what Ctrl+L is for.
   const termRef = useRef<TerminalPaneHandle>(null);
   const handleToggleTerminal = useCallback(() => {
+    // A served device only gets the terminal when the serving machine allows it.
+    if (!capabilities().terminal) return;
     const opening = monk || !rightVisible;
     toggleRight();
     if (opening) requestAnimationFrame(() => termRef.current?.focus());
@@ -184,6 +188,10 @@ export function Shell({
   // tag page, a full-window page — and Escape (or a tap on the backdrop)
   // closes it by hand. The desktop pane never auto-closes.
   const drawerOpen = drawer && leftVisible;
+  // …and a swipe in from the left edge pulls it out, a swipe left pushes it away.
+  const drawerSlotRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  useEdgeSwipe({ enabled: drawer && !monk, open: drawerOpen, drawer: drawerSlotRef, backdrop: backdropRef, onOpen: openLeft, onClose: closeLeft });
   useEffect(() => { if (drawer) closeLeft(); }, [drawer, closeLeft, selectedPath, openTag, showSettings, showMarketplace, showGraph]);
   useEffect(() => {
     if (!drawerOpen) return;
@@ -651,7 +659,7 @@ export function Shell({
       />}
 
       <div className={styles.body} style={{ "--left-panel-width": `${sidebarWidth}px` } as CSSProperties}>
-        {drawerOpen && <div className={styles.backdrop} onClick={() => { closeLeft(); focusEditor(); }} aria-hidden />}
+        {drawerOpen && <div ref={backdropRef} className={styles.backdrop} onClick={() => { closeLeft(); focusEditor(); }} aria-hidden />}
         {/* The way back to a sidebar that is away, whether you closed it or
             typing did: a sliver at the edge that widens under the pointer. */}
         {!drawer && !monk && !leftVisible && (
@@ -664,7 +672,7 @@ export function Shell({
             <ChevronRightIcon size={14} />
           </button>
         )}
-        <div className={`${styles.leftSlot} ${drawer ? styles.drawer : ""} ${leftVisible ? "" : styles.leftHidden}`}>
+        <div ref={drawerSlotRef} className={`${styles.leftSlot} ${drawer ? styles.drawer : ""} ${leftVisible ? "" : styles.leftHidden}`}>
         <LeftPanel
           ref={leftRef}
           onEscape={focusEditor}
@@ -807,7 +815,7 @@ export function Shell({
         <LogTodayModal onClose={() => { setShowLogToday(false); focusEditor(); }} onChanged={() => { refresh(); scheduleAutoCommit(); }} />
       )}
 
-      {showPublish && (
+      {showPublish && !capabilities().served && (
         <PublishModal
           vault={vault}
           onClose={() => { setShowPublish(false); focusEditor(); }}

@@ -8,7 +8,7 @@
 // derive every design token from them. Rust follows the file and emits
 // `theme://changed`, so a desktop theme switch retints the app live.
 
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "./transport";
 import { commands, Palette, Settings } from "./commands";
 import { applyProseFont, applyProseSlant } from "./fonts";
 

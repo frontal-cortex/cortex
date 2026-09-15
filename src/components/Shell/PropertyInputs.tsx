@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { commands, DateRange } from "../../lib/commands";
+import { capabilities } from "../../lib/host";
 import { DatePicker } from "./DatePicker";
 import { CloseIcon, PlusIcon } from "./icons";
 import styles from "./PropertyInputs.module.css";
@@ -174,7 +175,7 @@ export function FilesInput({ value, editable, compact, onChange }: {
     <div className={`${styles.files} ${compact ? styles.filesCompact : ""}`} onClick={(e) => e.stopPropagation()}>
       {files.map((p, i) => (
         <span key={`${p}:${i}`} className={styles.file} title={p}>
-          <button type="button" className={styles.fileOpen} onClick={() => commands.revealPath(p).catch(() => {})}>
+          <button type="button" className={styles.fileOpen} onClick={() => { if (capabilities().reveal) commands.revealPath(p).catch(() => {}); }}>
             {isImagePath(p) ? <Thumb path={p} /> : <span className={styles.fileName}>{baseName(p)}</span>}
           </button>
           {editable && (

@@ -8,6 +8,7 @@
 //! the filesystem, so anything written here shows up in it immediately.
 
 mod mcp;
+mod serve;
 mod ops;
 
 use clap::{Parser, Subcommand};
@@ -265,6 +266,24 @@ enum Cmd {
     },
     /// Serve the vault to an agent over MCP (stdio)
     Mcp,
+    /// Serve the vault to your own devices as an installed web app, over Tailscale (docs/SERVE.md)
+    Serve {
+        /// Port on 127.0.0.1 (default: the saved setting, else 4870)
+        #[arg(long)]
+        port: Option<u16>,
+        /// The built frontend (default: $CORTEX_DIST, else this checkout's dist/)
+        #[arg(long, value_name = "DIR")]
+        dist: Option<PathBuf>,
+        /// Sign devices in with a pairing code instead of their Tailscale login
+        #[arg(long)]
+        token: bool,
+        /// A Tailscale login allowed in; repeat for more (default: this machine's own)
+        #[arg(long, value_name = "LOGIN")]
+        allow: Vec<String>,
+        /// Let served devices use the terminal — a shell on this machine
+        #[arg(long)]
+        terminal: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -770,6 +789,8 @@ fn run() -> Result<()> {
         Cmd::Packs { action } => packs(&v, &out, action),
         Cmd::Import { action } => import(&v, &out, action),
         Cmd::Mcp => tokio::runtime::Runtime::new()?.block_on(mcp::serve(v)),
+        Cmd::Serve { port, dist, token, allow, terminal } => tokio::runtime::Runtime::new()?
+            .block_on(serve::serve(v, serve::ServeArgs { port, dist, token, allow, terminal })),
     }
 }
 

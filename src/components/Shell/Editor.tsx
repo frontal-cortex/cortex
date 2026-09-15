@@ -20,6 +20,7 @@ import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, Sugges
 import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { isCollectionRow } from "../../lib/rows";
+import { isDesktop } from "../../lib/transport";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
 import { flattenTags } from "../../lib/tags";
@@ -533,6 +534,9 @@ function NoteEditor({
     if (pos) ed.insertBlocks([{ type: "image", props: { url } }], pos.block, "after");
   }, []);
   const pasteFromSystemClipboard = useCallback(async (pasteText: (text: string) => boolean) => {
+    // Served to a browser there is no desktop clipboard to read; the browser's
+    // own paste event already did this.
+    if (!isDesktop()) return;
     let c: ClipboardContent;
     try {
       c = await commands.readClipboard();

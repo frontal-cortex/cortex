@@ -8,6 +8,7 @@ import { commands } from "./lib/commands";
 import { isMac } from "./lib/keymap";
 import { VaultPicker } from "./components/VaultPicker/VaultPicker";
 import { Shell } from "./components/Shell/Shell";
+import { PairScreen } from "./components/PairScreen/PairScreen";
 import styles from "./App.module.css";
 
 export default function App() {
@@ -33,6 +34,15 @@ export default function App() {
   // While deciding whether to reopen the last vault, show only the app
   // background rather than a landing page that would vanish a moment later.
   if (vault.booting) return <div className={styles.root} />;
+
+  // Served to a browser and not in yet: the front door, never the picker.
+  if (vault.served) {
+    return (
+      <div className={styles.root}>
+        <PairScreen gate={vault.served} onRetry={vault.retryServed} />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.root}>
