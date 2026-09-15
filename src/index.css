@@ -15,14 +15,12 @@ html, body {
   background: var(--bg-app);
 }
 
-/* An installed app on a phone draws under the status bar and the home
-   indicator (viewport-fit=cover); keep the app inside the safe area. Zero on
-   desktops. Pinned to the screen rather than sized by height: 100%, which iOS
-   home-screen apps measure short of the full display. */
+/* An installed app on a phone reaches the home indicator (viewport-fit=cover);
+   keep the app inside the safe area. Zero on desktops. The status bar stays
+   iOS's own (status-bar-style "default"): drawing under it makes home-screen
+   apps measure the screen short by its height, leaving a band at the bottom. */
 #root {
-  position: fixed;
-  inset: 0;
-  height: auto;
+  height: 100dvh;
   padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
 }
 
