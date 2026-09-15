@@ -1,6 +1,7 @@
 # Serve mode: Cortex on a phone, over Tailscale
 
-Status 2026-09-14: plan. Nothing here is built.
+Status 2026-09-15: built. The desktop app behaves as before; serving is off
+until you switch it on.
 
 The desktop app serves itself to your own devices. A phone on the same
 tailnet opens `https://<machine>.<tailnet>.ts.net`, adds it to the home
@@ -10,240 +11,188 @@ the desktop. The phone is a window onto that vault, not a second copy of it —
 there is nothing to sync, nothing to merge on a phone, and agents keep running
 where they already run.
 
-`docs/MOBILE.md` is the other path: a native Tauri build with its own clone
-of the vault. The two are complementary. Serve mode ships sooner, needs no
-store or signing, works on iOS and Android from one build, and keeps the
-agentic half of the app on the host — but it needs a connection to that host.
-The native app works offline and costs a platform port per target.
+`docs/MOBILE.md` is the other path: a native Tauri build with its own clone of
+the vault. The two are complementary. Serve mode needs no store or signing,
+works on iOS and Android from one build, and keeps the agentic half of the app
+on the host — but it needs a connection to that host. The native app works
+offline and costs a platform port per target.
 
-## What a phone gets
+## Using it
 
-- **In v1:** reading and editing notes, the property panel, collection views
-  (table, list, board, gallery, calendar, timeline, charts, stats), trackers
-  with Log today, search, quick capture, Today's note, the settings that make
-  sense per vault. The phone layout already exists — the `data-viewport="phone"`
-  rules, the drawer sidebar, the bottom-sheet terminal — so this is a
-  transport, not a redesign.
-- **Online only, by design.** With no route to the host, the installed app
-  opens its shell and says so. Reading on the move without a connection is
-  what a published site (`docs/publishing.md`) or the native app is for.
-- **Not in v1:** the terminal and agents (an opt-in in Phase 5, because it is a
-  shell on the host), switching vaults, anything that needs a folder picker on
-  the host (publish into a folder, import a folder), in-app updates.
+### From the desktop app
+
+1. Settings → **Serve to my devices** → switch on *Serve this vault to my
+   devices*. The app starts a server on `127.0.0.1:4870` for whichever vault is
+   open, and remembers to do so on the next launch.
+2. Run the command the page shows, once, in a terminal:
+   `tailscale serve --bg http://127.0.0.1:4870`. That puts the server on your
+   tailnet at this machine's HTTPS name. The app never runs it for you: it
+   changes what this machine offers on your network, so it stays your call.
+3. On the phone, open the address shown (or scan the QR code), then add it to
+   the home screen — on iPhone Share → Add to Home Screen, on Android the
+   install prompt or ⋮ → Install app.
+
+Installing needs HTTPS, so MagicDNS and HTTPS certificates must be on in the
+Tailscale admin console; the page warns when they aren't.
+
+### Without a desktop session
+
+```sh
+cd path/to/vault
+cortex serve                       # Tailscale logins; this machine's own by default
+cortex serve --allow you@example.com --allow partner@example.com
+cortex serve --token               # sign devices in with a pairing code instead
+cortex serve --port 5000 --dist path/to/dist --terminal
+```
+
+`cortex serve` opens the vault the way the desktop app does — index, watcher,
+writer lock — prints the address, who can sign in and the `tailscale serve`
+command, and serves until Ctrl-C. It needs the built frontend: `npm run build`
+in a checkout, or `--dist` / `$CORTEX_DIST` pointing at one.
+
+### Who can sign in
+
+- **Tailscale accounts** (the default). A request must come through
+  `tailscale serve` from a tailnet user whose login is on the allow-list. An
+  empty list means this machine's own login. Requests without Tailscale's
+  identity headers — including anything from Funnel, and tagged devices — are
+  refused.
+- **Pairing code.** Devices enter a code once; the server trades it for an
+  HttpOnly, SameSite=Strict cookie (Secure behind HTTPS). For a network without
+  Tailscale, or trying it on this machine. With Tailscale accounts, a code can
+  also be set as a second check.
+
+Settings and the code live in this machine's app config directory
+(`serve.yaml`, readable by you only), never in the vault: `.cortex/settings.yaml`
+is committed, and a vault synced to two machines must not make both of them
+serve.
+
+### One writer per vault
+
+The desktop app and `cortex serve` each index, watch and auto-commit the vault
+they hold, so opening a vault takes `.brain/writer.lock`. A second host is
+refused with a message naming the first; a lock left by a process that has gone
+is taken over. One-shot writers — `cortex set`, an editor, an agent — never look
+at it; the watcher is how the host sees what they did.
+
+## What a served device can do
+
+Everything in a vault: reading and editing notes, properties, every collection
+view, trackers and Log today, search, the graph, comments, templates and packs,
+settings that belong to the vault, git status and history. Edits it commits are
+authored by the vault member whose email is the device's Tailscale login
+(`.cortex/members.yaml`); otherwise they are this machine's, as always.
+
+What it does differently or not at all:
+
+| Feature | In the served app |
+|---|---|
+| Import a CSV or a Notion export zip | The browser's file chooser; the file waits in the vault's gitignored `.brain/uploads/` until imported |
+| Import a folder (Markdown, unpacked Notion) | Desktop only |
+| Export a note or a collection | A browser download |
+| Open a link | A new tab, with the same http / https / mailto allow-list |
+| Paste an image | The browser's own paste event |
+| Terminal and agents | Off unless this machine switches *Let devices use the terminal* on — it is a shell here |
+| Publish a site | Desktop only — it writes into a folder or pushes from this machine |
+| Open or switch vaults, Leave vault | Desktop only — the server serves one vault |
+| Reveal in the file manager, in-app updates, the terminal agent setting | Desktop only |
+
+The server enforces these per request; the interface only leaves out what would
+fail.
 
 ## How it fits together
 
 ```mermaid
 flowchart LR
-  phone["Phone — installed web app<br/>(same React bundle)"]
+  phone["Phone — installed web app<br/>(the same React bundle)"]
   ts["tailscale serve<br/>HTTPS on ts.net, identity headers"]
-  srv["Cortex server<br/>127.0.0.1 only"]
+  srv["cortex_app::server<br/>127.0.0.1 only"]
+  desk["Desktop webview"]
+  app["cortex_app::dispatch<br/>one command table"]
   core["cortex-core"]
   vault[("Vault on disk")]
   phone -- "POST /api/invoke/:command<br/>GET /api/events (SSE)" --> ts
   ts -- "http://127.0.0.1:4870" --> srv
-  srv --> core --> vault
+  desk -- "invoke" --> app
+  srv --> app
+  app --> core --> vault
 ```
 
-### The seams already exist
+### One command table, two hosts
 
-**Frontend.** Every backend call goes through one import of `invoke`, in
-`src/lib/commands.ts` (123 calls). Push events arrive through four `listen`
-sites: `vault://changed` (Shell, Settings), `theme://changed` (`lib/theme.ts`),
-and `terminal://data` / `terminal://exit` (`TerminalPane.tsx`). Vault images
-already come back as data URIs through commands (`Editor.tsx`), so there is no
-asset protocol to replace. The only other native imports are the dialog
-plugin (four files), `shell.open` (`lib/links.ts`) and the updater. Nothing in
-the frontend checks yet which host it runs in.
+`crates/cortex-app` is the application layer both hosts share: the commands
+(moved out of `src-tauri`, unchanged in behaviour), the vault watcher, the
+palette follower, the terminal, the writer lock and the server. Every command
+runs against one `AppCtx` holding what used to be seven Tauri states.
 
-**Backend.** About 120 `#[tauri::command]` functions live in
-`src-tauri/src/commands/`, and nearly all of them are thin wrappers — take the
-vault path from state, call `cortex_core`, return the result. `cortex-core`
-itself has no Tauri dependency. What the wrappers take from Tauri:
+`cortex_app::dispatch` is the table: each command's name, its mode and its
+exposure, and one `dispatch(ctx, name, args)` that turns the JSON the frontend
+sends into a call. The desktop app's invoke handler (`src-tauri/src/host.rs`)
+routes every call through it — a *sync* command inline, as Tauri always ran it,
+a *blocking* one on the blocking pool — and falls back to the few commands it
+still defines itself (the updater, the Wayland clipboard, serving). The server
+routes HTTP through the same function. `crates/cortex-app/tests/parity.rs` reads
+`src/lib/commands.ts` and the desktop handler list and fails when the frontend
+calls a command no host defines, or when the two lists overlap.
 
-| Parameter | Uses | What a server supplies instead |
-|---|---|---|
-| `State<VaultState>` | 114 | the served vault's path |
-| `State<DbState>` | 33 | the same open index handle |
-| `AppHandle` | 19 | per command: config and cache directories (`recent.rs`, `packs.rs`), the vault lifecycle (`open_vault` starts the watcher), the index (`search_notes`), desktop-only (`update_config`) |
-| `State<SelfWrites>` | 2 | the watcher's own-write suppression, shared |
-| `State<EmbedFrames>` | 1 | the embed allow-list, shared |
+Events go out through an `Emitter` trait: the desktop attaches one that forwards
+to its webview, a running server one that feeds its event stream, and both can
+be attached at once.
 
-### One command table, two transports
+### The transport
 
-The load-bearing change, the way `RemoteOps` was for the native path.
+`src/lib/transport.ts` is the one place the frontend reaches its backend. Inside
+the desktop app `invoke` and `listen` are Tauri's; in a browser they are
+`POST /api/invoke/<command>` and one shared `EventSource`. Two rules keep the
+browser faithful to the desktop: *sync* commands go through a single queue, so
+two quick saves arrive in the order they were made, as they did on the desktop's
+main thread; and after every reconnect `vault://changed` fires once with
+"everything may have changed", because events sent while a phone slept are gone.
 
-- The wrapper bodies move into a transport-neutral module — a new
-  `crates/cortex-app` crate, or `cortex_core::api` — as plain functions over a
-  context: `Ctx { vault, db, self_writes, frames, emit }`. Desktop behaviour
-  does not change: the Tauri commands become one-line calls into it.
-- Each command is declared **once**, in a macro table that expands to both the
-  `#[tauri::command]` function and an entry in the HTTP dispatcher: name →
-  deserialize the arguments → call → serialize the result or the error string
-  the frontend already expects.
-- A parity test asserts the Tauri handler set and the HTTP set are the same,
-  minus an explicit desktop-only list, so a command cannot exist on one
-  transport by accident.
-- An `Emitter` trait replaces direct `AppHandle::emit`: the Tauri
-  implementation emits as today; the server's pushes into a
-  `tokio::sync::broadcast` channel that `/api/events` streams as Server-Sent
-  Events.
+`src/lib/host.ts` asks `/api/capabilities` whether the browser is signed in and
+what this host allows; the front door (`PairScreen`) handles *not signed in*,
+*can't reach the server* and *no vault open*.
 
-### The frontend transport
+## Security
 
-- `src/lib/transport.ts` exports `invoke` and `listen`. Inside Tauri
-  (`window.__TAURI_INTERNALS__` present) they are the Tauri functions; in a
-  browser, `invoke(cmd, args)` is `POST /api/invoke/<cmd>` with a JSON body, and
-  `listen(name, cb)` filters one shared `EventSource` on `/api/events`.
-  `commands.ts` and the four listeners import from here instead of
-  `@tauri-apps/api`.
-- The event stream reconnects with backoff and on `visibilitychange` — iOS
-  drops connections from a backgrounded home-screen app — and after every
-  reconnect the app refreshes as if `vault://changed` had fired, since events
-  sent while it was away are gone.
-- `GET /api/capabilities` says what this host can do
-  (`{ folders, terminal, updater, reveal }`); served mode reports them false and
-  the UI hides those affordances rather than failing on them.
-- **One build.** The server serves the same `dist/` the desktop app bundles.
-
-## Where the server runs
-
-One library, two hosts.
-
-1. **Inside the desktop app** — Settings → Serve to my devices, off by default.
-   Same process, so there is still exactly one index writer and the watcher's
-   own-write suppression keeps working. It serves whichever vault is open and
-   shows the tailnet URL with a QR code to scan from the phone. **Ship this
-   first:** it is the safe shape.
-2. **`cortex serve --vault <path>`** — the same server from the CLI crate
-   (`tokio` is already a dependency; add `axum`) for a machine with no desktop
-   session, such as a home server. It runs `open_vault`'s scaffolding and the
-   watcher at startup. The spike (Phase 0) starts here because it is the
-   fastest loop; it ships alongside Phase 2.
-
-**Writer lock.** Nothing today stops two processes — the desktop app and a
-`cortex serve` — from indexing, watching and auto-committing the same vault at
-once. Opening a vault takes `.brain/writer.lock` (pid and hostname; `.brain/`
-is already gitignored); a second writer refuses with a message naming the
-first, and a stale lock whose pid is gone is taken over.
-
-**Settings live on the machine, not in the vault.** `.cortex/settings.yaml` is
-committed and syncs to every clone, and a vault synced to two machines must not
-make both of them serve. Serve settings go in the app's config directory
-(`serve.yaml` beside the recent-vaults list), and the token never touches the
-vault — the same rule `docs/MOBILE.md` sets for the git token.
-
-## Tailscale and security
-
-- **Loopback only.** The server binds `127.0.0.1`. It never listens on
-  `0.0.0.0` or a LAN address.
-- **Tailscale terminates TLS.** `tailscale serve --bg http://127.0.0.1:4870`
-  publishes it at `https://<machine>.<tailnet>.ts.net` with a real certificate
-  (MagicDNS and HTTPS certificates enabled in the tailnet admin console; the
-  `serve` CLI changed across versions, so check `tailscale serve --help`). A
-  real certificate matters: service workers and home-screen install need a
-  secure context on both iOS and Android.
-- **Identity from Tailscale.** Requests proxied by `tailscale serve` from a
-  tailnet user carry `Tailscale-User-Login` and `Tailscale-User-Name`. The server
-  requires the login and checks it against `allow` (default: the host's own
-  Tailscale login). Requests that arrive without it — including anything from
-  Funnel, and tagged devices — are refused.
-- **An optional pairing token** closes the remaining gap: because the server is
-  loopback-only, headers could otherwise be forged only by a process already
-  running on the host. With `token` set, the phone enters it once and the app
-  keeps it; the server checks both.
-- **Never Funnel.** Serve mode is for your tailnet. The docs and the Settings
-  row say so, and the identity check refuses Funnel traffic regardless.
-- **Commits say who.** Edits from a phone auto-commit as the host's git
-  identity today. When the Tailscale login maps to a member in
-  `.cortex/members.yaml`, the server sets that member as the author.
-- **The same CSP.** The server sends the `csp` from `tauri.conf.json` as a
-  header; `connect-src 'self'` already covers same-origin `/api`.
-- **Nothing new to reach.** Only commands in the table are callable, every one
-  already takes vault-relative paths, and static files come from `dist/` only.
+- **Loopback only.** The server binds `127.0.0.1`. Tailscale terminates TLS and
+  forwards.
+- **Identity or code on every API request**, as above. Static files — the
+  open-source app shell — are served without it; nothing under `/api` is.
+- **Paths stay inside the vault.** Arguments that name a place (`path`,
+  `source`, `into`, …) must be vault-relative with no `..`; absolute paths are
+  refused. Commands that take host paths or drive the desktop answer 404, the
+  terminal 403 unless switched on, and the palette command answers with the
+  vault's own `theme_file` whatever path it is sent.
+- **Uploads** are staged under the vault's `.brain/uploads/<random id>/` and
+  addressed by that handle only; requests are capped at 96 MB.
+- **Headers.** The app's CSP, `nosniff` and `no-referrer` on every file.
 
 ## The installed app
 
-- `public/manifest.webmanifest`: `name` Cortex, `start_url` and `scope` `/`,
-  `display: standalone`, background and theme colours from the tokens, icons at
-  192 and 512 plus a maskable 512 — `src-tauri/icons/icon.png` is 512×512, the
-  192 is generated from it.
-- A service worker caches the **app shell only**, keyed by build, and never
-  caches `/api/*`: vault data stays on the host. Offline, the shell opens and
-  shows "Can't reach <machine>" with a retry. `vite-plugin-pwa` (MIT) builds
-  the precache list; registration happens only outside Tauri.
-- iOS: `apple-touch-icon`, `apple-mobile-web-app-capable`,
-  `apple-mobile-web-app-status-bar-style`, and `viewport-fit=cover` with
-  `env(safe-area-inset-*)` on the shell's edges. Installing is Share → Add to
-  Home Screen; Android Chrome offers its own install prompt.
+`public/manifest.webmanifest` and `public/icons/` (generated from
+`src-tauri/app-icon.svg`) make it installable; `index.html` carries the iOS
+metadata and `viewport-fit=cover`, and `#root` keeps to the safe area. A small
+Vite plugin writes `sw.js` at build time with that build's file names: it caches
+the app shell only — never `/api` — so the app opens instantly and, offline,
+shows its own "can't reach" screen. It registers only outside the desktop app.
 
-## Desktop-only affordances in served mode
+## Where this differs from the plan
 
-| Feature | Where | In served mode |
-|---|---|---|
-| Open or create a vault (folder dialog) | `hooks/useVault.ts` | hidden — the server serves one vault |
-| Publish into a folder, gh-pages | `PublishModal.tsx` | hidden — a host-side action |
-| Import a folder | `ImportModal.tsx` | hidden |
-| Import a file (CSV, Notion zip) | `ImportModal.tsx` | `<input type="file">`, sent as bytes (the command gains a bytes variant) |
-| Export HTML (save dialog) | `lib/export.ts` | a browser download |
-| Open a link | `lib/links.ts` (`shell.open`) | `window.open`, same http / https / mailto allow-list |
-| Paste an image (`wl-paste`) | `commands/clipboard.rs` | the browser's paste event; a file input on phones |
-| Terminal and agents | `TerminalPane.tsx`, `terminal.rs` | hidden until Phase 5 |
-| Updates | `lib/updater.ts` | hidden — the host updates |
-| Reveal in the file manager | `commands/notes.rs` | hidden |
-| Recent vaults, desktop palette file | `recent.rs`, `theme.rs` | not applicable; the phone follows the host's palette through `theme://changed`, or its own light/dark |
+- **A dispatch function, not a macro.** The plan had each command declared once
+  in a macro expanding to both a Tauri command and an HTTP route. One function
+  both hosts call does the same with less machinery, and parity holds by
+  construction; the parity tests cover what's left.
+- **A hand-written service worker** instead of `vite-plugin-pwa`: the shell
+  cache is a few lines, and no dependency.
+- **The terminal needs no WebSocket.** Its existing commands run over HTTP, its
+  output arrives on the event stream, and the ordered queue keeps keystrokes in
+  order.
+- **Imports upload files** rather than gaining bytes variants of every import
+  command, and folder imports stay on the desktop.
 
-## Phases
+## Not in this build
 
-**Phase 0 — Spike (2–3 days).** `cortex serve` with a hand-written dispatcher for
-about ten read commands (`list_notes`, `read_note`, `list_tags`, `search_notes`,
-`get_settings`, `run_view`, `run_tracker`, …), the transport shim in
-`commands.ts`, `dist/` served statically, reached from a phone through
-`tailscale serve`.
-*Exit:* a phone on the tailnet opens a note and a tracker, read-only.
-
-**Phase 1 — One command table (1–2 weeks).** The transport-neutral module and
-macro, the `Emitter` trait, `/api/events`, the parity test.
-*Exit:* every command not on the desktop-only list answers over HTTP, the parity
-test passes, and the existing test suites pass unchanged.
-
-**Phase 2 — Hosting and security (3–5 days).** Serve to my devices in Settings,
-loopback bind, identity headers and `allow`, the optional token, the writer lock,
-commit authors from Tailscale logins, the URL and QR code; `cortex serve` for
-headless hosts.
-*Exit:* a tailnet user outside `allow` gets 403, a request with no identity gets
-401, and a second writer on the same vault is refused.
-
-**Phase 3 — The installed app (2–3 days).** Manifest, icons, service worker, iOS
-meta and safe areas, reconnect on visibility.
-*Exit:* installs from Safari on iOS and Chrome on Android, opens standalone, and
-recovers after an hour in the background.
-
-**Phase 4 — Served-mode polish (3–5 days).** `/api/capabilities` and the hidden
-affordances, file upload, downloads, quick capture and Today tuned for a thumb.
-*Exit:* no control on a phone leads to an error.
-
-**Phase 5 — Optional: the terminal from a phone.** The host's pty session
-streamed over a WebSocket to the existing terminal pane, behind a `terminal`
-setting that is off by default — it is a shell on the host.
-*Exit:* an agent CLI runs on the host from the phone, and only when enabled.
-
-## Risks and open questions
-
-- **Background life on iOS.** A home-screen app loses its connection when
-  backgrounded and its storage can be evicted. The reconnect-and-refresh rule
-  handles the first; caching only the shell makes the second harmless.
-- **Images as data URIs.** Fine for notes with a few images; if phones feel it,
-  add a streaming `GET /api/file` with the same path checks.
-- **Desktop and phone on the same note.** In the in-app host both see
-  `vault://changed` and the open editor reloads, but simultaneous typing in one
-  note is last write wins, as it is between two desktop windows today. The
-  co-editing relay (`collab_url`) is the answer if that becomes common.
-- **`open_vault` scaffolds on first open.** The server runs the same function at
-  startup, so a fresh vault served headless gets the same skeleton.
-
-## Not in this plan
-
-Offline editing on the phone (the native path in `docs/MOBILE.md`), exposure
-to the public internet, serving several vaults from one server, push
-notifications.
+Offline editing on the phone (the native path in `docs/MOBILE.md`), running
+`tailscale serve` automatically, exposure to the public internet, serving
+several vaults from one server, push notifications.
