@@ -18,26 +18,14 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 cortex-core.workspace = true
+cortex-app = { workspace = true, features = ["server"] }
+# QR code of the tailnet address in Settings → Serve to my devices
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
-thiserror.workspace = true
 
-# git2 types cross the command boundary (Repository, BranchType)
-git2 = { version = "0.19", default-features = false, features = ["vendored-openssl"] }
-
-# File traversal (folder listing in commands)
-walkdir = "2"
-
-# Base64 for asset binary upload
+# Clipboard images for the Wayland paste fallback
 base64 = "0.22"
-
-# Filesystem watcher (external edits, agents, git checkouts → live UI)
-notify = "8"
-# Desktop palette files (Omarchy colors.toml)
-toml = "1"
-# Embedded terminal pane (real PTY for interactive CLI tools)
-portable-pty = "0.9"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-process = "2"

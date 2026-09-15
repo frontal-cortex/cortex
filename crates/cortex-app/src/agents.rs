@@ -5,7 +5,6 @@
 use cortex_core::agents::{self, AgentCli};
 
 /// Every known agent CLI, with whether it is installed and where.
-#[tauri::command]
 pub fn detect_agents() -> Vec<AgentCli> {
     agents::detect()
 }

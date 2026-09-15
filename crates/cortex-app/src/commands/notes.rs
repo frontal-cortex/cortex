@@ -1,41 +1,25 @@
+use crate::ctx::AppCtx;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
-use tauri::{Manager, State};
 use walkdir::WalkDir;
 
-use crate::commands::vault::{DbState, VaultState};
-use crate::watcher::{self, SelfWrites};
+use crate::watcher;
 use cortex_core::error::{AppError, Result};
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::rename::RenameReport;
 use cortex_core::search::SearchHit;
 
-fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
-    state
-        .0
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or(AppError::NoVault)
-}
-
 // ── List / Read ──────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn list_notes(state: State<'_, VaultState>) -> Result<Vec<NoteEntry>> {
-    Ok(cortex_core::vault::list_notes(&vault_path(&state)?))
+pub fn list_notes(ctx: &AppCtx) -> Result<Vec<NoteEntry>> {
+    Ok(cortex_core::vault::list_notes(&ctx.vault_path()?))
 }
 
 /// The vault's tag tree with counts, nested by `/` — frontmatter and inline
 /// `#tags` alike. Computed from the notes on every call; nothing is stored.
-#[tauri::command]
-pub fn list_tags(state: State<'_, VaultState>) -> Result<Vec<cortex_core::tags::TagNode>> {
-    Ok(cortex_core::vault::list_tags(&vault_path(&state)?))
+pub fn list_tags(ctx: &AppCtx) -> Result<Vec<cortex_core::tags::TagNode>> {
+    Ok(cortex_core::vault::list_tags(&ctx.vault_path()?))
 }
-
-#[tauri::command]
-pub fn read_note(path: String, state: State<'_, VaultState>) -> Result<Note> {
-    let root = vault_path(&state)?;
+pub fn read_note(ctx: &AppCtx, path: String) -> Result<Note> {
+    let root = ctx.vault_path()?;
     let abs = root.join(&path);
     let content = std::fs::read_to_string(&abs)?;
     note::parse_note(&path, &content)
@@ -86,9 +70,8 @@ fn extract_section(body: &str, section: &str) -> Option<String> {
 /// `Note#Section`, `Note|alias`, `![[Note#Section]]`) to a note's body, for
 /// inline transclusion. The target is parsed and resolved by cortex-core, so
 /// the app, the CLI and the publisher all agree on which note a link means.
-#[tauri::command]
-pub fn resolve_ref(target: String, state: State<'_, VaultState>) -> Result<NoteRef> {
-    let root = vault_path(&state)?;
+pub fn resolve_ref(ctx: &AppCtx, target: String) -> Result<NoteRef> {
+    let root = ctx.vault_path()?;
     let link = note::parse_wiki_link(&target);
     let notes = cortex_core::vault::list_notes(&root);
     let Some(entry) = cortex_core::vault::resolve(&notes, &link.target) else {
@@ -104,16 +87,8 @@ pub fn resolve_ref(target: String, state: State<'_, VaultState>) -> Result<NoteR
 }
 
 // ── Write / Create / Delete ──────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn write_note(
-    path: String,
-    note: Note,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-    self_writes: State<'_, SelfWrites>,
-) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn write_note(ctx: &AppCtx, path: String, note: Note) -> Result<()> {
+    let root = ctx.vault_path()?;
     let abs = root.join(&path);
 
     if let Some(parent) = abs.parent() {
@@ -121,27 +96,18 @@ pub fn write_note(
     }
 
     let content = note::serialize_note(&note)?;
-    watcher::record_self_write(&self_writes, &path, &content);
+    watcher::record_self_write(&ctx.self_writes, &path, &content);
     std::fs::write(&abs, &content)?;
 
     // Keep index in sync
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = cortex_core::index::index_file(&root, &abs, db);
     }
 
     Ok(())
 }
-
-#[tauri::command]
-pub fn create_note(
-    path: String,
-    title: String,
-    created: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-    self_writes: State<'_, SelfWrites>,
-) -> Result<Note> {
-    let root = vault_path(&state)?;
+pub fn create_note(ctx: &AppCtx, path: String, title: String, created: String) -> Result<Note> {
+    let root = ctx.vault_path()?;
     let abs = root.join(&path);
 
     if abs.exists() {
@@ -159,10 +125,10 @@ pub fn create_note(
 
     let note = Note { path: path.clone(), frontmatter, body: String::new() };
     let content = note::serialize_note(&note)?;
-    watcher::record_self_write(&self_writes, &path, &content);
+    watcher::record_self_write(&ctx.self_writes, &path, &content);
     std::fs::write(&abs, &content)?;
 
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = cortex_core::index::index_file(&root, &abs, db);
     }
 
@@ -174,15 +140,8 @@ pub fn create_note(
 /// computed by the frontend, keeping this backend dependency-free). The result
 /// is normalized through parse→serialize when the substituted frontmatter is
 /// valid YAML, so the new note gets clean, sorted frontmatter.
-#[tauri::command]
-pub fn create_note_from_template(
-    template: String,
-    path: String,
-    vars: std::collections::HashMap<String, String>,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<Note> {
-    let root = vault_path(&state)?;
+pub fn create_note_from_template(ctx: &AppCtx, template: String, path: String, vars: std::collections::HashMap<String, String>) -> Result<Note> {
+    let root = ctx.vault_path()?;
     let tpl_path = root.join("templates").join(&template);
     let mut content = std::fs::read_to_string(&tpl_path)
         .map_err(|_| AppError::Other(format!("Template not found: {template}")))?;
@@ -206,20 +165,14 @@ pub fn create_note_from_template(
     };
     std::fs::write(&abs, &to_write)?;
 
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = cortex_core::index::index_file(&root, &abs, db);
     }
 
     note::parse_note(&path, &to_write)
 }
-
-#[tauri::command]
-pub fn delete_note(
-    path: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn delete_note(ctx: &AppCtx, path: String) -> Result<()> {
+    let root = ctx.vault_path()?;
     let abs = root.join(&path);
     if !abs.exists() {
         return Err(AppError::Other(format!("Note not found: {path}")));
@@ -229,7 +182,7 @@ pub fn delete_note(
     // Trash section, and committed so it syncs to other clones.
     crate::commands::trash::move_to_trash(&root, &path)?;
 
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = db.remove_note(&path);
     }
 
@@ -240,27 +193,19 @@ pub fn delete_note(
 
 /// Full-text search with operators (`"phrase"`, `-word`, `OR`, `tag:`,
 /// `type:`, `path:`); see `cortex_core::search`. Each hit carries a snippet.
-#[tauri::command]
-pub async fn search_notes(query: String, app: tauri::AppHandle) -> Result<Vec<SearchHit>> {
+pub fn search_notes(ctx: &AppCtx, query: String) -> Result<Vec<SearchHit>> {
     super::off_thread(move || {
-        let db_state = app.state::<DbState>();
-        let guard = db_state.0.lock().unwrap();
+        let guard = ctx.db.0.lock().unwrap();
         match guard.as_ref() {
             Some(db) => db.search(&query),
             None => Ok(vec![]),
         }
-    }).await
+    })
 }
 
 // ── Folders ──────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn delete_folder(
-    path: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn delete_folder(ctx: &AppCtx, path: String) -> Result<()> {
+    let root = ctx.vault_path()?;
 
     // Protect system and root directories
     let trimmed = path.trim_end_matches('/');
@@ -277,7 +222,7 @@ pub fn delete_folder(
 
     // Purge index entries for all notes that were inside this folder
     let prefix = if path.ends_with('/') { path.clone() } else { format!("{path}/") };
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = db.remove_notes_by_prefix(&prefix);
     }
 
@@ -288,54 +233,34 @@ pub fn delete_folder(
 /// filename) and, if `title` is given, retitle it. Every inbound link is
 /// rewritten to follow, and the change is committed when auto-commit is on —
 /// all in cortex-core (`rename::rename_note`), shared with `cortex mv`.
-#[tauri::command]
-pub fn rename_note(
-    old_path: String,
-    new_path: String,
-    title: Option<String>,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<RenameReport> {
-    let root = vault_path(&state)?;
-    let guard = db_state.0.lock().unwrap();
+pub fn rename_note(ctx: &AppCtx, old_path: String, new_path: String, title: Option<String>) -> Result<RenameReport> {
+    let root = ctx.vault_path()?;
+    let guard = ctx.db.0.lock().unwrap();
     let db = guard.as_ref().ok_or(AppError::NoVault)?;
     cortex_core::rename::rename_note(&root, db, &old_path, &new_path, title.as_deref())
 }
 
 /// The editor saves a title as it is typed; once the edit is final it calls
 /// this so links written against the old title are pointed at the new one.
-#[tauri::command]
-pub fn title_changed(
-    path: String,
-    old_title: String,
-    new_title: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<RenameReport> {
-    let root = vault_path(&state)?;
-    let guard = db_state.0.lock().unwrap();
+pub fn title_changed(ctx: &AppCtx, path: String, old_title: String, new_title: String) -> Result<RenameReport> {
+    let root = ctx.vault_path()?;
+    let guard = ctx.db.0.lock().unwrap();
     let db = guard.as_ref().ok_or(AppError::NoVault)?;
     cortex_core::rename::title_changed(&root, db, &path, &old_title, &new_title)
 }
 
 /// The note a `[[wiki link]]` (any written form) points at, resolved by
 /// cortex-core the same way for the app, the CLI and the publisher.
-#[tauri::command]
-pub fn resolve_note(target: String, state: State<'_, VaultState>) -> Result<Option<NoteEntry>> {
-    let root = vault_path(&state)?;
+pub fn resolve_note(ctx: &AppCtx, target: String) -> Result<Option<NoteEntry>> {
+    let root = ctx.vault_path()?;
     let notes = cortex_core::vault::list_notes(&root);
     Ok(cortex_core::vault::resolve(&notes, &target).cloned())
 }
 
 /// Duplicate a note as a `<stem>-copy[-N].md` sibling, bumping its title so the
 /// two are distinguishable. Returns the new vault-relative path.
-#[tauri::command]
-pub fn duplicate_note(
-    path: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<String> {
-    let root = vault_path(&state)?;
+pub fn duplicate_note(ctx: &AppCtx, path: String) -> Result<String> {
+    let root = ctx.vault_path()?;
     let from_abs = root.join(&path);
     if !from_abs.is_file() {
         return Err(AppError::Other(format!("Not a file: {path}")));
@@ -359,16 +284,15 @@ pub fn duplicate_note(
     }
     std::fs::write(&candidate, note::serialize_note(&dup)?)?;
 
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = cortex_core::index::index_file(&root, &candidate, db);
     }
     Ok(new_rel)
 }
 
 /// Reveal a note in the OS file manager (Finder / Explorer / file manager).
-#[tauri::command]
-pub fn reveal_path(path: String, state: State<'_, VaultState>) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn reveal_path(ctx: &AppCtx, path: String) -> Result<()> {
+    let root = ctx.vault_path()?;
     let abs = root.join(&path);
     if !abs.exists() {
         return Err(AppError::Other(format!("Path not found: {path}")));
@@ -384,14 +308,8 @@ pub fn reveal_path(path: String, state: State<'_, VaultState>) -> Result<()> {
 
 /// Move a note to a different folder, keeping the same filename. Inbound
 /// links follow (see `rename_note`). Returns the new vault-relative path.
-#[tauri::command]
-pub fn move_note(
-    from_path: String,
-    to_dir: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<String> {
-    let root = vault_path(&state)?;
+pub fn move_note(ctx: &AppCtx, from_path: String, to_dir: String) -> Result<String> {
+    let root = ctx.vault_path()?;
     let filename = std::path::Path::new(&from_path)
         .file_name()
         .and_then(|f| f.to_str())
@@ -401,7 +319,7 @@ pub fn move_note(
     if root.join(&new_path).exists() {
         return Err(AppError::Other(format!("A note with this name already exists in {to_dir_clean}")));
     }
-    let guard = db_state.0.lock().unwrap();
+    let guard = ctx.db.0.lock().unwrap();
     let db = guard.as_ref().ok_or(AppError::NoVault)?;
     cortex_core::rename::rename_note(&root, db, &from_path, &new_path, None)?;
     Ok(new_path)
@@ -481,13 +399,7 @@ fn unique_note_path(root: &std::path::Path, base: &str) -> String {
 /// Create a `collections/<slug>/` database from a title + items: a board (grouped
 /// by status) + table index, plus one row-note per item. Returns the collection
 /// directory name (slug). Shared by both "convert note" and "convert selection".
-fn build_database(
-    root: &std::path::Path,
-    db_state: &State<'_, DbState>,
-    title: &str,
-    items: &[TodoItem],
-    date: &str,
-) -> Result<String> {
+fn build_database(ctx: &AppCtx, root: &std::path::Path, title: &str, items: &[TodoItem], date: &str) -> Result<String> {
     // Unique collection directory.
     let base = slugify(title);
     let (mut dir_name, mut n) = (base.clone(), 2);
@@ -499,7 +411,7 @@ fn build_database(
     std::fs::create_dir_all(&dir)?;
 
     let reindex = |abs: &std::path::Path| {
-        if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+        if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
             let _ = cortex_core::index::index_file(root, abs, db);
         }
     };
@@ -562,49 +474,31 @@ fn build_database(
 
 /// Turn a whole checklist note into a database. Returns the new index path; the
 /// source note is untouched (the caller trashes it).
-#[tauri::command]
-pub fn convert_note_to_database(
-    path: String,
-    date: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<String> {
-    let root = vault_path(&state)?;
+pub fn convert_note_to_database(ctx: &AppCtx, path: String, date: String) -> Result<String> {
+    let root = ctx.vault_path()?;
     let content = std::fs::read_to_string(root.join(&path))?;
     let note = note::parse_note(&path, &content)?;
     let title = note::infer_title(&note);
     let items = parse_todo_items(&note.body);
-    let dir_name = build_database(&root, &db_state, &title, &items, &date)?;
+    let dir_name = build_database(ctx, &root, &title, &items, &date)?;
     Ok(format!("collections/{dir_name}/_index.md"))
 }
 
 /// Create a database from explicit items (a selection of blocks in the editor),
 /// to embed inline. Returns the collection directory name (the view `source` is
 /// `collections/<name>`).
-#[tauri::command]
-pub fn create_database_from_items(
-    name: String,
-    items: Vec<TodoItem>,
-    date: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<String> {
-    let root = vault_path(&state)?;
+pub fn create_database_from_items(ctx: &AppCtx, name: String, items: Vec<TodoItem>, date: String) -> Result<String> {
+    let root = ctx.vault_path()?;
     let title = if name.trim().is_empty() { "Tasks".to_string() } else { name };
-    build_database(&root, &db_state, &title, &items, &date)
+    build_database(ctx, &root, &title, &items, &date)
 }
 
 /// Turn a database into a checklist note: each row becomes a `- [ ]`/`- [x]`
 /// line (checked when its status is "done"), ordered by created then title.
 /// Returns the new note path. The source collection is untouched (the caller
 /// deletes it after confirming).
-#[tauri::command]
-pub fn convert_database_to_note(
-    name: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<String> {
-    let root = vault_path(&state)?;
+pub fn convert_database_to_note(ctx: &AppCtx, name: String) -> Result<String> {
+    let root = ctx.vault_path()?;
     let dir = root.join("collections").join(&name);
     if !dir.is_dir() {
         return Err(AppError::Other(format!("Not a database: {name}")));
@@ -651,15 +545,13 @@ pub fn convert_database_to_note(
     let mut fm: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     fm.insert("title".into(), serde_json::json!(title));
     std::fs::write(&abs, note::serialize_note(&Note { path: note_rel.clone(), frontmatter: fm, body })?)?;
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = cortex_core::index::index_file(&root, &abs, db);
     }
     Ok(note_rel)
 }
-
-#[tauri::command]
-pub fn create_folder(path: String, state: State<'_, VaultState>) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn create_folder(ctx: &AppCtx, path: String) -> Result<()> {
+    let root = ctx.vault_path()?;
 
     // Guard against path traversal and system directories
     if path.contains("..") || path.starts_with('/') || path.starts_with('\\') {
@@ -684,9 +576,8 @@ pub fn create_folder(path: String, state: State<'_, VaultState>) -> Result<()> {
 
 /// Return all subdirectory paths under `notes/`, relative to vault root,
 /// with a trailing slash. Used by the frontend to show empty directories.
-#[tauri::command]
-pub fn list_vault_dirs(state: State<'_, VaultState>) -> Result<Vec<String>> {
-    let root = vault_path(&state)?;
+pub fn list_vault_dirs(ctx: &AppCtx) -> Result<Vec<String>> {
+    let root = ctx.vault_path()?;
     let notes_root = root.join("notes");
 
     if !notes_root.exists() {
@@ -725,19 +616,14 @@ pub fn list_vault_dirs(state: State<'_, VaultState>) -> Result<Vec<String>> {
 
 /// Save a binary asset (image, file) to vault/assets/ and return the relative path.
 /// `data_base64` is the file content as a standard base64 string.
-#[tauri::command]
-pub fn save_asset(
-    name: String,
-    data_base64: String,
-    state: State<'_, VaultState>,
-) -> Result<String> {
+pub fn save_asset(ctx: &AppCtx, name: String, data_base64: String) -> Result<String> {
     use base64::{Engine as _, engine::general_purpose};
 
     let data = general_purpose::STANDARD
         .decode(&data_base64)
         .map_err(|e| AppError::Other(format!("base64 decode: {e}")))?;
 
-    let root = vault_path(&state)?;
+    let root = ctx.vault_path()?;
     let assets_dir = root.join("assets");
     std::fs::create_dir_all(&assets_dir)?;
 
@@ -770,11 +656,10 @@ pub fn save_asset(
 /// Read an asset from vault/assets/ and return it as a base64 data URI with
 /// the MIME type its extension implies (`cortex_core::assets::mime_for_path`).
 /// `rel_path` is like `assets/image-1234.png` or `assets/clip-1234.mp4`.
-#[tauri::command]
-pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<String> {
+pub fn read_asset(ctx: &AppCtx, rel_path: String) -> Result<String> {
     use base64::{Engine as _, engine::general_purpose};
 
-    let root = vault_path(&state)?;
+    let root = ctx.vault_path()?;
     let abs = root.join(&rel_path);
 
     if !abs.exists() {
@@ -798,10 +683,8 @@ pub fn read_asset(rel_path: String, state: State<'_, VaultState>) -> Result<Stri
 }
 
 // ── Graph ─────────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_all_links(db_state: State<'_, DbState>) -> Result<Vec<(String, String)>> {
-    let guard = db_state.0.lock().unwrap();
+pub fn get_all_links(ctx: &AppCtx) -> Result<Vec<(String, String)>> {
+    let guard = ctx.db.0.lock().unwrap();
     match guard.as_ref() {
         Some(db) => db.get_all_links(),
         None => Ok(vec![]),
@@ -809,13 +692,8 @@ pub fn get_all_links(db_state: State<'_, DbState>) -> Result<Vec<(String, String
 }
 
 // ── Backlinks ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_backlinks(
-    path: String,
-    db_state: State<'_, DbState>,
-) -> Result<Vec<NoteEntry>> {
-    let guard = db_state.0.lock().unwrap();
+pub fn get_backlinks(ctx: &AppCtx, path: String) -> Result<Vec<NoteEntry>> {
+    let guard = ctx.db.0.lock().unwrap();
     match guard.as_ref() {
         Some(db) => db.get_backlinks(&path),
         None => Ok(vec![]),
@@ -823,10 +701,8 @@ pub fn get_backlinks(
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn list_templates(state: State<'_, VaultState>) -> Result<Vec<String>> {
-    let root = vault_path(&state)?;
+pub fn list_templates(ctx: &AppCtx) -> Result<Vec<String>> {
+    let root = ctx.vault_path()?;
     let templates_dir = root.join("templates");
     if !templates_dir.exists() {
         return Ok(vec![]);
@@ -843,9 +719,8 @@ pub fn list_templates(state: State<'_, VaultState>) -> Result<Vec<String>> {
 
 /// Read a template file by name (e.g. "daily.md") and return its raw content.
 /// Returns None if the template doesn't exist — the frontend falls back gracefully.
-#[tauri::command]
-pub fn read_template(name: String, state: State<'_, VaultState>) -> Result<Option<String>> {
-    let root = vault_path(&state)?;
+pub fn read_template(ctx: &AppCtx, name: String) -> Result<Option<String>> {
+    let root = ctx.vault_path()?;
     let path = root.join("templates").join(&name);
     if !path.exists() {
         return Ok(None);

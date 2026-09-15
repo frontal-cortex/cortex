@@ -1,15 +1,10 @@
 //! Tauri command layer for typed property schemas. The model + storage live in
 //! `cortex_core::schema`; this is the thin IPC surface the frontend calls.
 
-use tauri::State;
 
-use crate::commands::vault::{DbState, VaultState};
-use cortex_core::error::{AppError, Result};
+use crate::ctx::AppCtx;
+use cortex_core::error::Result;
 use cortex_core::schema::{PropertyChange, PropertyDef, TypeSchema};
-
-fn root(state: &State<'_, VaultState>) -> Result<std::path::PathBuf> {
-    state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
-}
 
 /// Resolve a schema by its key (a collection name or a note `type`). Returns
 /// `null` when no schema is defined — never an error.
@@ -21,45 +16,31 @@ fn with_members(root: &std::path::Path, schema: Option<TypeSchema>) -> Option<Ty
         s
     })
 }
-
-#[tauri::command]
-pub fn get_schema(key: String, state: State<'_, VaultState>) -> Result<Option<TypeSchema>> {
-    let root = root(&state)?;
+pub fn get_schema(ctx: &AppCtx, key: String) -> Result<Option<TypeSchema>> {
+    let root = ctx.vault_path()?;
     Ok(with_members(&root, cortex_core::schema::load(&root, &key)?))
 }
 
 /// Resolve the schema that governs a specific note, using the same key rule the
 /// data views use (collection name, else frontmatter `type`).
-#[tauri::command]
-pub fn get_schema_for_note(
-    path: String,
-    note_type: Option<String>,
-    state: State<'_, VaultState>,
-) -> Result<Option<TypeSchema>> {
+pub fn get_schema_for_note(ctx: &AppCtx, path: String, note_type: Option<String>) -> Result<Option<TypeSchema>> {
     match cortex_core::schema::schema_key(&path, note_type.as_deref()) {
         Some(key) => {
-            let root = root(&state)?;
+            let root = ctx.vault_path()?;
             Ok(with_members(&root, cortex_core::schema::load(&root, &key)?))
         }
         None => Ok(None),
     }
 }
-
-#[tauri::command]
-pub fn set_schema(key: String, schema: TypeSchema, state: State<'_, VaultState>) -> Result<()> {
-    cortex_core::schema::save(&root(&state)?, &key, &schema)
+pub fn set_schema(ctx: &AppCtx, key: String, schema: TypeSchema) -> Result<()> {
+    cortex_core::schema::save(&ctx.vault_path()?, &key, &schema)
 }
 
 /// Insert or replace a single property in a schema (creating the schema file if
 /// needed). Lets a view or the properties panel patch one property — e.g. add a
 /// select option or recolor one — without round-tripping the whole schema.
-#[tauri::command]
-pub fn upsert_property(
-    key: String,
-    property: PropertyDef,
-    state: State<'_, VaultState>,
-) -> Result<()> {
-    let root = root(&state)?;
+pub fn upsert_property(ctx: &AppCtx, key: String, property: PropertyDef) -> Result<()> {
+    let root = ctx.vault_path()?;
     let mut schema = cortex_core::schema::load(&root, &key)?.unwrap_or_default();
     match schema.properties.iter_mut().find(|p| p.name == property.name) {
         Some(existing) => *existing = property,
@@ -69,8 +50,8 @@ pub fn upsert_property(
 }
 
 /// Re-index the notes a schema edit rewrote (rows, the collection's `_index.md`).
-fn reindex(root: &std::path::Path, change: &PropertyChange, db_state: &State<'_, DbState>) {
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+fn reindex(ctx: &AppCtx, root: &std::path::Path, change: &PropertyChange) {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         for rel in &change.files {
             let _ = cortex_core::index::index_file(root, &root.join(rel), db);
         }
@@ -79,31 +60,18 @@ fn reindex(root: &std::path::Path, change: &PropertyChange, db_state: &State<'_,
 
 /// Rename a property everywhere: the schema, every row's frontmatter key, the
 /// collection's views, and the rollups / formulas that reference it.
-#[tauri::command]
-pub fn rename_property(
-    key: String,
-    old: String,
-    new: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<PropertyChange> {
-    let root = root(&state)?;
+pub fn rename_property(ctx: &AppCtx, key: String, old: String, new: String) -> Result<PropertyChange> {
+    let root = ctx.vault_path()?;
     let change = cortex_core::schema::rename_property(&root, &key, &old, &new)?;
-    reindex(&root, &change, &db_state);
+    reindex(ctx, &root, &change);
     Ok(change)
 }
 
 /// Delete a property from the schema, every row and every view. Refused while
 /// a rollup or formula still depends on it (the error names them).
-#[tauri::command]
-pub fn delete_property(
-    key: String,
-    name: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<PropertyChange> {
-    let root = root(&state)?;
+pub fn delete_property(ctx: &AppCtx, key: String, name: String) -> Result<PropertyChange> {
+    let root = ctx.vault_path()?;
     let change = cortex_core::schema::delete_property(&root, &key, &name)?;
-    reindex(&root, &change, &db_state);
+    reindex(ctx, &root, &change);
     Ok(change)
 }

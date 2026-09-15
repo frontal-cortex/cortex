@@ -11,6 +11,8 @@
 //! file's directory (in-place edits) and its parent (the swap), re-read on any
 //! event, and re-arm the watch so it tracks the new target.
 
+use crate::ctx::AppCtx;
+use std::sync::Arc;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -18,7 +20,6 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager};
 
 use cortex_core::error::{AppError, Result};
 
@@ -98,7 +99,6 @@ fn expand_home(path: &str) -> PathBuf {
 }
 
 /// The desktop's palette file, if this machine has one we recognise.
-#[tauri::command]
 pub fn detect_desktop_theme() -> Option<String> {
     cortex_core::settings::desktop_palette_path()
 }
@@ -107,26 +107,24 @@ pub fn detect_desktop_theme() -> Option<String> {
 /// readable right now; `None` means "fall back to the light/dark setting" —
 /// a missing file is not an error, so a vault whose settings name an Omarchy
 /// path still opens cleanly on a machine without Omarchy.
-#[tauri::command]
-pub fn watch_theme_file(app: AppHandle, path: String) -> Result<Option<Palette>> {
-    let state = app.state::<ThemeWatcher>();
+pub fn watch_theme_file(ctx: &Arc<AppCtx>, path: String) -> Result<Option<Palette>> {
     if path.trim().is_empty() {
-        *state.0.lock().unwrap() = None;
+        *ctx.theme.0.lock().unwrap() = None;
         return Ok(None);
     }
     let abs = expand_home(path.trim());
     if !abs.exists() {
-        *state.0.lock().unwrap() = None;
+        *ctx.theme.0.lock().unwrap() = None;
         return Ok(None);
     }
-    arm(&app, abs.clone())?;
+    arm(ctx, abs.clone())?;
     Ok(read_palette(&abs).ok())
 }
 
 /// (Re)create the watcher for `file`. Watching the directory rather than the
 /// file survives editors that write-then-rename; watching the grandparent
 /// catches Omarchy replacing the `theme` symlink.
-fn arm(app: &AppHandle, file: PathBuf) -> Result<()> {
+fn arm(ctx: &Arc<AppCtx>, file: PathBuf) -> Result<()> {
     let (tx, rx) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if res.is_ok() {
@@ -143,9 +141,9 @@ fn arm(app: &AppHandle, file: PathBuf) -> Result<()> {
         let _ = watcher.watch(&d, RecursiveMode::NonRecursive);
     }
 
-    *app.state::<ThemeWatcher>().0.lock().unwrap() = Some(watcher);
+    *ctx.theme.0.lock().unwrap() = Some(watcher);
 
-    let app = app.clone();
+    let ctx = ctx.clone();
     std::thread::spawn(move || {
         // Wait for a burst, then let it settle: a theme switch rewrites many
         // files, and the symlink swap may land a few ms after the first event.
@@ -160,10 +158,20 @@ fn arm(app: &AppHandle, file: PathBuf) -> Result<()> {
             }
         }
         let payload = read_palette(&file).ok();
-        let _ = app.emit(CHANGED_EVENT, payload);
+        let _ = ctx.emit(CHANGED_EVENT, payload);
         // Re-arm so we follow the new symlink target. This drops the current
         // watcher (ours), which is fine — we've done our one job.
-        let _ = arm(&app, file);
+        let _ = arm(&ctx, file);
     });
     Ok(())
+}
+
+/// The palette a `theme_file` setting names, read once — what a served device
+/// gets, instead of following a path of its own choosing on this machine.
+pub fn palette_for_setting(path: &str) -> Option<Palette> {
+    let path = path.trim();
+    if path.is_empty() {
+        return None;
+    }
+    read_palette(&expand_home(path)).ok()
 }

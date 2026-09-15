@@ -12,6 +12,8 @@
 //! content matches is our own echo and is dropped, so the editor never
 //! remounts under the user's cursor because they typed.
 
+use crate::ctx::AppCtx;
+use std::sync::Arc;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -21,9 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
 
-use crate::commands::vault::DbState;
 use cortex_core::error::{AppError, Result};
 
 /// Event name the frontend listens on.
@@ -85,7 +85,7 @@ pub fn record_self_write(self_writes: &SelfWrites, rel: &str, content: &str) {
 }
 
 /// Start watching `root`, replacing any previous watcher.
-pub fn start(app: &AppHandle, root: PathBuf) -> Result<()> {
+pub fn start(ctx: &Arc<AppCtx>, root: PathBuf) -> Result<()> {
     let (tx, rx) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
@@ -97,21 +97,21 @@ pub fn start(app: &AppHandle, root: PathBuf) -> Result<()> {
         .watch(&root, RecursiveMode::Recursive)
         .map_err(|e| AppError::Other(format!("Watcher failed to watch vault: {e}")))?;
 
-    app.state::<SelfWrites>().0.lock().unwrap().clear();
-    *app.state::<WatcherState>().0.lock().unwrap() = Some(watcher);
+    ctx.self_writes.0.lock().unwrap().clear();
+    *ctx.watcher.0.lock().unwrap() = Some(watcher);
 
-    let app = app.clone();
-    std::thread::spawn(move || run(app, root, rx));
+    let ctx = ctx.clone();
+    std::thread::spawn(move || run(ctx, root, rx));
     Ok(())
 }
 
 /// Stop watching (on vault close). Idempotent.
-pub fn stop(app: &AppHandle) {
-    *app.state::<WatcherState>().0.lock().unwrap() = None;
-    app.state::<SelfWrites>().0.lock().unwrap().clear();
+pub fn stop(ctx: &AppCtx) {
+    *ctx.watcher.0.lock().unwrap() = None;
+    ctx.self_writes.0.lock().unwrap().clear();
 }
 
-fn run(app: AppHandle, root: PathBuf, rx: mpsc::Receiver<notify::Event>) {
+fn run(ctx: Arc<AppCtx>, root: PathBuf, rx: mpsc::Receiver<notify::Event>) {
     loop {
         // Block for the first event of a burst; a closed channel means the
         // watcher was dropped and this thread is done.
@@ -135,9 +135,9 @@ fn run(app: AppHandle, root: PathBuf, rx: mpsc::Receiver<notify::Event>) {
             }
         }
 
-        let payload = classify(&app, &root, paths);
+        let payload = classify(&ctx, &root, paths);
         if !payload.is_empty() {
-            let _ = app.emit(CHANGED_EVENT, payload);
+            let _ = ctx.emit(CHANGED_EVENT, payload);
         }
     }
 }
@@ -153,9 +153,8 @@ fn collect(event: &notify::Event, into: &mut HashSet<PathBuf>) {
 /// Sort a burst of changed paths into the payload, updating the index for
 /// notes as we go. Paths under the cache, trash and git internals are ignored
 /// (except the handful of git files that mean "refs moved").
-fn classify(app: &AppHandle, root: &Path, paths: HashSet<PathBuf>) -> VaultChanged {
-    let db_state = app.state::<DbState>();
-    let self_writes = app.state::<SelfWrites>();
+fn classify(ctx: &AppCtx, root: &Path, paths: HashSet<PathBuf>) -> VaultChanged {
+    let self_writes = &ctx.self_writes;
     let mut out = VaultChanged::default();
 
     for abs in paths {
@@ -202,12 +201,12 @@ fn classify(app: &AppHandle, root: &Path, paths: HashSet<PathBuf>) -> VaultChang
             if ours {
                 continue; // echo of write_note / create_note — already indexed
             }
-            if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+            if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
                 let _ = cortex_core::index::index_file(root, &abs, db);
             }
             out.notes.push(rel);
         } else {
-            if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+            if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
                 let _ = db.remove_note(&rel);
             }
             self_writes.0.lock().unwrap().remove(&rel);

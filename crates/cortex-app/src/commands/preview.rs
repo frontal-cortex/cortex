@@ -3,12 +3,10 @@
 //! navigation guard needs — which hosts the user has chosen to load in a
 //! frame through an embed's click-to-load shield.
 
+use crate::ctx::AppCtx;
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::State;
 
-use crate::commands::vault::VaultState;
 use cortex_core::embed::{self, Embed};
 use cortex_core::error::{AppError, Result};
 use cortex_core::preview::{self, LinkPreview};
@@ -32,35 +30,28 @@ impl EmbedFrames {
     }
 }
 
-fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
-    state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
-}
-
 /// The card data for a bookmark: cached in `.brain/previews/`, fetched once
 /// when missing (`refresh` refetches). Runs off the main thread — it is a
 /// network call with a timeout.
-#[tauri::command(async)]
-pub fn fetch_link_preview(url: String, refresh: bool, state: State<'_, VaultState>) -> Result<LinkPreview> {
-    let root = vault_path(&state)?;
+pub fn fetch_link_preview(ctx: &AppCtx, url: String, refresh: bool) -> Result<LinkPreview> {
+    let root = ctx.vault_path()?;
     preview::fetch(&root, &url, refresh)
 }
 
 /// What the editor should render for an embed URL (`None`: keep it a link).
-#[tauri::command]
 pub fn resolve_embed(url: String) -> Option<Embed> {
     embed::resolve(&url)
 }
 
 /// The user clicked through a generic embed's shield: let its host load in
 /// a frame for the rest of this session.
-#[tauri::command]
-pub fn allow_embed_frame(url: String, frames: State<'_, EmbedFrames>) -> Result<()> {
+pub fn allow_embed_frame(ctx: &AppCtx, url: String) -> Result<()> {
     if embed::resolve(&url).is_none() {
         return Err(AppError::Other(format!("not an embeddable link: {url}")));
     }
     let host = embed::domain(&url);
     if !host.is_empty() {
-        frames.0.lock().unwrap().insert(host);
+        ctx.frames.0.lock().unwrap().insert(host);
     }
     Ok(())
 }

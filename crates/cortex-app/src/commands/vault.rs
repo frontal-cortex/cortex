@@ -1,7 +1,8 @@
+use crate::ctx::AppCtx;
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{Manager, State};
 
 use cortex_core::db::Db;
 use cortex_core::error::{AppError, Result};
@@ -52,20 +53,19 @@ pub struct VaultInfo {
 /// Open a vault: make sure its skeleton, docs and settings exist, bring the
 /// search index up to date, start following the folder. Off the main thread —
 /// the index pass is the one thing here that scales with the vault.
-#[tauri::command]
-pub async fn open_vault(app: tauri::AppHandle, path: String) -> Result<VaultInfo> {
-    super::off_thread(move || open_vault_blocking(&app, path)).await
+pub fn open_vault(ctx: &Arc<AppCtx>, path: String) -> Result<VaultInfo> {
+    open_vault_blocking(ctx, path)
 }
 
-fn open_vault_blocking(app: &tauri::AppHandle, path: String) -> Result<VaultInfo> {
-    let state = app.state::<VaultState>();
-    let db_state = app.state::<DbState>();
+fn open_vault_blocking(ctx: &Arc<AppCtx>, path: String) -> Result<VaultInfo> {
     let vault_path = PathBuf::from(&path);
     if !vault_path.exists() {
         return Err(AppError::Other(format!("Path does not exist: {path}")));
     }
 
     git::open_or_init(&vault_path)?;
+    // One long-lived host per vault; a second one is refused (crate::lock).
+    let writer = crate::lock::WriterLock::acquire(&vault_path, &ctx.host_kind())?;
     std::fs::create_dir_all(vault_path.join(".brain"))?;
     std::fs::create_dir_all(vault_path.join(".cortex"))?;
     std::fs::create_dir_all(vault_path.join("templates"))?;
@@ -97,7 +97,7 @@ fn open_vault_blocking(app: &tauri::AppHandle, path: String) -> Result<VaultInfo
     // Open / migrate the SQLite index, then re-index all notes
     let db = Db::open(&vault_path)?;
     cortex_core::index::index_vault(&vault_path, &db)?;
-    *db_state.0.lock().unwrap() = Some(db);
+    *ctx.db.0.lock().unwrap() = Some(db);
 
     let name = vault_path
         .file_name()
@@ -109,12 +109,13 @@ fn open_vault_blocking(app: &tauri::AppHandle, path: String) -> Result<VaultInfo
         .map(|r| r.find_remote("origin").is_ok())
         .unwrap_or(false);
 
-    crate::commands::recent::record_recent(app, &vault_path);
+    crate::commands::recent::record_recent(ctx, &vault_path);
 
     // Follow external edits (agents, editors, git) for as long as the vault is open.
-    crate::watcher::start(app, vault_path.clone())?;
+    crate::watcher::start(ctx, vault_path.clone())?;
 
-    *state.0.lock().unwrap() = Some(vault_path);
+    *ctx.writer.lock().unwrap() = Some(writer);
+    *ctx.vault.0.lock().unwrap() = Some(vault_path);
 
     Ok(VaultInfo { path, name, has_remote })
 }
@@ -126,9 +127,8 @@ fn open_vault_blocking(app: &tauri::AppHandle, path: String) -> Result<VaultInfo
 /// commit, so the vault is the user's own from the first second. The caller
 /// is expected to follow up with `open_vault(path)`, which adds `VAULT.md`,
 /// `AGENTS.md` and `.cortex/settings.yaml`.
-#[tauri::command]
-pub async fn create_vault_from_template(path: String, template: Option<String>) -> Result<()> {
-    super::off_thread(move || create_vault_blocking(path, template)).await
+pub fn create_vault_from_template(path: String, template: Option<String>) -> Result<()> {
+    super::off_thread(move || create_vault_blocking(path, template))
 }
 
 fn create_vault_blocking(path: String, template: Option<String>) -> Result<()> {
@@ -154,21 +154,15 @@ fn create_vault_blocking(path: String, template: Option<String>) -> Result<()> {
 
 /// Close the open vault — clears the in-memory vault path and index handle so
 /// the app returns to the landing screen (like signing out).
-#[tauri::command]
-pub fn close_vault(
-    app: tauri::AppHandle,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<()> {
-    crate::watcher::stop(&app);
-    *state.0.lock().unwrap() = None;
-    *db_state.0.lock().unwrap() = None;
+pub fn close_vault(ctx: &AppCtx) -> Result<()> {
+    crate::watcher::stop(ctx);
+    *ctx.vault.0.lock().unwrap() = None;
+    *ctx.db.0.lock().unwrap() = None;
+    *ctx.writer.lock().unwrap() = None;
     Ok(())
 }
-
-#[tauri::command]
-pub fn get_vault_info(state: State<'_, VaultState>) -> Result<Option<VaultInfo>> {
-    let guard = state.0.lock().unwrap();
+pub fn get_vault_info(ctx: &AppCtx) -> Result<Option<VaultInfo>> {
+    let guard = ctx.vault.0.lock().unwrap();
     let Some(ref path) = *guard else {
         return Ok(None);
     };

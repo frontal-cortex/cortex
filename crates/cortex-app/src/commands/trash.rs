@@ -3,18 +3,13 @@
 //! note keeps its content as readable markdown plus a small YAML sidecar
 //! recording where it came from.
 
+use crate::ctx::AppCtx;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::State;
 
-use crate::commands::vault::{DbState, VaultState};
 use cortex_core::error::{AppError, Result};
 use cortex_core::note;
-
-fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
-    state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
-}
 
 fn trash_dir(root: &Path) -> PathBuf {
     root.join(".trash")
@@ -76,10 +71,8 @@ pub fn move_to_trash(root: &Path, rel_path: &str) -> Result<String> {
     std::fs::remove_file(&abs)?;
     Ok(id)
 }
-
-#[tauri::command]
-pub fn list_trash(state: State<'_, VaultState>) -> Result<Vec<TrashEntry>> {
-    let root = vault_path(&state)?;
+pub fn list_trash(ctx: &AppCtx) -> Result<Vec<TrashEntry>> {
+    let root = ctx.vault_path()?;
     let dir = trash_dir(&root);
     if !dir.exists() {
         return Ok(vec![]);
@@ -104,13 +97,8 @@ pub fn list_trash(state: State<'_, VaultState>) -> Result<Vec<TrashEntry>> {
 
 /// Restore a trashed note to its original location (or a non-colliding variant
 /// if something already lives there). Returns the path it was restored to.
-#[tauri::command]
-pub fn restore_trashed(
-    id: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<String> {
-    let root = vault_path(&state)?;
+pub fn restore_trashed(ctx: &AppCtx, id: String) -> Result<String> {
+    let root = ctx.vault_path()?;
     let dir = trash_dir(&root);
 
     let meta_path = dir.join(format!("{id}.meta.yaml"));
@@ -147,7 +135,7 @@ pub fn restore_trashed(
     std::fs::remove_file(&md_path)?;
     std::fs::remove_file(&meta_path)?;
 
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = cortex_core::index::index_file(&root, &target_abs, db);
     }
 
@@ -155,9 +143,8 @@ pub fn restore_trashed(
 }
 
 /// Permanently remove a single trashed item.
-#[tauri::command]
-pub fn delete_trashed(id: String, state: State<'_, VaultState>) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn delete_trashed(ctx: &AppCtx, id: String) -> Result<()> {
+    let root = ctx.vault_path()?;
     let dir = trash_dir(&root);
     let _ = std::fs::remove_file(dir.join(format!("{id}.md")));
     let _ = std::fs::remove_file(dir.join(format!("{id}.meta.yaml")));
@@ -165,9 +152,8 @@ pub fn delete_trashed(id: String, state: State<'_, VaultState>) -> Result<()> {
 }
 
 /// Permanently empty the trash.
-#[tauri::command]
-pub fn empty_trash(state: State<'_, VaultState>) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn empty_trash(ctx: &AppCtx) -> Result<()> {
+    let root = ctx.vault_path()?;
     let dir = trash_dir(&root);
     if dir.exists() {
         for entry in std::fs::read_dir(&dir)?.filter_map(|e| e.ok()) {
@@ -207,16 +193,11 @@ pub fn prune_expired(root: &Path, retention_days: u32) -> Result<()> {
 /// entry, so any of them can be restored later; the folder is removed once it
 /// is empty. The schema under `.cortex/schemas/` is left in place: restoring
 /// a row should find its properties still typed. Returns how many files moved.
-#[tauri::command]
-pub fn trash_collection(
-    name: String,
-    state: State<'_, VaultState>,
-    db_state: State<'_, DbState>,
-) -> Result<usize> {
+pub fn trash_collection(ctx: &AppCtx, name: String) -> Result<usize> {
     if name.is_empty() || name.contains('/') || name.contains("..") {
         return Err(AppError::Other("Invalid collection name".into()));
     }
-    let root = vault_path(&state)?;
+    let root = ctx.vault_path()?;
     let dir = root.join("collections").join(&name);
     if !dir.is_dir() {
         return Err(AppError::Other(format!("Collection not found: {name}")));
@@ -235,7 +216,7 @@ pub fn trash_collection(
     }
     // Only an empty folder is removed; anything that is not a note stays put.
     let _ = std::fs::remove_dir(&dir);
-    if let Some(db) = db_state.0.lock().unwrap().as_ref() {
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
         let _ = db.remove_notes_by_prefix(&format!("collections/{name}/"));
     }
     Ok(moved)

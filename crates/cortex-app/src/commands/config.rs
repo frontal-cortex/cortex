@@ -2,15 +2,10 @@
 //! portable to any clone. This is distinct from `.brain/`, which is a
 //! gitignored, rebuildable cache.
 
+use crate::ctx::AppCtx;
 use std::path::{Path, PathBuf};
-use tauri::State;
 
-use crate::commands::vault::VaultState;
-use cortex_core::error::{AppError, Result};
-
-fn vault_path(state: &State<'_, VaultState>) -> Result<PathBuf> {
-    state.0.lock().unwrap().clone().ok_or(AppError::NoVault)
-}
+use cortex_core::error::Result;
 
 fn cortex_dir(root: &Path) -> PathBuf {
     root.join(".cortex")
@@ -19,15 +14,11 @@ fn cortex_dir(root: &Path) -> PathBuf {
 // ── Settings ───────────────────────────────────────────────────────────────────
 
 pub use cortex_core::settings::Settings;
-
-#[tauri::command]
-pub fn get_settings(state: State<'_, VaultState>) -> Result<Settings> {
-    cortex_core::settings::load(&vault_path(&state)?)
+pub fn get_settings(ctx: &AppCtx) -> Result<Settings> {
+    cortex_core::settings::load(&ctx.vault_path()?)
 }
-
-#[tauri::command]
-pub fn set_settings(settings: Settings, state: State<'_, VaultState>) -> Result<()> {
-    cortex_core::settings::save(&vault_path(&state)?, &settings)
+pub fn set_settings(ctx: &AppCtx, settings: Settings) -> Result<()> {
+    cortex_core::settings::save(&ctx.vault_path()?, &settings)
 }
 
 // ── Favorites ──────────────────────────────────────────────────────────────────
@@ -35,10 +26,8 @@ pub fn set_settings(settings: Settings, state: State<'_, VaultState>) -> Result<
 // Moved from `.brain/favorites.json` (gitignored, not portable) to
 // `.cortex/favorites.yaml` (committed, readable). Old vaults are migrated
 // transparently on first read.
-
-#[tauri::command]
-pub fn get_favorites(state: State<'_, VaultState>) -> Result<Vec<String>> {
-    let root = vault_path(&state)?;
+pub fn get_favorites(ctx: &AppCtx) -> Result<Vec<String>> {
+    let root = ctx.vault_path()?;
     let yaml_path = cortex_dir(&root).join("favorites.yaml");
 
     if yaml_path.exists() {
@@ -58,10 +47,8 @@ pub fn get_favorites(state: State<'_, VaultState>) -> Result<Vec<String>> {
 
     Ok(vec![])
 }
-
-#[tauri::command]
-pub fn set_favorites(paths: Vec<String>, state: State<'_, VaultState>) -> Result<()> {
-    let root = vault_path(&state)?;
+pub fn set_favorites(ctx: &AppCtx, paths: Vec<String>) -> Result<()> {
+    let root = ctx.vault_path()?;
     write_favorites(&root, &paths)
 }
 
