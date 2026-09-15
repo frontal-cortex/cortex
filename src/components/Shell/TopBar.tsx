@@ -1,5 +1,6 @@
 import { VaultStatus } from "../../lib/commands";
 import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, TerminalIcon, MonkIcon, CommentIcon } from "./icons";
+import { capabilities } from "../../lib/host";
 import { shortcutFor } from "../../lib/keymap";
 import styles from "./TopBar.module.css";
 
@@ -99,9 +100,11 @@ export function TopBar({
           <CommentIcon size={15} />
           {unresolvedComments > 0 && <span className={styles.syncCounts}>{unresolvedComments}</span>}
         </button>
-        <button className={`${styles.action} ${rightOpen ? styles.actionOn : ""}`} onClick={onToggleRight} title={`Toggle terminal (${shortcutFor("toggle-terminal")})`}>
-          <TerminalIcon size={15} />
-        </button>
+        {capabilities().terminal && (
+          <button className={`${styles.action} ${rightOpen ? styles.actionOn : ""}`} onClick={onToggleRight} title={`Toggle terminal (${shortcutFor("toggle-terminal")})`}>
+            <TerminalIcon size={15} />
+          </button>
+        )}
         <button className={`${styles.action} ${styles.phoneHidden}`} onClick={onToggleMonk} title={`Monk mode — just the page (${shortcutFor("monk-mode")})`}>
           <MonkIcon size={15} />
         </button>

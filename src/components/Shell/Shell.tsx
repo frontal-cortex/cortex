@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, CSSProperties, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../../lib/transport";
 import { commands, VaultInfo, VaultStatus, AgentBranch, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
 import { parseWikiLink } from "../../lib/wikiLink";
 import { findShortcut, applyKeymapOverrides, shortcutFor, ShortcutId } from "../../lib/keymap";
@@ -15,6 +15,7 @@ import { useRecentNotes } from "../../hooks/useRecentNotes";
 import { ExplorerSort, DEFAULT_SORT, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
 import { useComments } from "../../hooks/useComments";
 import { ChevronRightIcon } from "./icons";
+import { capabilities } from "../../lib/host";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
 import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/database";
@@ -65,6 +66,8 @@ export function Shell({
   // Opening the terminal puts the cursor in it — that's what Ctrl+L is for.
   const termRef = useRef<TerminalPaneHandle>(null);
   const handleToggleTerminal = useCallback(() => {
+    // A served device only gets the terminal when the serving machine allows it.
+    if (!capabilities().terminal) return;
     const opening = monk || !rightVisible;
     toggleRight();
     if (opening) requestAnimationFrame(() => termRef.current?.focus());
@@ -807,7 +810,7 @@ export function Shell({
         <LogTodayModal onClose={() => { setShowLogToday(false); focusEditor(); }} onChanged={() => { refresh(); scheduleAutoCommit(); }} />
       )}
 
-      {showPublish && (
+      {showPublish && !capabilities().served && (
         <PublishModal
           vault={vault}
           onClose={() => { setShowPublish(false); focusEditor(); }}

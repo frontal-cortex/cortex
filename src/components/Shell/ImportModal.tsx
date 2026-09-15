@@ -14,6 +14,50 @@ import {
 } from "../../lib/commands";
 import { CloseIcon, DatabaseIcon, FolderIcon, FileIcon } from "./icons";
 import styles from "./ImportModal.module.css";
+import { isDesktop } from "../../lib/transport";
+
+// Served to a browser there is no path on the serving machine to pick: the
+// browser's own chooser picks a file, its bytes go up, and the import runs on
+// the handle the server keeps it under. Folders can't be uploaded that way, so
+// folder imports are a desktop thing.
+
+function uploadFile(accept: string): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(null); return; }
+      file.arrayBuffer()
+        .then((buf) => commands.uploadImportFile(file.name, toBase64(new Uint8Array(buf))))
+        .then(resolve, reject);
+    };
+    input.click();
+  });
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+function csvPlan(path: string, collection: string, titleColumn: string | null, columns: ImportColumn[] | null) {
+  return isDesktop()
+    ? commands.importCsvPlan(path, collection, titleColumn, columns)
+    : commands.importCsvPlanUpload(path, collection, titleColumn, columns);
+}
+
+function csvImport(path: string, collection: string, titleColumn: string | null, columns: ImportColumn[] | null) {
+  return isDesktop()
+    ? commands.importCsv(path, collection, titleColumn, columns)
+    : commands.importCsvUpload(path, collection, titleColumn, columns);
+}
+
+function notionImport(path: string, into: string, dryRun: boolean) {
+  return isDesktop() ? commands.importNotion(path, into, dryRun) : commands.importNotionUpload(path, into, dryRun);
+}
 
 interface Props {
   onClose: () => void;
@@ -70,14 +114,16 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
     if (kind !== "csv" || !csvPath || !collection.trim() || csvReport) return;
     let stale = false;
     setError(null);
-    commands.importCsvPlan(csvPath, collection.trim(), titleColumn, overrides.length ? overrides : null)
+    csvPlan(csvPath, collection.trim(), titleColumn, overrides.length ? overrides : null)
       .then((p) => { if (!stale) setPlan(p); })
       .catch((e) => { if (!stale) { setPlan(null); setError(String(e)); } });
     return () => { stale = true; };
   }, [kind, csvPath, collection, titleColumn, overrides, csvReport]);
 
   const pickCsv = async () => {
-    const f = await openDialog({ multiple: false, directory: false, title: "Import CSV…", filters: [{ name: "CSV", extensions: ["csv", "tsv", "txt"] }] });
+    const f = isDesktop()
+      ? await openDialog({ multiple: false, directory: false, title: "Import CSV…", filters: [{ name: "CSV", extensions: ["csv", "tsv", "txt"] }] })
+      : await uploadFile(".csv,.tsv,.txt").catch((e) => { setError(String(e)); return null; });
     if (!f || typeof f !== "string") return;
     setCsvPath(f);
     setOverrides([]);
@@ -101,7 +147,7 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const r = await commands.importCsv(csvPath, collection.trim(), titleColumn, overrides.length ? overrides : null);
+      const r = await csvImport(csvPath, collection.trim(), titleColumn, overrides.length ? overrides : null);
       setCsvReport(r);
       onChanged();
     } catch (e) { setError(String(e)); }
@@ -144,14 +190,16 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
     if (kind !== "notion" || !notionPath || !notionInto.trim() || notionReport) return;
     let stale = false;
     setError(null);
-    commands.importNotion(notionPath, notionInto.trim(), true)
+    notionImport(notionPath, notionInto.trim(), true)
       .then((r) => { if (!stale) setNotionPlan(r); })
       .catch((e) => { if (!stale) { setNotionPlan(null); setError(String(e)); } });
     return () => { stale = true; };
   }, [kind, notionPath, notionInto, notionReport]);
 
   const pickNotion = async (directory: boolean) => {
-    const f = await openDialog(directory
+    const f = !isDesktop()
+      ? await uploadFile(".zip").catch((e) => { setError(String(e)); return null; })
+      : await openDialog(directory
       ? { directory: true, multiple: false, title: "Import an unpacked Notion export…" }
       : { multiple: false, directory: false, title: "Import a Notion export…", filters: [{ name: "Notion export", extensions: ["zip"] }] });
     if (!f || typeof f !== "string") return;
@@ -164,7 +212,7 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const r = await commands.importNotion(notionPath, notionInto.trim(), false);
+      const r = await notionImport(notionPath, notionInto.trim(), false);
       setNotionReport(r);
       onChanged();
     } catch (e) { setError(String(e)); }
@@ -197,9 +245,11 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
             <button role="tab" aria-selected={kind === "csv"} className={`${styles.kind} ${kind === "csv" ? styles.kindOn : ""}`} onClick={() => switchKind("csv")}>
               <FileIcon size={14} /> CSV into a collection
             </button>
-            <button role="tab" aria-selected={kind === "markdown"} className={`${styles.kind} ${kind === "markdown" ? styles.kindOn : ""}`} onClick={() => switchKind("markdown")}>
-              <FolderIcon size={14} /> Folder of Markdown
-            </button>
+            {isDesktop() && (
+              <button role="tab" aria-selected={kind === "markdown"} className={`${styles.kind} ${kind === "markdown" ? styles.kindOn : ""}`} onClick={() => switchKind("markdown")}>
+                <FolderIcon size={14} /> Folder of Markdown
+              </button>
+            )}
             <button role="tab" aria-selected={kind === "notion"} className={`${styles.kind} ${kind === "notion" ? styles.kindOn : ""}`} onClick={() => switchKind("notion")}>
               <DatabaseIcon size={14} /> Notion export
             </button>
@@ -408,7 +458,7 @@ export function ImportModal({ onClose, onChanged, onOpenNote }: Props) {
                   <span className={styles.fieldLabel}>Export</span>
                   <span className={styles.fieldRow}>
                     <button className={styles.pick} onClick={() => pickNotion(false)}>{notionPath ? "Change…" : "Choose zip…"}</button>
-                    <button className={styles.pick} onClick={() => pickNotion(true)}>Folder…</button>
+                    {isDesktop() && <button className={styles.pick} onClick={() => pickNotion(true)}>Folder…</button>}
                     <span className={styles.path} title={notionPath}>{notionPath ? baseName(notionPath) : "No export chosen"}</span>
                   </span>
                 </label>

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./transport";
 
 export interface VaultInfo {
   path: string;
@@ -453,6 +453,34 @@ export interface Note {
   path: string;
   frontmatter: Record<string, unknown>;
   body: string;
+}
+
+/** Settings → Serve to my devices (saved in this machine's config directory). */
+export interface ServeConfig {
+  enabled: boolean;
+  port: number;
+  auth: "tailscale" | "token";
+  allow: string[];
+  token: string;
+  terminal: boolean;
+}
+
+export interface TailscaleSelf {
+  running: boolean;
+  dns_name: string | null;
+  login: string | null;
+  https: boolean;
+}
+
+export interface ServeStatus {
+  running: boolean;
+  error: string | null;
+  local_url: string;
+  tailscale: TailscaleSelf | null;
+  tailnet_url: string | null;
+  tailscale_command: string;
+  qr_svg: string | null;
+  config: ServeConfig;
 }
 
 export interface VaultStatus {
@@ -1137,6 +1165,18 @@ export const commands = {
   importNotion: (path: string, into: string, dryRun: boolean) =>
     invoke<NotionImportReport>("import_notion", { path, into, dryRun }),
 
+  // ── From a served device: files go up as bytes, exports come down as text ──
+  exportText: (kind: "note-html" | "collection-csv" | "collection-html", target: string) =>
+    invoke<string>("export_text", { kind, target }),
+  uploadImportFile: (name: string, dataBase64: string) =>
+    invoke<string>("upload_import_file", { name, dataBase64 }),
+  importCsvPlanUpload: (upload: string, collection: string, titleColumn: string | null, columns: ImportColumn[] | null) =>
+    invoke<CsvImportPlan>("import_csv_plan_upload", { upload, collection, titleColumn, columns }),
+  importCsvUpload: (upload: string, collection: string, titleColumn: string | null, columns: ImportColumn[] | null) =>
+    invoke<CsvImportReport>("import_csv_upload", { upload, collection, titleColumn, columns }),
+  importNotionUpload: (upload: string, into: string, dryRun: boolean) =>
+    invoke<NotionImportReport>("import_notion_upload", { upload, into, dryRun }),
+
   listTrash: () =>
     invoke<TrashEntry[]>("list_trash"),
 
@@ -1163,6 +1203,11 @@ export const commands = {
 
   gitStatus: () =>
     invoke<VaultStatus>("git_status"),
+
+  // ── Serving to devices (desktop app only) ──
+  serveStatus: () => invoke<ServeStatus>("serve_status"),
+  serveSet: (config: ServeConfig) => invoke<ServeStatus>("serve_set", { config }),
+  serveNewToken: () => invoke<ServeStatus>("serve_new_token"),
 
   gitCommit: (message: string) =>
     invoke<void>("git_commit", { message }),

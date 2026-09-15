@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
+import { isDesktop } from "../lib/transport";
+import { loadCapabilities } from "../lib/host";
+import type { ServedGate } from "../components/PairScreen/PairScreen";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { commands, VaultInfo, VaultStatus, AgentBranch, CommitEntry, RecentVault, SyncOutcome } from "../lib/commands";
 
@@ -14,6 +17,8 @@ interface VaultState {
   creating: boolean;
   /** True until we know whether there's a vault to reopen — avoids flashing the picker. */
   booting: boolean;
+  /** Served to a browser: what stands between it and the vault, if anything. */
+  served: ServedGate | null;
   error: string | null;
 }
 
@@ -27,10 +32,35 @@ export function useVault() {
     syncing: false,
     creating: false,
     booting: true,
+    served: null,
     error: null,
   });
 
+  // Served to a browser, the server has already opened its vault: ask whether
+  // this browser may use it, then go straight in. There is no picker there.
+  const bootServed = useCallback(async () => {
+    const caps = await loadCapabilities().catch(() => null);
+    if (!caps) {
+      setState((s) => ({ ...s, booting: false, served: "unreachable" }));
+      return;
+    }
+    if (!caps.authenticated) {
+      setState((s) => ({ ...s, booting: false, served: "pair" }));
+      return;
+    }
+    const vault = await commands.getVaultInfo().catch(() => null);
+    setState((s) => ({ ...s, vault, booting: false, served: vault ? null : "no-vault" }));
+  }, []);
+
   useEffect(() => {
+    if (!isDesktop()) {
+      void bootServed();
+      // Any request refused mid-session (a revoked login, a changed code) sends
+      // the browser back to the front door.
+      const onAuth = () => setState((s) => ({ ...s, vault: null, served: "pair" }));
+      window.addEventListener("cortex:served-auth", onAuth);
+      return () => window.removeEventListener("cortex:served-auth", onAuth);
+    }
     (async () => {
       const recentVaults = await commands.getRecentVaults().catch(() => [] as RecentVault[]);
       let vault = await commands.getVaultInfo().catch(() => null);
@@ -41,7 +71,7 @@ export function useVault() {
       }
       setState((s) => ({ ...s, vault, recentVaults, booting: false }));
     })();
-  }, []);
+  }, [bootServed]);
 
   // Open a vault by an explicit path (e.g. a recent-vaults entry).
   const openVaultPath = useCallback(async (path: string) => {
@@ -157,6 +187,7 @@ export function useVault() {
 
   return {
     ...state,
+    retryServed: bootServed,
     openVault,
     forgetRecent,
     openVaultPath,

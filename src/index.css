@@ -9,6 +9,13 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* An installed app on a phone draws under the status bar and the home
+   indicator (viewport-fit=cover); keep the app inside the safe area. Zero on
+   desktops. */
+#root {
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
 body {
   font-family: var(--font-sans);
   font-size: 15px;
