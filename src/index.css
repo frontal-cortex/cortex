@@ -9,10 +9,20 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Whatever shows around the app (safe areas, overscroll) is the app's own
+   background, not the browser's white. */
+html, body {
+  background: var(--bg-app);
+}
+
 /* An installed app on a phone draws under the status bar and the home
    indicator (viewport-fit=cover); keep the app inside the safe area. Zero on
-   desktops. */
+   desktops. Pinned to the screen rather than sized by height: 100%, which iOS
+   home-screen apps measure short of the full display. */
 #root {
+  position: fixed;
+  inset: 0;
+  height: auto;
   padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
 }
 
