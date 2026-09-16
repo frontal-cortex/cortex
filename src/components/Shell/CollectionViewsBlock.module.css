@@ -78,3 +78,6 @@
   border: 1px solid var(--border); border-radius: 12px; background: var(--bg-app); color: var(--text-primary);
 }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* A phone cannot hover, so the block's menu is always there to tap. */
+:root[data-viewport="phone"] .menuBtn { opacity: 1; min-width: 36px; min-height: 36px; }

@@ -7,6 +7,10 @@
 html, body, #root {
   height: 100%;
   overflow: hidden;
+  /* A tap is a tap. Without this a touch browser waits to see whether a second
+     one follows (double-tap to zoom) before it acts, which reads as taps being
+     ignored. Pinch to zoom still works. */
+  touch-action: manipulation;
 }
 
 /* Whatever shows around the app (safe areas, overscroll) is the app's own
@@ -68,6 +72,14 @@ a:focus-visible,
 .ProseMirror-selectednode > *,
 .ProseMirror-selectednode > .bn-block-content > * {
   outline: none !important;
+}
+
+/* BlockNote's checkbox is 12px wide: a fingertip misses it more often than it
+   hits. On a phone give it a box worth aiming at. */
+:root[data-viewport="phone"] .bn-block-content[data-content-type="checkListItem"] input[type="checkbox"] {
+  width: 26px;
+  height: 26px;
+  margin-inline-end: 8px;
 }
 
 /* Strike through a ticked todo based on the LIVE checkbox state. BlockNote keys

@@ -97,3 +97,6 @@
 .save { background: var(--accent); color: var(--text-inverse); border: 1px solid var(--accent); }
 .cancel { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
 .hint { color: var(--text-tertiary); font-size: var(--text-xs); }
+
+/* A phone cannot hover: the edit button stays put. */
+:root[data-viewport="phone"] .edit { opacity: 1; min-width: 36px; min-height: 36px; }
