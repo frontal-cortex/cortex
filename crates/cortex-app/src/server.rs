@@ -25,6 +25,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, oneshot, Mutex as AsyncMutex};
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
@@ -210,9 +211,45 @@ pub fn authorize(
             if cfg.token.is_empty() || !token_ok {
                 return Err(StatusCode::UNAUTHORIZED);
             }
-            Ok(Identity { login })
+            // Nothing vouches for the identity header here — anyone holding the
+            // code could set it — so this device is nobody in particular, and
+            // its commits are this machine's.
+            let _ = login;
+            Ok(Identity { login: None })
         }
     }
+}
+
+/// Whether a request came from the app itself rather than another site.
+///
+/// In Tailscale mode nothing the browser holds proves who is asking — the
+/// identity header is attached by `tailscale serve` to every request the
+/// browser makes to this address, including the ones another site sets off in
+/// the background. Without this check any page a signed-in device visited
+/// could write to the vault.
+pub fn same_origin(headers: &HeaderMap) -> bool {
+    // Browsers that send fetch metadata say it plainly: the app's own requests
+    // ("same-origin") and ones the person started themselves ("none").
+    if let Some(site) = header_str(headers, "sec-fetch-site") {
+        return site == "same-origin" || site == "none";
+    }
+    // Otherwise an `Origin`, when there is one, must be this server.
+    match (header_str(headers, "origin"), header_str(headers, "host")) {
+        (Some(origin), Some(host)) => origin
+            .split_once("://")
+            .is_some_and(|(_, rest)| rest.eq_ignore_ascii_case(host)),
+        (Some(_), None) => false,
+        // A program rather than a browser (curl, the tests): no site to be from.
+        (None, _) => true,
+    }
+}
+
+/// Whether the body says it is JSON. A cross-site form, `no-cors` fetch or
+/// image cannot set this, so a browser must ask permission first — and this
+/// server grants none.
+pub fn is_json(headers: &HeaderMap) -> bool {
+    header_str(headers, "content-type")
+        .is_some_and(|v| v.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case("application/json"))
 }
 
 fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
@@ -245,24 +282,48 @@ fn constant_eq(a: &[u8], b: &[u8]) -> bool {
 /// name places inside it: no absolute paths, no `..`.
 const PATH_KEYS: &[&str] = &[
     "path", "paths", "relPath", "source", "target", "from", "fromPath", "into", "dest", "dir",
-    "toDir", "newPath", "oldPath", "file", "logSource", "outDir",
+    "toDir", "newPath", "oldPath", "file", "logSource", "outDir", "upload", "template", "root",
 ];
 
-pub fn check_paths(args: &Value) -> std::result::Result<(), String> {
-    let Some(obj) = args.as_object() else { return Ok(()) };
-    for key in PATH_KEYS {
-        let values: Vec<&str> = match obj.get(*key) {
-            Some(Value::String(s)) => vec![s.as_str()],
-            Some(Value::Array(items)) => items.iter().filter_map(|i| i.as_str()).collect(),
-            _ => continue,
-        };
-        for v in values {
-            if escapes_vault(v) {
-                return Err(format!("`{key}` must be a path inside the vault, not {v:?}"));
-            }
-        }
+/// Whether an argument names a place. The listed keys, plus anything a command
+/// spells its own way — a name carrying "path", "dir", "file", "source",
+/// "target" or "dest" is a place, whatever comes before it. Checking by shape
+/// rather than by a list means a new command cannot quietly slip past.
+fn names_a_place(key: &str) -> bool {
+    if PATH_KEYS.iter().any(|p| p.eq_ignore_ascii_case(key)) {
+        return true;
     }
-    Ok(())
+    let k = key.to_ascii_lowercase();
+    ["path", "dir", "file", "source", "target", "dest"].iter().any(|word| k.contains(word))
+}
+
+/// Refuse any argument that names a place outside the vault, however deeply
+/// it is nested in the command's arguments.
+pub fn check_paths(args: &Value) -> std::result::Result<(), String> {
+    match args {
+        Value::Object(obj) => {
+            for (key, value) in obj {
+                if names_a_place(key) {
+                    inside_vault(key, value)?;
+                } else {
+                    check_paths(value)?;
+                }
+            }
+            Ok(())
+        }
+        Value::Array(items) => items.iter().try_for_each(check_paths),
+        _ => Ok(()),
+    }
+}
+
+fn inside_vault(key: &str, value: &Value) -> std::result::Result<(), String> {
+    match value {
+        Value::String(s) if escapes_vault(s) => {
+            Err(format!("`{key}` must be a path inside the vault, not {s:?}"))
+        }
+        Value::Array(items) => items.iter().try_for_each(|i| inside_vault(key, i)),
+        _ => Ok(()),
+    }
 }
 
 fn escapes_vault(p: &str) -> bool {
@@ -293,7 +354,18 @@ fn auth(inner: &Inner, headers: &HeaderMap) -> std::result::Result<Identity, Sta
     authorize(&cfg, inner.host_login.as_deref(), headers)
 }
 
+/// Refuse anything a browser started on another site's behalf.
+fn from_the_app(headers: &HeaderMap, json_body: bool) -> Option<Response> {
+    if !same_origin(headers) || (json_body && !is_json(headers)) {
+        return Some(error(StatusCode::FORBIDDEN, "This request didn't come from the Cortex app."));
+    }
+    None
+}
+
 async fn invoke(State(inner): State<Shared>, UrlPath(cmd): UrlPath<String>, headers: HeaderMap, body: Bytes) -> Response {
+    if let Some(refusal) = from_the_app(&headers, true) {
+        return refusal;
+    }
     let identity = match auth(&inner, &headers) {
         Ok(identity) => identity,
         Err(status) => return refuse(status),
@@ -376,17 +448,34 @@ fn theme_palette(inner: &Inner) -> Response {
     Json(palette).into_response()
 }
 
+/// What a device is told when it has missed events: everything may have changed.
+fn everything() -> Value {
+    json!({ "notes": [], "removed": [], "comments": [], "dirs": true, "config": true, "git": true })
+}
+
 async fn events(State(inner): State<Shared>, headers: HeaderMap) -> Response {
+    if let Some(refusal) = from_the_app(&headers, false) {
+        return refusal;
+    }
     if let Err(status) = auth(&inner, &headers) {
         return refuse(status);
     }
-    let terminal = inner.config.read().unwrap().terminal;
-    let stream = BroadcastStream::new(inner.events.subscribe()).filter_map(move |item| {
-        let (name, payload) = item.ok()?;
-        if !terminal && name.starts_with("terminal://") {
-            return None;
+    let shared = inner.clone();
+    let stream = BroadcastStream::new(inner.events.subscribe()).filter_map(move |item| match item {
+        Ok((name, payload)) => {
+            // Read the setting per event, so switching the terminal off reaches
+            // streams that are already open.
+            if !shared.config.read().unwrap().terminal && name.starts_with("terminal://") {
+                return None;
+            }
+            Some(Ok::<Event, std::convert::Infallible>(Event::default().event(name).data(payload.to_string())))
         }
-        Some(Ok::<Event, std::convert::Infallible>(Event::default().event(name).data(payload.to_string())))
+        // The device fell behind — asleep, or a slow link — and events were
+        // dropped. Say so, rather than leaving it with a stale vault until it
+        // next reconnects.
+        Err(BroadcastStreamRecvError::Lagged(_)) => Some(Ok(Event::default()
+            .event(crate::watcher::CHANGED_EVENT)
+            .data(everything().to_string()))),
     });
     Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
@@ -394,6 +483,9 @@ async fn events(State(inner): State<Shared>, headers: HeaderMap) -> Response {
 }
 
 async fn commands(State(inner): State<Shared>, headers: HeaderMap) -> Response {
+    if let Some(refusal) = from_the_app(&headers, false) {
+        return refusal;
+    }
     if let Err(status) = auth(&inner, &headers) {
         return refuse(status);
     }
@@ -403,6 +495,9 @@ async fn commands(State(inner): State<Shared>, headers: HeaderMap) -> Response {
 /// What the frontend needs before anything else: that it is served, whether
 /// this browser is signed in, and what this host lets it do.
 async fn capabilities(State(inner): State<Shared>, headers: HeaderMap) -> Response {
+    if let Some(refusal) = from_the_app(&headers, false) {
+        return refusal;
+    }
     let cfg = inner.config.read().unwrap().clone();
     let identity = authorize(&cfg, inner.host_login.as_deref(), &headers).ok();
     let signed_in = identity.is_some();
@@ -433,6 +528,9 @@ async fn capabilities(State(inner): State<Shared>, headers: HeaderMap) -> Respon
 /// Exchange the pairing token for a cookie, so the event stream (which can't
 /// send headers) and every request after it carry it.
 async fn pair(State(inner): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
+    if let Some(refusal) = from_the_app(&headers, true) {
+        return refusal;
+    }
     let cfg = inner.config.read().unwrap().clone();
     let token = serde_json::from_slice::<Value>(&body)
         .ok()
@@ -557,6 +655,37 @@ mod tests {
         assert!(check_paths(&json!({ "outDir": "C:\\Users" })).is_err());
         assert!(check_paths(&json!({ "paths": ["notes/a.md", "../b.md"] })).is_err());
         assert!(check_paths(&json!({ "title": "../not a path key" })).is_ok());
+        // Whatever a command calls it, and however deeply it is buried.
+        assert!(check_paths(&json!({ "themeFile": "/etc/shadow" })).is_err());
+        assert!(check_paths(&json!({ "attachmentDir": "../../elsewhere" })).is_err());
+        assert!(check_paths(&json!({ "options": { "outputPath": "/tmp/x" } })).is_err());
+        assert!(check_paths(&json!({ "rows": [{ "sourceFile": "../x" }] })).is_err());
+        assert!(check_paths(&json!({ "content": "see /etc/passwd and ../elsewhere" })).is_ok(), "prose is not a place");
+    }
+
+    #[test]
+    fn only_the_app_itself_may_ask() {
+        assert!(same_origin(&headers(&[])), "a program with no site to be from");
+        assert!(same_origin(&headers(&[("sec-fetch-site", "same-origin")])));
+        assert!(same_origin(&headers(&[("sec-fetch-site", "none")])), "typed into the address bar");
+        assert!(!same_origin(&headers(&[("sec-fetch-site", "cross-site")])), "another site, in the background");
+        assert!(!same_origin(&headers(&[("sec-fetch-site", "same-site")])));
+        assert!(same_origin(&headers(&[("origin", "https://box.tailnet.ts.net:8443"), ("host", "box.tailnet.ts.net:8443")])));
+        assert!(!same_origin(&headers(&[("origin", "https://evil.example"), ("host", "box.tailnet.ts.net:8443")])));
+
+        assert!(is_json(&headers(&[("content-type", "application/json")])));
+        assert!(is_json(&headers(&[("content-type", "application/json; charset=utf-8")])));
+        assert!(!is_json(&headers(&[("content-type", "text/plain;charset=UTF-8")])), "what a cross-site fetch may send");
+        assert!(!is_json(&headers(&[])), "a form post carries no JSON type");
+    }
+
+    #[test]
+    fn a_device_that_missed_events_is_told_everything_changed() {
+        let payload = everything();
+        assert_eq!(payload["dirs"], json!(true));
+        assert_eq!(payload["config"], json!(true));
+        assert_eq!(payload["git"], json!(true));
+        assert_eq!(payload["notes"], json!([]));
     }
 
     #[test]

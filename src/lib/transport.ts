@@ -48,10 +48,16 @@ let modes: Promise<Map<string, Mode>> | null = null;
 function commandModes(): Promise<Map<string, Mode>> {
   if (!modes) {
     modes = fetch(`${API}/commands`, { credentials: "same-origin" })
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => {
+        // Refused (not paired yet) or unreachable: ask again rather than
+        // remembering an empty table, which would send everything through the
+        // one-at-a-time queue for the rest of the session.
+        if (!r.ok) throw new Error(`commands: ${r.status}`);
+        return r.json();
+      })
       .then((list: CommandInfo[]) => new Map(list.map((c) => [c.name, c.mode])))
       .catch(() => {
-        modes = null; // try again next time
+        modes = null;
         return new Map();
       });
   }
@@ -74,9 +80,11 @@ async function httpInvoke<T>(cmd: string, args?: Record<string, unknown>): Promi
     announceAuth(res.status);
   }
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
+  // Ours is always JSON; something in between (a proxy's error page) may not be.
+  let body: unknown = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   // Errors come back as the same string Tauri would have rejected with.
-  if (!res.ok) throw typeof body === "string" ? body : `request failed (${res.status})`;
+  if (!res.ok) throw typeof body === "string" && body ? body : `request failed (${res.status})`;
   return body as T;
 }
 

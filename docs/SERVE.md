@@ -159,6 +159,13 @@ what this host allows; the front door (`PairScreen`) handles *not signed in*,
   forwards.
 - **Identity or code on every API request**, as above. Static files — the
   open-source app shell — are served without it; nothing under `/api` is.
+- **Only the app's own requests.** A Tailscale login is proved by a header the
+  proxy attaches to whatever the browser sends, so a page on another site could
+  otherwise post to the vault in the background. Every `/api` request must come
+  from this app's own origin (`Sec-Fetch-Site`, or `Origin` against the address
+  asked for), and every body must be JSON — which a cross-site form or a
+  no-questions-asked fetch cannot claim. Requests from a program rather than a
+  browser (`curl`, scripts) carry no site and are unaffected.
 - **Paths stay inside the vault.** Arguments that name a place (`path`,
   `source`, `into`, …) must be vault-relative with no `..`; absolute paths are
   refused. Commands that take host paths or drive the desktop answer 404, the

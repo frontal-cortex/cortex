@@ -40,7 +40,13 @@ struct AppAssets(AppHandle);
 
 impl Assets for AppAssets {
     fn get(&self, path: &str) -> Option<Vec<u8>> {
-        self.0.asset_resolver().get(path.to_string()).map(|a| a.bytes().to_vec())
+        // Tauri keys the embedded bundle by absolute path ("/index.html"); the
+        // server asks the way a URL spells it, without the leading slash.
+        let resolver = self.0.asset_resolver();
+        resolver
+            .get(format!("/{path}"))
+            .or_else(|| resolver.get(path.to_string()))
+            .map(|a| a.bytes().to_vec())
     }
 }
 

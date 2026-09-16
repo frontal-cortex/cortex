@@ -27,6 +27,10 @@ pub struct Holder {
     pub kind: String,
     /// Unix seconds.
     pub started: i64,
+    /// Tells two locks of the same process apart, so releasing one cannot
+    /// release the other's hold (reopening a vault within the same second).
+    #[serde(default)]
+    pub mark: u64,
 }
 
 /// A held lock. Dropping it releases the vault.
@@ -47,6 +51,7 @@ impl WriterLock {
             host: hostname(),
             kind: kind.to_string(),
             started: chrono::Utc::now().timestamp(),
+            mark: next_mark(),
         };
 
         // Two attempts: a lock can vanish between reading it and creating ours.
@@ -108,6 +113,13 @@ fn write_holder(path: &Path, holder: &Holder, create_new: bool) -> std::io::Resu
     }
 }
 
+/// A number no other lock in this process shares.
+fn next_mark() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 fn hostname() -> String {
     std::env::var("HOSTNAME")
         .or_else(|_| std::env::var("COMPUTERNAME"))
@@ -150,10 +162,12 @@ mod tests {
         let v = vault("take");
         let lock = WriterLock::acquire(&v, "the desktop app").unwrap();
         assert_eq!(holder_of(&v).unwrap().kind, "the desktop app");
-        // The same process asking again is fine (reopening the same vault).
+        // The same process asking again is fine (reopening the same vault) —
+        // and letting the first one go does not release the second's hold.
         let again = WriterLock::acquire(&v, "the desktop app").unwrap();
-        drop(again);
         drop(lock);
+        assert!(holder_of(&v).is_some(), "the newer lock still holds the vault");
+        drop(again);
         assert!(holder_of(&v).is_none(), "released on drop");
         let _ = std::fs::remove_dir_all(&v);
     }
@@ -165,13 +179,13 @@ mod tests {
         let path = v.join(".brain").join(FILE);
         std::fs::create_dir_all(v.join(".brain")).unwrap();
         // pid 1 is always running.
-        let live = Holder { pid: 1, host: hostname(), kind: "cortex serve".into(), started: 0 };
+        let live = Holder { pid: 1, host: hostname(), kind: "cortex serve".into(), started: 0, mark: 0 };
         write_holder(&path, &live, true).unwrap();
         let err = WriterLock::acquire(&v, "the desktop app").unwrap_err().to_string();
         assert!(err.contains("already open in cortex serve"), "{err}");
 
         // A process id far above any real one has exited.
-        let dead = Holder { pid: 4_000_000, host: hostname(), kind: "cortex serve".into(), started: 0 };
+        let dead = Holder { pid: 4_000_000, host: hostname(), kind: "cortex serve".into(), started: 0, mark: 0 };
         write_holder(&path, &dead, false).unwrap();
         let lock = WriterLock::acquire(&v, "the desktop app").unwrap();
         assert_eq!(lock.holder().pid, std::process::id());
