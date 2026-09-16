@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-shell";
+import { isDesktop } from "./transport";
 
 const SCHEMES = new Set(["http:", "https:", "mailto:"]);
 
@@ -9,19 +10,49 @@ export async function openExternal(raw: string): Promise<boolean> {
   let url: URL;
   try { url = new URL(raw); } catch { return false; }
   if (!SCHEMES.has(url.protocol)) return false;
-  try { await open(url.href); return true; } catch { return false; }
+  try {
+    // Served to a browser, a new tab is the outside.
+    if (isDesktop()) await open(url.href);
+    else window.open(url.href, "_blank", "noopener,noreferrer");
+    return true;
+  } catch { return false; }
+}
+
+/** The link a click or tap landed on, if it is one for the outside. */
+function outward(target: EventTarget | null): string | null {
+  const a = (target as Element | null)?.closest?.("a[href]");
+  if (!a) return null;
+  if (a.hasAttribute("download")) return null; // a download the app itself started (lib/export.ts)
+  const href = a.getAttribute("href") ?? "";
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(href)) return null; // relative or #anchor: the app's own
+  return href;
+}
+
+/** One link, one window. The editor opens a clicked link itself, from
+ *  ProseMirror's own handling, without passing through the guard below — so a
+ *  link inside a note was opened twice by one click. This makes a repeat of
+ *  the same address a moment later a no-op, whoever asks for it. */
+function openOnce(): void {
+  const native = window.open.bind(window);
+  let last = { href: "", at: 0 };
+  window.open = ((url?: string | URL, target?: string, features?: string) => {
+    const href = String(url ?? "");
+    const now = Date.now();
+    if (href && href === last.href && now - last.at < 700) return null;
+    last = { href, at: now };
+    return native(url, target, features);
+  }) as typeof window.open;
 }
 
 /** Every anchor click in the app: internal links (wiki links, same-document
  *  anchors) proceed; anything with a scheme goes through `openExternal`. The
  *  webview itself never navigates (the Rust side refuses that too). */
 export function installLinkGuard(): void {
+  openOnce();
   document.addEventListener("click", (e) => {
     if (e.defaultPrevented || e.button !== 0) return;
-    const a = (e.target as Element | null)?.closest?.("a[href]");
-    if (!a) return;
-    const href = a.getAttribute("href") ?? "";
-    if (!/^[a-z][a-z0-9+.-]*:/i.test(href)) return; // relative or #anchor: the app's own
+    const href = outward(e.target);
+    if (!href) return;
     e.preventDefault();
     void openExternal(href);
   }, true);

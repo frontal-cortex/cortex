@@ -392,6 +392,13 @@ pub fn signature(repo: &Repository) -> Result<git2::Signature<'static>> {
 }
 
 pub fn stage_all_and_commit(repo: &Repository, message: &str) -> Result<()> {
+    stage_all_and_commit_as(repo, message, None)
+}
+
+/// As [`stage_all_and_commit`], with `author` (name, email) as the commit's
+/// author when given — an edit made from a served device on behalf of a vault
+/// member. The committer is still this machine's identity.
+pub fn stage_all_and_commit_as(repo: &Repository, message: &str, author: Option<(&str, &str)>) -> Result<()> {
     let mut index = repo.index()?;
     index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
     index.write()?;
@@ -409,9 +416,13 @@ pub fn stage_all_and_commit(repo: &Repository, message: &str) -> Result<()> {
 
     let tree = repo.find_tree(oid)?;
     let sig = signature(repo)?;
+    let author = match author {
+        Some((name, email)) => git2::Signature::now(name, email)?,
+        None => sig.clone(),
+    };
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
 
-    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
+    repo.commit(Some("HEAD"), &author, &sig, message, &tree, &parents)?;
     Ok(())
 }
 

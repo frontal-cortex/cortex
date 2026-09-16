@@ -565,7 +565,7 @@ function FileContextMenu({
           {fav ? "Remove from favorites" : "Add to favorites"}
         </button>
       )}
-      <button className={styles.ctxItem} onClick={run(actions.onRevealFile)}>{revealLabel}</button>
+      {actions.onRevealFile && <button className={styles.ctxItem} onClick={run(actions.onRevealFile)}>{revealLabel}</button>}
       <button
         className={styles.ctxItem}
         onClick={(e) => {

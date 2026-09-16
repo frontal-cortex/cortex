@@ -228,3 +228,8 @@ th.today, td.today { background: var(--accent-light); }
 /* Narrow windows (compact and below, see lib/breakpoints.ts). */
 :root:not([data-viewport="wide"]) .summary { margin-left: 0; }
 :root:not([data-viewport="wide"]) .todayMeta .streakBest { display: none; }
+
+/* Phones: the day's box is something to hit with a finger, not a pointer. */
+:root[data-viewport="phone"] .check { width: 32px; height: 32px; border-radius: 9px; }
+:root[data-viewport="phone"] .table td { padding: 6px 2px; }
+:root[data-viewport="phone"] .todayRow { min-height: var(--tap-target); }

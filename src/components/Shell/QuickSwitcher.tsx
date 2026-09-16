@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from "react";
 import { NoteEntry, SearchHit, commands } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import { shortcutFor } from "../../lib/keymap";
+import { capabilities } from "../../lib/host";
 import { SearchIcon, TemplateIcon, TodayIcon, GraphIcon, PlusIcon, SyncIcon, GearIcon, ThemeIcon, BrainIcon, PanelLeftIcon, TerminalIcon, MonkIcon, TagsListIcon, GlobeIcon, SparkleIcon, TrackerIcon, TextLinesIcon, DatabaseIcon, ClockIcon, KeyboardIcon, CommentIcon, DownloadIcon } from "./icons";
 import styles from "./QuickSwitcher.module.css";
 import { getNoteButtons, subscribeNoteButtons, describeButton } from "../../lib/buttons";
@@ -218,13 +219,15 @@ export function QuickSwitcher({
         icon: <DatabaseIcon size={14} />,
         run: () => { onImport(); onClose(); },
       },
-      {
+      // Publishing writes into a folder or pushes from the serving machine —
+      // not something a served device starts.
+      ...(capabilities().served ? [] : [{
         id: "publish",
         label: "Publish site…",
         description: "Build a static site from the notes marked public — nothing is published until you confirm",
         icon: <GlobeIcon size={14} />,
         run: () => { onPublish(); onClose(); },
-      },
+      }]),
       ...(onTogglePublic ? [{
         id: "toggle-public",
         label: isPublic ? "Make this note private" : "Make this note public",
@@ -278,13 +281,13 @@ export function QuickSwitcher({
         icon: <CommentIcon size={14} />,
         run: () => { onClose(); onComment(); },
       }] : []),
-      {
+      ...(capabilities().terminal ? [{
         id: "toggle-terminal",
         label: "Toggle terminal",
         description: shortcutFor("toggle-terminal"),
         icon: <TerminalIcon size={14} />,
         run: () => { onToggleTerminal(); onClose(); },
-      },
+      }] : []),
       {
         id: "monk-mode",
         label: "Monk mode",

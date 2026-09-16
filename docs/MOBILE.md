@@ -5,6 +5,12 @@ first; the Android addendum at the end records what differs and what the
 2026-09-09 feasibility spike (`docs/parity/mobile-spike.md`) found. The
 Rust phases below are shared by both platforms.
 
+For a phone that should reach a vault without a native build, see
+`docs/SERVE.md`: the desktop app served to a home-screen web app over
+Tailscale. The two paths are complementary. Serve mode keeps the vault and
+its agents on the host and needs a connection; the native app described here
+works offline with its own clone.
+
 ## Guiding principle
 
 Desktop behavior stays **byte-for-byte unchanged**. It keeps shelling out to

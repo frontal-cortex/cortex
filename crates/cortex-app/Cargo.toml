@@ -1,0 +1,40 @@
+[package]
+name = "cortex-app"
+version = "0.1.0"
+edition = "2021"
+description = "Cortex's application layer — the commands, the vault watcher and the event bus — shared by the desktop app and `cortex serve`."
+
+[features]
+default = []
+# The HTTP host: `cortex serve` and Settings → Serve to my devices.
+server = ["dep:axum", "dep:tokio", "dep:tokio-stream"]
+
+[dependencies]
+cortex-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+
+git2 = { version = "0.19", default-features = false, features = ["https", "vendored-openssl"] }
+walkdir = "2"
+base64 = "0.22"
+# The vault watcher and the desktop palette follower
+notify = "8"
+toml = "1"
+# Per-machine directories (recent vaults, pack cache, serve settings) resolved
+# the way Tauri resolves them, so `cortex serve` shares the desktop app's files
+dirs = "6"
+
+axum = { version = "0.8", optional = true }
+tokio = { version = "1", optional = true, features = ["rt-multi-thread", "net", "sync", "macros", "time"] }
+tokio-stream = { version = "0.1", optional = true, features = ["sync"] }
+
+# The embedded terminal: a real pty, desktop only (no shell to spawn on a phone)
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+portable-pty = "0.9"
+
+# The writer lock's "is that process still running?" check
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

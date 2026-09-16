@@ -143,3 +143,6 @@
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
 }
+
+/* A phone cannot hover: adding a file stays put. */
+:root[data-viewport="phone"] .fileAdd { opacity: 1; min-height: 32px; }

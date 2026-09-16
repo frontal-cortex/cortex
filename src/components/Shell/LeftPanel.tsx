@@ -5,6 +5,7 @@ import {
 import { shortcutFor, SHORTCUTS, ShortcutId, isMac } from "../../lib/keymap";
 import { NoteEntry, SearchHit, AgentBranch, TrashEntry } from "../../lib/commands";
 import { commands } from "../../lib/commands";
+import { capabilities } from "../../lib/host";
 import {
   buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle,
   ExplorerSort, SORT_FIELDS,
@@ -281,7 +282,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     onMoveNote: handleMoveNote,
     onRenameFile: handleRenameFile,
     onDuplicateFile: handleDuplicateFile,
-    onRevealFile: handleRevealFile,
+    onRevealFile: capabilities().reveal ? handleRevealFile : undefined,
     onDeleteFile: onDeleteNote,
     onTurnIntoDatabase,
     onToggleFavorite,
@@ -319,7 +320,8 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
   const openAgentsDoc = useCallback(() => {
     if (notes.some((n) => n.path === "AGENTS.md")) onSelect("AGENTS.md");
-    else commands.revealPath("AGENTS.md").catch(() => window.alert("This vault has no AGENTS.md yet."));
+    else if (capabilities().reveal) commands.revealPath("AGENTS.md").catch(() => window.alert("This vault has no AGENTS.md yet."));
+    else window.alert("This vault has no AGENTS.md yet.");
   }, [notes, onSelect]);
 
   const dismissGettingStarted = useCallback(() => {

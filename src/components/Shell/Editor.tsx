@@ -20,6 +20,7 @@ import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, Sugges
 import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { isCollectionRow } from "../../lib/rows";
+import { isDesktop } from "../../lib/transport";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { WikiLinkDropdown, SuggestItem } from "./WikiLinkDropdown";
 import { flattenTags } from "../../lib/tags";
@@ -371,6 +372,15 @@ function NoteEditor({
 
   const navigateRef = useRef(onNavigate);
   navigateRef.current = onNavigate;
+  // A note is an editable document: the first tap on a wiki link only puts the
+  // cursor there, so following it took two taps. The tap below opens it, and
+  // this remembers that, so the editor's own click handler doesn't open it
+  // again a moment later.
+  const wikiTap = useRef({ target: "", at: 0 });
+  const followWikiLink = useCallback((target: string) => {
+    wikiTap.current = { target, at: Date.now() };
+    navigateRef.current(target);
+  }, []);
 
   // ── Live co-editing session (one Yjs room per note path) ───────────────────
   // Created synchronously so it exists before useCreateBlockNote runs. The
@@ -533,6 +543,9 @@ function NoteEditor({
     if (pos) ed.insertBlocks([{ type: "image", props: { url } }], pos.block, "after");
   }, []);
   const pasteFromSystemClipboard = useCallback(async (pasteText: (text: string) => boolean) => {
+    // Served to a browser there is no desktop clipboard to read; the browser's
+    // own paste event already did this.
+    if (!isDesktop()) return;
     let c: ClipboardContent;
     try {
       c = await commands.readClipboard();
@@ -634,7 +647,10 @@ function NoteEditor({
       : undefined,
     _tiptapOptions: {
       extensions: [
-        wikiLinkExtension((t) => navigateRef.current(t)),
+        wikiLinkExtension((t) => {
+          if (t === wikiTap.current.target && Date.now() - wikiTap.current.at < 700) return;
+          navigateRef.current(t);
+        }),
         wikiLinkSuggestionExtension(handle),
         imagePasteDropExtension,
         findExtension,
@@ -1059,7 +1075,14 @@ function NoteEditor({
           )}
           </div>
 
-          <div className={styles.editorWrap}>
+          <div
+            className={styles.editorWrap}
+            onPointerUp={(e) => {
+              if (e.pointerType === "mouse" || !e.isPrimary) return;
+              const target = (e.target as Element | null)?.closest?.("[data-wiki-target]")?.getAttribute("data-wiki-target");
+              if (target) followWikiLink(target);
+            }}
+          >
             <BlockNoteView editor={editor} slashMenu={false} formattingToolbar={false} linkToolbar={false} theme={colorScheme}>
               {/* Default link toolbar plus "Bookmark" / "Embed" for web links. */}
               <LinkToolbarController linkToolbar={(props) => <CortexLinkToolbar {...props} editor={editor} />} />

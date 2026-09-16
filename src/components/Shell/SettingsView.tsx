@@ -6,7 +6,7 @@
 // reachable from the UI.
 
 import { useCallback, useEffect, useMemo, useRef, useState, ReactNode, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../../lib/transport";
 import { commands, Settings, VaultInfo, Member, CurrentUser, AgentCli, VaultChanged } from "../../lib/commands";
 import { TAG_COLORS, swatchStyle, autoColor } from "../../lib/colors";
 import { syncTheme } from "../../lib/theme";
@@ -18,6 +18,8 @@ import {
 import { Dropdown } from "./Dropdown";
 import { AgentIcon } from "./agentIcons";
 import { UpdateChecker } from "./UpdateModal";
+import { ServeSettings } from "./ServeSettings";
+import { capabilities } from "../../lib/host";
 import { GitSummary } from "./GitSummary";
 import {
   CloseIcon, SearchIcon, FolderIcon, ThemeIcon, TextLinesIcon, FileIcon, SyncIcon, TerminalIcon,
@@ -53,6 +55,8 @@ interface Ctx {
 }
 
 interface RowDef {
+  /** Only meaningful in the desktop app (hidden when the app is itself served). */
+  desktopOnly?: boolean;
   /** Key in settings.yaml (`keybindings.<id>` for shortcuts), or a path under
    *  .cortex/ for things that live in another file. Omitted on info rows. */
   key?: string;
@@ -67,6 +71,8 @@ interface RowDef {
 
 interface SectionDef {
   id: string;
+  /** Only meaningful in the desktop app (hidden when the app is itself served). */
+  desktopOnly?: boolean;
   title: string;
   blurb?: string;
   icon: ReactNode;
@@ -92,9 +98,9 @@ const SECTIONS: SectionDef[] = [
         render: ({ vault }) => (
           <>
             <span className={`${styles.value} ${styles.valueMono} ${styles.valueWrap}`} title={vault.path}>{vault.path}</span>
-            <button className={styles.btn} onClick={() => commands.revealPath(".").catch(() => {})} title="Show in the file manager">
+            {capabilities().reveal && (<button className={styles.btn} onClick={() => commands.revealPath(".").catch(() => {})} title="Show in the file manager">
               <OpenIcon size={12} /> Reveal
-            </button>
+            </button>)}
           </>
         ),
       },
@@ -126,7 +132,7 @@ const SECTIONS: SectionDef[] = [
         ),
       },
       {
-        label: "Leave vault", keywords: "close switch another sign out leave",
+        label: "Leave vault", keywords: "close switch another sign out leave", desktopOnly: true,
         hint: "Back to the vault picker. Nothing is deleted.",
         render: ({ onClose, onLeaveVault }) => (
           <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => { onClose(); onLeaveVault(); }}>Leave vault</button>
@@ -446,7 +452,21 @@ const SECTIONS: SectionDef[] = [
     ],
   },
   {
+    id: "serve",
+    title: "Serve to my devices",
+    blurb: "Open this vault from your phone or another computer on your Tailscale network. It stays on this machine.",
+    icon: <GlobeIcon size={14} />,
+    desktopOnly: true,
+    rows: [
+      {
+        label: "Serving", wide: true, keywords: "phone mobile tailscale pwa install home screen serve server devices remote",
+        render: () => <ServeSettings />,
+      },
+    ],
+  },
+  {
     id: "terminal",
+    desktopOnly: true,
     title: "Terminal & agents",
     blurb: "The terminal pane, and the agent it opens into.",
     icon: <TerminalIcon size={14} />,
@@ -560,6 +580,7 @@ const SECTIONS: SectionDef[] = [
   },
   {
     id: "updates",
+    desktopOnly: true,
     title: "Updates",
     blurb: "New releases of the app. Checks only when you ask; installs only when you confirm.",
     icon: <DownloadIcon size={14} />,
@@ -635,9 +656,11 @@ export function SettingsView({ vault, onCommit, onClose, onLeaveVault }: Props) 
 
   const q = query.trim().toLowerCase();
   const visible = useMemo(() => {
-    if (!q) return SECTIONS.map((s) => ({ section: s, rows: s.rows }));
-    return SECTIONS
-      .map((s) => ({ section: s, rows: s.rows.filter((r) => rowMatches(s, r, q)) }))
+    const shown = (d: { desktopOnly?: boolean }) => !(d.desktopOnly && capabilities().served);
+    const sections = SECTIONS.filter(shown);
+    if (!q) return sections.map((s) => ({ section: s, rows: s.rows.filter(shown) }));
+    return sections
+      .map((s) => ({ section: s, rows: s.rows.filter((r) => shown(r) && rowMatches(s, r, q)) }))
       .filter((s) => s.rows.length > 0);
   }, [q]);
   const shown = q ? visible : visible.filter((v) => v.section.id === active);
@@ -704,7 +727,7 @@ export function SettingsView({ vault, onCommit, onClose, onLeaveVault }: Props) 
           })}
         </div>
         <div className={styles.navFoot}>
-          <button className={styles.fileLink} onClick={() => commands.revealPath(SETTINGS_FILE).catch(() => {})} title="Reveal in the file manager">
+          <button className={styles.fileLink} onClick={() => { if (capabilities().reveal) commands.revealPath(SETTINGS_FILE).catch(() => {}); }} title="Reveal in the file manager">
             <OpenIcon size={11} /> {SETTINGS_FILE}
           </button>
           <span>Every setting is a key in this file. Edit it anywhere; the app follows.</span>
@@ -758,7 +781,7 @@ function Row({ row, ctx }: { row: RowDef; ctx: Ctx }) {
 function ConfigFile({ path, what }: { path: string; what: string }) {
   return (
     <span className={styles.note}>
-      <button className={styles.fileLink} onClick={() => commands.revealPath(path).catch(() => {})} title="Reveal in the file manager">
+      <button className={styles.fileLink} onClick={() => { if (capabilities().reveal) commands.revealPath(path).catch(() => {}); }} title="Reveal in the file manager">
         <OpenIcon size={11} /> {path}
       </button>
       {" — "}{what}
