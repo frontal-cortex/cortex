@@ -20,9 +20,10 @@ database rows (one note per row, properties in frontmatter); templates/ holds no
 Notes link to each other with [[Title]] wiki links. Frontmatter keys are kept sorted so diffs \
 stay clean — use the tools rather than rewriting files by hand.
 
-Reading: list_notes, list_tags, search, read_note, links, backlinks, list_collections, query_collection, \
+Reading: list_notes, list_tags, search, read_note, links, backlinks, unlinked_mentions, list_collections, query_collection, \
 get_schema. Writing: create_note, write_note, set_properties; move_note renames or moves a note and \
-rewrites every inbound link (a title change through set_properties does the same). Writes are visible in the app \
+rewrites every inbound link (a title change through set_properties does the same); link_mentions turns a note's \
+plain-text mentions of another into [[links]]. Writes are visible in the app \
 immediately. Schemas: rename_property / delete_property change a typed property everywhere at once \
 (schema, every row, views, dependent rollups and formulas) — never rename a frontmatter key by hand across rows. Configuration: get_settings / set_settings edit .cortex/settings.yaml (the app reloads \
 it live); list_agents says which agent CLIs are installed for the terminal_command setting. \
@@ -82,6 +83,14 @@ pub struct SearchArgs {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct TargetArgs {
     /// A note: its vault-relative path, exact title, or filename stem
+    pub target: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct LinkMentionsArgs {
+    /// The note whose plain-text mentions become links: path, exact title, or filename stem
+    pub source: String,
+    /// The note being mentioned: path, exact title, or filename stem
     pub target: String,
 }
 
@@ -383,9 +392,20 @@ with the match wrapped in <mark>.")]
         json(&self.vault.links(&a.target).map_err(err)?)
     }
 
-    #[tool(description = "Notes that link to this one.")]
+    #[tool(description = "Notes that link to this one, each with `contexts`: the body lines the links sit on, the link wrapped in <mark>.")]
     fn backlinks(&self, Parameters(a): Parameters<TargetArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.backlinks(&a.target).map_err(err)?)
+    }
+
+    #[tool(description = "Notes that name this one's title in plain text without a [[link]] (whole word, any case; not inside links or code), each with `contexts`: the lines the mentions are on, the mention wrapped in <mark>. Use link_mentions to turn them into links.")]
+    fn unlinked_mentions(&self, Parameters(a): Parameters<TargetArgs>) -> Result<CallToolResult, McpError> {
+        json(&self.vault.unlinked_mentions(&a.target).map_err(err)?)
+    }
+
+    #[tool(description = "Turn every plain-text mention of `target`'s title inside `source` into a [[link]] (a mention in another case keeps its spelling as the alias). Rewrites `source`; returns how many were linked.")]
+    fn link_mentions(&self, Parameters(a): Parameters<LinkMentionsArgs>) -> Result<CallToolResult, McpError> {
+        let linked = self.vault.link_mentions(&a.source, &a.target).map_err(err)?;
+        json(&serde_json::json!({ "source": a.source, "target": a.target, "linked": linked }))
     }
 
     #[tool(description = "Comment threads on a note — stored beside it in <note>.comments.yaml, never in the note. Each thread has an id, an optional anchor (a quoted passage plus which occurrence; `anchored` says whether that passage is still in the body), author, created, resolved, text and replies. Open threads only unless include_resolved.")]

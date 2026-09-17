@@ -145,11 +145,42 @@ impl Db {
             "SELECT DISTINCT n.path, n.title, n.note_type, n.tags, n.modified
              FROM links l
              JOIN notes n ON n.path = l.source
-             WHERE (l.target = ?1 OR l.target = ?2)
+             WHERE (l.target = ?1 COLLATE NOCASE OR l.target = ?2 COLLATE NOCASE)
                AND l.source != ?3
              ORDER BY n.modified DESC",
         )?;
         collect_entries(&mut stmt, params![title, stem, path])
+    }
+
+    /// The indexed title of a note, if it is in the index.
+    pub fn title_of(&self, path: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row("SELECT title FROM notes WHERE path = ?1", params![path], |row| row.get(0))
+            .ok())
+    }
+
+    /// The indexed body of a note (Markdown, frontmatter stripped), if it is
+    /// in the index. This is the cache's copy: the file is still the truth.
+    pub fn body(&self, path: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row("SELECT body FROM notes_fts WHERE path = ?1", params![path], |row| row.get(0))
+            .ok())
+    }
+
+    /// Notes whose body contains `phrase` (the words in that order, matched
+    /// the way FTS tokenises them), other than `exclude`, newest first.
+    pub fn notes_mentioning(&self, phrase: &str, exclude: &str, limit: usize) -> Result<Vec<NoteEntry>> {
+        let expr = format!("body : \"{}\"", phrase.replace('"', "\"\""));
+        let mut stmt = self.conn.prepare(
+            "SELECT n.path, n.title, n.note_type, n.tags, n.modified
+             FROM notes_fts f JOIN notes n ON n.path = f.path
+             WHERE notes_fts MATCH ?1 AND n.path != ?2
+             ORDER BY n.modified DESC
+             LIMIT ?3",
+        )?;
+        collect_entries(&mut stmt, params![expr, exclude, limit as i64])
     }
 
     pub fn remove_note(&self, path: &str) -> Result<()> {

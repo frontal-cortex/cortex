@@ -4,6 +4,7 @@ use walkdir::WalkDir;
 
 use crate::watcher;
 use cortex_core::error::{AppError, Result};
+use cortex_core::backlinks::Backlink;
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::rename::RenameReport;
 use cortex_core::search::SearchHit;
@@ -692,12 +693,51 @@ pub fn get_all_links(ctx: &AppCtx) -> Result<Vec<(String, String)>> {
 }
 
 // ── Backlinks ────────────────────────────────────────────────────────────────
-pub fn get_backlinks(ctx: &AppCtx, path: String) -> Result<Vec<NoteEntry>> {
+/// Notes linking here, each with the body lines the links sit on.
+pub fn get_backlinks(ctx: &AppCtx, path: String) -> Result<Vec<Backlink>> {
     let guard = ctx.db.0.lock().unwrap();
     match guard.as_ref() {
-        Some(db) => db.get_backlinks(&path),
+        Some(db) => cortex_core::backlinks::backlinks(db, &path),
         None => Ok(vec![]),
     }
+}
+
+/// Notes that name this one in plain text without a `[[link]]`, with the
+/// lines the mentions are on.
+pub fn get_unlinked_mentions(ctx: &AppCtx, path: String) -> Result<Vec<Backlink>> {
+    let guard = ctx.db.0.lock().unwrap();
+    match guard.as_ref() {
+        Some(db) => cortex_core::backlinks::unlinked_mentions(db, &path),
+        None => Ok(vec![]),
+    }
+}
+
+/// Turn every plain-text mention of `path`'s title inside `source` into a
+/// `[[link]]`. Writes `source` the way a save does (recorded for the watcher,
+/// reindexed); returns how many mentions were linked.
+pub fn link_mentions(ctx: &AppCtx, source: String, path: String) -> Result<usize> {
+    let root = ctx.vault_path()?;
+    let title = {
+        let guard = ctx.db.0.lock().unwrap();
+        guard.as_ref().and_then(|db| db.title_of(&path).ok().flatten())
+    }
+    .filter(|t| !t.trim().is_empty())
+    .unwrap_or_else(|| cortex_core::vault::stem(&path).to_string());
+
+    let abs = root.join(&source);
+    let mut note = note::parse_note(&source, &std::fs::read_to_string(&abs)?)?;
+    let (body, linked) = cortex_core::backlinks::link_mentions(&note.body, &title);
+    if linked == 0 {
+        return Ok(0);
+    }
+    note.body = body;
+    let content = note::serialize_note(&note)?;
+    watcher::record_self_write(&ctx.self_writes, &source, &content);
+    std::fs::write(&abs, &content)?;
+    if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
+        let _ = cortex_core::index::index_file(&root, &abs, db);
+    }
+    Ok(linked)
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────

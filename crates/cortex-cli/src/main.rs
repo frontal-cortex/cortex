@@ -12,6 +12,7 @@ mod serve;
 mod ops;
 
 use clap::{Parser, Subcommand};
+use cortex_core::backlinks::Backlink;
 use cortex_core::note::NoteEntry;
 use cortex_core::search::SearchHit;
 use ops::{NewNote, Vault};
@@ -119,8 +120,15 @@ enum Cmd {
     Fmt { targets: Vec<String> },
     /// Outgoing [[wiki links]] of a note, resolved
     Links { target: String },
-    /// Notes that link to this one
+    /// Notes that link to this one, with the lines the links are on
     Backlinks { target: String },
+    /// Notes that name this one in plain text without linking to it
+    Mentions {
+        target: String,
+        /// Turn every such mention into a [[link]] (rewrites the mentioning notes)
+        #[arg(long)]
+        link: bool,
+    },
     /// Comment threads on a note (stored beside it in <note>.comments.yaml); open ones unless --all
     Comments {
         target: String,
@@ -500,7 +508,22 @@ fn run() -> Result<()> {
             ]).collect());
             Ok(())
         }
-        Cmd::Backlinks { target } => out.notes(&v.backlinks(&target)?),
+        Cmd::Backlinks { target } => out.backlinks(&v.backlinks(&target)?),
+        Cmd::Mentions { target, link } => {
+            let mentions = v.unlinked_mentions(&target)?;
+            if !link {
+                return out.backlinks(&mentions);
+            }
+            let mut linked = Vec::new();
+            for m in &mentions {
+                let n = v.link_mentions(&m.entry.path, &target)?;
+                if n > 0 { linked.push((m.entry.path.clone(), n)); }
+            }
+            if out.json { return out.emit(&linked); }
+            for (p, n) in &linked { println!("{p}\t{n}"); }
+            eprintln!("{} mention(s) linked in {} note(s)", linked.iter().map(|(_, n)| n).sum::<usize>(), linked.len());
+            Ok(())
+        }
         Cmd::Comments { target, all } => {
             let (note, threads) = v.comments(&target)?;
             let threads: Vec<_> = threads.into_iter().filter(|t| all || !t.resolved).collect();
@@ -1119,6 +1142,20 @@ impl Out {
         }
         table(&["PATH", "TITLE", "TYPE", "TAGS"], notes.iter().map(|n| vec![
             n.path.clone(), n.title.clone(), n.note_type.clone().unwrap_or_default(), n.tags.join(","),
+        ]).collect());
+        Ok(())
+    }
+
+    /// Backlinks or mentions: the note table plus the first line the link
+    /// (or mention) is on, `<mark>` tags stripped for the terminal (JSON
+    /// keeps every context line, marks included).
+    fn backlinks(&self, links: &[Backlink]) -> Result<()> {
+        if self.json {
+            return self.emit(&links);
+        }
+        table(&["PATH", "TITLE", "TYPE", "CONTEXT"], links.iter().map(|b| vec![
+            b.entry.path.clone(), b.entry.title.clone(), b.entry.note_type.clone().unwrap_or_default(),
+            b.contexts.first().map(|c| c.replace("<mark>", "").replace("</mark>", "")).unwrap_or_default(),
         ]).collect());
         Ok(())
     }
