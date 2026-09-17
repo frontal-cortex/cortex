@@ -1,0 +1,180 @@
+/* The tiles editor: one bordered card per tile, a sentence of pickers inside
+   ("Sum of amount in expenses"), the toolbar's chip language for the rest. */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 var(--space-3);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+}
+
+.tileHead,
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.input {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  min-width: 0;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.label {
+  flex: 0 1 180px;
+  font-weight: 600;
+}
+
+.grow {
+  flex: 1 1 200px;
+}
+
+.word {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.mode {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.modeBtn {
+  border: 0;
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.modeBtn + .modeBtn {
+  border-left: 1px solid var(--border);
+}
+
+.modeOn {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.iconBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+}
+
+.filterTitle {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px dashed var(--border);
+  background: none;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.add:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.empty {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}

@@ -60,6 +60,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { name: "run_view", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "list_collections", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "parse_view_spec", mode: Mode::Sync, exposure: Exposure::Both },
+    CommandInfo { name: "read_stats_entries", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "parse_view_doc", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "serialize_view_doc", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "serialize_view_spec", mode: Mode::Sync, exposure: Exposure::Both },
@@ -262,6 +263,13 @@ pub fn dispatch(ctx: &Arc<AppCtx>, name: &str, args: Value) -> Option<Result<Val
             struct Args { spec: String, }
             let a: Args = parse("parse_view_spec", args)?;
             json(crate::commands::data::parse_view_spec(a.spec))
+        })(),
+        "read_stats_entries" => (|| {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args { spec: String, }
+            let a: Args = parse("read_stats_entries", args)?;
+            json(crate::commands::data::read_stats_entries(a.spec))
         })(),
         "parse_view_doc" => (|| {
             #[derive(serde::Deserialize)]

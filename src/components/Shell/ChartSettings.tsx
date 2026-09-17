@@ -60,21 +60,38 @@ function TextRow({ label, value, placeholder, onCommit }: {
   );
 }
 
-function SelectRow({ label, value, options, onPick }: {
-  label: string; value: string; options: { value: string; label: string }[]; onPick: (v: string) => void;
+/** A field of the chart's source, picked from its properties; typed only
+ *  when the properties are not known (a source that does not load). */
+function FieldRow({ label, value, placeholder, fields, optional, onCommit }: {
+  label: string; value: string; placeholder: string; fields?: string[]; optional?: string; onCommit: (v: string) => void;
+}) {
+  if (!fields?.length) return <TextRow label={label} value={value} placeholder={placeholder} onCommit={onCommit} />;
+  const names = value && !fields.includes(value) ? [value, ...fields] : fields;
+  const options = [
+    ...(optional ? [{ value: "", label: optional }] : []),
+    ...names.map((f) => ({ value: f, label: f })),
+  ];
+  return <SelectRow label={label} value={value} options={options} onPick={onCommit} placeholder={placeholder} />;
+}
+
+function SelectRow({ label, value, options, onPick, placeholder }: {
+  label: string; value: string; options: { value: string; label: string }[]; onPick: (v: string) => void; placeholder?: string;
 }) {
   return (
     <div className={styles.row}>
       <span className={styles.rowLabel}>{label}</span>
-      <Dropdown value={value} options={options} onChange={onPick} className={styles.rowControl} />
+      <Dropdown value={value} options={options} onChange={onPick} className={styles.rowControl} placeholder={placeholder} />
     </div>
   );
 }
 
 /** The rows themselves, grouped the way a person thinks about a chart: what it
  *  is, what it plots, how it looks. */
-export function ChartSettingsPanel({ value, onChange }: {
-  value: ChartOptions; onChange: (key: ChartOptionKey, value: string) => void;
+export function ChartSettingsPanel({ value, fields, onChange }: {
+  value: ChartOptions;
+  /** The source's properties, when known: the data rows become pickers. */
+  fields?: string[];
+  onChange: (key: ChartOptionKey, value: string) => void;
 }) {
   const ct = value.chartType || "line";
   const round = ct === "donut" || ct === "pie";
@@ -105,9 +122,9 @@ export function ChartSettingsPanel({ value, onChange }: {
       </div>
 
       <div className={styles.group}>Data</div>
-      <TextRow label={round ? "Slice by" : "X"} value={value.x} placeholder={round ? "field" : "date field"}
+      <FieldRow label={round ? "Slice by" : "X"} value={value.x} placeholder={round ? "field" : "date field"} fields={fields}
         onCommit={(v) => onChange("x", v)} />
-      <TextRow label={round ? "Amount" : "Y"} value={value.y} placeholder="number field"
+      <FieldRow label={round ? "Amount" : "Y"} value={value.y} placeholder="number field" fields={fields}
         onCommit={(v) => onChange("y", v)} />
       <SelectRow label="Aggregate" value={value.agg}
         options={CHART_AGGS.map((a) => ({ value: a, label: a || "none" }))}
@@ -115,7 +132,7 @@ export function ChartSettingsPanel({ value, onChange }: {
       <SelectRow label="By" value={value.bucket}
         options={CHART_BUCKETS.map((b) => ({ value: b, label: b || "exact x" }))}
         onPick={(v) => onChange("bucket", v)} />
-      <TextRow label="Series" value={value.series} placeholder="field (one line each)"
+      <FieldRow label="Series" value={value.series} placeholder="field (one line each)" fields={fields} optional="one line"
         onCommit={(v) => onChange("series", v)} />
 
       <div className={styles.group}>Style</div>
@@ -142,8 +159,8 @@ export function ChartSettingsPanel({ value, onChange }: {
 /** The chip and its panel — what a chart shows above itself. A chart that
  *  cannot be drawn yet opens the panel itself, so the fields are in front of
  *  whoever just added it. */
-export function ChartSettings({ value, onChange }: {
-  value: ChartOptions; onChange: (key: ChartOptionKey, value: string) => void;
+export function ChartSettings({ value, fields, onChange }: {
+  value: ChartOptions; fields?: string[]; onChange: (key: ChartOptionKey, value: string) => void;
 }) {
   const [open, setOpen] = useState(!value.x || !value.y);
   const ref = useRef<HTMLDivElement>(null);
@@ -165,7 +182,7 @@ export function ChartSettings({ value, onChange }: {
         >
           <GearIcon size={12} /> Settings
         </button>
-        {open && <ChartSettingsPanel value={value} onChange={onChange} />}
+        {open && <ChartSettingsPanel value={value} fields={fields} onChange={onChange} />}
       </div>
     </div>
   );

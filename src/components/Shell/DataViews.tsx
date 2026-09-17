@@ -20,6 +20,10 @@ import { TimelineView } from "./TimelineView";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { PlusIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon } from "./icons";
 import styles from "./DatabaseView.module.css";
+import { StatsEditor } from "./StatsEditor";
+import { useSourceFields } from "./useSourceFields";
+import { GearIcon } from "./icons";
+import chartStyles from "./ChartSettings.module.css";
 
 
 export function viewIcon(type: ViewType, size = 14) {
@@ -229,8 +233,10 @@ export function DataViews({ source, views, onViewsChange, hotkeys, trailing }: P
       </div>
 
       {isChart ? (
-        <ChartConfigBar view={active} onChange={updateActive} />
-      ) : isTracker || isStats ? null : (
+        <ChartConfigBar view={active} source={source} onChange={updateActive} />
+      ) : isStats ? (
+        <StatsConfigBar view={active} source={source} onChange={updateActive} />
+      ) : isTracker ? null : (
         <ViewToolbar
           spec={activeSpec}
           fields={table?.allColumns ?? []}
@@ -311,9 +317,37 @@ function ViewTab({ view, active, onClick, onToggleMenu }: {
   );
 }
 
+/** A saved stats view's tiles, behind the same kind of chip a chart's
+ *  settings sit behind; the tiles editor opens under it, full width. */
+function StatsConfigBar({ view, source, onChange }: { view: ViewDef; source: string; onChange: (v: ViewDef) => void }) {
+  const [open, setOpen] = useState(false);
+  let entries: Record<string, string>[] = [];
+  try {
+    const parsed = JSON.parse(view.stats ?? "[]");
+    if (Array.isArray(parsed)) {
+      entries = parsed.filter((e) => e && typeof e === "object")
+        .map((e) => Object.fromEntries(Object.entries(e as Record<string, unknown>).filter(([, v]) => ["string", "number", "boolean"].includes(typeof v)).map(([k, v]) => [k, String(v)])));
+    }
+  } catch { /* an unreadable list edits as empty; the file is untouched until a change */ }
+  return (
+    <>
+      <div className={chartStyles.bar}>
+        <button className={`${chartStyles.chip} ${open ? chartStyles.chipOn : ""}`} onClick={() => setOpen((o) => !o)} title="Edit the tiles">
+          <GearIcon size={12} /> Tiles
+        </button>
+      </div>
+      {open && (
+        <StatsEditor entries={entries} defaultSource={source}
+          onChange={(next) => onChange({ ...view, stats: JSON.stringify(next) })} />
+      )}
+    </>
+  );
+}
+
 /** A saved chart view's options, through the shared settings panel (the same
  *  panel a chart block in a note shows). */
-function ChartConfigBar({ view, onChange }: { view: ViewDef; onChange: (v: ViewDef) => void }) {
+function ChartConfigBar({ view, source, onChange }: { view: ViewDef; source: string; onChange: (v: ViewDef) => void }) {
+  const { names } = useSourceFields(source);
   const value: ChartOptions = {
     x: view.x ?? "",
     y: view.y ?? "",
@@ -329,6 +363,7 @@ function ChartConfigBar({ view, onChange }: { view: ViewDef; onChange: (v: ViewD
   return (
     <ChartSettings
       value={value}
+      fields={names}
       onChange={(key, v) => onChange({ ...view, [key]: v || undefined })}
     />
   );

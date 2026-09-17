@@ -8,35 +8,13 @@
 // hatch.
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { commands, StructuredSpec, FilterClause } from "../../lib/commands";
+import { commands, StructuredSpec } from "../../lib/commands";
 import { isMac } from "../../lib/keymap";
 import { Dropdown } from "./Dropdown";
+import { FilterBuilder } from "./FilterBuilder";
+import { useSourceFields } from "./useSourceFields";
 import { CloseIcon, SearchIcon } from "./icons";
 import styles from "./ViewToolbar.module.css";
-
-const OPS: { value: string; label: string }[] = [
-  { value: "==", label: "is" },
-  { value: "!=", label: "is not" },
-  { value: ">", label: ">" },
-  { value: ">=", label: "≥" },
-  { value: "<", label: "<" },
-  { value: "<=", label: "≤" },
-  { value: "contains", label: "contains" },
-  { value: "does_not_contain", label: "does not contain" },
-  { value: "starts_with", label: "starts with" },
-  { value: "ends_with", label: "ends with" },
-  { value: "is_empty", label: "is empty" },
-  { value: "is_not_empty", label: "is not empty" },
-  { value: "in", label: "is any of" },
-  { value: "within", label: "within" },
-];
-
-const NO_VALUE_OPS = new Set(["is_empty", "is_not_empty"]);
-const VALUE_HINT: Record<string, string> = { in: "a, b, c", within: "7d, -7d, 2w, 1m" };
-
-function newClause(field: string): FilterClause {
-  return { field, op: "==", value: "" };
-}
 
 function usePopover() {
   const [open, setOpen] = useState(false);
@@ -73,6 +51,8 @@ interface Props {
 
 export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, onSpecChange, search, onSearchChange, searchRef }: Props) {
   const [s, setS] = useState<StructuredSpec | null>(null);
+  // The source's property types: a date filter offers "This month", a select its options.
+  const { props } = useSourceFields(s?.source);
 
   useEffect(() => {
     let alive = true;
@@ -115,54 +95,6 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
     setS(next);
     commands.serializeViewSpec(next).then(onSpecChange).catch(() => {});
   };
-
-  // ── Filters. A path is [i] for a top-level clause, [i, k] for the k-th
-  // clause of the group at i. ──
-  const updateAt = (path: number[], f: (c: FilterClause) => FilterClause | null): FilterClause[] => {
-    const [i, k] = path;
-    return s.filters.flatMap((c, j) => {
-      if (j !== i) return [c];
-      if (k === undefined) { const n = f(c); return n ? [n] : []; }
-      const inner = (c.clauses ?? []).flatMap((g, m) => { if (m !== k) return [g]; const n = f(g); return n ? [n] : []; });
-      return inner.length ? [{ ...c, clauses: inner }] : [];
-    });
-  };
-  const setFilter = (path: number[], patch: Partial<FilterClause>) =>
-    commit({ ...s, filters: updateAt(path, (c) => ({ ...c, ...patch, ...(patch.op && NO_VALUE_OPS.has(patch.op) ? { value: "" } : {}) })) });
-  const removeFilter = (path: number[]) => commit({ ...s, filters: updateAt(path, () => null) });
-  const addFilter = () => commit({ ...s, filters: [...s.filters, newClause(firstField)] });
-  const addGroup = () =>
-    commit({ ...s, filters: [...s.filters, { field: "", op: "", value: "", join: s.filterJoin === "or" ? "and" : "or", clauses: [newClause(firstField)] }] });
-  const addToGroup = (i: number) =>
-    commit({ ...s, filters: s.filters.map((c, j) => (j === i ? { ...c, clauses: [...(c.clauses ?? []), newClause(firstField)] } : c)) });
-  const toggleJoin = () =>
-    commit({ ...s, filterJoin: s.filterJoin === "or" ? "and" : "or" });
-  const toggleGroupJoin = (i: number) =>
-    commit({ ...s, filters: s.filters.map((c, j) => (j === i ? { ...c, join: c.join === "or" ? "and" : "or" } : c)) });
-
-  const clauseRow = (f: FilterClause, path: number[], lead: React.ReactNode) => (
-    <div key={path.join(".")} className={styles.clauseRow}>
-      {lead}
-      <Dropdown
-        value={f.field}
-        options={allFields.map((fl) => ({ value: fl, label: fl }))}
-        onChange={(v) => setFilter(path, { field: v })}
-      />
-      <Dropdown
-        value={f.op}
-        options={OPS}
-        onChange={(v) => setFilter(path, { op: v })}
-      />
-      {!NO_VALUE_OPS.has(f.op) && (
-        <input className={styles.valueInput} value={f.value} placeholder={VALUE_HINT[f.op] ?? "value"}
-          spellCheck={false}
-          onChange={(e) => setFilter(path, { value: e.target.value })} />
-      )}
-      <button className={styles.rowDel} onClick={() => removeFilter(path)} title="Remove">
-        <CloseIcon size={12} />
-      </button>
-    </div>
-  );
 
   // ── Sort ──
   const addSort = () =>
@@ -208,35 +140,13 @@ export function ViewToolbar({ spec, fields, visibleColumns, isBoard, isTable, on
                 <strong> Edit </strong> view to change it.
               </div>
             ) : (
-              <>
-                {s.filters.length === 0 && <div className={styles.empty}>No filters yet.</div>}
-                {s.filters.map((f, i) => {
-                  const lead = i > 0 ? (
-                    <button className={styles.joinToggle} onClick={toggleJoin}>{s.filterJoin}</button>
-                  ) : (
-                    <span className={styles.joinWhere}>Where</span>
-                  );
-                  if (!f.clauses?.length) return clauseRow(f, [i], lead);
-                  const join = f.join || "and";
-                  return (
-                    <div key={i} className={styles.clauseRow}>
-                      {lead}
-                      <div className={styles.group}>
-                        {f.clauses.map((g, k) => clauseRow(g, [i, k], k > 0 ? (
-                          <button className={styles.joinToggle} onClick={() => toggleGroupJoin(i)}>{join}</button>
-                        ) : (
-                          <span className={styles.joinWhere}>(</span>
-                        )))}
-                        <button className={styles.addBtn} onClick={() => addToGroup(i)}>+ Add to group</button>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className={styles.clauseRow}>
-                  <button className={styles.addBtn} onClick={addFilter}>+ Add filter</button>
-                  <button className={styles.addBtn} onClick={addGroup}>+ Add group</button>
-                </div>
-              </>
+              <FilterBuilder
+                filters={s.filters}
+                join={s.filterJoin}
+                fields={allFields}
+                props={props}
+                onChange={(filters, filterJoin) => commit({ ...s, filters, filterJoin })}
+              />
             )}
           </div>
         )}
