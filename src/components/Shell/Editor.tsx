@@ -826,7 +826,7 @@ function NoteEditor({
   useEffect(() => {
     const finish = () => {
       // A collection's page always shows its views, even before the note has a fence.
-      if (collection) { try { ensureCollectionViewsBlock(editor, collection); } catch { /* editor torn down */ } }
+      if (collection) { try { ensureCollectionViewsBlock(editor, collection, parseViews(note.frontmatter).length > 0); } catch { /* editor torn down */ } }
       hydrating.current = false;
       try { refreshDerived(); } catch { /* editor torn down */ }
     };

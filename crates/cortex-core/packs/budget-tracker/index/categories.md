@@ -10,19 +10,19 @@ views:
   layout: compact
   size: small
   columns: [title, spent, monthly_budget, usage]
-  filter: active == true
+  filter: active == true and (monthly_budget > 0 or spent > 0)
   sort: [usage desc]
 - name: Last month
   type: gallery
   layout: compact
   size: small
   columns: [title, last_month, monthly_budget, last_month_usage]
-  filter: active == true
+  filter: active == true and (monthly_budget > 0 or last_month > 0)
   sort: [last_month_usage desc]
 - name: Budget check
   type: table
   columns: [title, bucket, monthly_budget, spent, remaining, usage, last_month]
-  filter: active == true
+  filter: active == true and monthly_budget > 0
   sort: [usage desc]
   summary: {monthly_budget: sum, spent: sum}
 - name: Needs, wants, savings
@@ -37,7 +37,9 @@ it each month. `spent` adds up this month's expenses in the category,
 ring. The same numbers for the previous month sit beside them, so a category
 that ran over two months running stands out.
 
-This month and Last month are the cards on the dashboard. Budget check is the
+This month and Last month are the cards on the dashboard: the categories you
+set a budget for, and any other you have spent in this month — a category you
+never use stays out of the way until you do. Budget check is the
 same numbers as a table, fullest first. `bucket` sorts categories into needs,
 wants and savings for the 50/30/20 split; the board shows them that way.
 

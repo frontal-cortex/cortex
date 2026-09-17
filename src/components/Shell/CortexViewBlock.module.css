@@ -1257,7 +1257,12 @@
 }
 
 .listDate {
-  flex: 0 0 auto;
+  /* Gives way before the title does, and is dropped entirely in a narrow
+     column (below), where a half-shown date says nothing. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-tertiary);
 }
