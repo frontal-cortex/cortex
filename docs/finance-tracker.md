@@ -466,3 +466,96 @@ References: the two Notion structures as dumped are in
 `docs/parity/finance-tracker-notion.md`; the property, formula and view
 details in §1 come from them. Related: `docs/parity/notion-parity.md` §1 (columns, buttons), §5–6
 (views, grouping, summaries), `docs/parity/proposed-backlog.md`.
+
+---
+
+## 7. Revisited 2026-09-17 — separate databases, as the template has them
+
+Read again from a live copy of Sentele's Finance Tracker in a signed-in
+browser: every database schema, view definition and button automation, as
+the Notion web app loads them. The structure matches §1 exactly.
+
+### 7.1 Why decision 3 is reversed
+
+Decision 3 kept transfers as rows of one ledger with a `kind`. In use it
+failed in the way the template's design avoids. A row logged with
+`kind: income` and `to_account: Bank` looked like a transfer into Bank and
+counted nowhere: accounts count `to_account` only when `kind` is
+`transfer`, and nothing on the row or the page said so. Two install
+problems hid it further. The vault's `account` was still a select from an
+older schema (a pack update keeps a schema edited since install), and the
+seeded accounts had been skipped because the collection already existed.
+The balance stayed at the opening amount with no hint why.
+
+In the template a row's database *is* its kind. An expense cannot have a
+destination account, a transfer has both ends by construction, and every
+rollup is a plain sum over a relation. Pack 4.0 adopts that model.
+
+### 7.2 Feature list
+
+Status: ✅ Cortex does it the same way · ≈ possible by other means ·
+❌ gap. The last column is the budget-tracker pack as shipped (3.1).
+
+| # | Template feature | Cortex app | Pack 3.1 |
+|---|---|---|---|
+| **Data** | | | |
+| 1 | Expenses: title, amount, date, account → Accounts, category → Categories | ✅ relations | ≈ one ledger, `kind: expense` |
+| 2 | Incomes: title, amount, date, source (select), account → Accounts | ✅ | ≈ same ledger, `kind: income` |
+| 3 | Transfers: title, amount, date, from account, to account | ✅ | ❌ ledger row, trusts `kind` |
+| 4 | Accounts: initial amount; income, expenses, transfers in and out as rollups over two-way relations; balance formula | ✅ reverse rollups | ≈ rollups filtered by `kind` |
+| 5 | Categories: monthly budget; this month's and last month's spend; usage as a ring | ✅ rollup `where` + `format: ring` | ≈ `budget-limits`, matched to a category select |
+| 6 | A relation creates its reverse side automatically | ≈ the reverse is declared in the target schema | — |
+| **Views** | | | |
+| 7 | Budget cards, This Month and Last Month tabs: page icon, spent, budget, usage ring | ≈ compact gallery and ring; ❌ no row icon on cards | ≈ one tab |
+| 8 | Expenses: Recent (table), Weekly (grouped by day), Monthly (by month), each group totalled | ✅ `group` + `bucket` + `summary` | ≈ on the ledger |
+| 9 | Expenses chart: columns per month for the past 12 months, stacked by category | ✅ `bucket` + `series` + `stack` + `date >= @month-11` | ≈ not stacked |
+| 10 | Incomes: Recent, Monthly, Yearly, and a chart stacked by source | ✅ | ❌ no income views |
+| 11 | Transfers: Recent and Monthly lists with both accounts | ✅ | ❌ |
+| 12 | Donut of this month's expenses by category; switchable to income by source | ✅ single-valued; ≈ a multi-valued axis joins its values | ≈ expenses only |
+| 13 | Account cards: name and "Current Balance: $X" | ✅ compact gallery | ≈ balances empty in practice |
+| 14 | "Load more" on long inline lists | ≈ `limit`, no load more | — |
+| **Buttons** | | | |
+| 15 | New Expense, New Income, New Transfer: create a row dated today (income presets an account), then open it | ✅ `add-row` + `values` + `open: true` | ≈ writes `kind` |
+| **Page** | | | |
+| 16 | Cover, icon, guide callouts and toggles | ✅ | ✅ |
+| 17 | Three columns, about 1 : 2.5 : 1 | ✅ `::: columns 1 2 1` | ✅ |
+| **Getting the template into a vault** | | | |
+| 18 | Duplicating gives a working copy every time | ❌ an update keeps a schema edited since install, and says nothing | — |
+| 19 | Example rows arrive with the databases | ❌ seeds skipped into an existing collection, silently | — |
+
+### 7.3 Gaps to close
+
+In the app, generic:
+
+- **Row icons on gallery cards** (7). A card shows the row's `icon` before its title, as a page icon does in Notion.
+- **Multi-valued chart axes** (12). A chart whose `x` is a relation or multi-select counts a row under each of its values, the way `group` and `series` already do, instead of under the values joined as text.
+- **Say what an install or update skipped** (18, 19). Follow-up: the report already lists kept and skipped files; the app should show it and offer the pack's version of an edited schema.
+
+In the pack, 4.0, below.
+
+### 7.4 Budget Tracker 4.0 — the target
+
+Id kept (`budget-tracker`). `budget` becomes the dashboard page and holds
+no rows; the databases nest under it.
+
+| Collection | Properties | Computed |
+|---|---|---|
+| `expenses` | title, date, amount (currency), category → `categories`, account → `accounts`, payee, bill → `budget-bills`, wish → `budget-wishlist` | — |
+| `income` | title, date, amount, source (select), account → `accounts` | — |
+| `transfers` | title, date, amount, from_account → `accounts`, to_account → `accounts`, wish → `budget-wishlist` | — |
+| `accounts` | title, kind, initial, active | income, spent, moved_in, moved_out (rollups over the reverse relations), **balance**, this_month |
+| `categories` | title, monthly_budget, bucket (need · want · saving), active | spent (this month), last_month, remaining, **usage** and last_month_usage (rings) |
+| `budget-bills` | as 3.1, payments now rolled up from `expenses` | last_paid, total_paid, monthly, due_in |
+| `budget-wishlist` | as 3.1; money put by from `transfers`, the purchase from `expenses` | put_by, paid, left, saved, status |
+
+Dashboard (`index.md`), the template's layout:
+
+- **Left:** New expense, New income, New transfer; budget cards with This month and Last month tabs.
+- **Middle:** Expenses (Recent, Weekly, Monthly, Chart), Income (Recent, Monthly, Yearly, Chart), Transfers (Recent, Monthly), each a `cortex-views` block whose tabs are that database's own views.
+- **Right:** this month's donut; account cards with the balance.
+
+Existing 3.x vaults keep their `budget` ledger rows. Moving them is a
+one-off: expense, income and transfer rows go to their collection, `kind`
+dropped, `account` and `to_account` renamed where a transfer needs
+`from_account`. That is a migration to run with the user, not something an
+update does silently.
