@@ -57,6 +57,19 @@
   opacity: 0.6;
 }
 
+/* Quiet: the prompt belongs to the row you are on, not to all of them. Kept in
+   the layout either way, so nothing shifts when it appears. */
+.placeholderQuiet {
+  opacity: 0;
+  transition: opacity var(--motion-fast, 0.1s) ease;
+}
+tr:hover .placeholderQuiet,
+tr:focus-within .placeholderQuiet,
+[class*="row"]:hover .placeholderQuiet,
+[class*="row"]:focus-within .placeholderQuiet {
+  opacity: 0.6;
+}
+
 .popover {
   position: absolute;
   top: calc(100% + 4px);

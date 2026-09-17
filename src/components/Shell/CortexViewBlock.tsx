@@ -1457,6 +1457,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
           multi={multi}
           editable={c.key !== "$body" && c.key !== "id"}
           placeholder={t === "person" ? "Unassigned" : t === "relation" ? "Link…" : "Empty"}
+          quietPlaceholder
           forceOpen={opening}
           onClose={done}
           onChange={(next) => {
