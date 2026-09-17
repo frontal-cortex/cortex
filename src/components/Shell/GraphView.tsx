@@ -7,7 +7,7 @@ import { NoteEntry, commands } from "../../lib/commands";
 import { Point, clamp, distance, midpoint, pinchFactor, wheelZoomFactor } from "../../lib/gestures";
 import {
   buildGraph, buildLegend, colorOf, nodeRadius, clampDepth, MIN_DEPTH, MAX_DEPTH,
-  GraphNode, GraphMode, ColorBy,
+  GraphNode, GraphMode, ColorBy, GraphLink, labelFloor,
 } from "../../lib/graph";
 import { shortcutFor } from "../../lib/keymap";
 import { CloseIcon } from "./icons";
@@ -34,7 +34,7 @@ interface Props {
 
 /** Settings survive closing and reopening the graph within a session; they
  *  are view state, so they are not written anywhere. */
-const remembered = { mode: "global" as GraphMode, depth: 1, filter: "", colorBy: "none" as ColorBy, showOrphans: true };
+const remembered = { mode: "global" as GraphMode, depth: 1, filter: "", colorBy: "none" as ColorBy, showOrphans: true, showRelations: true };
 
 const LEGEND_MAX = 12;
 const DRAG_THRESHOLD = 4;
@@ -42,7 +42,7 @@ const MIN_SCALE = 0.2;
 const MAX_SCALE = 4;
 
 export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose }: Props) {
-  const [rawLinks, setRawLinks] = useState<Array<[string, string]> | null>(null);
+  const [rawLinks, setRawLinks] = useState<Array<[string, string, string]> | null>(null);
   const [failed, setFailed] = useState(false);
 
   const [mode, setMode] = useState<GraphMode>(initialMode ?? remembered.mode);
@@ -50,18 +50,19 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
   const [filter, setFilter] = useState(remembered.filter);
   const [colorBy, setColorBy] = useState<ColorBy>(remembered.colorBy);
   const [showOrphans, setShowOrphans] = useState(remembered.showOrphans);
-  useEffect(() => { Object.assign(remembered, { mode, depth, filter, colorBy, showOrphans }); }, [mode, depth, filter, colorBy, showOrphans]);
+  const [showRelations, setShowRelations] = useState(remembered.showRelations);
+  useEffect(() => { Object.assign(remembered, { mode, depth, filter, colorBy, showOrphans, showRelations }); }, [mode, depth, filter, colorBy, showOrphans, showRelations]);
 
   // Local mode needs a centre; without an open note the toggle is disabled.
   const localMode = mode === "local" && currentPath !== null;
 
   useEffect(() => {
-    commands.getAllLinks().then(setRawLinks).catch(() => setFailed(true));
+    commands.getLinkGraph().then(setRawLinks).catch(() => setFailed(true));
   }, [notes]);
 
   const model = useMemo(
-    () => buildGraph(notes, rawLinks ?? [], { mode: localMode ? "local" : "global", centre: currentPath, depth, filter, showOrphans }),
-    [notes, rawLinks, localMode, currentPath, depth, filter, showOrphans],
+    () => buildGraph(notes, rawLinks ?? [], { mode: localMode ? "local" : "global", centre: currentPath, depth, filter, showOrphans, showRelations }),
+    [notes, rawLinks, localMode, currentPath, depth, filter, showOrphans, showRelations],
   );
   const legend = useMemo(() => buildLegend(model.nodes, colorBy), [model.nodes, colorBy]);
   const centre = localMode ? currentPath : null;
@@ -133,6 +134,10 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
   // `touch-action: none` on the svg keeps the browser from scrolling or zooming
   // the page with the same fingers) ──
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  // Pointing at a node names it even when its label is one of the thinned-out ones.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // How many labels the graph can carry: fewer as it grows, all of them zoomed in.
+  const floor = labelFloor(model.nodes.length, transform.scale);
   const transformRef = useRef(transform);
   transformRef.current = transform;
   const svgRef = useRef<SVGSVGElement>(null);
@@ -300,6 +305,10 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
             <input type="checkbox" checked={showOrphans} onChange={(e) => setShowOrphans(e.target.checked)} />
             Orphans
           </label>
+          <label className={styles.control} title="Draw the edges a database's relations make — an expense to its category, a transfer to its accounts">
+            <input type="checkbox" checked={showRelations} onChange={(e) => setShowRelations(e.target.checked)} />
+            Relations
+          </label>
           <button className={styles.playBtn} onClick={togglePlay} title={running ? "Pause the layout" : "Resume the layout"} aria-pressed={running}>
             {running ? "Pause" : "Resume"}
           </button>
@@ -323,10 +332,12 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
                 {links.map((l, i) => {
                   const s = l.source as SimNode, t = l.target as SimNode;
                   if (typeof s !== "object" || typeof t !== "object") return null;
-                  return <line key={i} x1={s.x ?? 0} y1={s.y ?? 0} x2={t.x ?? 0} y2={t.y ?? 0} className={styles.edge} />;
+                  // A relation is drawn fainter than a link someone wrote.
+                  return <line key={i} x1={s.x ?? 0} y1={s.y ?? 0} x2={t.x ?? 0} y2={t.y ?? 0} className={`${styles.edge} ${(l as GraphLink).kind === "relation" ? styles.edgeRelation : ""}`} />;
                 })}
                 {nodes.map((n) => {
                   const r = nodeRadius(n.degree);
+                  const named = n.degree >= floor || n.id === centre || n.id === hoveredId;
                   const color = colorBy === "none" ? null : colorOf(n, colorBy, legend);
                   const isCentre = n.id === centre;
                   const dim = n.distance !== undefined && n.distance > 1 ? 1 - (n.distance - 1) * 0.2 : 1;
@@ -334,6 +345,7 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
                     <g key={n.id} data-node className={`${styles.nodeGroup} ${isCentre ? styles.nodeCentre : ""}`}
                       transform={`translate(${n.x ?? 0},${n.y ?? 0})`} opacity={dim}
                       onPointerDown={(e) => onNodePointerDown(e, n.id)} role="button" tabIndex={-1}
+                      onPointerEnter={() => setHoveredId(n.id)} onPointerLeave={() => setHoveredId((h) => (h === n.id ? null : h))}
                       aria-label={n.title}>
                       <title>{n.title}{n.degree ? ` · ${n.degree} link${n.degree === 1 ? "" : "s"}` : ""}</title>
                       <circle r={r} className={styles.nodeCircle}
@@ -344,9 +356,11 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
                         <circle r={Math.max(2, r / 4)} className={styles.nodeDot}
                           style={color ? { fill: `var(--tag-${color}-fg)` } : undefined} />
                       )}
-                      <text y={r + 12} textAnchor="middle" className={styles.nodeLabel}>
-                        {n.title.length > 18 ? n.title.slice(0, 16) + "…" : n.title}
-                      </text>
+                      {named && (
+                        <text y={r + 12} textAnchor="middle" className={styles.nodeLabel}>
+                          {n.title.length > 18 ? n.title.slice(0, 16) + "…" : n.title}
+                        </text>
+                      )}
                     </g>
                   );
                 })}

@@ -64,9 +64,36 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
     // Only the target names a note: `[[Note|alias]]` and `[[Note#Section]]`
     // both link to `Note`, so that is what the graph and backlinks record.
     let links: Vec<String> = crate::note::extract_wiki_links(&note.body).into_iter().map(|l| l.target).collect();
-    db.upsert_links(&rel, &links)?;
+    db.upsert_links_and_relations(&rel, &links, &relation_targets(root, &rel, &note))?;
 
     Ok(())
+}
+
+/// The rows a row's relation properties name — the other half of the graph.
+/// An expense's `category` and `account`, a transfer's two accounts, a bill's
+/// category: written as frontmatter, not as `[[links]]`, so without this a
+/// database of hundreds of rows is hundreds of islands. The target is the
+/// related row's title, exactly as a wiki link's target would be.
+fn relation_targets(root: &Path, rel: &str, note: &note::Note) -> Vec<String> {
+    let Some(collection) = crate::vault::row_collection(rel) else { return vec![] };
+    let Ok(Some(schema)) = crate::schema::load(root, &collection) else { return vec![] };
+    let mut out: Vec<String> = Vec::new();
+    for p in &schema.properties {
+        // The forward side only: a reverse rollup (`from:`) is the same edge
+        // seen from the other end, and would double every one of them.
+        if p.ty != crate::schema::PropType::Relation || p.from.is_some() { continue; }
+        let Some(value) = note.frontmatter.get(&p.name) else { continue };
+        let titles: Vec<String> = match value {
+            serde_json::Value::String(s) => vec![s.clone()],
+            serde_json::Value::Array(items) => items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+            _ => vec![],
+        };
+        for t in titles {
+            let t = t.trim().to_string();
+            if !t.is_empty() && !out.contains(&t) { out.push(t); }
+        }
+    }
+    out
 }
 
 fn is_note(p: &Path) -> bool {
