@@ -225,8 +225,17 @@ Phase 0.
 ## Android addendum
 
 Everything above applies; these are the Android-specific answers from
-`docs/parity/mobile-spike.md`, which also carries the file:line evidence
-and the backlog rows (36–39).
+`docs/parity/mobile-spike.md` (refreshed 2026-09-17), which carries the
+file:line evidence, the current blocker list and the backlog rows (40–45).
+
+Status 2026-09-17: the transport (Phase 1), the `portable-pty` gating, the
+`https` feature of `git2`, the responsive shell and CI have all landed.
+What is left for a native Android build is small: the frontend must
+recognise a native build as a third host kind rather than the desktop
+(serve mode's capability model already hides everything a phone lacks),
+plus the TLS trust store, a writable `TMPDIR`, a stored token and a clone
+flow, then the first APK. Serve mode's upload-based imports already work in
+the Android WebView, so file imports need no new code.
 
 ### Storage: app-private directory, not scoped storage
 
@@ -260,15 +269,21 @@ store — `/apex/com.android.conscrypt/cacerts` on Android 14+, else
 Marketplace fetches are unaffected: `ureq` uses rustls with bundled
 `webpki-roots`.
 
-### Two more Android-only gotchas
+### Three more Android-only gotchas
 
 - `std::env::temp_dir()` is `/data/local/tmp`, which an app cannot write.
   Set `TMPDIR` to `app_cache_dir()` in `setup` so the Notion zip importer
-  (`import/notion.rs:479`) and the gh-pages scratch (`publish.rs:592`) work.
-- `portable-pty` must become a desktop-only dependency and `terminal.rs`,
-  `reveal_path`, `detect_agents` and the Omarchy theme watcher go behind
-  `#[cfg(desktop)]`; the frontend hides the terminal pane and the
-  terminal-agent setting on mobile.
+  (`import/notion.rs`), URL templates (`template.rs`) and the gh-pages
+  scratch (`publish.rs`) work.
+- A native build has `__TAURI_INTERNALS__`, so the frontend's `isDesktop()`
+  is true and `host.ts` hands it the desktop capabilities (folder pickers,
+  reveal, terminal, updater, the Wayland clipboard). A `host_info` command
+  and a `MOBILE` capability set fix this; the served host's rules are the
+  right ones for a phone.
+- `portable-pty` and the terminal are already desktop-only
+  (`crates/cortex-app`, `cfg(not(any(target_os = "android", target_os =
+  "ios")))`); `reveal_path`, `detect_agents` and the theme watcher compile
+  on a phone and find nothing, which is fine.
 
 ### Sync triggers
 
@@ -281,7 +296,8 @@ explicit gesture. No background sync.
 JDK 17, Android SDK (platform 34, build-tools, platform-tools), NDK r26+,
 `rustup target add aarch64-linux-android armv7-linux-androideabi
 i686-linux-android x86_64-linux-android`, `ANDROID_HOME` and `NDK_HOME`
-exported; then `npx tauri android init` (commit `src-tauri/gen/android`),
-`npx tauri icon`, `npx tauri android build --debug --target aarch64`. The
-dev machine that produced the spike had none of this installed, so the
-first APK is its own backlog row (38).
+exported; then `npx tauri android init` (commit `src-tauri/gen/android`;
+`src-tauri/gen/` is gitignored today and must be un-ignored for that
+directory), `npx tauri icon`, `npx tauri android build --debug --target
+aarch64`. The dev machine that produced both spike passes had none of this
+installed, so the first APK is its own backlog row (43).
