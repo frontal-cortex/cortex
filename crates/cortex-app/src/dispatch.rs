@@ -132,6 +132,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { name: "packs_install", mode: Mode::Blocking, exposure: Exposure::Both },
     CommandInfo { name: "packs_update", mode: Mode::Blocking, exposure: Exposure::Both },
     CommandInfo { name: "packs_remove", mode: Mode::Blocking, exposure: Exposure::Both },
+    CommandInfo { name: "packs_clear", mode: Mode::Blocking, exposure: Exposure::Both },
     CommandInfo { name: "packs_preview", mode: Mode::Blocking, exposure: Exposure::Both },
     CommandInfo { name: "packs_export", mode: Mode::Blocking, exposure: Exposure::Desktop },
     CommandInfo { name: "fetch_link_preview", mode: Mode::Sync, exposure: Exposure::Both },
@@ -687,6 +688,13 @@ pub fn dispatch(ctx: &Arc<AppCtx>, name: &str, args: Value) -> Option<Result<Val
             struct Args { id: String, }
             let a: Args = parse("packs_remove", args)?;
             json(crate::commands::packs::packs_remove(ctx, a.id))
+        })(),
+        "packs_clear" => (|| {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args { id: String, dry_run: bool, }
+            let a: Args = parse("packs_clear", args)?;
+            json(crate::commands::packs::packs_clear(ctx, a.id, a.dry_run))
         })(),
         "packs_preview" => (|| {
             #[derive(serde::Deserialize)]

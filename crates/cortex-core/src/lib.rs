@@ -39,5 +39,6 @@ pub mod settings;
 pub mod tags;
 pub mod template;
 pub mod tracker;
+pub mod trash;
 pub mod ui_state;
 pub mod vault;

@@ -1,33 +1,12 @@
-//! Soft-delete. Deleting a note moves it to `.trash/` (committed, so it syncs
-//! and can be restored on any clone) rather than destroying it. Each trashed
-//! note keeps its content as readable markdown plus a small YAML sidecar
-//! recording where it came from.
+//! The trash: listing, restoring and emptying it. The move into it is
+//! `cortex_core::trash`, shared with the CLI and MCP server.
 
 use crate::ctx::AppCtx;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use cortex_core::error::{AppError, Result};
-use cortex_core::note;
-
-fn trash_dir(root: &Path) -> PathBuf {
-    root.join(".trash")
-}
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TrashMeta {
-    pub original_path: String,
-    pub title: String,
-    pub deleted_at: u64,
-}
+pub use cortex_core::trash::{move_to_trash, now_secs, trash_dir, TrashMeta};
 
 #[derive(Debug, Serialize)]
 pub struct TrashEntry {
@@ -37,40 +16,6 @@ pub struct TrashEntry {
     pub deleted_at: u64,
 }
 
-fn sanitize(stem: &str) -> String {
-    stem.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
-        .collect()
-}
-
-/// Move a note at `rel_path` into the trash. Returns the trash id. Called by
-/// `delete_note`.
-pub fn move_to_trash(root: &Path, rel_path: &str) -> Result<String> {
-    let abs = root.join(rel_path);
-    let content = std::fs::read_to_string(&abs)?;
-    let parsed = note::parse_note(rel_path, &content)?;
-    let title = note::infer_title(&parsed);
-
-    let stem = Path::new(rel_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("note");
-    let id = format!("{}-{}", now_secs(), sanitize(stem));
-
-    let dir = trash_dir(root);
-    std::fs::create_dir_all(&dir)?;
-
-    std::fs::write(dir.join(format!("{id}.md")), &content)?;
-    let meta = TrashMeta {
-        original_path: rel_path.to_string(),
-        title,
-        deleted_at: now_secs(),
-    };
-    std::fs::write(dir.join(format!("{id}.meta.yaml")), serde_yaml::to_string(&meta)?)?;
-
-    std::fs::remove_file(&abs)?;
-    Ok(id)
-}
 pub fn list_trash(ctx: &AppCtx) -> Result<Vec<TrashEntry>> {
     let root = ctx.vault_path()?;
     let dir = trash_dir(&root);

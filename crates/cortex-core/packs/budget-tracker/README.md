@@ -20,22 +20,27 @@ start of a month.
 | `schemas/categories.yaml`, `index/categories.md` | `collections/categories/` | monthly_budget, bucket, active; computed `spent`, `last_month`, `remaining`, `usage` and `last_month_usage` as rings; views This month, Last month, Budget check, Needs, wants, savings |
 | `schemas/budget-bills.yaml`, `index/budget-bills.md` | `collections/budget-bills/` | amount, repeat, next_due, paid, category, account; computed `last_paid`, `total_paid`, `monthly`, `due_in` |
 | `schemas/budget-wishlist.yaml`, `index/budget-wishlist.md` | `collections/budget-wishlist/` | price, priority, target; computed `put_by`, `paid`, `bought_on`, `left`, `saved`, `status` |
-| `templates/*.md` | `collections/<name>/_template-<name>.md` | each database's new-row shape; account, category, bill and wish pages list their own rows |
-| `seed/*/*.md` | `collections/<name>/` | four accounts, six categories, eight expenses, two salaries, three transfers, two bills, three wishes — dated relative to the day you install, so every ring, chart and balance has a shape straight away |
+| `templates/*.md` | `collections/*/_template-*.md` | each database's new-row shape; account, category, bill and wish pages list their own rows |
+| `seed/*/*.md` | `collections/*/` | four accounts, six categories, eight expenses, two salaries, three transfers, two bills, three wishes — dated relative to the day you install, so every ring, chart and balance has a shape straight away |
 
 All seven databases nest under Budget in the sidebar.
 
 ## How to start
 
 1. **Install** the pack (Marketplace, or `cortex packs install budget-tracker`).
-2. **Set up your accounts.** In Accounts, rename the examples to yours and set
-   each one's `initial` to what it held on the day you start logging.
-3. **Set your categories.** In Categories, keep the ones you use and set
-   `monthly_budget` on the few you want to hold to a number.
-4. **Log with the buttons.** New expense, New income and New transfer each open
+   Look around: the example rows show what every ring, chart and balance does.
+2. **Clear the examples** when you are ready for real data: **Clear data** on
+   the pack's Marketplace page, or `cortex packs clear budget-tracker`. Every
+   row in the seven databases goes to the trash (each one restorable); the
+   dashboard, views and row templates stay.
+3. **Add your accounts.** In Accounts, one row per account, with `initial` set
+   to what it held on the day you start logging.
+4. **Add your categories.** In Categories, one row per category, with
+   `monthly_budget` on the ones you want to hold to a number.
+5. **Log with the buttons.** New expense, New income and New transfer each open
    a row dated today: type the amount, pick the account (and for an expense,
-   the category). Delete the example rows when you have your own.
-5. **Optional: a currency sign.** Amounts use the `currency` format with no
+   the category).
+6. **Optional: a currency sign.** Amounts use the `currency` format with no
    sign. Pick Currency in a column's menu and type the unit, or add
    `unit: "€"` to `amount` in the schemas.
 

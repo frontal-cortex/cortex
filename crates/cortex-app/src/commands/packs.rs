@@ -6,7 +6,7 @@
 
 use crate::ctx::AppCtx;
 use cortex_core::error::Result;
-use cortex_core::marketplace::{self as mk, Catalog, InstallReport, Pack, PackPreview, Plan, RemoveReport, UpdateReport};
+use cortex_core::marketplace::{self as mk, Catalog, ClearReport, InstallReport, Pack, PackPreview, Plan, RemoveReport, UpdateReport};
 
 
 fn cache_dir(ctx: &AppCtx) -> Option<std::path::PathBuf> {
@@ -48,6 +48,22 @@ pub fn packs_update(ctx: &AppCtx, id: String) -> Result<UpdateReport> {
 pub fn packs_remove(ctx: &AppCtx, id: String) -> Result<RemoveReport> {
     let root = ctx.vault_path()?;
     off_thread(move || mk::remove(&root, &id))
+}
+
+/// Move every row of an installed pack's collections to the trash, keeping
+/// its pages, views and schemas. `dry_run` lists what would go, for the
+/// confirmation.
+pub fn packs_clear(ctx: &AppCtx, id: String, dry_run: bool) -> Result<ClearReport> {
+    let root = ctx.vault_path()?;
+    let report = off_thread(move || mk::clear(&root, &id, dry_run))?;
+    if !dry_run {
+        if let Some(db) = ctx.db.0.lock().unwrap().as_ref() {
+            for c in &report.collections {
+                for r in &c.rows { let _ = db.remove_note(r); }
+            }
+        }
+    }
+    Ok(report)
 }
 
 /// What the pack's page shows: each collection's properties, views, row

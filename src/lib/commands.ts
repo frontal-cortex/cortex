@@ -780,6 +780,12 @@ export interface PackPreview {
   includes: string[];
 }
 
+export interface PackClearReport {
+  id: string;
+  dry_run: boolean;
+  collections: { collection: string; rows: string[] }[];
+}
+
 export interface PackRemoveReport {
   id: string;
   removed: string[];
@@ -1150,6 +1156,8 @@ export const commands = {
     invoke<PackUpdateReport>("packs_update", { id }),
   packsRemove: (id: string) =>
     invoke<PackRemoveReport>("packs_remove", { id }),
+  packsClear: (id: string, dryRun: boolean) =>
+    invoke<PackClearReport>("packs_clear", { id, dryRun }),
   packsExport: (id: string, from: string, outDir: string) =>
     invoke<string>("packs_export", { id, from, outDir }),
 

@@ -368,6 +368,13 @@ enum PacksCmd {
     },
     /// Remove a pack: deletes only the files it installed that you have not changed
     Remove { id: String },
+    /// Clear a pack's data: move every row of its collections (examples and yours) to the trash, keeping its pages, views and schemas
+    Clear {
+        id: String,
+        /// List the rows that would go, and move nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Check a pack directory (or every pack under packs/) against the format rules
     Lint {
         /// A pack directory, or a marketplace checkout containing packs/
@@ -976,6 +983,17 @@ fn packs(v: &Vault, out: &Out, action: PacksCmd) -> Result<()> {
             println!("removed {}", r.id);
             for f in &r.removed { println!("  - {f}"); }
             for f in &r.kept { println!("  = {f} (edited since install, kept)"); }
+            Ok(())
+        }
+        PacksCmd::Clear { id, dry_run } => {
+            let r = mk::clear(&v.root, &id, dry_run)?;
+            if out.json { return out.emit(&r); }
+            if r.total() == 0 { println!("nothing to clear: {}'s collections are empty", r.id); }
+            for c in r.collections.iter().filter(|c| !c.rows.is_empty()) {
+                if dry_run { for row in &c.rows { println!("  - {row}"); } }
+                println!("{} {} row{} from {}", if dry_run { "would trash" } else { "trashed" }, c.rows.len(), if c.rows.len() == 1 { "" } else { "s" }, c.collection);
+            }
+            if !dry_run && r.total() > 0 { println!("restore any of them from the trash"); }
             Ok(())
         }
         PacksCmd::Lint { path } => packs_lint(out, path),
