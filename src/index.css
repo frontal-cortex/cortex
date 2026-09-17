@@ -138,10 +138,14 @@ a:focus-visible,
 /* Stack when the document area (Editor.module.css `.docWrap`, an inline-size
    container) is narrow — the sidebar open in a small window — not only when
    the whole viewport is. */
+/* Stacked, each column takes the full width. Side by side the columns start at
+   the top (`align-items: flex-start` above); stacked, that same rule would size
+   every column to its content, which pins it at its min-width floor and leaves
+   a list one word wide in a phone-wide page. */
 @container (max-width: 800px) {
-  .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; gap: 4px; }
+  .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; align-items: stretch; gap: 4px; }
 }
-:root[data-viewport="phone"] .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; gap: 4px; }
+:root[data-viewport="phone"] .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group { flex-direction: column; align-items: stretch; gap: 4px; }
 
 /* ── Buttons ───────────────────────────────────────────────────────────────
    Consecutive button blocks flow as one row of pills. */
