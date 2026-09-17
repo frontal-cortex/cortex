@@ -308,7 +308,8 @@ function DayGrid({ r, range, focus, busy, onToggle, onFocus, onOpen }: {
               const dt = parseYmd(d.date);
               const isToday = d.date === r.today;
               return (
-                <th key={d.date} className={`${styles.thDay} ${isToday ? styles.today : ""} ${d.date > r.today ? styles.future : ""}`}>
+                <th key={d.date} className={`${styles.thDay} ${isToday ? styles.today : ""} ${d.date > r.today ? styles.future : ""}`}
+                  data-major={dt.getDate() === 1 || dt.getDate() % 5 === 0 || isToday ? "" : undefined}>
                   {!month && <span className={styles.dow}>{DOW[(dt.getDay() + 6) % 7]}</span>}
                   <span className={styles.dom}>{dt.getDate()}</span>
                 </th>

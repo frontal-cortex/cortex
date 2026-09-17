@@ -28,6 +28,7 @@ import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from
 import { DEFAULT_STATS } from "../../lib/database";
 import { NotePathContext } from "./ButtonBlock";
 import { StatsEditor } from "./StatsEditor";
+import { friendlyDateValue } from "../../lib/displayDate";
 import { XYChart, seriesColor } from "./XYChart";
 import { FilterText } from "./FilterBuilder";
 import { useCollections, useSourceFields } from "./useSourceFields";
@@ -539,9 +540,26 @@ function FormattedNumber({ value, schema, onSet }: { value: unknown; schema: Pro
   return <>{formatNumber(n, schema)}</>;
 }
 
-/** A cell for display only: formatted when its column declares a number format, else plain text. */
+/** A date-typed column: its values read as "16 Sep 2026". */
+function isDateColumn(c: ViewColumn): boolean {
+  const t = c.schema?.type;
+  return c.ty === "date" || t === "date" || t === "date_range" || t === "created_time" || t === "edited_time";
+}
+
+/** A date as it reads, falling back to the plain cell text. */
+function dateText(v: unknown): string {
+  return friendlyDateValue(v) ?? formatCell(v);
+}
+
+/** A cell for display only: formatted when its column declares a number format,
+ *  a date as a date, else plain text. */
 function displayCell(c: ViewColumn, v: unknown): ReactNode {
-  return numberFormat(c) ? <FormattedNumber value={v} schema={c.schema!} /> : formatCell(v);
+  if (numberFormat(c)) return <FormattedNumber value={v} schema={c.schema!} />;
+  if (isDateColumn(c)) return dateText(v);
+  // A rollup or formula that works out to a day (a next milestone, a last paid) reads as one too.
+  const t = c.schema?.type;
+  if ((t === "rollup" || t === "formula") && typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return dateText(v);
+  return formatCell(v);
 }
 
 /** Today's date in the user's own timezone — the same day the calendar shows. */
@@ -701,10 +719,19 @@ function RoundChart({ chart }: { chart: ChartResult }) {
           if (arc.y / total < 0.06) return null;
           const mid = (arc.a0 + arc.a1) / 2;
           const rad = donut ? (R + r) / 2 : R * 0.62;
-          const text = labelText(arc);
+          // As many characters as fit inside the slice (about 6.5 units a
+          // character), and none when that is under three. The text runs
+          // horizontally: at the ring's sides that is across the band, whose
+          // width is the ring's thickness; at the top and bottom, along it.
+          const across = donut ? (R - r) / Math.max(0.25, Math.abs(Math.cos(mid))) : 2 * (R - rad * Math.abs(Math.cos(mid)));
+          const room = Math.floor(Math.min(donut ? 60 : 90, rad * (arc.a1 - arc.a0), across - 4) / 6.5);
+          const full = labelText(arc);
+          const text = full.length > room ? (room >= 3 ? full.slice(0, room - 1) + "…" : "") : full;
           return text ? (
-            <text key={`t${arc.i}`} x={cx + rad * Math.cos(mid)} y={cy + rad * Math.sin(mid)} textAnchor="middle" dominantBaseline="central" className={styles.sliceLabel}>
-              {text.length > 14 ? text.slice(0, 13) + "…" : text}
+            // Kept inside the drawing: a label on the left or right of the ring
+            // would otherwise run past the edge and be cut off.
+            <text key={`t${arc.i}`} x={Math.min(S - 2 - text.length * 3.4, Math.max(2 + text.length * 3.4, cx + rad * Math.cos(mid)))} y={cy + rad * Math.sin(mid)} textAnchor="middle" dominantBaseline="central" className={styles.sliceLabel}>
+              {text}
             </text>
           ) : null;
         })}
@@ -875,7 +902,7 @@ function DateCell({ value, editable, saving, onCommit, forceOpen, onDone }: {
   useEffect(() => { if (forceOpen && editable) setEditing(true); }, [forceOpen, editable]);
 
   const text = toInput(value);
-  if (!editable) return <span className={styles.cellReadonly}>{formatCell(value)}</span>;
+  if (!editable) return <span className={styles.cellReadonly}>{dateText(value)}</span>;
   if (!editing) {
     return (
       <span
@@ -883,7 +910,7 @@ function DateCell({ value, editable, saving, onCommit, forceOpen, onDone }: {
         title="Click to edit"
         onClick={() => setEditing(true)}
       >
-        {saving ? "…" : formatCell(value)}
+        {saving ? "…" : dateText(value)}
       </span>
     );
   }
@@ -913,12 +940,12 @@ function DateRangeCell({ value, editable, saving, onCommit, forceOpen, onDone }:
 }) {
   const [editing, setEditing] = useState(false);
   useEffect(() => { if (forceOpen && editable) setEditing(true); }, [forceOpen, editable]);
-  if (!editable) return <span className={styles.cellReadonly}>{formatCell(value)}</span>;
+  if (!editable) return <span className={styles.cellReadonly}>{dateText(value)}</span>;
   if (!editing) {
     const text = formatRange(value);
     return (
       <span className={`${styles.cellEditable} ${text === "" ? styles.cellEmpty : ""}`} title="Click to edit" onClick={() => setEditing(true)}>
-        {saving ? "…" : formatCell(value)}
+        {saving ? "…" : dateText(value)}
       </span>
     );
   }
@@ -946,6 +973,14 @@ function colClass(c: ViewColumn): string {
   if (c.ty === "bool" || t === "checkbox") return styles.colBool;
   if (c.ty === "number" || numberFormat(c)) return styles.colNum;
   return styles.colText;
+}
+
+/** A column of plain numbers — its header, cells and totals sit on the right, so
+ *  the digits line up. A bar, ring or stars keeps its own layout. */
+function alignsRight(c: ViewColumn): boolean {
+  const t = c.schema?.type;
+  const numeric = c.ty === "number" || t === "number" || ((t === "rollup" || t === "formula") && !!numberFormat(c));
+  return numeric && !["progress", "ring", "stars"].includes(c.schema?.format ?? "");
 }
 
 /** What a blank new row starts with: a title, today, the view's filter seeds
@@ -1496,7 +1531,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
             data-r={r}
             data-c={ci}
             tabIndex={here || (!active && r === 0 && ci === 0) ? 0 : -1}
-            className={here ? styles.cellActive : undefined}
+            className={`${here ? styles.cellActive : ""} ${alignsRight(c) ? styles.numRight : ""}` || undefined}
             onFocus={(e) => { if (e.target === e.currentTarget && !here) moveTo({ r, c: ci }); }}
             onMouseDown={() => { if (!here) moveTo({ r, c: ci }); }}
           >
@@ -1632,7 +1667,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
         <thead>
           <tr>
             {cols.map((c) => (
-              <th key={c.key} className={colClass(c)}>
+              <th key={c.key} className={`${colClass(c)} ${alignsRight(c) ? styles.numRight : ""}`}>
                 <ColumnHeader
                   col={c}
                   canType={!!schemaKey && c.key !== "id" && c.key !== "$body"}
@@ -1686,7 +1721,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
             {!s.folded && s.summary && hasSummary && (
               <tr className={styles.groupSummaryRow}>
                 {cols.map((c) => (
-                  <td key={c.key}>
+                  <td key={c.key} className={alignsRight(c) ? styles.numRight : undefined}>
                     {summarySpec[c.key] && <SummaryCell col={c} func={summarySpec[c.key]} value={s.summary?.[c.key]} />}
                   </td>
                 ))}
@@ -1700,7 +1735,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
           <tfoot>
             <tr className={styles.summaryRow}>
               {cols.map((c) => (
-                <td key={c.key}>
+                <td key={c.key} className={alignsRight(c) ? styles.numRight : undefined}>
                   <SummaryCell
                     col={c}
                     func={summarySpec[c.key]}
@@ -1831,7 +1866,7 @@ function NewRowButton({ source, spec, onAddBlank, onChanged, onError, extra, com
 }
 
 /** Keys every note carries that say nothing about the row on a card. */
-const CARD_HIDDEN = new Set(["created", "updated", "modified", "tags", "type", "icon", "cover", "parent", "id", "$body"]);
+const CARD_HIDDEN = new Set(["created", "updated", "modified", "tags", "type", "icon", "cover", "parent", "id", "$body", "pack"]);
 
 /** A row's page icon (an emoji) before its title on a card, as a page icon
  *  sits before a page's name. It is not a field, so it stays out of the card's
@@ -2556,7 +2591,10 @@ export function ListView({ table, spec, source, onChanged, onFind }: {
   const schemaKey = collectionKey(source);
   const titleField = table.columns.find((c) => c.key === "title") ? "title" : "id";
   // Three chips at most, whatever `columns:` lists — a line stays a line.
-  const fieldCols = cardFields(table, spec, [titleField], 3).slice(0, 3);
+  // Pills and text first, then dates, numbers last: the numbers end every line
+  // at the same edge, so a column of amounts reads down the right.
+  const rank = (c: ViewColumn) => (alignsRight(c) ? 2 : isDateColumn(c) ? 1 : 0);
+  const fieldCols = cardFields(table, spec, [titleField], 3).slice(0, 3).sort((a, b) => rank(a) - rank(b));
   const [menuRow, setMenuRow] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [templatesVersion, setTemplatesVersion] = useState(0);
@@ -2598,9 +2636,14 @@ export function ListView({ table, spec, source, onChanged, onFind }: {
                     <SelectCell value={row.cells[c.key]} options={c.schema!.options ?? []}
                       multi={c.schema!.type === "multi_select"} editable={false} onChange={() => {}} />
                   </span>
-                : <span key={c.key} className={styles.listChip} title={c.key}>
-                    <span className={styles.listChipKey}>{c.key}</span>{displayCell(c, row.cells[c.key])}
-                  </span>
+                : alignsRight(c) || isDateColumn(c)
+                  // A number or a date says what it is: no box, no label (it is in the tooltip).
+                  ? <span key={c.key} className={alignsRight(c) ? styles.listNumber : styles.listDate} title={c.key}>
+                      {displayCell(c, row.cells[c.key])}
+                    </span>
+                  : <span key={c.key} className={styles.listChip} title={c.key}>
+                      <span className={styles.listChipKey}>{c.key}</span>{displayCell(c, row.cells[c.key])}
+                    </span>
             ))}
           </span>
           <div className={styles.rowActions}>
