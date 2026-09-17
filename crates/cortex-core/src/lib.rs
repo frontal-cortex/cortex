@@ -3,7 +3,7 @@
 //! A vault is a directory of Markdown notes with YAML frontmatter that is also
 //! a git repository. This crate owns that model: parsing and serialising notes
 //! (`note`), the rebuildable SQLite index (`db`, `index`) and its query
-//! operators (`search`), collections and
+//! operators (`search`), backlinks in context and unlinked mentions (`backlinks`), collections and
 //! views over frontmatter (`data`, `schema`), the team roster (`members`),
 //! comment sidecars (`comments`),
 //! settings (`settings`), tags (`tags`), git operations (`git`) and their remote/merge backends (`remote`), importers (`import`), vault discovery (`vault`),
@@ -15,6 +15,7 @@
 pub mod agents;
 pub mod comments;
 pub mod assets;
+pub mod backlinks;
 pub mod data;
 pub mod db;
 pub mod embed;
