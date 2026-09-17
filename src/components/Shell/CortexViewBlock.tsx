@@ -8,7 +8,7 @@
 // codeBlock(language: "cortex-view") <-> our custom block at the load/save
 // boundary, so we never depend on BlockNote's lossy custom-block serializer.
 
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, ReactNode } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useContext, ReactNode } from "react";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, ViewGroup, PropType, PropertyDef, ChartResult, Stat, StatsResult } from "../../lib/commands";
@@ -26,6 +26,7 @@ import { useViewport } from "../../hooks/useViewport";
 import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
 import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
 import { DEFAULT_STATS } from "../../lib/database";
+import { NotePathContext } from "./ButtonBlock";
 import styles from "./CortexViewBlock.module.css";
 
 /** Select-like columns render as colored pills (incl. person + relation). The
@@ -2946,6 +2947,10 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   const needsGroup = isBoard && !peek(spec, "group");
   const needsChartFields = isChart && (!peek(spec, "x") || !peek(spec, "y"));
 
+  // The page this view sits on: `@this` in its filter means that page, so a
+  // page's own lists keep working when the page is renamed.
+  const hostPath = useContext(NotePathContext);
+
   const reload = useCallback(() => {
     // A chart with no X/Y would error — wait for the inline config instead.
     if (isChart && (!peek(spec, "x") || !peek(spec, "y"))) {
@@ -2957,15 +2962,16 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
     if (isTracker) { setTable(null); setChart(null); setError(null); return Promise.resolve(); }
     setLoading(true);
     setError(null);
+    const query = hostPath && spec.includes("@this") ? `${spec.trimEnd()}\nthis: ${JSON.stringify(hostPath)}\n` : spec;
     const p = isChart
-      ? commands.runChart(spec).then((c) => { setChart(c); setTable(null); setStats(null); })
+      ? commands.runChart(query).then((c) => { setChart(c); setTable(null); setStats(null); })
       : isStats
-        ? commands.runStats(spec).then((s) => { setStats(s); setTable(null); setChart(null); })
-        : commands.runView(spec).then((t) => { setTable(t); setChart(null); setStats(null); });
+        ? commands.runStats(query).then((s) => { setStats(s); setTable(null); setChart(null); })
+        : commands.runView(query).then((t) => { setTable(t); setChart(null); setStats(null); });
     return p
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [spec, isChart, isStats, isTracker]);
+  }, [spec, isChart, isStats, isTracker, hostPath]);
 
   useEffect(() => { reload(); }, [reload]);
 

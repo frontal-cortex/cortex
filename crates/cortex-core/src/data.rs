@@ -989,13 +989,43 @@ fn prop_ty(ty: crate::schema::PropType) -> &'static str {
     }
 }
 
+/// `@this` in a view spec is the title of the note the view sits on. The app
+/// passes that note's path as `this:`, so a page's own views — an account's
+/// transfers, a category's expenses, a bill's payments — filter by the page's
+/// current title and keep working when the page is renamed. Without `this:`
+/// (the CLI, a view on no page) `@this` stays as written and matches nothing.
+pub fn resolve_this(spec: &str, root: &Path) -> String {
+    if !spec.contains("@this") {
+        return spec.to_string();
+    }
+    let path = spec
+        .lines()
+        .find_map(|l| l.strip_prefix("this:"))
+        .map(|p| p.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
+        .unwrap_or_default();
+    // Only a note inside the vault: no absolute paths, no climbing out.
+    let inside = !path.is_empty()
+        && Path::new(&path).components().all(|c| matches!(c, std::path::Component::Normal(_)));
+    if !inside {
+        return spec.to_string();
+    }
+    let Ok(text) = std::fs::read_to_string(root.join(&path)) else { return spec.to_string() };
+    let Ok(parsed) = crate::note::parse_note(&path, &text) else { return spec.to_string() };
+    let title = crate::note::infer_title(&parsed);
+    if title.is_empty() {
+        return spec.to_string();
+    }
+    let quoted = format!("'{}'", title.replace('\'', ""));
+    spec.replace("'@this'", &quoted).replace("\"@this\"", &quoted).replace("@this", &quoted)
+}
+
 /// Run a view and dress it for display: `@me` resolved, the schema attached
 /// per column (person options from the roster, relation options from the
 /// linked collection), rollups computed, schema-only properties surfaced as
 /// empty columns, `$body` hidden. The app's table, the CLI and MCP all go
 /// through here, so they cannot drift.
 pub fn resolve_view(root: &Path, spec_yaml: &str) -> Result<ResolvedTable> {
-    let spec_text = crate::members::resolve_me(spec_yaml, root);
+    let spec_text = resolve_this(&crate::members::resolve_me(spec_yaml, root), root);
     let spec: ViewSpec = serde_yaml::from_str(&spec_text)?;
     let all_columns = source_columns(root, &spec.source).ok().unwrap_or_default();
     let members = crate::members::load(root);
@@ -1113,7 +1143,7 @@ pub fn source_columns(root: &Path, source: &str) -> Result<Vec<String>> {
 
 /// Parse a `cortex-view` YAML spec, resolve its source, and run its query.
 pub fn run_view(root: &Path, spec_yaml: &str) -> Result<Table> {
-    let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
+    let spec: ViewSpec = serde_yaml::from_str(&resolve_this(spec_yaml, root))?;
     let table = resolve_source(root, &spec.source)?;
     let schema = schema_for_source(root, &spec.source);
 
@@ -2350,7 +2380,7 @@ fn aggregate(table: &Table, x: &str, y: &str, agg: &str, bucket: Option<&str>) -
 /// `{x, y}` points (aggregated if `agg` is set; bucketed by `bucket`; one
 /// series per distinct `series` value when that is set).
 pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
-    let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
+    let spec: ViewSpec = serde_yaml::from_str(&resolve_this(spec_yaml, root))?;
     let table = resolve_source(root, &spec.source)?;
 
     let x = spec.option("x").ok_or_else(|| AppError::Other("Chart requires an `x` field".into()))?;
@@ -2531,7 +2561,7 @@ pub fn stat_ident(label: &str) -> String {
 /// underscore form: `spent / budget * 100`). The view's own `filter:` applies
 /// to entries on the view's source. Nothing here is written anywhere.
 pub fn run_stats(root: &Path, spec_yaml: &str) -> Result<StatsResult> {
-    let spec_text = crate::members::resolve_me(spec_yaml, root);
+    let spec_text = resolve_this(&crate::members::resolve_me(spec_yaml, root), root);
     let spec: ViewSpec = serde_yaml::from_str(&spec_text)?;
     let entries = match spec.options.get("stats") {
         Some(serde_yaml::Value::Sequence(s)) => s.clone(),
@@ -2646,6 +2676,20 @@ mod tests {
         // A chart over the select follows the same order.
         let c = run_chart(&root, "source: collections/tasks\ntype: chart\nx: priority\ny: title\nagg: count\n").unwrap();
         assert_eq!(c.points.iter().map(|p| p.x.as_str()).collect::<Vec<_>>(), vec!["high", "medium", "low"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn at_this_is_the_title_of_the_page_a_view_sits_on() {
+        let root = gap_root("atthis");
+        put(&root, ".cortex/schemas/expenses.yaml", "properties:\n  - name: account\n    type: relation\n    collection: accounts\n");
+        put(&root, "collections/accounts/main.md", "---\ntitle: Main account\n---\n");
+        put(&root, "collections/expenses/a.md", "---\ntitle: A\naccount: [Main account]\n---\n");
+        put(&root, "collections/expenses/b.md", "---\ntitle: B\naccount: [Savings]\n---\n");
+        let names = |spec: &str| -> Vec<String> { run_view(&root, spec).unwrap().rows.iter().map(|r| r.cells["title"].as_text()).collect() };
+        assert_eq!(names("source: collections/expenses\nfilter: account == @this\nthis: \"collections/accounts/main.md\"\n"), vec!["A"]);
+        assert!(names("source: collections/expenses\nfilter: account == @this\n").is_empty(), "no page to be on: nothing matches");
+        assert!(names("source: collections/expenses\nfilter: account == @this\nthis: ../outside.md\n").is_empty(), "a path out of the vault is not read");
         let _ = std::fs::remove_dir_all(&root);
     }
 
