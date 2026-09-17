@@ -1,0 +1,48 @@
+properties:
+  # What you mean to spend in this category each month. Leave it empty for a
+  # category you only want to see, not hold to a number.
+  - name: monthly_budget
+    type: number
+    format: currency
+  # Needs, wants and savings: the 50/30/20 split, if you use it.
+  - name: bucket
+    type: select
+    options:
+      - name: need
+        color: green
+      - name: want
+        color: orange
+      - name: saving
+        color: blue
+  - name: active
+    type: checkbox
+  # Computed from the expenses filed under this category, so nothing resets on
+  # the first of the month: the dates do it.
+  - name: spent
+    type: rollup
+    from: expenses
+    relation: category
+    property: amount
+    function: sum
+    where: date >= @month and date < @month+1
+    format: currency
+  - name: last_month
+    type: rollup
+    from: expenses
+    relation: category
+    property: amount
+    function: sum
+    where: date >= @month-1 and date < @month
+    format: currency
+  - name: remaining
+    type: formula
+    expr: coalesce(monthly_budget, 0) - coalesce(spent, 0)
+    format: currency
+  - name: usage
+    type: formula
+    expr: if(monthly_budget > 0, round(100 * coalesce(spent, 0) / monthly_budget, 0), empty)
+    format: ring
+  - name: last_month_usage
+    type: formula
+    expr: if(monthly_budget > 0, round(100 * coalesce(last_month, 0) / monthly_budget, 0), empty)
+    format: ring

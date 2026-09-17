@@ -575,7 +575,15 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                 Some(text) => {
                     if let Some(fm) = frontmatter_yaml(&lint_dates(&text)) {
                         let views = fm.get("views").and_then(|v| v.as_sequence()).cloned().unwrap_or_default();
-                        if views.is_empty() { err(&mut out, Some(&index_path), "no views".into()); }
+                        // The main collection may be a page rather than a database: a
+                        // dashboard whose body lays out the other collections' views, as a
+                        // Notion template's root is a page. Any other collection is there
+                        // to hold rows, and a collection nobody can see a view of is a mistake.
+                        let dashboard = *c == primary && {
+                            let (_, body) = split_note(&text);
+                            body.contains("```cortex-view")
+                        };
+                        if views.is_empty() && !dashboard { err(&mut out, Some(&index_path), "no views".into()); }
                         for v in views {
                             let kind = v.get("type").and_then(|x| x.as_str()).unwrap_or("table");
                             if kind == "tracker" {
@@ -666,7 +674,14 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                     }
                 }
             }
-            if pack.text(&format!("templates/{c}.md")).is_none() {
+            // A dashboard page holds no rows, so it has no row template to miss.
+            let dashboard_page = *c == primary && pack.text(&index_path).is_some_and(|t| {
+                let has_views = frontmatter_yaml(&lint_dates(&t))
+                    .and_then(|fm| fm.get("views").and_then(|v| v.as_sequence()).map(|s| !s.is_empty()))
+                    .unwrap_or(false);
+                !has_views && split_note(&t).1.contains("```cortex-view")
+            });
+            if !dashboard_page && pack.text(&format!("templates/{c}.md")).is_none() {
                 warn(&mut out, None, format!("no row template templates/{c}.md — New row in {c} will have no shape"));
             }
         }
@@ -1922,6 +1937,18 @@ mod tests {
     }
 
     #[test]
+    fn a_packs_main_page_may_be_a_dashboard_without_views_of_its_own() {
+        let no_views = |body: &str| {
+            let mut p = pack("tasks");
+            let idx = p.files.iter_mut().find(|f| f.path == "index.md").unwrap();
+            idx.contents = format!("---\ntitle: T\ntype: database\n---\n{body}").into_bytes();
+            lint(&p).into_iter().filter(|f| f.message == "no views").count()
+        };
+        assert_eq!(no_views("\n```cortex-views\ncollection: tasks\n```\n"), 0, "a page that lays out views is a dashboard");
+        assert_eq!(no_views("\nJust prose, nothing to look at.\n"), 1, "a page with no views anywhere is still a mistake");
+    }
+
+    #[test]
     fn install_keeps_placeholders_inside_buttons() {
         let m = pack("tasks").manifest;
         let src = "---\ntitle: T\ntype: database\ncreated: \"{{today}}\"\n---\n\n```cortex-button\nlabel: New\naction: add-row\ncollection: tasks\nvalues: {due: \"{{today+7}}\"}\n```\n\nSeeded on {{today}}.\n";
@@ -2045,13 +2072,13 @@ mod tests {
     fn remove_deletes_only_unchanged_files_and_leaves_user_rows() {
         let root = vault("remove");
         install(&root, &pack("budget-tracker"), false, &|_| None).unwrap();
-        std::fs::write(root.join("collections/budget/my-own-row.md"), "---\ntitle: Rent\n---\n").unwrap();
-        std::fs::write(root.join("collections/budget/_template-budget.md"), "edited").unwrap();
+        std::fs::write(root.join("collections/expenses/my-own-row.md"), "---\ntitle: Rent\n---\n").unwrap();
+        std::fs::write(root.join("collections/expenses/_template-expenses.md"), "edited").unwrap();
         let r = remove(&root, "budget-tracker").unwrap();
         assert!(r.removed.contains(&"collections/budget/_index.md".to_string()), "{r:?}");
-        assert_eq!(r.kept, vec!["collections/budget/_template-budget.md".to_string()], "{r:?}");
-        assert!(root.join("collections/budget/my-own-row.md").exists(), "user rows survive");
-        assert!(root.join("collections/budget").exists(), "folder kept because it is not empty");
+        assert_eq!(r.kept, vec!["collections/expenses/_template-expenses.md".to_string()], "{r:?}");
+        assert!(root.join("collections/expenses/my-own-row.md").exists(), "user rows survive");
+        assert!(root.join("collections/expenses").exists(), "folder kept because it is not empty");
         assert!(installed(&root).is_empty());
         assert!(!root.join(RECORD).exists());
         let _ = std::fs::remove_dir_all(&root);

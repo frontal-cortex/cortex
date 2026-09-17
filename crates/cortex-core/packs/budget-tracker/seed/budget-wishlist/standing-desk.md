@@ -13,7 +13,7 @@ created: "{{today}}"
 ---
 
 An example of a wish with nothing set aside yet: it sits at `wanted` with an
-empty bar until a transfer or a purchase points at it. No target date, which
+empty ring until a transfer or a purchase points at it. No target date, which
 is the honest state of most of a wishlist.
 
 ## Why
@@ -24,4 +24,4 @@ What it is for and what would happen if you did not buy it.
 
 - [ ] Would I still want it in a month?
 - [ ] Is there a second-hand or cheaper version?
-- [ ] Does it fit this month's budget without touching the limits?
+- [ ] Does it fit this month's budget without touching the categories?

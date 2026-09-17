@@ -1,0 +1,28 @@
+properties:
+  - name: date
+    type: date
+  # Money coming in, always as a positive number.
+  - name: amount
+    type: number
+    format: currency
+  - name: source
+    type: select
+    options:
+      - name: salary
+        color: green
+      - name: freelance
+        color: blue
+      - name: business
+        color: purple
+      - name: investments
+        color: yellow
+      - name: gifts
+        color: pink
+      - name: refunds
+        color: gray
+      - name: other
+        color: gray
+  # The account the money arrived in.
+  - name: account
+    type: relation
+    collection: accounts

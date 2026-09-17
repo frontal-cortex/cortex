@@ -1,5 +1,5 @@
 ---
-title: checking
+title: Checking
 type: note
 tags: []
 icon: 🏦
@@ -9,31 +9,40 @@ active: true
 created: "{{today}}"
 ---
 
-The everyday account: salary lands here, rent and the weekly shop leave
-from here. The opening balance is an example — replace it with what your
-account held on the day you started logging.
+The everyday account: salary lands here, rent and the weekly shop leave from
+here, and it funds the savings and the credit card. The opening balance is an
+example — replace it with what your account held on the day you started
+logging.
 
-## Recent movements
+## Spending from this account
 
 ```cortex-view
-source: collections/budget
+source: collections/expenses
 type: table
-columns: [title, date, amount, kind, category, to_account]
+columns: [title, date, amount, category]
 sort: [date desc]
-limit: 20
-filter: account == 'checking' or to_account == 'checking'
+limit: 15
+filter: account == @this
 ```
 
-## Month by month
+## Income into this account
 
 ```cortex-view
-source: collections/budget
-type: chart
-chartType: bar
-x: date
-bucket: month
-y: amount
-agg: sum
-series: kind
-filter: account == 'checking'
+source: collections/income
+type: table
+columns: [title, date, amount, source]
+sort: [date desc]
+limit: 15
+filter: account == @this
+```
+
+## Transfers
+
+```cortex-view
+source: collections/transfers
+type: table
+columns: [title, date, amount, from_account, to_account]
+sort: [date desc]
+limit: 15
+filter: from_account == @this or to_account == @this
 ```

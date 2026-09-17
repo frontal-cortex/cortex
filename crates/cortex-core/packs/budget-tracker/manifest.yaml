@@ -1,54 +1,67 @@
 format: 1
 id: budget-tracker
 name: "Budget Tracker"
-version: 3.1.0
+version: 4.0.0
 kind: collection
-summary: "A finance dashboard: one-click capture, live balances, budgets with rings, this month at a glance — from one ledger."
+summary: "A finance dashboard: quick capture, live account balances, budget rings, over separate expenses, income and transfers."
 description: |
-  Five small databases that stay filled in, and a dashboard that reads them. `budget` is the ledger: one row per transaction with a date, an amount, a kind (expense, income, transfer), a category and the account it hit — a transfer names both accounts. Its page is the dashboard: New expense / New income / New transfer buttons, this month's spent, earned and net as tiles, the budgets as cards with a ring each, spending grouped by month with totals, a donut of where the money went, and every account's balance. `accounts` holds one row per account with its opening balance; income, spending, transfers in and out and the balance are computed from the ledger. `budget-limits` holds one row per category with the monthly amount you mean to spend and shows spent, remaining and the share used as a ring. `budget-bills` is every recurring charge with its cycle and next due date: tick paid and the date moves forward one cycle in the same row. `budget-wishlist` is what you are saving up for: tag a transfer with `wish` and the item shows how much is put by and how much is left, tag the purchase and it moves to Bought at what it really cost. Everything is computed from the rows when you open the page; nothing is copied between databases and nothing needs resetting on the 1st.
+  A dashboard page over seven small databases. You log into three of them — `expenses`, `income` and `transfers` — and the rest add up what you logged. An expense has a category and the account it left; an income, its source and the account it arrived in; a transfer, the account it left and the account it landed in, so moving money between your own accounts can never be mistaken for spending. `accounts` holds each account's opening balance, and its income, spending, transfers in and out and current balance are computed from those rows. `categories` holds what you mean to spend per category each month, and shows this month's and last month's spend with the share used as a ring. The dashboard page has New expense / New income / New transfer buttons, the budgets as cards, Expenses, Income and Transfers with their Recent, Weekly, Monthly, Yearly and Chart tabs, a donut of where the money went, and every account's balance. `budget-bills` is every recurring charge — tick paid and the next due date moves forward — and `budget-wishlist` is what you are saving up for: set `wish` on a transfer to put money aside, on the expense that buys it to mark it bought. Everything is computed when you look; nothing is copied between databases and nothing needs resetting on the 1st.
 tags: [finance, budget, money, dashboard, database]
 author:
   name: "Cortex team"
   url: https://github.com/frontal-cortex
 license: CC0-1.0
-credits: "The dashboard shape — quick-action buttons, budget rings, month-grouped lists, a donut and account balances — follows Sentele's Finance Tracker and Notion's Personal Finance Tracker; the single ledger with transfers as rows and everything computed on read is our own."
+credits: "The structure — separate expenses, income, transfers, accounts and categories databases, account balances from two-way relations, budget rings, quick-action buttons and the three-column dashboard — follows Sentele's Finance Tracker. Bills with an advancing due date and the wishlist are our own."
 min_cortex: 0.1.0
 collection: budget
-collections: [accounts, budget-limits, budget-bills, budget-wishlist]
+collections: [expenses, income, transfers, accounts, categories, budget-bills, budget-wishlist]
 files:
   - schemas/budget.yaml
+  - schemas/expenses.yaml
+  - schemas/income.yaml
+  - schemas/transfers.yaml
   - schemas/accounts.yaml
-  - schemas/budget-limits.yaml
+  - schemas/categories.yaml
   - schemas/budget-bills.yaml
   - schemas/budget-wishlist.yaml
   - index.md
+  - index/expenses.md
+  - index/income.md
+  - index/transfers.md
   - index/accounts.md
-  - index/budget-limits.md
+  - index/categories.md
   - index/budget-bills.md
   - index/budget-wishlist.md
-  - templates/budget.md
+  - templates/expenses.md
+  - templates/income.md
+  - templates/transfers.md
   - templates/accounts.md
-  - templates/budget-limits.md
+  - templates/categories.md
   - templates/budget-bills.md
   - templates/budget-wishlist.md
-  - seed/budget/weekly-shop.md
-  - seed/budget/weekly-shop-last-week.md
-  - seed/budget/coffee.md
-  - seed/budget/bus-pass.md
-  - seed/budget/music-streaming.md
-  - seed/budget/salary.md
-  - seed/budget/salary-last-month.md
-  - seed/budget/rent.md
-  - seed/budget/rent-last-month.md
-  - seed/budget/move-to-savings.md
-  - seed/budget/cash-withdrawal.md
-  - seed/budget/headphones.md
+  - seed/expenses/weekly-shop.md
+  - seed/expenses/weekly-shop-last-week.md
+  - seed/expenses/coffee.md
+  - seed/expenses/bus-pass.md
+  - seed/expenses/music-streaming.md
+  - seed/expenses/rent.md
+  - seed/expenses/rent-last-month.md
+  - seed/expenses/headphones.md
+  - seed/income/salary.md
+  - seed/income/salary-last-month.md
+  - seed/transfers/move-to-savings.md
+  - seed/transfers/cash-withdrawal.md
+  - seed/transfers/card-payment.md
   - seed/accounts/checking.md
   - seed/accounts/savings.md
   - seed/accounts/cash.md
-  - seed/budget-limits/groceries.md
-  - seed/budget-limits/dining.md
-  - seed/budget-limits/subscriptions.md
+  - seed/accounts/credit-card.md
+  - seed/categories/groceries.md
+  - seed/categories/dining.md
+  - seed/categories/housing.md
+  - seed/categories/transport.md
+  - seed/categories/subscriptions.md
+  - seed/categories/shopping.md
   - seed/budget-bills/rent.md
   - seed/budget-bills/music-streaming.md
   - seed/budget-wishlist/trip-to-lisbon.md

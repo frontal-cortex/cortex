@@ -10,47 +10,41 @@ properties:
         color: yellow
       - name: credit
         color: red
-  # What the account held on the day you started logging. Everything after
-  # that comes from the ledger.
+  # What the account held on the day you started logging here.
   - name: initial
     type: number
     format: currency
   - name: active
     type: checkbox
-  # Computed on read from the ledger rows that name this account. A transfer
-  # is one ledger row with `account` (from) and `to_account` (to), so it
-  # leaves one balance and lands in another without being counted twice.
+  # Computed from every row that names this account. None of it is written to
+  # a file: add an expense, an income or a transfer and the balance follows.
   - name: income
     type: rollup
-    from: budget
+    from: income
     relation: account
-    function: sum
     property: amount
-    where: kind == 'income'
+    function: sum
     format: currency
   - name: spent
     type: rollup
-    from: budget
+    from: expenses
     relation: account
-    function: sum
     property: amount
-    where: kind == 'expense'
+    function: sum
     format: currency
   - name: moved_in
     type: rollup
-    from: budget
+    from: transfers
     relation: to_account
-    function: sum
     property: amount
-    where: kind == 'transfer'
+    function: sum
     format: currency
   - name: moved_out
     type: rollup
-    from: budget
-    relation: account
-    function: sum
+    from: transfers
+    relation: from_account
     property: amount
-    where: kind == 'transfer'
+    function: sum
     format: currency
   - name: balance
     type: formula
@@ -58,9 +52,9 @@ properties:
     format: currency
   - name: this_month
     type: rollup
-    from: budget
+    from: expenses
     relation: account
-    function: sum
     property: amount
-    where: kind == 'expense' and date >= @month
+    function: sum
+    where: date >= @month
     format: currency

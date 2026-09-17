@@ -1,5 +1,5 @@
 ---
-title: cash
+title: Cash
 type: note
 tags: []
 icon: 👛
@@ -9,16 +9,28 @@ active: true
 created: "{{today}}"
 ---
 
-What is in your wallet. The seeded cash withdrawal tops it up and the coffee
-comes out of it; the balance follows.
+The money in your wallet. A cash withdrawal is a transfer from Checking into
+here, and the coffee is an expense paid from here, so this balance goes up at
+the machine and down at the counter.
 
-## Recent movements
+## Spending from this account
 
 ```cortex-view
-source: collections/budget
+source: collections/expenses
 type: table
-columns: [title, date, amount, kind, category]
+columns: [title, date, amount, category]
 sort: [date desc]
-limit: 20
-filter: account == 'cash' or to_account == 'cash'
+limit: 15
+filter: account == @this
+```
+
+## Transfers
+
+```cortex-view
+source: collections/transfers
+type: table
+columns: [title, date, amount, from_account, to_account]
+sort: [date desc]
+limit: 15
+filter: from_account == @this or to_account == @this
 ```
