@@ -527,9 +527,20 @@ Status: ✅ Cortex does it the same way · ≈ possible by other means ·
 
 In the app, generic:
 
-- **Row icons on gallery cards** (7). A card shows the row's `icon` before its title, as a page icon does in Notion.
-- **Multi-valued chart axes** (12). A chart whose `x` is a relation or multi-select counts a row under each of its values, the way `group` and `series` already do, instead of under the values joined as text.
-- **Say what an install or update skipped** (18, 19). Follow-up: the report already lists kept and skipped files; the app should show it and offer the pack's version of an edited schema.
+- **Row icons on gallery cards** (7). A card shows the row's `icon` before its title, as a page icon does in Notion. *Done.*
+- **Multi-valued chart axes** (12). A chart whose `x` is a relation or multi-select counts a row under each of its values, the way `group` and `series` already do, instead of under the values joined as text. *Done.*
+- **Say what an install or update skipped** (18, 19). The report already lists kept and skipped files; the app should show it and offer the pack's version of an edited schema. *Open.*
+
+Found while verifying 4.0, and closed with it:
+
+- **Renaming a row kept its relations only in `[[links]]`.** A relation names a row by title, so renaming the category Groceries to Food left every expense pointing at "Groceries" and Food's ring empty — Notion relations name the page itself and never break. A rename, `cortex mv`, the MCP tool and a title edit in the editor now rewrite the relation values that name the row in every collection relating to it. *Done.*
+- **A page's own views filtered by its title as written.** An account's page listing its transfers said `to_account == 'Checking'`, which a rename breaks. `@this` in a view filter is the title of the page the view sits on, as Notion's "this page" filter is. *Done.*
+- **A pack's main collection had to be a database.** A template rooted in a dashboard page — Notion's are — needed views and a row template it has no use for. The main collection may now be a page whose body lays out the other collections' views. *Done.*
+
+Still open, seen while verifying:
+
+- Hovering a table in a view on a dashboard logs `Cannot read properties of undefined (reading 'rows')` from the editor library's table handles, which appear to take the view's table for one of their own. Nothing visible breaks.
+- On a phone the dashboard's stacked columns are only as wide as their content until #86 (stacked columns stretch) is merged.
 
 In the pack, 4.0, below.
 
