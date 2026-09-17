@@ -170,14 +170,22 @@
   color: var(--accent);
 }
 
-.sourceLabel {
+/* The source menu sits in the chrome as quietly as the label it replaced. */
+.sourcePick {
   flex: 0 1 auto;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  max-width: 160px;
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+}
+
+/* The YAML escape hatch: there, but not competing with the gear. */
+.editBtnQuiet {
+  border-color: transparent !important;
+  background: none !important;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-weight: 400;
 }
 
 .editBtn,
@@ -1337,7 +1345,8 @@
   top: calc(100% + 4px);
   right: 0;
   z-index: 60;
-  width: 200px;
+  width: 300px;
+  max-width: calc(100vw - 32px);
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -2041,4 +2050,32 @@
 .galleryIcon {
   margin-right: 6px;
   text-transform: none;
+}
+
+/* A rollup's `where`, as filter rows; a formula's properties, as chips. */
+.addPropWhere {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.addPropChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.addPropChip {
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.addPropChip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

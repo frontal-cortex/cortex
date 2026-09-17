@@ -2555,6 +2555,27 @@ pub fn stat_ident(label: &str) -> String {
     s.trim_matches('_').to_string()
 }
 
+/// A stats view's `stats:` entries as JSON objects, for the visual editor —
+/// every value as text (`field: amount`, `filter: "date >= @month"`), so the
+/// editor never meets a YAML number or bool. An absent or malformed list is
+/// empty; the raw spec stays the source of truth either way.
+pub fn read_stats_entries(spec_yaml: &str) -> Result<Vec<BTreeMap<String, String>>> {
+    let spec: ViewSpec = serde_yaml::from_str(spec_yaml)?;
+    let Some(serde_yaml::Value::Sequence(entries)) = spec.options.get("stats") else { return Ok(vec![]) };
+    Ok(entries.iter().filter_map(|e| e.as_mapping()).map(|m| {
+        m.iter().filter_map(|(k, v)| {
+            let k = k.as_str()?.to_string();
+            let v = match v {
+                serde_yaml::Value::String(s) => s.clone(),
+                serde_yaml::Value::Number(n) => n.to_string(),
+                serde_yaml::Value::Bool(b) => b.to_string(),
+                _ => return None,
+            };
+            Some((k, v))
+        }).collect()
+    }).collect())
+}
+
 /// Run a `stats` view: each entry of `stats:` is `{label, source?, agg, field,
 /// filter?, format?}` — one summary function over one source's rows — or
 /// `{label, expr}`, a formula over the tiles before it (by label or its
@@ -3545,6 +3566,18 @@ mod tests {
         let p = resolve_view(&root, "source: collections/spend\ngroup: date\nbucket: month\ncolumns: [title, amount]\n").unwrap();
         assert_eq!(p.groups.iter().map(|g| g.key.as_str()).collect::<Vec<_>>(), vec!["2026-09", "2026-08", ""]);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn stats_entries_read_as_text_for_the_visual_editor() {
+        let spec = "source: collections/x\ntype: stats\nstats:\n  - {label: Spent, agg: sum, field: amount, filter: \"date >= @month\"}\n  - {label: Net, expr: \"Earned - Spent\"}\n  - {label: 2, agg: count, nested: [a]}\n";
+        let e = read_stats_entries(spec).unwrap();
+        assert_eq!(e.len(), 3);
+        assert_eq!(e[0]["filter"], "date >= @month");
+        assert_eq!(e[1]["expr"], "Earned - Spent");
+        assert_eq!(e[2]["label"], "2", "a YAML number arrives as text");
+        assert!(!e[2].contains_key("nested"), "values that are not scalars are left out");
+        assert!(read_stats_entries("source: collections/x\ntype: stats\n").unwrap().is_empty());
     }
 
     #[test]

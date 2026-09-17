@@ -936,6 +936,10 @@ export const commands = {
   parseViewSpec: (spec: string) =>
     invoke<StructuredSpec>("parse_view_spec", { spec }),
 
+  /** A stats view's `stats:` entries, every value as text. */
+  readStatsEntries: (spec: string) =>
+    invoke<Record<string, string>[]>("read_stats_entries", { spec }),
+
   serializeViewSpec: (spec: StructuredSpec) =>
     invoke<string>("serialize_view_spec", { spec }),
 

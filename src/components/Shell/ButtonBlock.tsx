@@ -8,12 +8,15 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
-import { commands } from "../../lib/commands";
+import { commands, PropertyDef } from "../../lib/commands";
+import { parseViews } from "../../lib/database";
 import { openExternal } from "../../lib/links";
 import {
   BUTTON_ACTIONS, ButtonAction, ButtonDeps, ButtonSpec, describeButton, parseButtonSpec, runButton, serializeButtonSpec,
 } from "../../lib/buttons";
-import { PlusIcon, OpenIcon, TrackerIcon, LinkIcon, CheckSquareIcon, MoreIcon } from "./icons";
+import { PlusIcon, OpenIcon, TrackerIcon, LinkIcon, CheckSquareIcon, MoreIcon, CloseIcon } from "./icons";
+import { Dropdown } from "./Dropdown";
+import { useCollections, useRowTitles, useSourceFields } from "./useSourceFields";
 import styles from "./ButtonBlock.module.css";
 
 export const BUTTON_LANGUAGE = "cortex-button";
@@ -102,24 +105,112 @@ const ACTION_LABEL: Record<ButtonAction, string> = {
   "add-row": "Add a row", open: "Open a page or view", log: "Tick a habit today", set: "Set properties on this row", url: "Open a link",
 };
 
+/** A date a button writes: the day it is pressed, relative to it, or fixed. */
+const DATE_CHOICES = [
+  { value: "{{today}}", label: "When pressed" },
+  { value: "{{today+1}}", label: "The next day" },
+  { value: "{{today+7}}", label: "A week later" },
+  { value: "{{monday}}", label: "That week's Monday" },
+  { value: "__date", label: "A specific date…", separator: true },
+];
+
+/** Computed properties are never written by a button. */
+const COMPUTED = new Set(["rollup", "formula", "created_time", "edited_time", "created_by", "edited_by"]);
+
+function ValueInput({ prop, value, onChange }: { prop?: PropertyDef; value: string; onChange: (v: string) => void }) {
+  const titles = useRowTitles(prop?.type === "relation" ? prop.collection : undefined);
+  const [specific, setSpecific] = useState(false);
+  switch (prop?.type) {
+    case "date": {
+      if (specific || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return (
+          <span className={styles.valueLine}>
+            <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+            <button type="button" className={styles.iconBtn} title="Relative to the press" onClick={() => { setSpecific(false); onChange("{{today}}"); }}>↺</button>
+          </span>
+        );
+      }
+      return <Dropdown fullWidth value={value} placeholder="Pick a day" options={DATE_CHOICES}
+        onChange={(v) => { if (v === "__date") { setSpecific(true); onChange(""); } else onChange(v); }} />;
+    }
+    case "select":
+    case "status":
+      if (prop.options?.length) return <Dropdown fullWidth value={value} placeholder="Pick an option" options={prop.options.map((o) => ({ value: o.name, label: o.name }))} onChange={onChange} />;
+      break;
+    case "checkbox":
+      return <Dropdown fullWidth value={value} placeholder="Pick" options={[{ value: "true", label: "Checked" }, { value: "false", label: "Unchecked" }]} onChange={onChange} />;
+    case "relation":
+      if (titles.length) return <Dropdown fullWidth value={value} placeholder={`Pick from ${prop.collection}`} options={[...(value && !titles.includes(value) ? [value] : []), ...titles].map((t) => ({ value: t, label: t }))} onChange={onChange} />;
+      break;
+  }
+  return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={prop?.type === "number" ? "0" : "value"} inputMode={prop?.type === "number" ? "decimal" : undefined} spellCheck={false} />;
+}
+
+/** The values a button writes, one row per property: the property from the
+ *  collection's schema, the value shaped by its type. */
+function ValuesEditor({ collection, values, onChange }: {
+  collection: string | undefined; values: [string, string][]; onChange: (v: [string, string][]) => void;
+}) {
+  const { names, props } = useSourceFields(collection ? `collections/${collection}` : undefined);
+  const writable = names.filter((n) => n !== "title" && !COMPUTED.has(props[n]?.type ?? ""));
+  const unused = writable.filter((n) => !values.some(([k]) => k === n));
+  const set = (i: number, row: [string, string]) => onChange(values.map((r, j) => (j === i ? row : r)));
+  return (
+    <div className={styles.values}>
+      {values.length === 0 && <span className={styles.hint}>Nothing set — the row starts from its template.</span>}
+      {values.map(([k, v], i) => (
+        <div key={i} className={styles.valueRow}>
+          {writable.length ? (
+            <Dropdown fullWidth value={k} placeholder="Property"
+              options={[...(k && !writable.includes(k) ? [k] : []), ...writable].map((n) => ({ value: n, label: n, disabled: n !== k && values.some(([x]) => x === n) }))}
+              onChange={(n) => set(i, [n, props[n]?.type === "date" ? "{{today}}" : ""])} />
+          ) : (
+            <input value={k} placeholder="property" onChange={(e) => set(i, [e.target.value, v])} spellCheck={false} />
+          )}
+          <ValueInput prop={props[k]} value={v} onChange={(nv) => set(i, [k, nv])} />
+          <button type="button" className={styles.iconBtn} title="Remove" onClick={() => onChange(values.filter((_, j) => j !== i))}>
+            <CloseIcon size={12} />
+          </button>
+        </div>
+      ))}
+      <button type="button" className={styles.addValue} disabled={writable.length > 0 && unused.length === 0}
+        onClick={() => { const n = unused[0] ?? ""; onChange([...values, [n, props[n]?.type === "date" ? "{{today}}" : ""]]); }}>
+        <PlusIcon size={12} /> Set a property
+      </button>
+    </div>
+  );
+}
+
 function ButtonEditor({ spec, unknownKeys, onSave, onCancel }: {
   spec: ButtonSpec; unknownKeys: string[]; onSave: (s: ButtonSpec) => void; onCancel: () => void;
 }) {
+  const notePath = useContext(NotePathContext);
   const [draft, setDraft] = useState<ButtonSpec>({ ...spec, action: BUTTON_ACTIONS.includes(spec.action) ? spec.action : "add-row" });
-  const [valuesText, setValuesText] = useState(Object.entries(spec.values ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"));
-  const [collections, setCollections] = useState<string[]>([]);
-  useEffect(() => { commands.listCollections().then(setCollections).catch(() => {}); }, []);
-
-  const save = () => {
-    const values: Record<string, string> = {};
-    for (const line of valuesText.split("\n")) {
-      const m = line.match(/^\s*([^:]+):\s*(.*)$/);
-      if (m) values[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-    onSave({ ...draft, label: draft.label.trim() || "Button", values: Object.keys(values).length ? values : undefined });
-  };
+  const [values, setValues] = useState<[string, string][]>(Object.entries(spec.values ?? {}));
+  const collections = useCollections();
+  const [templates, setTemplates] = useState<string[]>([]);
+  const [views, setViews] = useState<string[]>([]);
   const set = <K extends keyof ButtonSpec>(k: K, v: ButtonSpec[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const needsCollection = draft.action === "add-row" || draft.action === "log" || (draft.action === "open" && !draft.target);
+  // A `set` button writes to the row it sits on: its collection is the note's.
+  const valuesCollection = draft.action === "set" ? notePath.match(/^collections\/([^/]+)\//)?.[1] : draft.collection;
+  const habits = useRowTitles(draft.action === "log" ? draft.collection : undefined);
+
+  useEffect(() => {
+    if (!draft.collection) { setTemplates([]); setViews([]); return; }
+    let live = true;
+    commands.listRowTemplates(`collections/${draft.collection}`).then((t) => { if (live) setTemplates(t); }).catch(() => { if (live) setTemplates([]); });
+    commands.readNote(`collections/${draft.collection}/_index.md`)
+      .then((n) => { if (live) setViews(parseViews(n.frontmatter).map((v) => v.name)); })
+      .catch(() => { if (live) setViews([]); });
+    return () => { live = false; };
+  }, [draft.collection]);
+
+  const save = () => {
+    const kept = values.filter(([k]) => k.trim());
+    onSave({ ...draft, label: draft.label.trim() || "Button", values: kept.length ? Object.fromEntries(kept.map(([k, v]) => [k.trim(), v])) : undefined });
+  };
+  const listed = (list: string[], current: string | undefined) => [...(current && !list.includes(current) ? [current] : []), ...list];
 
   return (
     <div className={styles.editor} role="group" aria-label="Button settings"
@@ -127,31 +218,36 @@ function ButtonEditor({ spec, unknownKeys, onSave, onCancel }: {
       <label className={styles.field}><span>Label</span>
         <input autoFocus value={draft.label} onChange={(e) => set("label", e.target.value)} placeholder="New expense" />
       </label>
-      <label className={styles.field}><span>Does</span>
-        <select value={draft.action} onChange={(e) => set("action", e.target.value as ButtonAction)}>
-          {BUTTON_ACTIONS.map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
-        </select>
-      </label>
+      <div className={styles.field}><span>Does</span>
+        <Dropdown fullWidth value={draft.action} options={BUTTON_ACTIONS.map((a) => ({ value: a, label: ACTION_LABEL[a] }))} onChange={(a) => set("action", a as ButtonAction)} />
+      </div>
       {needsCollection && (
-        <label className={styles.field}><span>Collection</span>
-          <input list="cortex-button-collections" value={draft.collection ?? ""} onChange={(e) => set("collection", e.target.value.replace(/^collections\//, ""))} placeholder="budget" />
-          <datalist id="cortex-button-collections">{collections.map((c) => <option key={c} value={c} />)}</datalist>
-        </label>
+        <div className={styles.field}><span>{draft.action === "open" ? "Collection" : "In"}</span>
+          <Dropdown fullWidth value={draft.collection ?? ""} placeholder="Pick a collection"
+            options={listed(collections, draft.collection).map((c) => ({ value: c, label: c }))}
+            onChange={(c) => setDraft((d) => ({ ...d, collection: c, template: undefined, view: undefined, item: undefined }))} />
+        </div>
       )}
       {draft.action === "open" && (
         <>
           <label className={styles.field}><span>Or a note</span>
             <input value={draft.target ?? ""} onChange={(e) => set("target", e.target.value)} placeholder="a title or notes/path.md" />
           </label>
-          <label className={styles.field}><span>View</span>
-            <input value={draft.view ?? ""} onChange={(e) => set("view", e.target.value)} placeholder="tab name (optional)" />
-          </label>
+          {!draft.target && (
+            <div className={styles.field}><span>View</span>
+              <Dropdown fullWidth value={draft.view ?? ""} placeholder="Its first view"
+                options={[{ value: "", label: "Its first view" }, ...listed(views, draft.view).map((v) => ({ value: v, label: v }))]}
+                onChange={(v) => set("view", v || undefined)} />
+            </div>
+          )}
         </>
       )}
       {draft.action === "log" && (
-        <label className={styles.field}><span>Item</span>
-          <input value={draft.item ?? ""} onChange={(e) => set("item", e.target.value)} placeholder="the habit's title" />
-        </label>
+        <div className={styles.field}><span>Item</span>
+          {habits.length
+            ? <Dropdown fullWidth value={draft.item ?? ""} placeholder="Pick one" options={listed(habits, draft.item).map((h) => ({ value: h, label: h }))} onChange={(h) => set("item", h)} />
+            : <input value={draft.item ?? ""} onChange={(e) => set("item", e.target.value)} placeholder="the habit's title" />}
+        </div>
       )}
       {draft.action === "url" && (
         <label className={styles.field}><span>URL</span>
@@ -159,15 +255,19 @@ function ButtonEditor({ spec, unknownKeys, onSave, onCancel }: {
         </label>
       )}
       {(draft.action === "add-row" || draft.action === "set") && (
-        <label className={styles.field}><span>Values</span>
-          <textarea rows={3} value={valuesText} onChange={(e) => setValuesText(e.target.value)} placeholder={"kind: expense\ndate: {{today}}"} spellCheck={false} />
-        </label>
+        <div className={styles.field}><span>{draft.action === "set" ? "Sets" : "With"}</span>
+          <ValuesEditor collection={valuesCollection} values={values} onChange={setValues} />
+        </div>
       )}
       {draft.action === "add-row" && (
         <>
-          <label className={styles.field}><span>Template</span>
-            <input value={draft.template ?? ""} onChange={(e) => set("template", e.target.value)} placeholder="row template name (optional)" />
-          </label>
+          {templates.length > 0 && (
+            <div className={styles.field}><span>Template</span>
+              <Dropdown fullWidth value={draft.template ?? ""} placeholder="The default"
+                options={[{ value: "", label: "The default" }, ...listed(templates, draft.template).map((t) => ({ value: t, label: t }))]}
+                onChange={(t) => set("template", t || undefined)} />
+            </div>
+          )}
           <label className={styles.check}>
             <input type="checkbox" checked={!!draft.open} onChange={(e) => set("open", e.target.checked)} /> Open the new row
           </label>

@@ -27,6 +27,10 @@ import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
 import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
 import { DEFAULT_STATS } from "../../lib/database";
 import { NotePathContext } from "./ButtonBlock";
+import { StatsEditor } from "./StatsEditor";
+import { FilterText } from "./FilterBuilder";
+import { useCollections, useSourceFields } from "./useSourceFields";
+import { StatEntry, specReplaceKey, statsBlock } from "../../lib/visualSpec";
 import styles from "./CortexViewBlock.module.css";
 
 /** Select-like columns render as colored pills (incl. person + relation). The
@@ -261,6 +265,11 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
   const relationCols = columns.filter((c) => c.schema?.type === "relation" && !c.schema.from);
   const reverse = via.startsWith("from:");
   const fns = reverse ? REVERSE_ROLLUP_FNS : ROLLUP_FNS;
+  // The rows a rollup reads: the other collection's, whichever way it links.
+  // Their properties are picked from lists, and its `where` built as clauses.
+  const target = reverse ? via.slice("from:".length) : relationCols.find((c) => `rel:${c.key}` === via)?.schema?.collection;
+  const targetFields = useSourceFields(type === "rollup" && target ? `collections/${target}` : undefined);
+  const backLinks = targetFields.names.filter((n) => targetFields.props[n]?.type === "relation" && !targetFields.props[n]?.from);
   const viaOptions = [
     ...relationCols.map((c) => ({ value: `rel:${c.key}`, label: `via ${c.key}` })),
     ...collections.map((c, i) => ({ value: `from:${c}`, label: `from ${c}`, hint: "rows that link here", separator: i === 0 && relationCols.length > 0 })),
@@ -330,35 +339,49 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
                 options={viaOptions}
                 onChange={(v) => { setVia(v); if (!v.startsWith("from:") && fn === "percent") setFn("count"); }}
               />
-              {reverse && (
+              {reverse && (backLinks.length ? (
+                <Dropdown
+                  fullWidth
+                  value={relation}
+                  placeholder="Their property that links here"
+                  options={backLinks.map((n) => ({ value: n, label: n, hint: targetFields.props[n]?.collection ? `→ ${targetFields.props[n]?.collection}` : undefined }))}
+                  onChange={setRelation}
+                />
+              ) : (
                 <input
                   className={styles.addPropInput}
                   value={relation}
                   placeholder="Their property that links here"
                   onChange={(e) => setRelation(e.target.value)}
                 />
-              )}
+              ))}
               <Dropdown
                 fullWidth
                 value={fn}
                 options={fns.map((f) => ({ value: f, label: f }))}
                 onChange={setFn}
               />
-              {fn !== "count" && fn !== "percent" && (
+              {fn !== "count" && fn !== "percent" && (targetFields.names.length ? (
+                <Dropdown
+                  fullWidth
+                  value={property}
+                  placeholder="Property to aggregate"
+                  options={targetFields.names.map((n) => ({ value: n, label: n }))}
+                  onChange={setProperty}
+                />
+              ) : (
                 <input
                   className={styles.addPropInput}
                   value={property}
                   placeholder="Property to aggregate"
                   onChange={(e) => setProperty(e.target.value)}
                 />
-              )}
+              ))}
               {reverse && (
-                <input
-                  className={styles.addPropInput}
-                  value={where}
-                  placeholder={fn === "percent" ? "where, e.g. done == true" : "where (optional)"}
-                  onChange={(e) => setWhere(e.target.value)}
-                />
+                <div className={styles.addPropWhere}>
+                  <div className={styles.addPropHint}>{fn === "percent" ? "Share of their rows where" : "Only their rows where (optional)"}</div>
+                  <FilterText value={where} fields={targetFields.names} props={targetFields.props} onChange={setWhere} />
+                </div>
               )}
               {viaOptions.length === 0 && <div className={styles.addPropHint}>Add a Relation property first.</div>}
             </>
@@ -374,6 +397,15 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
                 placeholder="budget - spent"
                 onChange={(e) => setExpr(e.target.value)}
               />
+              {/* This row's properties, one click into the formula. */}
+              <div className={styles.addPropChips}>
+                {columns.filter((c) => /^[\p{L}_][\p{L}\p{N}_]*$/u.test(c.key)).map((c) => (
+                  <button key={c.key} type="button" className={styles.addPropChip}
+                    onClick={() => setExpr((x) => `${x.trimEnd()}${x.trim() ? " " : ""}${c.key}`)}>
+                    {c.key}
+                  </button>
+                ))}
+              </div>
               <div className={styles.addPropHint}>{FORMULA_HINT}</div>
             </>
           )}
@@ -2825,6 +2857,19 @@ function sourceLabel(source: string): string {
   return collectionKey(source) ?? source.replace(/^data\//, "").replace(/\.csv$/, "");
 }
 
+/** Where a view's rows come from, as a menu of the vault's collections —
+ *  switching one needs no `source:` line. A CSV source stays listed. */
+function SourcePicker({ source, onPick }: { source: string; onPick: (source: string) => void }) {
+  const collections = useCollections();
+  const options = collections.map((c) => ({ value: `collections/${c}`, label: c }));
+  if (!options.some((o) => o.value === source.replace(/\/$/, ""))) options.unshift({ value: source, label: sourceLabel(source) });
+  return (
+    <span className={styles.sourcePick} title="Where the rows come from">
+      <Dropdown value={source.replace(/\/$/, "")} options={options} onChange={(v) => { if (v !== source) onPick(v); }} />
+    </span>
+  );
+}
+
 const VIEW_TYPE_OPTIONS: { type: string; label: string; render: (s: number) => ReactNode }[] = [
   { type: "table", label: "Table", render: (s) => <TableIcon size={s} /> },
   { type: "board", label: "Board", render: (s) => <BoardIcon size={s} /> },
@@ -2944,6 +2989,21 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(spec);
 
+  // A stats view's tiles, read out of the spec when its settings open. What
+  // the editor writes comes straight back as the spec; that echo is not
+  // re-read, so a tile being edited never jumps under the pointer.
+  const [statEntries, setStatEntries] = useState<StatEntry[] | null>(null);
+  // A chart's source properties, so X, Y and Series are picked, not typed.
+  const chartFields = useSourceFields(isChart && settingsOpen ? source : undefined);
+  const writtenSpec = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isStats || !settingsOpen) return;
+    if (statEntries && writtenSpec.current === spec) return;
+    let live = true;
+    commands.readStatsEntries(spec).then((e) => { if (live) setStatEntries(e); }).catch(() => { if (live) setStatEntries([]); });
+    return () => { live = false; };
+  }, [isStats, settingsOpen, spec]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const needsGroup = isBoard && !peek(spec, "group");
   const needsChartFields = isChart && (!peek(spec, "x") || !peek(spec, "y"));
 
@@ -2989,19 +3049,19 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
   // floats in on hover, or stays while it is being used, so a page of views
   // reads as its data and not as ten toolbars.
   const chromeStuck = editing || settingsOpen || !!error || needsGroup || needsChartFields;
-  const hasSettings = isChart || (!isTracker && !isStats && !needsGroup);
+  const hasSettings = isChart || isStats || (!isTracker && !needsGroup);
   const shaped = !!peek(spec, "filter") || !!peek(spec, "sort") || !!search.trim();
 
   return (
     <div className={`${styles.card} ${chromeStuck ? styles.cardActive : ""}`} contentEditable={false}>
       <div className={styles.chrome}>
         <ViewTypeSwitcher current={declaredType} onChange={(t) => applySpec(specWithType(spec, t, table))} />
-        <span className={styles.sourceLabel}>{sourceLabel(source)}</span>
+        <SourcePicker source={source} onPick={(next) => applySpec(specRemove(specSet(spec, "source", next), "columns"))} />
         {!editing && hasSettings && (
           <div className={styles.chromeCtl}>
             <button
               className={`${styles.chromeBtn} ${settingsOpen ? styles.chromeBtnOn : ""} ${!settingsOpen && shaped ? styles.chromeBtnShaped : ""}`}
-              title={isChart ? "Chart settings" : "Filter, sort, properties and search"}
+              title={isChart ? "Chart settings" : isStats ? "Edit the tiles" : "Filter, sort, properties and search"}
               onClick={() => setSettingsOpen((o) => !o)}
             >
               <GearIcon size={13} />
@@ -3009,17 +3069,18 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
             {settingsOpen && isChart && (
               <ChartSettingsPanel
                 value={chartOptions(spec)}
+                fields={chartFields.names}
                 onChange={(key, v) => applySpec(v ? specSet(spec, key, v) : specRemove(spec, key))}
               />
             )}
           </div>
         )}
         <button
-          className={styles.editBtn}
-          title="Edit the raw spec (advanced)"
+          className={`${styles.editBtn} ${editing ? "" : styles.editBtnQuiet}`}
+          title={editing ? "Close the YAML" : "Edit as YAML (advanced) — the gear edits it visually"}
           onClick={() => { setDraft(spec); setEditing((x) => !x); }}
         >
-          {editing ? "Close" : "Edit"}
+          {editing ? "Close" : "YAML"}
         </button>
       </div>
 
@@ -3037,6 +3098,19 @@ function CortexView({ block, editor }: { block: any; editor: any }) {
             <button className={styles.cancelBtn} onClick={() => setEditing(false)}>Cancel</button>
           </div>
         </div>
+      )}
+
+      {!editing && settingsOpen && isStats && statEntries && (
+        <StatsEditor
+          entries={statEntries}
+          defaultSource={source}
+          onChange={(entries) => {
+            setStatEntries(entries);
+            const next = specReplaceKey(spec, "stats", statsBlock(entries));
+            writtenSpec.current = next;
+            applySpec(next);
+          }}
+        />
       )}
 
       {/* Per-type controls: table/board/calendar/gallery get the filter toolbar

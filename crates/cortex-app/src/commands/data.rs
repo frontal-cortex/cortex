@@ -33,6 +33,11 @@ pub fn parse_view_spec(spec: String) -> Result<StructuredSpec> {
     cortex_core::data::parse_view_spec(&spec)
 }
 
+/// A stats view's tiles, for the visual editor.
+pub fn read_stats_entries(spec: String) -> Result<Vec<std::collections::BTreeMap<String, String>>> {
+    cortex_core::data::read_stats_entries(&spec)
+}
+
 // ── Multi-view document (an embedded block holding several named views) ────────
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]

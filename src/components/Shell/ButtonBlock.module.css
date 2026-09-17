@@ -50,7 +50,8 @@
   top: calc(100% + 6px);
   left: 0;
   z-index: 30;
-  width: 320px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -65,11 +66,11 @@
 
 .field {
   display: grid;
-  grid-template-columns: 76px 1fr;
-  align-items: center;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
 }
-.field > span { color: var(--text-tertiary); font-size: var(--text-xs); }
+.field > span { color: var(--text-tertiary); font-size: var(--text-xs); padding-top: 6px; }
 .field input, .field select, .field textarea {
   font: inherit;
   font-size: var(--text-sm);
@@ -100,3 +101,33 @@
 
 /* A phone cannot hover: the edit button stays put. */
 :root[data-viewport="phone"] .edit { opacity: 1; min-width: 36px; min-height: 36px; }
+
+/* The values a button writes: property, value, remove — one row each. */
+.values { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.valueRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 6px; align-items: center; }
+.valueRow input, .valueLine input {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  min-width: 0;
+  width: 100%;
+}
+.valueRow input:focus, .valueLine input:focus { outline: none; border-color: var(--accent); }
+.valueLine { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.iconBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border: 0; background: none; border-radius: var(--radius-sm);
+  color: var(--text-tertiary); cursor: pointer;
+}
+.iconBtn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.addValue {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 4px;
+  border: 1px dashed var(--border); background: none; color: var(--text-secondary);
+  border-radius: var(--radius-sm); font-size: var(--text-xs); padding: 3px 9px; cursor: pointer;
+}
+.addValue:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.addValue:disabled { opacity: 0.5; cursor: default; }
