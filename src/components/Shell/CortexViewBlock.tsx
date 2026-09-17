@@ -1883,7 +1883,9 @@ const CARD_HIDDEN = new Set(["created", "updated", "modified", "tags", "type", "
  *  sits before a page's name. It is not a field, so it stays out of the card's
  *  lines; a path or anything long is not an icon. */
 function RowIcon({ value }: { value: unknown }) {
-  const text = formatCell(value).trim();
+  // The raw value, not the cell text: an empty cell reads as "—", which is a
+  // dash on every card of a collection whose rows have no icon.
+  const text = typeof value === "string" ? value.trim() : "";
   if (!text || [...text].length > 4 || /[/\\.]/.test(text)) return null;
   return <span className={styles.galleryIcon} aria-hidden>{text}</span>;
 }

@@ -33,6 +33,7 @@ import {
   ensureCollectionViewsBlock, collectionViewsSlashItem,
 } from "./CollectionViewsBlock";
 import { isDatabaseNote, collectionNameFromIndex, parseViews, defaultViews, viewToFrontmatter } from "../../lib/database";
+import { rowCollection } from "../../lib/paths";
 import { inflateEmbeds, flattenEmbeds, noteEmbedSlashItem } from "./NoteEmbedBlock";
 import { inflateCallouts, flattenCallouts, calloutSlashItem } from "./CalloutBlock";
 import { mathSlashItem, inlineMathInputRule } from "./MathBlock";
@@ -44,7 +45,7 @@ import { inflateRichFormats, flattenRichFormats } from "./richFormats";
 import { NotePathContext, inflateButtons, flattenButtons, buttonSlashItem } from "./ButtonBlock";
 import { columnsSlashItems } from "./ColumnBlocks";
 import { inflateColumns, flattenColumns } from "../../lib/columns";
-import { collectButtons, setNoteButtons } from "../../lib/buttons";
+import { collectButtons, setNoteButtons, expandPlaceholders } from "../../lib/buttons";
 import { collectAssetRefs, assetsToDisplayUrls, displayUrlsToAssets, inflateFileBlocks } from "../../lib/assets";
 import { imageAlignments } from "../../lib/alignment";
 import { shortcutFor } from "../../lib/keymap";
@@ -831,8 +832,29 @@ function NoteEditor({
       try { refreshDerived(); } catch { /* editor torn down */ }
     };
     const seedFromMarkdown = () => {
-      if (!note.body.trim()) { finish(); return; }
-      loadAssetsForDisplay(note.body)
+      if (!note.body.trim()) { seedFromRowTemplate(); return; }
+      seedBody(note.body);
+    };
+
+    // A row with nothing written on it shows the layout its collection's row
+    // template carries — the lists and totals that belong to one row of this
+    // database, as if it had been made from the template. A row made by hand
+    // or by an agent gets the same page as one made with + New. Nothing is
+    // written until the page is edited (the hydration guard below), and a row
+    // that has its own text keeps it.
+    const seedFromRowTemplate = () => {
+      const coll = rowCollection(note.path);
+      if (!coll) { finish(); return; }
+      commands.readNote(`collections/${coll}/_template-${coll}.md`)
+        .then((t) => {
+          const body = expandPlaceholders(t.body ?? "").replace(/\{\{\s*title\s*\}\}/gi, String(note.frontmatter["title"] ?? ""));
+          if (body.trim()) seedBody(body); else finish();
+        })
+        .catch(finish);
+    };
+
+    const seedBody = (body: string) => {
+      loadAssetsForDisplay(body)
         .then((displayBody) => {
           try {
             // `$…$` / `$$…$$` are lifted out before parsing so the Markdown
