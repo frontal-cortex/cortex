@@ -423,6 +423,14 @@ export interface NoteEntry {
   parent: string | null;
 }
 
+/** A note that refers to the open one — by `[[link]]` (backlinks) or in plain
+ *  text (unlinked mentions) — with the body lines it does so on. Each context
+ *  is one line with the link or mention wrapped in `<mark>…</mark>`; long
+ *  lines are cut to a window around it. */
+export interface Backlink extends NoteEntry {
+  contexts: string[];
+}
+
 /** One node of the vault's tag tree: `path` is the full tag (`project/alpha`),
  *  `name` its last segment, `count` the notes carrying it or any child. */
 export interface TagNode {
@@ -436,20 +444,6 @@ export interface TagNode {
  *  the matched words wrapped in `<mark>…</mark>` (empty for filter-only queries). */
 export interface SearchHit extends NoteEntry {
   snippet: string;
-}
-
-/** The passage around one `[[link]]`, as a reader sees it: `link` is the
- *  link's label, `before` / `after` the rest of the paragraph, clipped at
- *  word boundaries with `…` where text was cut. */
-export interface LinkContext {
-  before: string;
-  link: string;
-  after: string;
-}
-
-/** A note that links to the open one, with every passage that does so, in document order. */
-export interface Backlink extends NoteEntry {
-  mentions: LinkContext[];
 }
 
 /** The sidecar omits defaults (`resolved: false`, `replies: []`, `occurrence: 0`); fill them in. */
@@ -1206,8 +1200,18 @@ export const commands = {
   getAllLinks: () =>
     invoke<Array<[string, string]>>("get_all_links"),
 
+  /** Notes linking to `path`, each with the body lines the links sit on. */
   getBacklinks: (path: string) =>
     invoke<Backlink[]>("get_backlinks", { path }),
+
+  /** Notes that name `path`'s title in plain text without a `[[link]]`. */
+  getUnlinkedMentions: (path: string) =>
+    invoke<Backlink[]>("get_unlinked_mentions", { path }),
+
+  /** Turn every plain-text mention of `path`'s title inside `source` into a
+   *  `[[link]]`; rewrites `source`. Resolves to how many were linked. */
+  linkMentions: (source: string, path: string) =>
+    invoke<number>("link_mentions", { source, path }),
 
   listTemplates: () =>
     invoke<string[]>("list_templates"),

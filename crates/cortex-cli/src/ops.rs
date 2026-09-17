@@ -5,6 +5,7 @@
 use cortex_core::agents::{self, AgentCli};
 use cortex_core::comments::{self, Anchor, Thread};
 use cortex_core::assets::AssetEntry;
+use cortex_core::backlinks::{self, Backlink};
 use cortex_core::data::{self};
 
 /// What `cortex view` / MCP `query_collection` ask for.
@@ -544,9 +545,30 @@ impl Vault {
             .collect())
     }
 
-    pub fn backlinks(&self, target: &str) -> Result<Vec<cortex_core::db::Backlink>> {
+    /// Notes linking to `target`, each with the body lines the links sit on.
+    pub fn backlinks(&self, target: &str) -> Result<Vec<Backlink>> {
         let rel = self.resolve(target)?.path;
-        Ok(self.db()?.get_backlinks(&rel)?)
+        Ok(backlinks::backlinks(&self.db()?, &rel)?)
+    }
+
+    /// Notes that name `target`'s title in plain text without linking to it.
+    pub fn unlinked_mentions(&self, target: &str) -> Result<Vec<Backlink>> {
+        let rel = self.resolve(target)?.path;
+        Ok(backlinks::unlinked_mentions(&self.db()?, &rel)?)
+    }
+
+    /// Turn every plain-text mention of `target`'s title in `source` into a
+    /// `[[link]]`, written through the ordinary save path. Returns how many.
+    pub fn link_mentions(&self, source: &str, target: &str) -> Result<usize> {
+        let entry = self.resolve(target)?;
+        let title = if entry.title.trim().is_empty() { vault::stem(&entry.path).to_string() } else { entry.title.clone() };
+        let mut note = self.read(source)?;
+        let (body, linked) = backlinks::link_mentions(&note.body, &title);
+        if linked > 0 {
+            note.body = body;
+            self.write(&note)?;
+        }
+        Ok(linked)
     }
 
     /// Rename or move a note and rewrite every inbound link. `dest` is a new
