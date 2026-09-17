@@ -10,6 +10,17 @@ created: "{{date}}"
 
 <!-- Set `monthly_budget`. `spent`, `remaining` and the ring are computed from the expenses filed under this category. -->
 
+```cortex-view
+source: collections/categories
+type: stats
+stats:
+  - {label: Spent this month, source: collections/expenses, agg: sum, field: amount, filter: "category == @this and date >= @month", format: currency}
+  - {label: Budget, source: collections/categories, agg: sum, field: monthly_budget, filter: "title == @this", format: currency}
+  - {label: Left, expr: "budget - spent_this_month", format: currency}
+  - {label: Last month, source: collections/expenses, agg: sum, field: amount, filter: "category == @this and date >= @month-1 and date < @month", format: currency}
+  - {label: Payments, source: collections/expenses, agg: count, filter: "category == @this and date >= @month"}
+```
+
 ## What counts
 
 What goes in this category and what does not, so future you files things the

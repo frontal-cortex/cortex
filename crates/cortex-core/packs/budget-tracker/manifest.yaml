@@ -1,7 +1,7 @@
 format: 1
 id: budget-tracker
 name: "Budget Tracker"
-version: 4.1.0
+version: 4.2.0
 kind: collection
 summary: "A finance dashboard: quick capture, live account balances, budget rings, over separate expenses, income and transfers."
 description: |
