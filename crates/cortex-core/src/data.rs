@@ -2501,9 +2501,47 @@ pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
             out
         }
     };
-    let points = if series.is_empty() { series_of(&filtered)? } else { series.iter().flat_map(|s| s.points.iter().cloned()).fold(BTreeMap::<String, f64>::new(), |mut m, p| { *m.entry(p.x).or_default() += p.y; m }).into_iter().map(|(x, y)| ChartPoint { x, y }).collect() };
+    let mut series = series;
+    let mut points = if series.is_empty() { series_of(&filtered)? } else { series.iter().flat_map(|s| s.points.iter().cloned()).fold(BTreeMap::<String, f64>::new(), |mut m, p| { *m.entry(p.x).or_default() += p.y; m }).into_iter().map(|(x, y)| ChartPoint { x, y }).collect() };
+
+    // `limit:` keeps the biggest few and adds the rest together as "Other", so
+    // a chart over thirty categories says where the money went instead of
+    // drawing thirty slivers. With `series:` it is the series that are folded.
+    if let Some(n) = spec.limit.filter(|n| *n > 0) {
+        if series.is_empty() {
+            points = keep_largest(points, n);
+        } else if series.len() > n {
+            series.sort_by(|a, b| total_of(b).partial_cmp(&total_of(a)).unwrap_or(std::cmp::Ordering::Equal));
+            let rest: Vec<ChartSeries> = series.split_off(n);
+            let mut other: BTreeMap<String, f64> = BTreeMap::new();
+            for s in rest { for p in s.points { *other.entry(p.x).or_default() += p.y; } }
+            if !other.is_empty() {
+                series.push(ChartSeries { name: OTHER.into(), points: other.into_iter().map(|(x, y)| ChartPoint { x, y }).collect() });
+            }
+        }
+    }
 
     Ok(ChartResult { chart_type, x_label: x, y_label: y, points, series, stack, labels, legend, height })
+}
+
+/// What a chart calls the slices or lines it folded together under `limit:`.
+const OTHER: &str = "Other";
+
+fn total_of(s: &ChartSeries) -> f64 {
+    s.points.iter().map(|p| p.y.max(0.0)).sum()
+}
+
+/// The `n` largest points, with the rest added together as "Other" (kept in
+/// the order they came in, so a chart along a date still reads left to right).
+fn keep_largest(points: Vec<ChartPoint>, n: usize) -> Vec<ChartPoint> {
+    if points.len() <= n { return points; }
+    let mut by_size: Vec<&ChartPoint> = points.iter().collect();
+    by_size.sort_by(|a, b| b.y.partial_cmp(&a.y).unwrap_or(std::cmp::Ordering::Equal));
+    let keep: std::collections::HashSet<String> = by_size.into_iter().take(n).map(|p| p.x.clone()).collect();
+    let other: f64 = points.iter().filter(|p| !keep.contains(&p.x)).map(|p| p.y).sum();
+    let mut out: Vec<ChartPoint> = points.into_iter().filter(|p| keep.contains(&p.x)).collect();
+    if other != 0.0 { out.push(ChartPoint { x: OTHER.into(), y: other }); }
+    out
 }
 
 // ── Saved views and shared display helpers ────────────────────────────────────
@@ -2635,6 +2673,9 @@ pub fn run_stats(root: &Path, spec_yaml: &str) -> Result<StatsResult> {
             if s.is_empty() { None } else { Some(s) }
         };
         let label = get("label").or_else(|| get("field")).or_else(|| get("expr")).or_else(|| get("agg")).unwrap_or_else(|| "Stat".into());
+        // `hidden: true` — worked out and named for the formulas after it, but
+        // not shown: "spent last month" behind "12% less than last month".
+        let hidden = get("hidden").map_or(false, |h| h == "true");
         let mut format = get("format");
         let mut error = None;
         let cell = if let Some(expr) = get("expr") {
@@ -2669,6 +2710,7 @@ pub fn run_stats(root: &Path, spec_yaml: &str) -> Result<StatsResult> {
         };
         env.insert(label.clone(), cell.clone());
         env.insert(stat_ident(&label), cell.clone());
+        if hidden { continue; }
         let value = match &cell { CellValue::Num(n) if n.is_finite() => Some(*n), _ => None };
         let text = match &cell { CellValue::Null => "—".to_string(), c => c.as_text() };
         stats.push(Stat { label, value, text, format, error });
@@ -2740,6 +2782,35 @@ mod tests {
         assert_eq!(names("source: collections/expenses\nfilter: account == @this\nthis: \"collections/accounts/main.md\"\n"), vec!["A"]);
         assert!(names("source: collections/expenses\nfilter: account == @this\n").is_empty(), "no page to be on: nothing matches");
         assert!(names("source: collections/expenses\nfilter: account == @this\nthis: ../outside.md\n").is_empty(), "a path out of the vault is not read");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_chart_limit_keeps_the_biggest_and_adds_up_the_rest() {
+        let root = gap_root("chartlimit");
+        for (i, (cat, amount)) in [("Rent", 1000.0), ("Food", 400.0), ("Fun", 200.0), ("Bus", 50.0), ("Gym", 30.0)].iter().enumerate() {
+            put(&root, &format!("collections/spend/r{i}.md"), &format!("---\ntitle: R{i}\ncategory: {cat}\namount: {amount}\n---\n"));
+        }
+        let spec = "source: collections/spend\ntype: chart\nchartType: donut\nx: category\ny: amount\nagg: sum\nlimit: 3\n";
+        let c = run_chart(&root, spec).unwrap();
+        let mut got: Vec<(String, f64)> = c.points.iter().map(|p| (p.x.clone(), p.y)).collect();
+        got.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        assert_eq!(got, vec![("Rent".into(), 1000.0), ("Food".into(), 400.0), ("Fun".into(), 200.0), ("Other".into(), 80.0)]);
+        // Without a limit every slice stands on its own.
+        let all = run_chart(&root, "source: collections/spend\ntype: chart\nchartType: donut\nx: category\ny: amount\nagg: sum\n").unwrap();
+        assert_eq!(all.points.len(), 5);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_hidden_stat_feeds_a_formula_without_taking_a_tile() {
+        let root = gap_root("hiddenstat");
+        put(&root, "collections/spend/a.md", "---\ntitle: A\namount: 60\ndate: \"2026-09-10\"\n---\n");
+        put(&root, "collections/spend/b.md", "---\ntitle: B\namount: 40\ndate: \"2026-08-10\"\n---\n");
+        let spec = "source: collections/spend\ntype: stats\nstats:\n  - {label: This, agg: sum, field: amount, filter: \"date >= 2026-09-01\"}\n  - {label: Last, agg: sum, field: amount, filter: \"date < 2026-09-01\", hidden: true}\n  - {label: Change, expr: \"this - last\"}\n";
+        let s = run_stats(&root, spec).unwrap();
+        assert_eq!(s.stats.iter().map(|t| t.label.as_str()).collect::<Vec<_>>(), vec!["This", "Change"], "the hidden tile is not shown");
+        assert_eq!(s.stats.iter().find(|t| t.label == "Change").unwrap().value, Some(20.0), "but a formula can still use it");
         let _ = std::fs::remove_dir_all(&root);
     }
 

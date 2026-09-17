@@ -12,7 +12,7 @@ start of a month.
 
 | File | Lands at | What it is |
 |---|---|---|
-| `index.md` | `collections/budget/_index.md` | the dashboard page: buttons, this month's totals, budget cards, the Expenses / Income / Transfers tabs, donuts, account balances |
+| `index.md` | `collections/budget/_index.md` | the dashboard page: this month's totals and how they compare with last month, the buttons, budget cards, what is due, six months of bars, the biggest and latest payments, donuts of the top categories and sources, account balances |
 | `schemas/expenses.yaml`, `index/expenses.md` | `collections/expenses/` | date, amount, `category` → Categories, `account` → Accounts, payee, `bill`, `wish`; views Recent, Weekly, Monthly, Chart, By category, Calendar |
 | `schemas/income.yaml`, `index/income.md` | `collections/income/` | date, amount, source, `account` → Accounts; views Recent, Monthly, Yearly, Chart |
 | `schemas/transfers.yaml`, `index/transfers.md` | `collections/transfers/` | date, amount, `from_account` and `to_account` → Accounts, `wish`; views Recent, Monthly |
@@ -82,6 +82,28 @@ All seven databases nest under Budget in the sidebar.
   first. Add `--json` for a script.
 - Over MCP, `create_note` in `collections/expenses` and `set_properties` log a
   row, and `run_view` reads the same computed numbers the app shows.
+
+## What is new in 4.1
+
+The dashboard is a summary, not a copy of the databases. It used to embed
+Expenses, Income and Transfers whole — every tab, twenty-five rows each — and
+a card for every category, most of them empty. Now it shows:
+
+- **This month in numbers:** spent, earned, net, the share of income saved,
+  and how the spending compares with last month, plus what every account
+  holds together.
+- **Budgets you actually set:** the six fullest of the categories with a
+  monthly budget; a category with no budget and no spending stays out of the
+  way (the Categories page works the same way).
+- **What is due:** unpaid bills in the next three weeks, and the three things
+  you are closest to affording.
+- **The shape of the month:** six months of spending as bars, this month's
+  five biggest payments, and the last eight logged.
+- **Where it went and came from:** donuts of the top six categories and top
+  five sources, the rest added up as "Other".
+
+The databases are one click away in the sidebar, where every row and the
+Weekly, Monthly, Chart and Calendar views live.
 
 ## What is new in 4.0
 

@@ -185,14 +185,17 @@ export function flattenCollectionViews(blocks: any[]): any[] {
  *  note has no fence yet — at the top of an ordinary page, but under a body
  *  that already lays out views of its own (a dashboard: `cortex-view` blocks
  *  or a column layout), so the dashboard comes first. Idempotent. */
-export function ensureCollectionViewsBlock(editor: any, collection: string): void {
+export function ensureCollectionViewsBlock(editor: any, collection: string, hasOwnViews: boolean): void {
   const any = (blocks: any[], types: string[]): boolean =>
     blocks.some((b) => types.includes(b?.type) || (Array.isArray(b?.children) && any(b.children, types)));
   if (any(editor.document, ["collectionViews"])) return;
   const doc = editor.document;
+  const dashboard = any(doc, ["cortexView", "columnList"]);
+  // A dashboard page with no views of its own (a Budget page laying out other
+  // collections' views, holding no rows) would get an empty table at the end.
+  if (dashboard && !hasOwnViews) return;
   const block = { type: "collectionViews", props: { collection } } as never;
   if (!doc.length) { editor.replaceBlocks(doc, [block]); return; }
-  const dashboard = any(doc, ["cortexView", "columnList"]);
   if (dashboard) editor.insertBlocks([block], doc[doc.length - 1], "after");
   else editor.insertBlocks([block], doc[0], "before");
 }
