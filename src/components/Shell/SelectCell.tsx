@@ -22,6 +22,10 @@ interface Props {
   multi: boolean;
   editable?: boolean;
   placeholder?: string;
+  /** In a table an empty cell's prompt repeats on every row, which reads as
+   *  clutter — "Link…" down a whole column says nothing. Quiet means it waits
+   *  for the pointer or keyboard focus. */
+  quietPlaceholder?: boolean;
   onChange: (next: string | string[]) => void;
   onOptionsChange?: (next: SelectOption[]) => void;
   /** A host (the data table, on Enter) asks for the popover to open. */
@@ -42,6 +46,7 @@ export function SelectCell({
   multi,
   editable = true,
   placeholder = "Empty",
+  quietPlaceholder = false,
   onChange,
   onOptionsChange,
   forceOpen,
@@ -131,7 +136,9 @@ export function SelectCell({
   return (
     <div className={styles.wrap} ref={wrapRef}>
       <div className={styles.trigger} onClick={() => setOpen((o) => !o)} title="Edit">
-        {selected.length === 0 && <span className={styles.placeholder}>{placeholder}</span>}
+        {selected.length === 0 && (
+          <span className={`${styles.placeholder} ${quietPlaceholder ? styles.placeholderQuiet : ""}`}>{placeholder}</span>
+        )}
         {selected.map((name) => (
           <span key={name} className={styles.pill} style={tagStyle(colorFor(name))}>
             {name}

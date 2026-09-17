@@ -105,7 +105,11 @@ a:focus-visible,
 }
 .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="columnList"]) > .bn-block > .bn-block-group > .bn-block-outer {
   flex: 1 1 0;
-  min-width: 0;
+  /* A floor, not zero: a column holding something that wants the whole width —
+     a chart, a wide table — would otherwise squeeze its neighbours to a few
+     pixels, and their text comes out one letter per line. Narrower than this
+     and the columns stack instead (the container rule below). */
+  min-width: 7rem;
 }
 .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"][data-width="2"]) { flex-grow: 2 !important; }
 .bn-block-outer:has(> .bn-block > .bn-react-node-view-renderer > .bn-block-content[data-content-type="column"][data-width="3"]) { flex-grow: 3 !important; }

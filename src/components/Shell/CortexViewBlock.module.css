@@ -2009,3 +2009,29 @@
   color: var(--danger);
   white-space: normal;
 }
+
+/* A card's line is `label   value`. When there isn't room for both, the label
+   gives way — a budget card reading "monthly_limit 4…" tells you nothing,
+   while "monthly… 420.00" still does. */
+.galleryKey {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.galleryLine > span:last-child {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* A view fills the column it is in. As a flex item sized from its content it
+   collapsed to about one character wide — the block is also a size container
+   for its rows, so asking it what width it wants is circular — and its rows
+   then spilled out of it: cards out of line, a stub reading one letter per
+   line. `min-width: 0` above still lets it shrink below its widest row. */
+.card {
+  width: 100%;
+  flex: 1 1 auto;
+}
