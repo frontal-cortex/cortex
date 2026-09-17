@@ -28,6 +28,7 @@ import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from
 import { DEFAULT_STATS } from "../../lib/database";
 import { NotePathContext } from "./ButtonBlock";
 import { StatsEditor } from "./StatsEditor";
+import { Deferred } from "./Deferred";
 import { friendlyDateValue } from "../../lib/displayDate";
 import { XYChart, seriesColor } from "./XYChart";
 import { FilterText } from "./FilterBuilder";
@@ -459,6 +460,16 @@ function fmtNum(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
+/** Building an Intl.NumberFormat is far dearer than using one: a table of
+ *  amounts made one per cell. One per option set, made once. */
+const numberFormats = new Map<string, Intl.NumberFormat>();
+function nf(min: number, max: number): Intl.NumberFormat {
+  const key = `${min}:${max}`;
+  let f = numberFormats.get(key);
+  if (!f) { f = new Intl.NumberFormat(undefined, { minimumFractionDigits: min, maximumFractionDigits: max }); numberFormats.set(key, f); }
+  return f;
+}
+
 /** Number display formats a schema can declare (`format:`). */
 const NUMBER_FORMATS: { value: string; label: string }[] = [
   { value: "", label: "Plain" },
@@ -488,9 +499,9 @@ export function formatNumber(n: number, schema: PropertyDef | undefined): string
   const unit = schema?.unit ?? "";
   switch (schema?.format) {
     case "percent": return `${fmtNum(n)}%`;
-    case "currency": return `${unit}${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
-    case "integer": return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
-    case "decimal": return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
+    case "currency": return `${unit}${nf(2, 2).format(n)}`;
+    case "integer": return nf(0, 0).format(n);
+    case "decimal": return nf(1, 1).format(n);
     case "progress":
     case "ring": {
       // A bare 0–100 bar is a share, so it reads as one; a custom range or unit reads as itself.
@@ -773,10 +784,10 @@ function statText(s: Stat): string {
   const n = s.value;
   switch (s.format) {
     case "percent": case "progress": case "ring": return `${fmtNum(n)}%`;
-    case "currency": return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-    case "integer": return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
-    case "decimal": return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
-    default: return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+    case "currency": return nf(2, 2).format(n);
+    case "integer": return nf(0, 0).format(n);
+    case "decimal": return nf(1, 1).format(n);
+    default: return nf(0, 2).format(n);
   }
 }
 
@@ -2839,7 +2850,16 @@ function chartOptions(spec: string): ChartOptions {
   };
 }
 
+/** A view block: drawn when it comes near the screen (see Deferred). */
 function CortexView({ block, editor }: { block: any; editor: any }) {
+  const spec = String(block.props.spec ?? "");
+  const type = peek(spec, "type") ?? (block.props.lang === "cortex-chart" ? "chart" : "table");
+  // About the height it will take, so the page does not jump when it arrives.
+  const estimate = type === "stats" ? 110 : type === "chart" ? 300 : type === "gallery" ? 180 : 240;
+  return <Deferred minHeight={estimate}><CortexViewBody block={block} editor={editor} /></Deferred>;
+}
+
+function CortexViewBody({ block, editor }: { block: any; editor: any }) {
   const spec = String(block.props.spec ?? "");
   const lang = String(block.props.lang ?? "cortex-view");
   const declaredType = peek(spec, "type") ?? (lang === "cortex-chart" ? "chart" : "table");

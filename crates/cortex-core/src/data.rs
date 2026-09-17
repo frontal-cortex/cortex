@@ -15,7 +15,7 @@
 //! the `Table`/`Query` contract here does not change when that lands.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 
@@ -184,38 +184,54 @@ pub(crate) fn infer_columns(rows: &[Row]) -> Vec<Column> {
     }).collect()
 }
 
+/// A row file as last parsed: its length and modification time then, and the
+/// row it held.
+struct CachedRow { len: u64, modified: std::time::SystemTime, row: Option<Row> }
+
+/// Parsed rows, per row file, reused while the file is unchanged. A dashboard
+/// asks for the same collection many times over — each view, and each rollup
+/// that reads it (an account's balance reads expenses, income and transfers,
+/// twice over) — and a file's length and time are far cheaper to look at than
+/// its YAML is to parse. Only a changed file is parsed again.
+fn row_cache() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, CachedRow>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, CachedRow>>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
 /// `collections/<name>/*.md` — each file is a row, frontmatter is its fields,
 /// id is the filename stem. Body is exposed as `$body`.
 pub fn read_collection(root: &Path, name: &str) -> Result<Table> {
     let dir = root.join("collections").join(name);
-    let mut rows = Vec::new();
-
     let entries = std::fs::read_dir(&dir)
         .map_err(|_| AppError::Other(format!("Collection not found: {name}")))?;
-
+    let now = std::time::SystemTime::now();
+    let mut rows = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             continue;
         }
-        let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-        // `_`-prefixed files (e.g. `_index.md`, the collection's view note) are
-        // not rows.
-        if id.starts_with('_') {
+        // `_`-prefixed files (e.g. `_index.md`, the collection's view note) are not rows.
+        if path.file_stem().and_then(|s| s.to_str()).unwrap_or("").starts_with('_') {
             continue;
         }
-        let content = std::fs::read_to_string(&path)?;
-        let note = match crate::note::parse_note(&id, &content) {
-            Ok(n) => n,
-            Err(_) => continue, // skip unparseable rows rather than failing the table
-        };
-
-        let mut cells: BTreeMap<String, CellValue> = BTreeMap::new();
-        for (k, v) in &note.frontmatter {
-            cells.insert(k.clone(), json_to_cell(v));
+        let Ok(meta) = entry.metadata() else { continue };
+        let (len, modified) = (meta.len(), meta.modified().unwrap_or(std::time::UNIX_EPOCH));
+        // File times tick in coarse steps, so two same-length writes a moment
+        // apart can look alike: a file touched in the last two seconds is read
+        // again whatever its time says.
+        let settled = now.duration_since(modified).map_or(false, |age| age.as_secs() >= 2);
+        if settled {
+            if let Some(c) = row_cache().lock().unwrap().get(&path) {
+                if c.len == len && c.modified == modified {
+                    if let Some(row) = &c.row { rows.push(row.clone()); }
+                    continue;
+                }
+            }
         }
-        cells.insert("$body".into(), CellValue::Text(note.body.trim().to_string()));
-        rows.push(Row { id, cells });
+        let row = parse_row(&path);
+        if let Some(r) = &row { rows.push(r.clone()); }
+        row_cache().lock().unwrap().insert(path, CachedRow { len, modified, row });
     }
 
     // Default order: creation date ascending, then id as a stable tiebreak.
@@ -230,6 +246,19 @@ pub fn read_collection(root: &Path, name: &str) -> Result<Table> {
     });
     let columns = infer_columns(&rows);
     Ok(Table { name: name.to_string(), columns, rows })
+}
+
+/// One row file parsed, or `None` when it cannot be (skipped rather than failing the table).
+fn parse_row(path: &Path) -> Option<Row> {
+    let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let content = std::fs::read_to_string(path).ok()?;
+    let note = crate::note::parse_note(&id, &content).ok()?;
+    let mut cells: BTreeMap<String, CellValue> = BTreeMap::new();
+    for (k, v) in &note.frontmatter {
+        cells.insert(k.clone(), json_to_cell(v));
+    }
+    cells.insert("$body".into(), CellValue::Text(note.body.trim().to_string()));
+    Some(Row { id, cells })
 }
 
 fn split_csv_record(line: &str) -> Vec<String> {
@@ -3565,6 +3594,34 @@ mod tests {
         // The group field need not be a shown column.
         let p = resolve_view(&root, "source: collections/spend\ngroup: date\nbucket: month\ncolumns: [title, amount]\n").unwrap();
         assert_eq!(p.groups.iter().map(|g| g.key.as_str()).collect::<Vec<_>>(), vec!["2026-09", "2026-08", ""]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_collection_read_again_sees_every_change_to_its_files() {
+        let root = gap_root("rowcache");
+        put(&root, "collections/spend/a.md", "---\ntitle: A\namount: 1\n---\n");
+        put(&root, "collections/spend/b.md", "---\ntitle: B\namount: 2\n---\n");
+        let amount = |t: &Table, id: &str| t.rows.iter().find(|r| r.id == id).and_then(|r| r.cells.get("amount")).map(CellValue::as_text);
+        let t = read_collection(&root, "spend").unwrap();
+        assert_eq!(amount(&t, "a").as_deref(), Some("1"));
+        // Same length, a moment later: a coarse file time must not hide it.
+        put(&root, "collections/spend/a.md", "---\ntitle: A\namount: 7\n---\n");
+        assert_eq!(amount(&read_collection(&root, "spend").unwrap(), "a").as_deref(), Some("7"));
+        // A row removed, a row added.
+        std::fs::remove_file(root.join("collections/spend/b.md")).unwrap();
+        put(&root, "collections/spend/c.md", "---\ntitle: C\namount: 3\n---\n");
+        let t = read_collection(&root, "spend").unwrap();
+        assert_eq!(t.rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["a", "c"]);
+        // Settled files are served from the cache and still read the same.
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        for f in ["a", "c"] {
+            std::fs::File::options().write(true).open(root.join(format!("collections/spend/{f}.md"))).unwrap().set_modified(old).unwrap();
+        }
+        let first = read_collection(&root, "spend").unwrap();
+        let again = read_collection(&root, "spend").unwrap();
+        assert_eq!(amount(&first, "c"), amount(&again, "c"));
+        assert_eq!(amount(&again, "a").as_deref(), Some("7"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
