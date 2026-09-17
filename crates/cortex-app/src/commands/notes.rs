@@ -692,6 +692,17 @@ pub fn get_all_links(ctx: &AppCtx) -> Result<Vec<(String, String)>> {
     }
 }
 
+/// Every edge in the vault with what made it: "link" for a `[[wiki link]]` in
+/// a body, "relation" for a relation property pointing at another row. The
+/// graph draws both, and can show one without the other.
+pub fn get_link_graph(ctx: &AppCtx) -> Result<Vec<(String, String, String)>> {
+    let guard = ctx.db.0.lock().unwrap();
+    match guard.as_ref() {
+        Some(db) => db.get_all_links_kinded(),
+        None => Ok(vec![]),
+    }
+}
+
 // ── Backlinks ────────────────────────────────────────────────────────────────
 /// Notes linking here, each with the body lines the links sit on.
 pub fn get_backlinks(ctx: &AppCtx, path: String) -> Result<Vec<Backlink>> {

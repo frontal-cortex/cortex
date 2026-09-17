@@ -1,7 +1,7 @@
 // Run with `npm run test:lib` (node's built-in runner; no bundler needed).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildGraph, buildLegend, colorOf, parseFilter, resolveLinks, nodeRadius } from "./graph.ts";
+import { buildGraph, buildLegend, colorOf, parseFilter, resolveLinks, nodeRadius, labelFloor } from "./graph.ts";
 import type { GraphOptions } from "./graph.ts";
 import type { NoteEntry } from "./commands";
 
@@ -32,11 +32,28 @@ const opts = (o: Partial<GraphOptions> = {}): GraphOptions =>
 
 test("links resolve like vault::resolve and collapse duplicates", () => {
   assert.deepEqual(resolveLinks(notes, raw), [
-    { source: "notes/hub.md", target: "notes/work/a.md" },
-    { source: "notes/hub.md", target: "notes/work/b.md" },
-    { source: "notes/work/a.md", target: "notes/c.md" },
-    { source: "notes/c.md", target: "notes/hub.md" },
+    { source: "notes/hub.md", target: "notes/work/a.md", kind: "link" },
+    { source: "notes/hub.md", target: "notes/work/b.md", kind: "link" },
+    { source: "notes/work/a.md", target: "notes/c.md", kind: "link" },
+    { source: "notes/c.md", target: "notes/hub.md", kind: "link" },
   ]);
+});
+
+test("a relation property is an edge too, and a written link outranks it", () => {
+  const rows: Array<[string, string, string]> = [
+    ["notes/work/a.md", "Gamma", "relation"],   // a relation only
+    ["notes/hub.md", "Alpha", "relation"],      // also written as a link below
+    ["notes/hub.md", "Alpha", "link"],
+  ];
+  assert.deepEqual(resolveLinks(notes, rows), [
+    { source: "notes/work/a.md", target: "notes/c.md", kind: "relation" },
+    { source: "notes/hub.md", target: "notes/work/a.md", kind: "link" },
+  ]);
+  // Relations off: only what someone wrote is drawn.
+  const off = buildGraph(notes, rows, opts({ showRelations: false, showOrphans: false }));
+  assert.deepEqual(off.links.map((l) => l.kind), ["link"]);
+  const on = buildGraph(notes, rows, opts({ showOrphans: false }));
+  assert.equal(on.links.length, 2);
 });
 
 test("global graph carries every note, degree counts both directions", () => {
@@ -117,4 +134,11 @@ test("node radius grows with the square root of the link count, capped", () => {
   assert.equal(nodeRadius(0), 7);
   assert.equal(nodeRadius(4), 13);
   assert.equal(nodeRadius(400), 24);
+});
+
+test("labels thin out as the graph grows and come back on zoom", () => {
+  assert.equal(labelFloor(20, 1), 0, "a small graph names every node");
+  assert.ok(labelFloor(300, 1) > 0, "three hundred nodes cannot all be named");
+  assert.ok(labelFloor(300, 3) < labelFloor(300, 1), "zooming in names more of them");
+  assert.equal(labelFloor(300, 4), 0, "and at full zoom (the view's maximum), all of them");
 });

@@ -454,3 +454,12 @@ mod tests {
         assert_eq!(path("api"), None);
     }
 }
+
+/// The collection a row note belongs to: `collections/<name>/<id>.md`, where
+/// the file is neither the collection's page nor a row template.
+pub fn row_collection(rel_path: &str) -> Option<String> {
+    let rest = rel_path.strip_prefix("collections/")?;
+    let (collection, file) = rest.split_once('/')?;
+    if file.contains('/') || file.starts_with('_') || !file.ends_with(".md") { return None; }
+    Some(collection.to_string())
+}

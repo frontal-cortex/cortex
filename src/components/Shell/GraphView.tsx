@@ -7,7 +7,7 @@ import { NoteEntry, commands } from "../../lib/commands";
 import { Point, clamp, distance, midpoint, pinchFactor, wheelZoomFactor } from "../../lib/gestures";
 import {
   buildGraph, buildLegend, colorOf, nodeRadius, clampDepth, MIN_DEPTH, MAX_DEPTH,
-  GraphNode, GraphMode, ColorBy,
+  GraphNode, GraphMode, ColorBy, labelFloor,
 } from "../../lib/graph";
 import { shortcutFor } from "../../lib/keymap";
 import { CloseIcon } from "./icons";
@@ -34,7 +34,7 @@ interface Props {
 
 /** Settings survive closing and reopening the graph within a session; they
  *  are view state, so they are not written anywhere. */
-const remembered = { mode: "global" as GraphMode, depth: 1, filter: "", colorBy: "none" as ColorBy, showOrphans: true };
+const remembered = { mode: "global" as GraphMode, depth: 1, filter: "", colorBy: "none" as ColorBy, showOrphans: true, showRelations: true };
 
 const LEGEND_MAX = 12;
 const DRAG_THRESHOLD = 4;
@@ -42,7 +42,7 @@ const MIN_SCALE = 0.2;
 const MAX_SCALE = 4;
 
 export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose }: Props) {
-  const [rawLinks, setRawLinks] = useState<Array<[string, string]> | null>(null);
+  const [rawLinks, setRawLinks] = useState<Array<[string, string, string]> | null>(null);
   const [failed, setFailed] = useState(false);
 
   const [mode, setMode] = useState<GraphMode>(initialMode ?? remembered.mode);
@@ -50,18 +50,19 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
   const [filter, setFilter] = useState(remembered.filter);
   const [colorBy, setColorBy] = useState<ColorBy>(remembered.colorBy);
   const [showOrphans, setShowOrphans] = useState(remembered.showOrphans);
-  useEffect(() => { Object.assign(remembered, { mode, depth, filter, colorBy, showOrphans }); }, [mode, depth, filter, colorBy, showOrphans]);
+  const [showRelations, setShowRelations] = useState(remembered.showRelations);
+  useEffect(() => { Object.assign(remembered, { mode, depth, filter, colorBy, showOrphans, showRelations }); }, [mode, depth, filter, colorBy, showOrphans, showRelations]);
 
   // Local mode needs a centre; without an open note the toggle is disabled.
   const localMode = mode === "local" && currentPath !== null;
 
   useEffect(() => {
-    commands.getAllLinks().then(setRawLinks).catch(() => setFailed(true));
+    commands.getLinkGraph().then(setRawLinks).catch(() => setFailed(true));
   }, [notes]);
 
   const model = useMemo(
-    () => buildGraph(notes, rawLinks ?? [], { mode: localMode ? "local" : "global", centre: currentPath, depth, filter, showOrphans }),
-    [notes, rawLinks, localMode, currentPath, depth, filter, showOrphans],
+    () => buildGraph(notes, rawLinks ?? [], { mode: localMode ? "local" : "global", centre: currentPath, depth, filter, showOrphans, showRelations }),
+    [notes, rawLinks, localMode, currentPath, depth, filter, showOrphans, showRelations],
   );
   const legend = useMemo(() => buildLegend(model.nodes, colorBy), [model.nodes, colorBy]);
   const centre = localMode ? currentPath : null;
@@ -80,23 +81,67 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
   const nodesRef = useRef<SimNode[]>([]);
   const linksRef = useRef<SimLink[]>([]);
   const signatureRef = useRef("");
-  const [, setTick] = useState(0);
   const [running, setRunning] = useState(false);
+  // The drawn elements, by node id and by edge index. A tick moves these
+  // directly: React lays the graph out once per model change, and the sixty
+  // frames a second in between are two attribute writes each, not a re-render
+  // of every node, circle, label and line.
+  const nodeEls = useRef(new Map<string, SVGGElement | null>());
+  const edgeEls = useRef<Array<SVGLineElement | null>>([]);
+  const lastPaint = useRef(0);
+  /** Move every drawn element to where the simulation has it. */
+  const paint = useCallback(() => {
+    for (const n of nodesRef.current) {
+      nodeEls.current.get(n.id)?.setAttribute("transform", `translate(${n.x ?? 0},${n.y ?? 0})`);
+    }
+    linksRef.current.forEach((l, i) => {
+      const el = edgeEls.current[i];
+      const s = l.source as SimNode, t = l.target as SimNode;
+      if (!el || typeof s !== "object" || typeof t !== "object") return;
+      el.setAttribute("x1", String(s.x ?? 0));
+      el.setAttribute("y1", String(s.y ?? 0));
+      el.setAttribute("x2", String(t.x ?? 0));
+      el.setAttribute("y2", String(t.y ?? 0));
+    });
+  }, []);
 
   const sim = useCallback((): Simulation<SimNode, SimLink> => {
     if (!simRef.current) {
       simRef.current = forceSimulation<SimNode>([])
         .force("link", forceLink<SimNode, SimLink>([]).id((d) => d.id).distance(90).strength(0.6))
-        .force("charge", forceManyBody<SimNode>().strength(-200))
+        // Repulsion past a few hundred units barely moves a node and costs the
+        // most: capped, with a coarser approximation of far-away clusters.
+        .force("charge", forceManyBody<SimNode>().strength(-200).distanceMax(600).theta(0.9))
         .force("center", forceCenter(0, 0))
         .force("collide", forceCollide<SimNode>((d) => nodeRadius(d.degree) + 8))
-        .on("tick", () => setTick((t) => t + 1))
-        .on("end", () => setRunning(false))
+        // Settle in about a hundred frames rather than three hundred: the last
+        // two hundred move nothing anyone can see, and the fans hear all of them.
+        .alphaDecay(0.05)
+        .alphaMin(0.02)
+        // Thirty frames a second is as much as a settling graph shows; the
+        // other thirty are eight hundred elements repainted for nothing.
+        .on("tick", () => {
+          const now = performance.now();
+          if (now - lastPaint.current < 32) return;
+          lastPaint.current = now;
+          paint();
+        })
+        .on("end", () => { paint(); setRunning(false); })
         .stop();
     }
     return simRef.current;
-  }, []);
+  }, [paint]);
   useEffect(() => () => { simRef.current?.stop(); }, []);
+
+  // A hidden window has nothing to lay out: d3 would otherwise keep ticking
+  // behind another workspace.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) { simRef.current?.stop(); setRunning(false); }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   const heat = useCallback((alpha: number) => { sim().alpha(alpha).restart(); setRunning(true); }, [sim]);
 
@@ -118,12 +163,17 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
       else if (dragRef.current?.id !== n.id) { node.fx = null; node.fy = null; }
       return node;
     });
-    linksRef.current = model.links.map((l) => ({ source: l.source, target: l.target }));
+    linksRef.current = model.links.map((l) => ({ source: l.source, target: l.target, kind: l.kind }));
+    edgeEls.current = [];
     const s = sim();
     s.nodes(nodesRef.current);
     (s.force("link") as ForceLink<SimNode, SimLink>).links(linksRef.current);
     heat(prev.size ? 0.6 : 1);
   }, [model, centre, rawLinks, sim, heat]);
+
+  // After React has drawn a changed model, put every element where the
+  // simulation already has it (a paused graph draws in place, not at 0,0).
+  useEffect(() => { paint(); });
 
   const togglePlay = useCallback(() => {
     if (running) { sim().stop(); setRunning(false); } else heat(0.5);
@@ -133,6 +183,8 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
   // `touch-action: none` on the svg keeps the browser from scrolling or zooming
   // the page with the same fingers) ──
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  // How many labels the graph can carry: fewer as it grows, all of them zoomed in.
+  const floor = labelFloor(model.nodes.length, transform.scale);
   const transformRef = useRef(transform);
   transformRef.current = transform;
   const svgRef = useRef<SVGSVGElement>(null);
@@ -300,6 +352,10 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
             <input type="checkbox" checked={showOrphans} onChange={(e) => setShowOrphans(e.target.checked)} />
             Orphans
           </label>
+          <label className={styles.control} title="Draw the edges a database's relations make — an expense to its category, a transfer to its accounts">
+            <input type="checkbox" checked={showRelations} onChange={(e) => setShowRelations(e.target.checked)} />
+            Relations
+          </label>
           <button className={styles.playBtn} onClick={togglePlay} title={running ? "Pause the layout" : "Resume the layout"} aria-pressed={running}>
             {running ? "Pause" : "Resume"}
           </button>
@@ -323,15 +379,19 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
                 {links.map((l, i) => {
                   const s = l.source as SimNode, t = l.target as SimNode;
                   if (typeof s !== "object" || typeof t !== "object") return null;
-                  return <line key={i} x1={s.x ?? 0} y1={s.y ?? 0} x2={t.x ?? 0} y2={t.y ?? 0} className={styles.edge} />;
+                  // A relation is drawn fainter than a link someone wrote.
+                  return <line key={i} ref={(el) => { edgeEls.current[i] = el; }} x1={s.x ?? 0} y1={s.y ?? 0} x2={t.x ?? 0} y2={t.y ?? 0}
+                    className={`${styles.edge} ${(l as SimLink & { kind?: string }).kind === "relation" ? styles.edgeRelation : ""}`} />;
                 })}
                 {nodes.map((n) => {
                   const r = nodeRadius(n.degree);
+                  const named = n.degree >= floor || n.id === centre;
                   const color = colorBy === "none" ? null : colorOf(n, colorBy, legend);
                   const isCentre = n.id === centre;
                   const dim = n.distance !== undefined && n.distance > 1 ? 1 - (n.distance - 1) * 0.2 : 1;
                   return (
-                    <g key={n.id} data-node className={`${styles.nodeGroup} ${isCentre ? styles.nodeCentre : ""}`}
+                    <g key={n.id} data-node ref={(el) => { nodeEls.current.set(n.id, el); }}
+                      className={`${styles.nodeGroup} ${isCentre ? styles.nodeCentre : ""}`}
                       transform={`translate(${n.x ?? 0},${n.y ?? 0})`} opacity={dim}
                       onPointerDown={(e) => onNodePointerDown(e, n.id)} role="button" tabIndex={-1}
                       aria-label={n.title}>
@@ -344,7 +404,10 @@ export function GraphView({ notes, currentPath, initialMode, onNavigate, onClose
                         <circle r={Math.max(2, r / 4)} className={styles.nodeDot}
                           style={color ? { fill: `var(--tag-${color}-fg)` } : undefined} />
                       )}
-                      <text y={r + 12} textAnchor="middle" className={styles.nodeLabel}>
+                      {/* A name the graph has no room for is still there for
+                          the pointer: CSS shows it on hover, so pointing at a
+                          node costs nothing to draw. */}
+                      <text y={r + 12} textAnchor="middle" className={`${styles.nodeLabel} ${named ? "" : styles.nodeLabelQuiet}`}>
                         {n.title.length > 18 ? n.title.slice(0, 16) + "…" : n.title}
                       </text>
                     </g>

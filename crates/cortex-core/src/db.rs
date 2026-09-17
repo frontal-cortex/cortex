@@ -77,6 +77,10 @@ impl Db {
             );
             ",
         )?;
+        // A link is a `[[wiki link]]` in the body or a relation property
+        // pointing at another row. Older indexes have no `kind` column; a new
+        // one defaults to "link", and the next index pass fills the rest in.
+        let _ = self.conn.execute("ALTER TABLE links ADD COLUMN kind TEXT NOT NULL DEFAULT 'link'", []);
         Ok(())
     }
 
@@ -110,12 +114,25 @@ impl Db {
         Ok(())
     }
 
+    /// Replace a note's links. `targets` are the `[[wiki link]]` targets;
+    /// `relations` the rows its relation properties name. A target named both
+    /// ways stays a link — the stronger of the two.
     pub fn upsert_links(&self, source: &str, targets: &[String]) -> Result<()> {
+        self.upsert_links_and_relations(source, targets, &[])
+    }
+
+    pub fn upsert_links_and_relations(&self, source: &str, targets: &[String], relations: &[String]) -> Result<()> {
         self.conn
             .execute("DELETE FROM links WHERE source = ?1", params![source])?;
         for target in targets {
             self.conn.execute(
-                "INSERT OR IGNORE INTO links (source, target) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO links (source, target, kind) VALUES (?1, ?2, 'link')",
+                params![source, target],
+            )?;
+        }
+        for target in relations {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO links (source, target, kind) VALUES (?1, ?2, 'relation')",
                 params![source, target],
             )?;
         }
@@ -147,6 +164,7 @@ impl Db {
              JOIN notes n ON n.path = l.source
              WHERE (l.target = ?1 COLLATE NOCASE OR l.target = ?2 COLLATE NOCASE)
                AND l.source != ?3
+               AND l.kind = 'link'
              ORDER BY n.modified DESC",
         )?;
         collect_entries(&mut stmt, params![title, stem, path])
@@ -214,10 +232,27 @@ impl Db {
         Ok(())
     }
 
+    /// What the index was built by. Bumped when a change means the old
+    /// contents are incomplete — new columns, a new kind of edge — so the next
+    /// open reads every note again instead of trusting file times.
+    pub fn index_version(&self) -> u32 {
+        self.conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap_or(0) as u32
+    }
+
+    pub fn set_index_version(&self, version: u32) -> Result<()> {
+        self.conn.execute_batch(&format!("PRAGMA user_version = {version}"))?;
+        Ok(())
+    }
+
     pub fn get_all_links(&self) -> Result<Vec<(String, String)>> {
-        let mut stmt = self.conn.prepare("SELECT source, target FROM links")?;
+        Ok(self.get_all_links_kinded()?.into_iter().map(|(s, t, _)| (s, t)).collect())
+    }
+
+    /// Every edge with what made it: a `[[wiki link]]` or a relation property.
+    pub fn get_all_links_kinded(&self) -> Result<Vec<(String, String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT source, target, kind FROM links")?;
         let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2).unwrap_or_else(|_| "link".into())))
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
