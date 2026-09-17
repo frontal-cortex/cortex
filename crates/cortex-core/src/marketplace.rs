@@ -1240,6 +1240,55 @@ pub fn remove(root: &Path, id: &str) -> Result<RemoveReport> {
     Ok(report)
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ClearedCollection {
+    pub collection: String,
+    /// Row paths moved to the trash (or that would be, on a dry run).
+    pub rows: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClearReport {
+    pub id: String,
+    pub dry_run: bool,
+    pub collections: Vec<ClearedCollection>,
+}
+
+impl ClearReport {
+    pub fn total(&self) -> usize {
+        self.collections.iter().map(|c| c.rows.len()).sum()
+    }
+}
+
+/// Empty an installed pack's collections — its example rows and the user's
+/// alike — so it can start over with real data. Every row goes to the trash,
+/// where each can be restored; the pages, views, row templates and schemas
+/// stay, so the dashboard is still there, empty. `dry_run` only lists.
+pub fn clear(root: &Path, id: &str, dry_run: bool) -> Result<ClearReport> {
+    let rec = installed(root).into_iter().find(|r| r.id == id).ok_or_else(|| AppError::Other(format!("'{id}' is not installed")))?;
+    // The collections are the ones install wrote into: a page, row template
+    // or seed under collections/<c>/ — the record, not the (maybe newer) pack.
+    let names: BTreeSet<String> = rec.files.iter()
+        .filter_map(|f| f.path.strip_prefix("collections/").and_then(|r| r.split_once('/')).map(|(c, _)| c.to_string()))
+        .collect();
+    let mut report = ClearReport { id: id.into(), dry_run, collections: vec![] };
+    for c in names {
+        let dir = root.join("collections").join(&c);
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let mut rows: Vec<String> = entries.flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".md") && !n.starts_with('_'))
+            .map(|n| format!("collections/{c}/{n}"))
+            .collect();
+        rows.sort();
+        if !dry_run {
+            for r in &rows { crate::trash::move_to_trash(root, r)?; }
+        }
+        report.collections.push(ClearedCollection { collection: c, rows });
+    }
+    Ok(report)
+}
+
 // ── Export ──────────────────────────────────────────────────────────────────
 
 /// Turn a template or a collection in the vault into a pack directory —
@@ -2081,6 +2130,37 @@ mod tests {
         assert!(root.join("collections/expenses").exists(), "folder kept because it is not empty");
         assert!(installed(&root).is_empty());
         assert!(!root.join(RECORD).exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn clearing_a_pack_trashes_every_row_and_keeps_the_pages() {
+        let root = vault("clear");
+        install(&root, &pack("budget-tracker"), false, &|_| None).unwrap();
+        std::fs::write(root.join("collections/expenses/my-own-row.md"), "---\ntitle: Rent\n---\n").unwrap();
+        std::fs::create_dir_all(root.join("collections/unrelated")).unwrap();
+        std::fs::write(root.join("collections/unrelated/keep.md"), "---\ntitle: Keep\n---\n").unwrap();
+
+        let dry = clear(&root, "budget-tracker", true).unwrap();
+        assert!(dry.total() > 0);
+        assert!(root.join("collections/expenses/my-own-row.md").exists(), "a dry run moves nothing");
+
+        let r = clear(&root, "budget-tracker", false).unwrap();
+        assert_eq!(r.total(), dry.total());
+        let expenses = r.collections.iter().find(|c| c.collection == "expenses").unwrap();
+        assert!(expenses.rows.contains(&"collections/expenses/my-own-row.md".to_string()), "the user's rows go too");
+        assert!(r.collections.iter().any(|c| c.collection == "accounts"));
+        for c in ["expenses", "income", "transfers", "accounts", "categories"] {
+            let left: Vec<_> = std::fs::read_dir(root.join("collections").join(c)).unwrap().flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| !n.starts_with('_')).collect();
+            assert!(left.is_empty(), "{c}: {left:?}");
+            assert!(root.join(format!("collections/{c}/_index.md")).exists(), "{c} keeps its page");
+        }
+        assert!(root.join("collections/budget/_index.md").exists(), "the dashboard stays");
+        assert!(root.join("collections/unrelated/keep.md").exists(), "other collections are untouched");
+        let trashed = std::fs::read_dir(root.join(".trash")).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".meta.yaml")).count();
+        assert_eq!(trashed, r.total(), "every row is restorable from the trash");
+        assert_eq!(installed(&root).len(), 1, "the pack stays installed");
         let _ = std::fs::remove_dir_all(&root);
     }
 

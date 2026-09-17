@@ -12,7 +12,7 @@ import { openExternal } from "../../lib/links";
 import { tagStyle } from "../../lib/colors";
 import {
   commands, PackCatalog, PackEntry, Pack, PackPlan, PackPreview, PackPreviewProperty, PackKind, PackTier,
-  PackInstallReport, PackUpdateReport, PackRemoveReport,
+  PackInstallReport, PackUpdateReport, PackRemoveReport, PackClearReport,
 } from "../../lib/commands";
 import { Dropdown } from "./Dropdown";
 import { MiniMarkdown, renderInline } from "./MiniMarkdown";
@@ -482,7 +482,8 @@ function CardExcerpt({ entry }: { entry: PackEntry }) {
 type Report =
   | { kind: "install"; reports: PackInstallReport[] }
   | { kind: "update"; report: PackUpdateReport }
-  | { kind: "remove"; report: PackRemoveReport };
+  | { kind: "remove"; report: PackRemoveReport }
+  | { kind: "clear"; report: PackClearReport };
 
 function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () => void; onChanged: () => void }) {
   const [pack, setPack] = useState<Pack | null>(null);
@@ -490,7 +491,7 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
   // undefined while loading; null when the pack could not be read.
   const [preview, setPreview] = useState<PackPreview | null | undefined>(undefined);
   const [force, setForce] = useState(false);
-  const [busy, setBusy] = useState<null | "install" | "update" | "remove">(null);
+  const [busy, setBusy] = useState<null | "install" | "update" | "remove" | "clear">(null);
   const [err, setErr] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
 
@@ -504,11 +505,20 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
     return () => { live = false; };
   }, [entry.id]);
 
-  const run = async (what: "install" | "update" | "remove") => {
+  const run = async (what: "install" | "update" | "remove" | "clear") => {
     setBusy(what); setErr(null); setReport(null);
     try {
       if (what === "install") setReport({ kind: "install", reports: await commands.packsInstall(entry.id, force) });
       else if (what === "update") setReport({ kind: "update", report: await commands.packsUpdate(entry.id) });
+      else if (what === "clear") {
+        // Count first, so the question says exactly what goes.
+        const dry = await commands.packsClear(entry.id, true);
+        const total = dry.collections.reduce((n, c) => n + c.rows.length, 0);
+        if (total === 0) { setReport({ kind: "clear", report: dry }); return; }
+        const per = dry.collections.filter((c) => c.rows.length > 0).map((c) => `${c.collection} (${c.rows.length})`).join(", ");
+        if (!window.confirm(`Clear ${entry.name}'s data?\n\n${total} row${total === 1 ? "" : "s"} go to the trash — the example rows and any you added: ${per}.\n\nThe pages, views and row templates stay, so you can start logging real data. Each row can be restored from the trash.`)) return;
+        setReport({ kind: "clear", report: await commands.packsClear(entry.id, false) });
+      }
       else setReport({ kind: "remove", report: await commands.packsRemove(entry.id) });
       onChanged();
       load();
@@ -564,6 +574,11 @@ function PackPage({ entry, onBack, onChanged }: { entry: PackEntry; onBack: () =
               {installed && !entry.update_available && (
                 <button className={styles.btn} disabled={!!busy || !plan} onClick={() => run("install")} title="Write back any of the pack's files that are missing or unchanged; your edits are kept">
                   {busy === "install" ? "Reinstalling…" : "Reinstall"}
+                </button>
+              )}
+              {installed && (
+                <button className={styles.btn} disabled={!!busy} onClick={() => run("clear")} title="Move every row in this template's databases to the trash — the examples and yours — and keep the pages and views, to start fresh">
+                  {busy === "clear" ? "Clearing…" : "Clear data"}
                 </button>
               )}
               {installed && (
@@ -686,6 +701,16 @@ function ReportView({ report }: { report: Report }) {
         {line("replaced", r.replaced)}
         {line("added", r.added)}
         {line("kept your version", r.kept)}
+      </div>
+    );
+  }
+  if (report.kind === "clear") {
+    const r = report.report;
+    const rows = r.collections.flatMap((c) => c.rows);
+    return (
+      <div className={styles.callout}>
+        <strong>{rows.length === 0 ? "Nothing to clear — its databases are already empty." : `Moved ${rows.length} row${rows.length === 1 ? "" : "s"} to the trash. The pages and views are ready for your own data.`}</strong>
+        {line("trashed", rows)}
       </div>
     );
   }
