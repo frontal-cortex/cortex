@@ -1,0 +1,25 @@
+properties:
+  - name: date
+    type: date
+  # Money going out, always as a positive number: being in this database is
+  # what makes it spending.
+  - name: amount
+    type: number
+    format: currency
+  - name: category
+    type: relation
+    collection: categories
+  # The account the money left.
+  - name: account
+    type: relation
+    collection: accounts
+  - name: payee
+    type: text
+  # When this pays a recurring charge, the bill knows when it was last paid.
+  - name: bill
+    type: relation
+    collection: budget-bills
+  # When this buys something on the wishlist, the wish moves to Bought.
+  - name: wish
+    type: relation
+    collection: budget-wishlist

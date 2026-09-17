@@ -1,0 +1,19 @@
+properties:
+  - name: date
+    type: date
+  - name: amount
+    type: number
+    format: currency
+  # A transfer always has both ends: it leaves one of your accounts and lands in
+  # another, so it is never spending or income. Paying off a credit card is a
+  # transfer from checking to the card.
+  - name: from_account
+    type: relation
+    collection: accounts
+  - name: to_account
+    type: relation
+    collection: accounts
+  # When the money is put aside for something on the wishlist.
+  - name: wish
+    type: relation
+    collection: budget-wishlist

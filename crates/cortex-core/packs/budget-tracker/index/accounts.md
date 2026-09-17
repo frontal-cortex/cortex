@@ -23,16 +23,14 @@ views:
   filter: active == true
 ---
 
-One row per place money sits: current account, savings, cash, a credit card.
-Set `initial` to what it held on the day you started logging; from then on
-the balance is worked out from the ledger — income into it, spending out of
-it, transfers in and out — every time you look. Nothing here is typed twice.
+One row per account you track: current accounts, savings, the cash in your
+wallet, credit cards. Set `initial` to what it held on the day you started
+logging; everything else is computed.
 
-A transfer is one ledger row with `kind: transfer`, the account it left in
-`account` and the one it reached in `to_account`, so it moves money without
-counting as spending. `this_month` is what left this account in expenses
-since the 1st.
+`balance` is the opening amount, plus income that arrived here, minus expenses
+that left from here, plus transfers in, minus transfers out. Nothing is copied
+into the row, so there is nothing to keep in step: log a payment against the
+account and the balance is already right the next time you look.
 
-Untick `active` to retire an account without losing its history. The
-Balances table sums to your net position; Cards is the same as tiles, the
-view the dashboard shows.
+A credit card works the same way with the sign turned round: spending on it
+lowers its balance below zero, and a transfer from checking pays it back up.

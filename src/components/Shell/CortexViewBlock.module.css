@@ -2035,3 +2035,10 @@
   width: 100%;
   flex: 1 1 auto;
 }
+
+/* A row's page icon before its title on a card, as a page icon sits before a
+   page's name. Not uppercased with a compact card's kicker. */
+.galleryIcon {
+  margin-right: 6px;
+  text-transform: none;
+}

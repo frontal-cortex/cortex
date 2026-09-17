@@ -39,32 +39,29 @@ properties:
     type: date
   - name: active
     type: checkbox
-  # Computed on read from the ledger rows whose `wish` points here: money
-  # moved towards it, money spent on it, the day it was bought. Nothing below
+  # Computed on read: money put aside is every transfer whose `wish` points
+  # here, the purchase is the expense whose `wish` points here. Nothing below
   # is written to a file.
   - name: put_by
     type: rollup
-    from: budget
+    from: transfers
     relation: wish
     function: sum
     property: amount
-    where: kind == 'transfer'
     format: currency
   - name: paid
     type: rollup
-    from: budget
+    from: expenses
     relation: wish
     function: sum
     property: amount
-    where: kind == 'expense'
     format: currency
   - name: bought_on
     type: rollup
-    from: budget
+    from: expenses
     relation: wish
     function: max
     property: date
-    where: kind == 'expense'
   - name: left
     type: formula
     expr: max(price - coalesce(put_by, 0), 0)

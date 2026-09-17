@@ -8,32 +8,37 @@ active: true
 created: "{{date}}"
 ---
 
-<!-- Set `initial` to the balance on the day you start logging. The title is what ledger rows name in `account` / `to_account`; keep it short (checking, savings, cash). -->
+<!-- Set `initial` to what the account held on the day you start logging. Expenses, income and transfers pick this account by its title. -->
 
-## Recent movements
-
-Everything that touched this account, newest first — spending and income
-where it is the `account`, transfers where it is either end.
+## Spending from this account
 
 ```cortex-view
-source: collections/budget
+source: collections/expenses
 type: table
-columns: [title, date, amount, kind, category, to_account]
+columns: [title, date, amount, category]
 sort: [date desc]
-limit: 20
-filter: account == '{{title}}' or to_account == '{{title}}'
+limit: 15
+filter: account == @this
 ```
 
-## Month by month
+## Income into this account
 
 ```cortex-view
-source: collections/budget
-type: chart
-chartType: bar
-x: date
-bucket: month
-y: amount
-agg: sum
-series: kind
-filter: account == '{{title}}'
+source: collections/income
+type: table
+columns: [title, date, amount, source]
+sort: [date desc]
+limit: 15
+filter: account == @this
+```
+
+## Transfers
+
+```cortex-view
+source: collections/transfers
+type: table
+columns: [title, date, amount, from_account, to_account]
+sort: [date desc]
+limit: 15
+filter: from_account == @this or to_account == @this
 ```

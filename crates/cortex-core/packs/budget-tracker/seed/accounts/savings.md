@@ -1,25 +1,25 @@
 ---
-title: savings
+title: Savings
 type: note
 tags: []
-icon: 🌱
+icon: 🐖
 kind: savings
-initial: 4000
+initial: 2000
 active: true
 created: "{{today}}"
 ---
 
-Money set aside. The seeded "Move to savings" transfer lands here, so the
-balance is the opening amount plus that. Replace the opening amount with
-your own.
+Where money is put aside. Nothing is spent from here directly: the seeded
+transfer from Checking moves 300 in, and that transfer is also tagged for the
+Trip to Lisbon wish.
 
-## Recent movements
+## Transfers
 
 ```cortex-view
-source: collections/budget
+source: collections/transfers
 type: table
-columns: [title, date, amount, kind, category, account]
+columns: [title, date, amount, from_account, to_account]
 sort: [date desc]
-limit: 20
-filter: account == 'savings' or to_account == 'savings'
+limit: 15
+filter: from_account == @this or to_account == @this
 ```

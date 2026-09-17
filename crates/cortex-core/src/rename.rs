@@ -109,6 +109,16 @@ pub fn rename_note(root: &Path, db: &Db, old_path: &str, new_path: &str, new_tit
     for (old, new) in &pairs {
         rewritten.extend(rewrite_links(root, db, old, new)?);
     }
+    // A collection row is also named by the relation properties that point at
+    // it. Moving it to another collection breaks those regardless; a new title
+    // in the same collection does not have to.
+    if old_title != new_title {
+        if let (Some(from), Some(to)) = (row_collection(old_path), row_collection(new_path)) {
+            if from == to {
+                rewritten.extend(rewrite_relations(root, db, &to, new_path, &old_title, &new_title)?);
+            }
+        }
+    }
 
     let mut report = RenameReport {
         old_path: old_path.to_string(),
@@ -141,10 +151,16 @@ pub fn title_changed(root: &Path, db: &Db, path: &str, old_title: &str, new_titl
     let title_shared = vault::list_notes(root)
         .iter()
         .any(|n| n.path != path && n.title.eq_ignore_ascii_case(old_title));
-    if title_shared {
-        return Ok(report);
+    let mut rewritten = BTreeSet::new();
+    if !title_shared {
+        rewritten.extend(rewrite_links(root, db, old_title, new_title)?);
     }
-    report.rewritten = rewrite_links(root, db, old_title, new_title)?;
+    // Relations name a row within its own collection, so whether the old
+    // title was shared is decided there, not across the vault.
+    if let Some(collection) = row_collection(path) {
+        rewritten.extend(rewrite_relations(root, db, &collection, path, old_title, new_title)?);
+    }
+    report.rewritten = rewritten.into_iter().collect();
     if !report.rewritten.is_empty() {
         report.committed = commit_if_auto(root, &report.commit_message())?;
     }
@@ -180,6 +196,98 @@ pub fn rewrite_links(root: &Path, db: &Db, old_target: &str, new_target: &str) -
         rewritten.push(rel);
     }
     Ok(rewritten)
+}
+
+/// The collection a row belongs to (`collections/<name>/<row>.md`). `None` for
+/// any other note, and for a collection's own `_index.md` and `_template-*`.
+fn row_collection(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("collections/")?;
+    let (collection, file) = rest.split_once('/')?;
+    if file.contains('/') || file.starts_with('_') || !file.ends_with(".md") {
+        return None;
+    }
+    Some(collection.to_string())
+}
+
+/// The rows of a collection, parsed, with their vault-relative paths.
+fn collection_rows(root: &Path, collection: &str) -> Vec<(String, note::Note)> {
+    let Ok(entries) = std::fs::read_dir(root.join("collections").join(collection)) else { return Vec::new() };
+    let mut rows = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('_') || !name.ends_with(".md") {
+            continue;
+        }
+        let rel = format!("collections/{collection}/{name}");
+        let Ok(text) = std::fs::read_to_string(entry.path()) else { continue };
+        if let Ok(parsed) = note::parse_note(&rel, &text) {
+            rows.push((rel, parsed));
+        }
+    }
+    rows
+}
+
+/// A collection row is named by title in the relation properties that point
+/// at it — `account: [Checking]` on an expense. When its title changes, rewrite
+/// those values so the relations, and every rollup and formula reading
+/// through them, still find it; a relation that silently stops matching is the
+/// worst kind of wrong, because the numbers still look like numbers.
+///
+/// Left alone when another row of the same collection has the old title too,
+/// as for links. Returns the rewritten rows' paths, sorted; each is re-indexed.
+pub fn rewrite_relations(root: &Path, db: &Db, collection: &str, row_path: &str, old_title: &str, new_title: &str) -> Result<Vec<String>> {
+    let (old_title, new_title) = (old_title.trim(), new_title.trim());
+    if old_title.is_empty() || new_title.is_empty() || old_title == new_title {
+        return Ok(Vec::new());
+    }
+    let shared = collection_rows(root, collection)
+        .iter()
+        .any(|(rel, n)| rel != row_path && note::infer_title(n) == old_title);
+    if shared {
+        return Ok(Vec::new());
+    }
+    let Ok(entries) = std::fs::read_dir(root.join(".cortex").join("schemas")) else { return Ok(Vec::new()) };
+
+    let mut rewritten = BTreeSet::new();
+    for entry in entries.flatten() {
+        let file = entry.file_name().to_string_lossy().to_string();
+        let Some(key) = file.strip_suffix(".yaml") else { continue };
+        let Some(schema) = crate::schema::load(root, key).ok().flatten() else { continue };
+        // Forward relations only: the reverse side is computed, never stored.
+        let props: Vec<String> = schema
+            .properties
+            .iter()
+            .filter(|p| p.ty == crate::schema::PropType::Relation && p.from.is_none() && p.collection.as_deref() == Some(collection))
+            .map(|p| p.name.clone())
+            .collect();
+        if props.is_empty() {
+            continue;
+        }
+        for (rel, mut row) in collection_rows(root, key) {
+            let mut changed = false;
+            for prop in &props {
+                let Some(value) = row.frontmatter.get_mut(prop) else { continue };
+                if let Some(items) = value.as_array_mut() {
+                    for item in items.iter_mut() {
+                        if item.as_str() == Some(old_title) {
+                            *item = serde_json::Value::String(new_title.to_string());
+                            changed = true;
+                        }
+                    }
+                } else if value.as_str() == Some(old_title) {
+                    *value = serde_json::Value::String(new_title.to_string());
+                    changed = true;
+                }
+            }
+            if changed {
+                let abs = root.join(&rel);
+                std::fs::write(&abs, note::serialize_note(&row)?)?;
+                index::index_file(root, &abs, db)?;
+                rewritten.insert(rel);
+            }
+        }
+    }
+    Ok(rewritten.into_iter().collect())
 }
 
 /// Commit the working tree with `message` if the vault's `auto_commit`
@@ -332,6 +440,42 @@ mod tests {
         let report = rename_note(&root, &db, "notes/roadmap.md", "notes/plan.md", None).unwrap();
         assert!(!report.committed);
         assert_eq!(git::get_log(&repo, 5).unwrap().len(), 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_renamed_row_keeps_the_relations_that_name_it() {
+        let root = std::env::temp_dir().join(format!("cortex-rename-relations-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for dir in [".cortex/schemas", "collections/categories", "collections/expenses"] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let w = |rel: &str, s: &str| std::fs::write(root.join(rel), s).unwrap();
+        w(".cortex/schemas/categories.yaml", "properties: []\n");
+        w(".cortex/schemas/expenses.yaml", "properties:\n  - name: category\n    type: relation\n    collection: categories\n");
+        w("collections/categories/groceries.md", "---\ntitle: Groceries\n---\n");
+        w("collections/categories/dining.md", "---\ntitle: Dining\n---\n");
+        w("collections/expenses/shop.md", "---\ncategory: [Groceries]\ntitle: Weekly shop\n---\n");
+        w("collections/expenses/meal.md", "---\ncategory: [Dining]\ntitle: Dinner\n---\n");
+        w("collections/expenses/both.md", "---\ncategory: [Groceries, Dining]\ntitle: Market and lunch\n---\n");
+        let db = Db::open(&root).unwrap();
+        index::index_vault(&root, &db).unwrap();
+
+        // `cortex mv` and the agent tool: a new file name and a new title.
+        let report = rename_note(&root, &db, "collections/categories/groceries.md", "collections/categories/food.md", Some("Food")).unwrap();
+        assert!(report.rewritten.contains(&"collections/expenses/shop.md".to_string()), "{report:?}");
+        assert!(report.rewritten.contains(&"collections/expenses/both.md".to_string()), "{report:?}");
+        assert!(!report.rewritten.contains(&"collections/expenses/meal.md".to_string()), "a row naming another category is untouched");
+        let shop = read(&root, "collections/expenses/shop.md");
+        assert!(shop.contains("Food") && !shop.contains("Groceries"), "{shop}");
+        let both = read(&root, "collections/expenses/both.md");
+        assert!(both.contains("Food") && both.contains("Dining") && !both.contains("Groceries"), "the other value stays: {both}");
+
+        // The editor: the title is already saved when the edit is final.
+        w("collections/categories/dining.md", "---\ntitle: Eating out\n---\n");
+        let report = title_changed(&root, &db, "collections/categories/dining.md", "Dining", "Eating out").unwrap();
+        assert_eq!(report.rewritten, ["collections/expenses/both.md", "collections/expenses/meal.md"]);
+        assert!(read(&root, "collections/expenses/meal.md").contains("Eating out"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

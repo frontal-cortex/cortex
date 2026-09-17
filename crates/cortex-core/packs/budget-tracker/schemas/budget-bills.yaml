@@ -25,22 +25,8 @@ properties:
   - name: paid
     type: checkbox
   - name: category
-    type: select
-    options:
-      - name: housing
-        color: blue
-      - name: utilities
-        color: brown
-      - name: subscriptions
-        color: purple
-      - name: transport
-        color: gray
-      - name: health
-        color: green
-      - name: savings
-        color: green
-      - name: other
-        color: gray
+    type: relation
+    collection: categories
   - name: account
     type: relation
     collection: accounts
@@ -48,16 +34,16 @@ properties:
     type: checkbox
   - name: url
     type: url
-  # Computed on read from the ledger rows whose `bill` points here.
+  # Computed on read from the expenses whose `bill` points here.
   - name: last_paid
     type: rollup
-    from: budget
+    from: expenses
     relation: bill
     function: max
     property: date
   - name: total_paid
     type: rollup
-    from: budget
+    from: expenses
     relation: bill
     function: sum
     property: amount
