@@ -85,6 +85,13 @@
   --tag-pink-bg:   #f4dfeb;  --tag-pink-fg:   #4f2741;
   --tag-red-bg:    #fbe4e4;  --tag-red-fg:    #5d1715;
 
+  /* Chart series: twelve hues far enough apart to tell a dozen categories
+     apart. The tag palette is tuned for text on a pill, where neighbours may
+     be close; a stacked bar needs every colour to differ from the next. */
+  --chart-1:  #4e79a7;  --chart-2:  #e8853a;  --chart-3:  #59a14f;  --chart-4:  #d9534f;
+  --chart-5:  #9b6fb0;  --chart-6:  #c9a227;  --chart-7:  #4ea8a0;  --chart-8:  #d7719a;
+  --chart-9:  #8c6d56;  --chart-10: #7b8fa6;  --chart-11: #a3b83b;  --chart-12: #5b62d6;
+
   /* Code blocks. shiki's CSS-variables theme (Shell/codeBlock.ts) colours
      tokens with these, so highlighting follows the theme without a re-render.
      Light/dark are hand-picked hues; the desktop palette maps its own names. */
@@ -112,6 +119,9 @@
     --tag-purple-bg: #3a2f4d;  --tag-purple-fg: #c8b4e8;
     --tag-pink-bg:   #4d2b3f;  --tag-pink-fg:   #e8b4d2;
     --tag-red-bg:    #4d2626;  --tag-red-fg:    #e8a4a4;
+    --chart-1:  #7aa6d9;  --chart-2:  #f5a45b;  --chart-3:  #7cc47a;  --chart-4:  #ef7f80;
+    --chart-5:  #c49bd8;  --chart-6:  #e6cc62;  --chart-7:  #74cfc6;  --chart-8:  #f19ab9;
+    --chart-9:  #c9a386;  --chart-10: #a9b7c8;  --chart-11: #c3d65f;  --chart-12: #9aa0ff;
   }
 }
 
@@ -125,6 +135,9 @@
   --tag-purple-bg: #3a2f4d;  --tag-purple-fg: #c8b4e8;
   --tag-pink-bg:   #4d2b3f;  --tag-pink-fg:   #e8b4d2;
   --tag-red-bg:    #4d2626;  --tag-red-fg:    #e8a4a4;
+  --chart-1:  #7aa6d9;  --chart-2:  #f5a45b;  --chart-3:  #7cc47a;  --chart-4:  #ef7f80;
+  --chart-5:  #c49bd8;  --chart-6:  #e6cc62;  --chart-7:  #74cfc6;  --chart-8:  #f19ab9;
+  --chart-9:  #c9a386;  --chart-10: #a9b7c8;  --chart-11: #c3d65f;  --chart-12: #9aa0ff;
 }
 
 /* Warm dark. Applied automatically when the OS is dark AND no explicit theme is
@@ -231,6 +244,22 @@
   --tag-pink-fg:   color-mix(in srgb, color-mix(in srgb, var(--palette-magenta) 65%, var(--palette-red)) 75%, var(--palette-foreground));
   --tag-red-bg:    color-mix(in srgb, var(--palette-red) 22%, var(--palette-background));
   --tag-red-fg:    color-mix(in srgb, var(--palette-red) 75%, var(--palette-foreground));
+
+  /* Chart series: the theme's own colours at full strength (a tag's are
+     pulled toward the text colour, which makes a dozen of them look alike),
+     then blends of neighbours for the rest. */
+  --chart-1:  var(--palette-blue);
+  --chart-2:  var(--palette-orange, var(--palette-yellow));
+  --chart-3:  var(--palette-green);
+  --chart-4:  var(--palette-red);
+  --chart-5:  var(--palette-magenta);
+  --chart-6:  var(--palette-yellow);
+  --chart-7:  var(--palette-cyan, color-mix(in srgb, var(--palette-blue) 50%, var(--palette-green)));
+  --chart-8:  color-mix(in srgb, var(--palette-magenta) 55%, var(--palette-red));
+  --chart-9:  var(--palette-brown, color-mix(in srgb, var(--palette-red) 45%, var(--palette-yellow)));
+  --chart-10: color-mix(in srgb, var(--palette-blue) 55%, var(--palette-foreground));
+  --chart-11: color-mix(in srgb, var(--palette-green) 55%, var(--palette-yellow));
+  --chart-12: color-mix(in srgb, var(--palette-blue) 50%, var(--palette-magenta));
 
   /* Code tokens: the palette's own colour names, so highlighted code matches
      the terminal's. */

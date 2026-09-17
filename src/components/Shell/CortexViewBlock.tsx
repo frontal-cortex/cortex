@@ -28,6 +28,7 @@ import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from
 import { DEFAULT_STATS } from "../../lib/database";
 import { NotePathContext } from "./ButtonBlock";
 import { StatsEditor } from "./StatsEditor";
+import { XYChart, seriesColor } from "./XYChart";
 import { FilterText } from "./FilterBuilder";
 import { useCollections, useSourceFields } from "./useSourceFields";
 import { StatEntry, specReplaceKey, statsBlock } from "../../lib/visualSpec";
@@ -602,177 +603,17 @@ type: timeline
 start: start
 end: end`;
 
-/** Series colours: the accent first, then the tag palette — theme tokens, never hex. */
-const SERIES_COLORS = ["var(--accent)", "var(--tag-green-fg)", "var(--tag-orange-fg)", "var(--tag-purple-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-brown-fg)", "var(--tag-red-fg)", "var(--tag-blue-fg)"];
-
 /** The wrapper class for a chart's `height:`. */
 function chartHeightClass(chart: ChartResult): string {
   return chart.height === "small" ? styles.chartSmall : chart.height === "large" ? styles.chartLarge : "";
 }
 
-/** Dependency-free SVG chart: line, bar, area, donut or pie. One series, or
- *  several when the spec sets `series:` (lines overlaid, bars grouped or
- *  stacked). Responsive via viewBox. */
+/** A chart: donut and pie are drawn here; line, area and bar — one series or
+ *  several — by XYChart, which measures its width, labels bar totals and lets
+ *  a series be isolated. */
 export function MiniChart({ chart }: { chart: ChartResult }) {
   if (chart.chartType === "donut" || chart.chartType === "pie") return <RoundChart chart={chart} />;
-  if (chart.series && chart.series.length > 1) return <MultiChart chart={chart} />;
-  const W = 640, H = 240;
-  const padL = 46, padR = 16, padT = 14, padB = 38;
-  const innerW = W - padL - padR;
-  const innerH = H - padT - padB;
-
-  const ys = chart.points.map((p) => p.y);
-  let min = Math.min(...ys);
-  let max = Math.max(...ys);
-  if (min === max) { min -= 1; max += 1; }
-  const span = max - min;
-  min -= span * 0.06;
-  max += span * 0.06;
-
-  const n = chart.points.length;
-  const xAt = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-  const yAt = (v: number) => padT + innerH - ((v - min) / (max - min)) * innerH;
-
-  const isBar = chart.chartType === "bar";
-  const isArea = chart.chartType === "area";
-  const ticks = [max, (min + max) / 2, min];
-  const baseY = yAt(Math.max(0, min));
-  const labelEvery = Math.ceil(n / 6);
-
-  return (
-    <div className={`${styles.chartWrap} ${chartHeightClass(chart)}`}>
-      <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} preserveAspectRatio="xMidYMid meet">
-        {ticks.map((t, i) => {
-          const y = yAt(t);
-          return (
-            <g key={i}>
-              <line x1={padL} y1={y} x2={W - padR} y2={y} className={styles.grid} />
-              <text x={padL - 6} y={y + 3} textAnchor="end" className={styles.axisLabel}>{fmtNum(t)}</text>
-            </g>
-          );
-        })}
-
-        {isBar
-          ? chart.points.map((p, i) => {
-              const bw = n <= 1 ? innerW * 0.35 : (innerW / n) * 0.6;
-              const y = yAt(p.y);
-              return (
-                <rect
-                  key={i}
-                  x={xAt(i) - bw / 2}
-                  y={Math.min(y, baseY)}
-                  width={bw}
-                  height={Math.max(1, Math.abs(baseY - y))}
-                  rx={2}
-                  className={styles.bar}
-                />
-              );
-            })
-          : (
-            <>
-              {isArea && n > 1 && (
-                <polygon
-                  points={`${xAt(0)},${baseY} ${chart.points.map((p, i) => `${xAt(i)},${yAt(p.y)}`).join(" ")} ${xAt(n - 1)},${baseY}`}
-                  className={styles.area}
-                />
-              )}
-              <polyline
-                points={chart.points.map((p, i) => `${xAt(i)},${yAt(p.y)}`).join(" ")}
-                className={styles.line}
-              />
-              {chart.points.map((p, i) => (
-                <circle key={i} cx={xAt(i)} cy={yAt(p.y)} r={2.5} className={styles.dot} />
-              ))}
-            </>
-          )}
-
-        {chart.points.map((p, i) => {
-          if (n > 6 && i % labelEvery !== 0 && i !== n - 1) return null;
-          return (
-            <text key={i} x={xAt(i)} y={H - padB + 18} textAnchor="middle" className={styles.axisLabel}>{p.x}</text>
-          );
-        })}
-      </svg>
-      <div className={styles.count}>{chart.yLabel} by {chart.xLabel} · {n} point{n === 1 ? "" : "s"}</div>
-    </div>
-  );
-}
-
-function MultiChart({ chart }: { chart: ChartResult }) {
-  const W = 640, H = 260;
-  const padL = 46, padR = 16, padT = 14, padB = 58;
-  const innerW = W - padL - padR;
-  const innerH = H - padT - padB;
-  const xs = [...new Set(chart.series.flatMap((s) => s.points.map((p) => p.x)))].sort((a, b) => {
-    const [p, q] = [parseFloat(a), parseFloat(b)];
-    return !isNaN(p) && !isNaN(q) ? p - q : a.localeCompare(b);
-  });
-  const isBar = chart.chartType === "bar";
-  const isArea = chart.chartType === "area";
-  // Stacked: each series sits on the sum of those before it, so the top of the
-  // last one is the total per x.
-  const stacked = chart.stack && (isBar || isArea);
-  const byXs = chart.series.map((s) => new Map(s.points.map((p) => [p.x, p.y])));
-  const base = (si: number, x: string) => stacked ? byXs.slice(0, si).reduce((acc, m) => acc + Math.max(0, m.get(x) ?? 0), 0) : 0;
-  const top = (si: number, x: string) => base(si, x) + (byXs[si].get(x) ?? 0);
-  const ys = chart.series.flatMap((_, si) => xs.map((x) => top(si, x)));
-  let min = Math.min(0, ...ys), max = Math.max(...ys);
-  if (min === max) { max = min + 1; }
-  const span = max - min; max += span * 0.06;
-  const n = xs.length;
-  const xAt = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-  const yAt = (v: number) => padT + innerH - ((v - min) / (max - min)) * innerH;
-  const slot = innerW / Math.max(1, n);
-  const perSlot = stacked ? 1 : chart.series.length;
-  const bw = Math.max(1, (slot * 0.7) / perSlot);
-  const ticks = 3;
-  const labelEvery = Math.max(1, Math.ceil(n / 6));
-  return (
-    <div className={`${styles.chartWrap} ${chartHeightClass(chart)}`}>
-      <svg className={styles.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-        {Array.from({ length: ticks + 1 }, (_, i) => {
-          const v = min + ((max - min) * i) / ticks;
-          return (
-            <g key={i}>
-              <line x1={padL} x2={W - padR} y1={yAt(v)} y2={yAt(v)} className={styles.grid} />
-              <text x={padL - 6} y={yAt(v) + 3} textAnchor="end" className={styles.axisLabel}>{fmtNum(v)}</text>
-            </g>
-          );
-        })}
-        {chart.series.map((_, si) => {
-          const color = SERIES_COLORS[si % SERIES_COLORS.length];
-          if (isBar) {
-            return xs.map((x, i) => {
-              const y0 = base(si, x), y1 = top(si, x);
-              const x0 = padL + i * slot + (slot - bw * perSlot) / 2 + (stacked ? 0 : si * bw);
-              return <rect key={`${si}-${x}`} x={x0} y={yAt(Math.max(y0, y1))} width={bw} height={Math.max(0, Math.abs(yAt(y0) - yAt(y1)))} fill={color} opacity={0.9} rx={1} />;
-            });
-          }
-          const line = xs.map((x, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yAt(top(si, x))}`).join(" ");
-          if (isArea) {
-            // The band between this series' baseline and its top.
-            const back = [...xs].reverse().map((x, j) => `L${xAt(n - 1 - j)},${yAt(base(si, x))}`).join(" ");
-            return (
-              <g key={si}>
-                <path d={`${line} ${back} Z`} fill={color} opacity={0.22} />
-                <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-              </g>
-            );
-          }
-          return <path key={si} d={line} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />;
-        })}
-        {xs.map((x, i) => (i % labelEvery === 0 || i === n - 1) && (
-          <text key={x} x={isBar ? padL + i * slot + slot / 2 : xAt(i)} y={H - padB + 16} textAnchor="middle" className={styles.axisLabel}>{x}</text>
-        ))}
-        {chart.legend && chart.series.map((s, si) => (
-          <g key={`l${si}`} transform={`translate(${padL + si * 100}, ${H - 14})`}>
-            <rect width={10} height={10} rx={2} fill={SERIES_COLORS[si % SERIES_COLORS.length]} />
-            <text x={14} y={9} className={styles.axisLabel}>{s.name.length > 12 ? s.name.slice(0, 11) + "…" : s.name}</text>
-          </g>
-        ))}
-      </svg>
-    </div>
-  );
+  return <div className={chartHeightClass(chart)}><XYChart chart={chart} /></div>;
 }
 
 /** A donut or pie: one slice per point, tag-palette colours, the slice's
@@ -846,7 +687,7 @@ function RoundChart({ chart }: { chart: ChartResult }) {
             <path
               key={arc.i}
               d={path(arc.a0, arc.a1)}
-              fill={SERIES_COLORS[arc.i % SERIES_COLORS.length]}
+              fill={seriesColor(arc.i)}
               className={`${styles.slice} ${on ? styles.sliceOn : ""}`}
               transform={shift ? `translate(${(shift * Math.cos(mid)).toFixed(2)} ${(shift * Math.sin(mid)).toFixed(2)})` : undefined}
               onMouseEnter={() => setHover(arc.i)}
@@ -884,7 +725,7 @@ function RoundChart({ chart }: { chart: ChartResult }) {
               onMouseLeave={() => setHover(null)}
               onClick={() => setFocus(arc.i)}
             >
-              <span className={styles.legendSwatch} style={{ background: SERIES_COLORS[arc.i % SERIES_COLORS.length] }} />
+              <span className={styles.legendSwatch} style={{ background: seriesColor(arc.i) }} />
               <span className={styles.legendName}>{arc.x}</span>
               <span className={styles.legendValue}>{fmtNum(arc.y)} · {pct(arc.y)}</span>
             </li>
