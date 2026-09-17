@@ -232,6 +232,18 @@ impl Db {
         Ok(())
     }
 
+    /// What the index was built by. Bumped when a change means the old
+    /// contents are incomplete — new columns, a new kind of edge — so the next
+    /// open reads every note again instead of trusting file times.
+    pub fn index_version(&self) -> u32 {
+        self.conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap_or(0) as u32
+    }
+
+    pub fn set_index_version(&self, version: u32) -> Result<()> {
+        self.conn.execute_batch(&format!("PRAGMA user_version = {version}"))?;
+        Ok(())
+    }
+
     pub fn get_all_links(&self) -> Result<Vec<(String, String)>> {
         Ok(self.get_all_links_kinded()?.into_iter().map(|(s, t, _)| (s, t)).collect())
     }
