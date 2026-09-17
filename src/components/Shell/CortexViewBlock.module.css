@@ -1228,14 +1228,14 @@
 .listChips {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: flex-end;
+  margin-left: auto;
+  gap: 8px;
   flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
 .listChip {
@@ -1245,6 +1245,21 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-app);
+}
+
+.listNumber {
+  flex: 0 0 auto;
+  min-width: 64px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.listDate {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-tertiary);
 }
 
 .listChipKey {
@@ -1259,7 +1274,6 @@
 }
 
 .listRow .rowActions {
-  margin-left: auto;
   flex: 0 0 auto;
 }
 
@@ -1821,10 +1835,10 @@
 }
 .roundChart {
   outline: none;
-  border-radius: 50%;
 }
 .roundChart:focus-visible {
-  box-shadow: 0 0 0 2px var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .chartSmall .roundChart {
   max-height: 150px;
@@ -2078,4 +2092,31 @@
 .addPropChip:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Figures in data read as data: lining and of one width, so a column of
+   amounts lines up (the prose font's old-style figures dip below the line). */
+.table,
+.list,
+.board,
+.gallery,
+.stats,
+.calendar,
+.legend,
+.roundChart {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.table th.numRight,
+.table td.numRight {
+  text-align: right;
+}
+
+.table th.numRight .colHeader {
+  text-align: right;
+}
+
+/* A slice's label may reach past the ring's edge rather than be cut off. */
+.roundChart {
+  overflow: visible;
 }
