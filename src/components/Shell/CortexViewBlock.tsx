@@ -1959,6 +1959,15 @@ function NewRowButton({ source, spec, onAddBlank, onChanged, onError, extra, com
 /** Keys every note carries that say nothing about the row on a card. */
 const CARD_HIDDEN = new Set(["created", "updated", "modified", "tags", "type", "icon", "cover", "parent", "id", "$body"]);
 
+/** A row's page icon (an emoji) before its title on a card, as a page icon
+ *  sits before a page's name. It is not a field, so it stays out of the card's
+ *  lines; a path or anything long is not an icon. */
+function RowIcon({ value }: { value: unknown }) {
+  const text = formatCell(value).trim();
+  if (!text || [...text].length > 4 || /[/\\.]/.test(text)) return null;
+  return <span className={styles.galleryIcon} aria-hidden>{text}</span>;
+}
+
 /** The properties a card shows under its title. A view that names `columns:`
  *  chose them; otherwise the first few real properties, never the bookkeeping
  *  ones, so a card stays a card and not a copy of the whole row. */
@@ -2572,6 +2581,7 @@ export function GalleryView({ table, spec, source, onChanged }: {
                     className={`${styles.galleryKicker} ${canOpen ? styles.galleryTitleOpen : ""}`}
                     onClick={canOpen ? () => openRow(source, row.id) : undefined}
                   >
+                    <RowIcon value={row.cells["icon"]} />
                     {formatCell(row.cells[titleField])}
                   </div>
                   {big && (
@@ -2635,6 +2645,7 @@ export function GalleryView({ table, spec, source, onChanged }: {
                 className={canOpen ? styles.galleryTitleOpen : styles.galleryTitle}
                 onClick={canOpen ? () => openRow(source, row.id) : undefined}
               >
+                <RowIcon value={row.cells["icon"]} />
                 {formatCell(row.cells[titleField])}
               </div>
               {fieldCols.filter((c) => hasValue(row.cells[c.key])).map((c) => (

@@ -2312,12 +2312,22 @@ fn aggregate(table: &Table, x: &str, y: &str, agg: &str, bucket: Option<&str>) -
     // lexical — acceptable for Slice 2, revisit with typed x buckets later).
     let mut groups: BTreeMap<String, Acc> = BTreeMap::new();
     for row in &table.rows {
-        let raw = row.cells.get(x).map(|c| c.as_text()).unwrap_or_default();
-        let xv = match bucket { Some(b) => bucket_key(&raw, b), None => raw };
-        let acc = groups.entry(xv).or_default();
-        acc.rows += 1;
-        if let Some(n) = row.cells.get(y).and_then(|c| c.as_num()) {
-            acc.vals.push(n);
+        // A multi-valued cell — a relation, a multi-select — counts the row
+        // under each of its values, as `group:` and `series:` do, rather than
+        // under the values joined into one label.
+        let raws: Vec<String> = match row.cells.get(x) {
+            Some(CellValue::List(items)) if !items.is_empty() => items.clone(),
+            Some(c) => vec![c.as_text()],
+            None => vec![String::new()],
+        };
+        let yv = row.cells.get(y).and_then(|c| c.as_num());
+        for raw in raws {
+            let xv = match bucket { Some(b) => bucket_key(&raw, b), None => raw };
+            let acc = groups.entry(xv).or_default();
+            acc.rows += 1;
+            if let Some(n) = yv {
+                acc.vals.push(n);
+            }
         }
     }
 
@@ -2636,6 +2646,19 @@ mod tests {
         // A chart over the select follows the same order.
         let c = run_chart(&root, "source: collections/tasks\ntype: chart\nx: priority\ny: title\nagg: count\n").unwrap();
         assert_eq!(c.points.iter().map(|p| p.x.as_str()).collect::<Vec<_>>(), vec!["high", "medium", "low"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_chart_over_a_multi_valued_axis_counts_a_row_under_each_value() {
+        let root = gap_root("multiaxis");
+        put(&root, ".cortex/schemas/expenses.yaml", "properties:\n  - name: amount\n    type: number\n  - name: category\n    type: multi_select\n");
+        put(&root, "collections/expenses/a.md", "---\ntitle: Groceries\namount: 10\ncategory: [food]\n---\n");
+        put(&root, "collections/expenses/b.md", "---\ntitle: Dinner on a trip\namount: 20\ncategory: [food, travel]\n---\n");
+        put(&root, "collections/expenses/c.md", "---\ntitle: Train\namount: 5\ncategory: [travel]\n---\n");
+        let c = run_chart(&root, "source: collections/expenses\ntype: chart\nchartType: donut\nx: category\ny: amount\nagg: sum\n").unwrap();
+        let slices: Vec<(String, f64)> = c.points.iter().map(|p| (p.x.clone(), p.y)).collect();
+        assert_eq!(slices, vec![("food".to_string(), 30.0), ("travel".to_string(), 25.0)], "no slice for the values joined together");
         let _ = std::fs::remove_dir_all(&root);
     }
 
