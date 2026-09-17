@@ -383,7 +383,7 @@ with the match wrapped in <mark>.")]
         json(&self.vault.links(&a.target).map_err(err)?)
     }
 
-    #[tool(description = "Notes that link to this one.")]
+    #[tool(description = "Notes that link to this one, each with the passage around every such link (`mentions`: before / link / after).")]
     fn backlinks(&self, Parameters(a): Parameters<TargetArgs>) -> Result<CallToolResult, McpError> {
         json(&self.vault.backlinks(&a.target).map_err(err)?)
     }

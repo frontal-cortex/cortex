@@ -544,7 +544,7 @@ impl Vault {
             .collect())
     }
 
-    pub fn backlinks(&self, target: &str) -> Result<Vec<NoteEntry>> {
+    pub fn backlinks(&self, target: &str) -> Result<Vec<cortex_core::db::Backlink>> {
         let rel = self.resolve(target)?.path;
         Ok(self.db()?.get_backlinks(&rel)?)
     }

@@ -692,7 +692,7 @@ pub fn get_all_links(ctx: &AppCtx) -> Result<Vec<(String, String)>> {
 }
 
 // ── Backlinks ────────────────────────────────────────────────────────────────
-pub fn get_backlinks(ctx: &AppCtx, path: String) -> Result<Vec<NoteEntry>> {
+pub fn get_backlinks(ctx: &AppCtx, path: String) -> Result<Vec<cortex_core::db::Backlink>> {
     let guard = ctx.db.0.lock().unwrap();
     match guard.as_ref() {
         Some(db) => db.get_backlinks(&path),
