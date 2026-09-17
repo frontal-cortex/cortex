@@ -438,20 +438,6 @@ export interface SearchHit extends NoteEntry {
   snippet: string;
 }
 
-/** The passage around one `[[link]]`, as a reader sees it: `link` is the
- *  link's label, `before` / `after` the rest of the paragraph, clipped at
- *  word boundaries with `…` where text was cut. */
-export interface LinkContext {
-  before: string;
-  link: string;
-  after: string;
-}
-
-/** A note that links to the open one, with every passage that does so, in document order. */
-export interface Backlink extends NoteEntry {
-  mentions: LinkContext[];
-}
-
 /** The sidecar omits defaults (`resolved: false`, `replies: []`, `occurrence: 0`); fill them in. */
 function normalizeThreads(threads: CommentThread[]): CommentThread[] {
   return threads.map((t) => ({
@@ -1207,7 +1193,7 @@ export const commands = {
     invoke<Array<[string, string]>>("get_all_links"),
 
   getBacklinks: (path: string) =>
-    invoke<Backlink[]>("get_backlinks", { path }),
+    invoke<NoteEntry[]>("get_backlinks", { path }),
 
   listTemplates: () =>
     invoke<string[]>("list_templates"),

@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(read(&root, "notes/other/untouched.md"), before_untouched);
 
         // The index followed: backlinks of the new path, none of the old.
-        let mut back: Vec<String> = db.get_backlinks("notes/archive/big-plan.md").unwrap().into_iter().map(|n| n.entry.path).collect();
+        let mut back: Vec<String> = db.get_backlinks("notes/archive/big-plan.md").unwrap().into_iter().map(|n| n.path).collect();
         back.sort();
         assert_eq!(back, ["notes/refs.md"]);
         let notes = vault::list_notes(&root);

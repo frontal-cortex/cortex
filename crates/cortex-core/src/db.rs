@@ -1,23 +1,12 @@
 use rusqlite::{params, params_from_iter, Connection};
-use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::error::Result;
-use crate::note::{self, LinkContext, NoteEntry};
+use crate::note::NoteEntry;
 use crate::search::{self, Field, SearchHit};
 
 pub struct Db {
     conn: Connection,
-}
-
-/// A note that links to another, with the passage around each of its links
-/// there (`mentions` is in document order; empty only if the body could not
-/// be read back from the index).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Backlink {
-    #[serde(flatten)]
-    pub entry: NoteEntry,
-    pub mentions: Vec<LinkContext>,
 }
 
 impl std::fmt::Debug for Db {
@@ -133,10 +122,9 @@ impl Db {
         Ok(())
     }
 
-    /// Every note that contains a [[link]] pointing at this note, matched by
-    /// title or path stem, newest first — each with the passage around every
-    /// such link, so a panel can show *what* was said, not just who said it.
-    pub fn get_backlinks(&self, path: &str) -> Result<Vec<Backlink>> {
+    /// Return all notes that contain a [[link]] pointing at this note,
+    /// matched by title or path stem.
+    pub fn get_backlinks(&self, path: &str) -> Result<Vec<NoteEntry>> {
         let stem = path
             .split('/')
             .next_back()
@@ -161,33 +149,7 @@ impl Db {
                AND l.source != ?3
              ORDER BY n.modified DESC",
         )?;
-        let entries = collect_entries(&mut stmt, params![title, stem, path])?;
-        if entries.is_empty() {
-            return Ok(vec![]);
-        }
-
-        // The bodies live in the FTS table; one query for all the sources.
-        let placeholders = vec!["?"; entries.len()].join(",");
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT path, body FROM notes_fts WHERE path IN ({placeholders})"
-        ))?;
-        let bodies: std::collections::HashMap<String, String> = stmt
-            .query_map(params_from_iter(entries.iter().map(|e| e.path.as_str())), |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(entries
-            .into_iter()
-            .map(|entry| {
-                let mentions = bodies
-                    .get(&entry.path)
-                    .map(|body| note::link_contexts(body, |t| t == title || t == stem))
-                    .unwrap_or_default();
-                Backlink { entry, mentions }
-            })
-            .collect())
+        collect_entries(&mut stmt, params![title, stem, path])
     }
 
     pub fn remove_note(&self, path: &str) -> Result<()> {

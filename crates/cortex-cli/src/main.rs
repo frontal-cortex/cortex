@@ -500,7 +500,7 @@ fn run() -> Result<()> {
             ]).collect());
             Ok(())
         }
-        Cmd::Backlinks { target } => out.backlinks(&v.backlinks(&target)?),
+        Cmd::Backlinks { target } => out.notes(&v.backlinks(&target)?),
         Cmd::Comments { target, all } => {
             let (note, threads) = v.comments(&target)?;
             let threads: Vec<_> = threads.into_iter().filter(|t| all || !t.resolved).collect();
@@ -1120,22 +1120,6 @@ impl Out {
         table(&["PATH", "TITLE", "TYPE", "TAGS"], notes.iter().map(|n| vec![
             n.path.clone(), n.title.clone(), n.note_type.clone().unwrap_or_default(), n.tags.join(","),
         ]).collect());
-        Ok(())
-    }
-
-    /// Backlinks: the note table plus the passage around the first link,
-    /// and how many more there are (JSON carries every mention).
-    fn backlinks(&self, back: &[cortex_core::db::Backlink]) -> Result<()> {
-        if self.json {
-            return self.emit(&back);
-        }
-        table(&["PATH", "TITLE", "TYPE", "CONTEXT"], back.iter().map(|b| {
-            let mut context = b.mentions.first().map(|m| format!("{}[[{}]]{}", m.before, m.link, m.after)).unwrap_or_default();
-            if b.mentions.len() > 1 {
-                context.push_str(&format!(" (+{})", b.mentions.len() - 1));
-            }
-            vec![b.entry.path.clone(), b.entry.title.clone(), b.entry.note_type.clone().unwrap_or_default(), context]
-        }).collect());
         Ok(())
     }
 

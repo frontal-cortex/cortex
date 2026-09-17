@@ -75,16 +75,8 @@ is indexed, its `[[...]]` references are extracted and stored as
 `source → target` rows.
 
 The "Linked from" panel at the bottom of the editor queries this table
-to show all notes that link to the current note, and under each of them
-the passage that does: the paragraph around the link (a list item or
-heading stands alone), other links shown as their labels, clipped at
-word boundaries with `…`. The link itself is set off; clicking a passage
-opens the source note. The panel updates in real time as you write.
-
-The same shape comes out of `cortex backlinks <note>` (a CONTEXT column;
-`--json` carries every mention as `before` / `link` / `after`) and the
-MCP `backlinks` tool, all through `note::link_contexts`. Contexts are read
-back from the index's full-text bodies, so nothing is written to a note.
+to show all notes that link to the current note. It updates in real time
+as you write.
 
 ## Implementation
 
