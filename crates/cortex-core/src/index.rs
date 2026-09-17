@@ -147,9 +147,12 @@ mod tests {
         let db = Db::open(&root).unwrap();
         index_vault(&root, &db).unwrap();
 
-        let mut back: Vec<String> = db.get_backlinks("notes/target.md").unwrap().into_iter().map(|n| n.path).collect();
-        back.sort();
-        assert_eq!(back, ["notes/aliased.md", "notes/embedded.md", "notes/sectioned.md"]);
+        let mut back = db.get_backlinks("notes/target.md").unwrap();
+        back.sort_by(|a, b| a.entry.path.cmp(&b.entry.path));
+        let paths: Vec<&str> = back.iter().map(|b| b.entry.path.as_str()).collect();
+        assert_eq!(paths, ["notes/aliased.md", "notes/embedded.md", "notes/sectioned.md"]);
+        let mentions: Vec<(&str, &str, &str)> = back.iter().flat_map(|b| b.mentions.iter().map(|m| (m.before.as_str(), m.link.as_str(), m.after.as_str()))).collect();
+        assert_eq!(mentions, [("See ", "the target", "."), ("", "target › Sec", ""), ("See ", "Target › Sec", ".")], "each backlink carries the passage around its link");
 
         let mut targets: Vec<String> = db.get_all_links().unwrap().into_iter().map(|(_, t)| t).collect();
         targets.sort();
