@@ -16,6 +16,7 @@ import { commands, Note, ViewDef } from "../../lib/commands";
 import { parseViews, defaultViews, viewToFrontmatter, viewSource } from "../../lib/database";
 import { exportToFile } from "../../lib/export";
 import { DataViews } from "./DataViews";
+import { Deferred } from "./Deferred";
 import { DatabaseIcon } from "./icons";
 import styles from "./CollectionViewsBlock.module.css";
 
@@ -39,10 +40,13 @@ function CollectionViewsBlock({ block, editor }: { block: any; editor: any }) {
   const collection = own || page?.collection || "";
 
   // Unbound: another note showing a collection — read its `_index.md`, write back there.
-  const [remote, setRemote] = useState<{ note: Note; views: ViewDef[] } | null>(null);
+  // `undefined` while that read is out: the views are not known yet, and a
+  // default table queried in the meantime would be thrown away.
+  const [remote, setRemote] = useState<{ note: Note; views: ViewDef[] } | null | undefined>(undefined);
   useEffect(() => {
     if (bound || !collection) { setRemote(null); return; }
     let alive = true;
+    setRemote(undefined);
     commands.readNote(`collections/${collection}/_index.md`)
       .then((n) => { if (alive) setRemote({ note: n, views: parseViews(n.frontmatter) }); })
       .catch(() => { if (alive) setRemote(null); });
@@ -82,14 +86,20 @@ function CollectionViewsBlock({ block, editor }: { block: any; editor: any }) {
           {menu}
         </div>
       )}
-      <DataViews
-        key={`${collection}:${bound}`}
-        source={source}
-        views={views.length ? views : defaultViews()}
-        onViewsChange={setViews}
-        hotkeys={bound}
-        trailing={bound ? menu : undefined}
-      />
+      {!bound && remote === undefined ? (
+        <div style={{ minHeight: 240 }} aria-busy="true" />
+      ) : (
+        <Deferred minHeight={240}>
+          <DataViews
+            key={`${collection}:${bound}`}
+            source={source}
+            views={views.length ? views : defaultViews()}
+            onViewsChange={setViews}
+            hotkeys={bound}
+            trailing={bound ? menu : undefined}
+          />
+        </Deferred>
+      )}
     </div>
   );
 }

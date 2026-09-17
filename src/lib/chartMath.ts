@@ -27,10 +27,12 @@ export function compactNumber(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(a >= 100 ? 0 : 1);
 }
 
+const FULL = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+
 /** A value in full for a tooltip: 1,549.09. */
 export function fullNumber(n: number): string {
   if (!isFinite(n)) return "—";
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(n);
+  return FULL.format(n);
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
