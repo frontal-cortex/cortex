@@ -532,7 +532,7 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
                     Err(e) => { err(&mut out, Some(&schema_path), format!("schema does not parse: {e}")); BTreeMap::new() }
                     Ok(s) => {
                         for p in &s.properties {
-                            if ["type", "title", "tags", "created", "id", "path", "icon", "cover", "parent", "pack"].contains(&p.name.as_str()) {
+                            if ["type", "title", "tags", "created", "id", "path", "icon", "cover", "parent", "pack", "width"].contains(&p.name.as_str()) {
                                 err(&mut out, Some(&schema_path), format!("a property may not be named `{}` — it is a note's own key; use kind, name, …", p.name));
                             }
                             if p.ty == schema::PropType::Formula {
@@ -698,7 +698,9 @@ pub fn lint(pack: &Pack) -> Vec<Finding> {
             let text = strip_template_vars(&text);
             if let Some(fm) = frontmatter_yaml(&text) {
                 for key in fm.keys().filter_map(|k| k.as_str()) {
-                    if !["title", "type", "tags", "created", "icon", "cover", "parent", "pack"].contains(&key) && !props.contains_key(key) {
+                    // How a page is laid out is not data: `width: full` gives a
+                    // row's page the window, as a collection's own page may have.
+                    if !["title", "type", "tags", "created", "icon", "cover", "parent", "pack", "width"].contains(&key) && !props.contains_key(key) {
                         err(&mut out, Some(&f.path), format!("property `{key}` is not in the {owner} schema"));
                     }
                 }

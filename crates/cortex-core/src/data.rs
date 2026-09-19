@@ -1173,8 +1173,8 @@ pub fn source_columns(root: &Path, source: &str) -> Result<Vec<String>> {
 /// Parse a `cortex-view` YAML spec, resolve its source, and run its query.
 pub fn run_view(root: &Path, spec_yaml: &str) -> Result<Table> {
     let spec: ViewSpec = serde_yaml::from_str(&resolve_this(spec_yaml, root))?;
-    let table = resolve_source(root, &spec.source)?;
     let schema = schema_for_source(root, &spec.source);
+    let table = computed_table(root, &spec.source, schema.as_ref())?;
 
     let query = Query {
         filter: match spec.filter {
@@ -2118,12 +2118,33 @@ pub fn apply_authorship(root: &Path, table: &mut Table, collection: &str, schema
 /// Compute each `rollup` property: follow its relation to the target collection,
 /// aggregate the chosen target property, and inject the result into every row.
 pub fn apply_rollups(root: &Path, table: &mut Table, schema: &crate::schema::TypeSchema) {
+    apply_rollups_deep(root, table, schema, 1)
+}
+
+/// The rows a rollup counts, with their own computed properties worked out
+/// `depth` levels down. A set's `volume` is `reps * weight` — a formula — and
+/// a session's volume is the sum of its sets' volumes, so a rollup that could
+/// only see what is written in a file would read nothing. One level covers
+/// that; deeper chains stop at what is on disk, which keeps a relation that
+/// points back at this collection from looping forever.
+fn related_rows(root: &Path, collection: &str, depth: u8) -> Result<Table> {
+    let mut table = read_collection(root, collection)?;
+    if depth > 0 {
+        if let Some(schema) = schema_for_source(root, &format!("collections/{collection}")) {
+            apply_rollups_deep(root, &mut table, &schema, depth - 1);
+            apply_formulas(&mut table, &schema);
+        }
+    }
+    Ok(table)
+}
+
+fn apply_rollups_deep(root: &Path, table: &mut Table, schema: &crate::schema::TypeSchema, depth: u8) {
     use crate::schema::PropType;
     // Reverse side first: rows of `from` whose `relation` names this row.
     for p in &schema.properties {
         let (Some(from), Some(rel_name)) = (p.from.clone(), p.relation.clone()) else { continue };
         if !matches!(p.ty, PropType::Rollup | PropType::Relation) { continue; }
-        let Ok(children) = read_collection(root, &from) else { continue };
+        let Ok(children) = related_rows(root, &from, depth) else { continue };
         let filter = p.where_.as_deref().filter(|w| !w.trim().is_empty()).and_then(|w| parse_filter(w).ok());
         let func = p.function.clone().unwrap_or_else(|| "count".into());
         let target_prop = p.property.clone().unwrap_or_default();
@@ -2154,7 +2175,7 @@ pub fn apply_rollups(root: &Path, table: &mut Table, schema: &crate::schema::Typ
         let target_prop = p.property.clone().unwrap_or_default();
         let Some(rel) = schema.property(&rel_name) else { continue };
         let Some(coll) = rel.collection.clone() else { continue };
-        let Ok(target) = read_collection(root, &coll) else { continue };
+        let Ok(target) = related_rows(root, &coll, depth) else { continue };
 
         let mut by_title: std::collections::HashMap<String, &Row> = std::collections::HashMap::new();
         for r in &target.rows {
@@ -2410,7 +2431,7 @@ fn aggregate(table: &Table, x: &str, y: &str, agg: &str, bucket: Option<&str>) -
 /// series per distinct `series` value when that is set).
 pub fn run_chart(root: &Path, spec_yaml: &str) -> Result<ChartResult> {
     let spec: ViewSpec = serde_yaml::from_str(&resolve_this(spec_yaml, root))?;
-    let table = resolve_source(root, &spec.source)?;
+    let table = computed_table(root, &spec.source, schema_for_source(root, &spec.source).as_ref())?;
 
     let x = spec.option("x").ok_or_else(|| AppError::Other("Chart requires an `x` field".into()))?;
     let y = spec.option("y").ok_or_else(|| AppError::Other("Chart requires a `y` field".into()))?;
@@ -3384,6 +3405,47 @@ mod tests {
         assert_eq!(row.cells.get("total_hours").unwrap().as_num(), Some(8.0)); // 3 + 5
         assert_eq!(row.cells.get("task_count").unwrap().as_num(), Some(2.0));
 
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_rollup_adds_up_a_computed_property_of_the_rows_it_counts() {
+        let root = scratch("rollupformula");
+        std::fs::create_dir_all(root.join(".cortex/schemas")).unwrap();
+        // One row per set: its volume is reps × weight, worked out on read.
+        write(&root.join(".cortex/schemas/sets.yaml"),
+            "properties:\n  - name: session\n    type: relation\n    collection: sessions\n  - name: volume\n    type: formula\n    expr: reps * weight\n");
+        write(&root.join("collections/sets/s1.md"), "---\ntitle: Squat 1\nsession: [Leg day]\nreps: 5\nweight: 100\n---\n");
+        write(&root.join("collections/sets/s2.md"), "---\ntitle: Squat 2\nsession: [Leg day]\nreps: 5\nweight: 110\n---\n");
+        write(&root.join("collections/sessions/leg.md"), "---\ntitle: Leg day\n---\n");
+
+        let schema = crate::schema::TypeSchema {
+            properties: vec![
+                crate::schema::PropertyDef {
+                    name: "volume".into(),
+                    ty: crate::schema::PropType::Rollup,
+                    from: Some("sets".into()),
+                    relation: Some("session".into()),
+                    property: Some("volume".into()),
+                    function: Some("sum".into()),
+                    ..Default::default()
+                },
+                crate::schema::PropertyDef {
+                    name: "top_set".into(),
+                    ty: crate::schema::PropType::Rollup,
+                    from: Some("sets".into()),
+                    relation: Some("session".into()),
+                    property: Some("weight".into()),
+                    function: Some("max".into()),
+                    ..Default::default()
+                },
+            ],
+        };
+        let mut table = read_collection(&root, "sessions").unwrap();
+        apply_rollups(&root, &mut table, &schema);
+        let row = &table.rows[0];
+        assert_eq!(row.cells.get("volume").unwrap().as_num(), Some(1050.0), "5×100 + 5×110");
+        assert_eq!(row.cells.get("top_set").unwrap().as_num(), Some(110.0), "a plain property still works");
         std::fs::remove_dir_all(&root).ok();
     }
 

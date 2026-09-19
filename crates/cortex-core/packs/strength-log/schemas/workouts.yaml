@@ -1,0 +1,71 @@
+properties:
+  - name: date
+    type: date
+  - name: day
+    type: select
+    options:
+      - name: push
+        color: orange
+      - name: pull
+        color: blue
+      - name: legs
+        color: green
+      - name: core
+        color: gray
+  - name: duration
+    type: number
+    unit: " min"
+  - name: bodyweight
+    type: number
+    format: decimal
+    unit: " kg"
+  - name: feel
+    type: select
+    options:
+      - name: strong
+        color: green
+      - name: fine
+        color: gray
+      - name: flat
+        color: yellow
+      - name: rough
+        color: red
+  # Everything below is the session's sets added up — warmups left out.
+  - name: sets_done
+    type: rollup
+    from: sets
+    relation: workout
+    function: count
+    where: kind != warmup
+  - name: reps_done
+    type: rollup
+    from: sets
+    relation: workout
+    function: sum
+    property: reps
+    where: kind != warmup
+    format: integer
+  - name: volume
+    type: rollup
+    from: sets
+    relation: workout
+    function: sum
+    property: volume
+    where: kind != warmup
+    format: integer
+    unit: " kg"
+  - name: top_set
+    type: rollup
+    from: sets
+    relation: workout
+    function: max
+    property: weight
+    where: kind != warmup
+    format: decimal
+    unit: " kg"
+  - name: hard_sets
+    type: rollup
+    from: sets
+    relation: workout
+    function: count
+    where: kind != warmup and rpe >= 8

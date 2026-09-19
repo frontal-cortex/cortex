@@ -1,0 +1,3 @@
+# The dashboard page holds no rows of its own: it reads the three databases
+# under it (workouts, sets, exercises).
+properties: []

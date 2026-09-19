@@ -26,10 +26,11 @@ import { useViewport } from "../../hooks/useViewport";
 import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
 import { DateRangeInput, FilesInput, Ring, formatRange, rangeOf, rangeEnd } from "./PropertyInputs";
 import { DEFAULT_STATS } from "../../lib/database";
-import { NotePathContext } from "./ButtonBlock";
+import { NotePathContext, NoteTitleContext } from "./ButtonBlock";
 import { StatsEditor } from "./StatsEditor";
 import { Deferred } from "./Deferred";
 import { friendlyDateValue } from "../../lib/displayDate";
+import { resolveSeedValue } from "../../lib/seedValues";
 import { XYChart, seriesColor } from "./XYChart";
 import { FilterText } from "./FilterBuilder";
 import { useCollections, useSourceFields } from "./useSourceFields";
@@ -586,13 +587,15 @@ export function newRowId(): string {
 // A new row in a filtered view would otherwise vanish (it can't match the
 // filter). Seed it with the view's top-level equality constraints so it shows
 // up where the user expects — e.g. filter `status == 'reading'` → status:reading.
-export function seedFromFilter(spec: string): Record<string, string> {
+export function seedFromFilter(spec: string, here = ""): Record<string, string> {
   const filter = peek(spec, "filter");
   if (!filter || /\bor\b/i.test(filter)) return {};
   const seed: Record<string, string> = {};
   for (const clause of filter.split(/\band\b/i)) {
     const m = clause.trim().match(/^([A-Za-z_$][\w$]*)\s*==?\s*(.+)$/);
-    if (m) seed[m[1]] = m[2].trim().replace(/^['"]|['"]$/g, "");
+    // `@this` is the page the view sits on, `@today` is today: a row added to
+    // a view carries what the filter means, so it belongs to that view.
+    if (m) seed[m[1]] = resolveSeedValue(m[2].replace(/^['"]|['"]$/g, ""), here);
   }
   return seed;
 }
@@ -780,7 +783,9 @@ function RoundChart({ chart }: { chart: ChartResult }) {
 /** A stat's value as text, in its format: a share with `%`, money grouped to
  *  two decimals, `—` for nothing. */
 function statText(s: Stat): string {
-  if (s.value === null) return s.text;
+  // A tile that works out to a day — the last time you trained a lift — reads
+  // as one, like every other date in a view.
+  if (s.value === null) return friendlyDateValue(s.text) ?? s.text;
   const n = s.value;
   switch (s.format) {
     case "percent": case "progress": case "ring": return `${fmtNum(n)}%`;
@@ -996,8 +1001,8 @@ function alignsRight(c: ViewColumn): boolean {
 
 /** What a blank new row starts with: a title, today, the view's filter seeds
  *  and, for a row made inside a table group, that group's value. */
-function blankRowSeed(spec: string, extra?: Record<string, string>): Record<string, string> {
-  return { title: "Untitled", created: today(), ...seedFromFilter(spec), ...(extra ?? {}) };
+function blankRowSeed(spec: string, extra?: Record<string, string>, here = ""): Record<string, string> {
+  return { title: "Untitled", created: today(), ...seedFromFilter(spec, here), ...(extra ?? {}) };
 }
 
 type CellPos = { r: number; c: number };
@@ -1167,6 +1172,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   /** mod+f while the table has focus: hand focus to the toolbar's search box. */
   onFind?: () => void;
 }) {
+  const hostTitle = useContext(NoteTitleContext);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Folded groups — a glance-state, kept in memory only.
@@ -1299,7 +1305,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   const addBlank = (extra?: Record<string, string>) => {
     const id = newRowId();
     setPendingRowId(id);
-    commands.addRow(source, id, blankRowSeed(spec, extra)).then(onChanged).catch((e) => { setPendingRowId(null); setErr(String(e)); });
+    commands.addRow(source, id, blankRowSeed(spec, extra, hostTitle)).then(onChanged).catch((e) => { setPendingRowId(null); setErr(String(e)); });
   };
 
   const duplicate = (rowId: string) => {
@@ -1814,6 +1820,7 @@ function NewRowButton({ source, spec, onAddBlank, onChanged, onError, extra, com
   /** Bumped when a template was saved elsewhere, so the list refreshes. */
   templatesVersion?: number;
 }) {
+  const hostTitle = useContext(NoteTitleContext);
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<string[]>([]);
   const ref = useRef<HTMLDivElement>(null);
@@ -1831,7 +1838,7 @@ function NewRowButton({ source, spec, onAddBlank, onChanged, onError, extra, com
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const seed = () => blankRowSeed(spec, extra);
+  const seed = () => blankRowSeed(spec, extra, hostTitle);
   const addBlank = onAddBlank ?? (() => {
     commands.addRow(source, newRowId(), seed()).then(onChanged).catch((e) => onError(String(e)));
   });
@@ -1910,6 +1917,7 @@ export function BoardView({ table, spec, source, onChanged }: {
   source: string;
   onChanged: () => void;
 }) {
+  const hostTitle = useContext(NoteTitleContext);
   // Optimistic local rows so a dropped card jumps to its new column instantly,
   // before the write + reload round-trips.
   const [rows, setRows] = useState(table.rows);
@@ -1974,7 +1982,7 @@ export function BoardView({ table, spec, source, onChanged }: {
     const fields: Record<string, string> = {
       title: "Untitled",
       created: today(),
-      ...seedFromFilter(spec),
+      ...seedFromFilter(spec, hostTitle),
       [groupField]: valueOf(value),
     };
     commands.addRow(source, newRowId(), fields).then(onChanged).catch((e) => window.alert(String(e)));
@@ -2221,6 +2229,7 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
   /** Persist a picked mode (`mode: week`) into the view. */
   onModeChange?: (mode: CalendarMode) => void;
 }) {
+  const hostTitle = useContext(NoteTitleContext);
   const dateField = dateFieldFor(table, spec);
   const endField = endFieldFor(table, spec, dateField);
   const canOpen = source.startsWith("collections/");
@@ -2285,7 +2294,7 @@ export function CalendarView({ table, spec, source, onChanged, onModeChange }: {
   const todayStr = ymd(new Date());
   const [picking, setPicking] = useState(false);
   const addOn = (day: string) =>
-    commands.addRow(source, newRowId(), { ...blankRowSeed(spec), [dateField]: day })
+    commands.addRow(source, newRowId(), { ...blankRowSeed(spec, undefined, hostTitle), [dateField]: day })
       .then(onChanged).catch((e) => window.alert(String(e)));
 
   const year = anchor.getFullYear();
@@ -2465,6 +2474,7 @@ function weekLabel(weekStart: Date): string {
 export function GalleryView({ table, spec, source, onChanged }: {
   table: ViewTable; spec: string; source: string; onChanged: () => void;
 }) {
+  const hostTitle = useContext(NoteTitleContext);
   const canOpen = source.startsWith("collections/");
   const titleField = table.columns.find((c) => c.key === "title") ? "title" : "id";
   // `layout: compact` — a KPI card: no cover, one labelled line per shown
@@ -2530,7 +2540,7 @@ export function GalleryView({ table, spec, source, onChanged }: {
         </div>
         <button
           className={styles.newRowBtn}
-          onClick={() => commands.addRow(source, newRowId(), { title: "Untitled", created: today(), ...seedFromFilter(spec) })
+          onClick={() => commands.addRow(source, newRowId(), { title: "Untitled", created: today(), ...seedFromFilter(spec, hostTitle) })
             .then(onChanged).catch((e) => window.alert(String(e)))}
         >
           + New card

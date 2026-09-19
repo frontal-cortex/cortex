@@ -1,0 +1,100 @@
+properties:
+  - name: day
+    type: select
+    options:
+      - name: push
+        color: orange
+      - name: pull
+        color: blue
+      - name: legs
+        color: green
+      - name: core
+        color: gray
+  - name: muscle
+    type: select
+    options:
+      - name: chest
+        color: orange
+      - name: shoulders
+        color: yellow
+      - name: triceps
+        color: brown
+      - name: back
+        color: blue
+      - name: biceps
+        color: purple
+      - name: quads
+        color: green
+      - name: hamstrings
+        color: green
+      - name: glutes
+        color: pink
+      - name: calves
+        color: gray
+      - name: core
+        color: gray
+  - name: equipment
+    type: select
+    options:
+      - name: barbell
+        color: gray
+      - name: dumbbell
+        color: gray
+      - name: machine
+        color: gray
+      - name: cable
+        color: gray
+      - name: bodyweight
+        color: gray
+  - name: target_reps
+    type: text
+  - name: rest
+    type: number
+    unit: "s"
+  - name: active
+    type: checkbox
+  # Every number below is worked out from the sets logged against this
+  # exercise: nothing here is typed in, and nothing goes stale.
+  - name: sets_done
+    type: rollup
+    from: sets
+    relation: exercise
+    function: count
+    where: kind != warmup
+  - name: best_weight
+    type: rollup
+    from: sets
+    relation: exercise
+    function: max
+    property: weight
+    where: kind != warmup
+    format: decimal
+    unit: " kg"
+  - name: best_e1rm
+    type: rollup
+    from: sets
+    relation: exercise
+    function: max
+    property: e1rm
+    where: kind != warmup
+    format: decimal
+    unit: " kg"
+  - name: last_done
+    type: rollup
+    from: sets
+    relation: exercise
+    function: max
+    property: date
+  - name: volume_30d
+    type: rollup
+    from: sets
+    relation: exercise
+    function: sum
+    property: volume
+    where: kind != warmup and date >= @today-30
+    format: integer
+    unit: " kg"
+  # How long since this lift was trained — what the Overdue view sorts on.
+  - name: days_since
+    type: formula
+    expr: days_since(last_done)
