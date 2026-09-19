@@ -24,6 +24,10 @@ export const BUTTON_LANGUAGE = "cortex-button";
 /** The open note's path, so a `set` button knows which row it is on. */
 export const NotePathContext = createContext<string>("");
 
+/** The open note's title: what `@this` means to a view on it, and so what a
+ *  row added to that view carries. */
+export const NoteTitleContext = createContext<string>("");
+
 /** What a button touches in the app — one place, shared with the palette. */
 export function appButtonDeps(): ButtonDeps {
   return {
@@ -39,6 +43,7 @@ export function appButtonDeps(): ButtonDeps {
       if (view) setTimeout(() => window.dispatchEvent(new CustomEvent("cortex:select-view", { detail: { path, name: view } })), 150);
     },
     openExternal,
+    titleOf: (path) => commands.readNote(path).then((n) => String(n.frontmatter["title"] ?? "")).catch(() => ""),
   };
 }
 

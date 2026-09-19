@@ -66,11 +66,16 @@ fn main() {
 }
 
 fn walk(base: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
+    // Cargo watches a directory's own entries, not what is nested inside it:
+    // without naming every file, editing a pack's schema or index left the
+    // previous build's copy embedded in the binary.
+    println!("cargo:rerun-if-changed={}", dir.display());
     for entry in std::fs::read_dir(dir).unwrap().flatten() {
         let p = entry.path();
         if p.is_dir() {
             walk(base, &p, out);
         } else if p.is_file() {
+            println!("cargo:rerun-if-changed={}", p.display());
             // Screenshots (preview.png and the preview/ gallery) stay out of
             // the binary: a bundled pack shows images only once the remote
             // index supplies their URLs, and installs never write them.
