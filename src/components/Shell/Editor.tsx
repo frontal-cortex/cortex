@@ -42,7 +42,7 @@ import { webEmbedSlashItem } from "./WebEmbedBlock";
 import { extractEmbedLines, inflateWebBlocks, flattenWebBlocks, isWebUrl } from "../../lib/webBlocks";
 import { extractMath, inflateMath, flattenMath, restoreMath } from "../../lib/math";
 import { inflateRichFormats, flattenRichFormats } from "./richFormats";
-import { NotePathContext, inflateButtons, flattenButtons, buttonSlashItem } from "./ButtonBlock";
+import { NotePathContext, NoteTitleContext, inflateButtons, flattenButtons, buttonSlashItem } from "./ButtonBlock";
 import { columnsSlashItems } from "./ColumnBlocks";
 import { inflateColumns, flattenColumns } from "../../lib/columns";
 import { collectButtons, setNoteButtons, expandPlaceholders } from "../../lib/buttons";
@@ -1020,6 +1020,7 @@ function NoteEditor({
   return (
     <CollectionPageContext.Provider value={page}>
     <NotePathContext.Provider value={note.path}>
+    <NoteTitleContext.Provider value={String(note.frontmatter["title"] ?? "")}>
     <div className={styles.root}>
      <div className={styles.main}>
      <div className={styles.column}>
@@ -1197,6 +1198,7 @@ function NoteEditor({
         />
       )}
     </div>
+    </NoteTitleContext.Provider>
     </NotePathContext.Provider>
     </CollectionPageContext.Provider>
   );

@@ -149,9 +149,9 @@ export function expandPlaceholders(value: string, now: Date = new Date()): strin
   }).replace(/\{\{\s*time\s*\}\}/gi, `${pad(now.getHours())}:${pad(now.getMinutes())}`);
 }
 
-export function expandValues(values: Record<string, string> | undefined, now: Date = new Date()): Record<string, string> {
+export function expandValues(values: Record<string, string> | undefined, now: Date = new Date(), here = ""): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(values ?? {})) out[k] = expandPlaceholders(v, now);
+  for (const [k, v] of Object.entries(values ?? {})) out[k] = expandPlaceholders(v, now).replace(/\{\{\s*this\s*\}\}/gi, here);
   return out;
 }
 
@@ -181,6 +181,9 @@ export interface ButtonDeps {
   openExternal(url: string): Promise<boolean>;
   now?: () => Date;
   newId?: () => string;
+  /** The title of a note, for `{{this}}` in a value: a button on a workout's
+   *  page logs a set that points back at that workout. */
+  titleOf?(path: string): Promise<string>;
 }
 
 export function newRowId(): string {
@@ -208,7 +211,10 @@ export async function runButton(spec: ButtonSpec, notePath: string, deps: Button
       if (!spec.collection) throw new Error("This button names no collection.");
       const source = `collections/${spec.collection}`;
       const id = (deps.newId ?? newRowId)();
-      const fields = expandValues(spec.values, now);
+      const here = /\{\{\s*this\s*\}\}/i.test(JSON.stringify(spec.values ?? {})) && deps.titleOf
+        ? await deps.titleOf(notePath).catch(() => "")
+        : "";
+      const fields = expandValues(spec.values, now, here);
       let template = spec.template;
       if (!template && deps.listRowTemplates) {
         const names = await deps.listRowTemplates(source).catch(() => [] as string[]);

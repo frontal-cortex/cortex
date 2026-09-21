@@ -48,6 +48,7 @@ function deps(log: string[]): ButtonDeps {
     async openExternal(u) { log.push(`url ${u}`); return u.startsWith("http"); },
     now: () => new Date(2026, 8, 10),
     newId: () => "row-x",
+    async titleOf(path) { return path === "collections/workouts/leg-day.md" ? "Leg day" : "Somewhere"; },
   };
 }
 
@@ -96,4 +97,11 @@ test("rowOf and collectButtons", () => {
   const doc = [{ type: "paragraph" }, { type: "cortexButton", props: { spec: "label: A\naction: url\nurl: https://a" } },
     { type: "columnList", children: [{ type: "column", children: [{ type: "cortexButton", props: { spec: "label: B\naction: open\ntarget: Welcome" } }] }] }];
   assert.deepEqual(collectButtons(doc).map((b) => b.label), ["A", "B"]);
+});
+
+test("{{this}} in a value is the page the button sits on", async () => {
+  const log: string[] = [];
+  const fence = 'label: Add a set\naction: add-row\ncollection: sets\nvalues: {workout: "{{this}}", date: "{{today}}"}\n';
+  await runButton(parseButtonSpec(fence).spec, "collections/workouts/leg-day.md", deps(log));
+  assert.equal(log[0], 'addRow collections/sets row-x {"title":"Untitled","created":"2026-09-10","workout":"Leg day","date":"2026-09-10"}');
 });

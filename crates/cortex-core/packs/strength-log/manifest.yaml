@@ -1,0 +1,61 @@
+format: 1
+id: strength-log
+name: "Strength Log"
+version: 1.0.0
+kind: collection
+summary: "A push/pull/legs log: a row per set, with volume, one-rep-max estimates and records worked out on read."
+description: |
+  Three small databases and a page that reads them. `workouts` is one row per session — its day (push, pull or legs), how long it took and how it felt. `sets` is one row per set: the movement, the weight, the reps and, if you want it, how hard it felt. `exercises` is the movements you do, each filed under a day and a muscle. A set takes its date from its session, and its muscle and day from its movement, so the only things you ever type are a weight and a number of reps. Volume is weight × reps; the one-rep-max estimate is Epley — weight × (1 + reps ÷ 30) — and stops above twelve reps, where the estimate stops being honest. A warmup is logged as one and stays out of every total and record. The session page is where you log: its table adds sets that already belong to it. The dashboard carries this week's sessions, sets and volume against last week's, twelve weeks of volume, sets per muscle this month, your records, and the lifts you have not trained lately. Every number is computed when you look at it, so nothing is ever reset and nothing goes stale.
+tags: [health, fitness, gym, strength, database, tracker]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The shape — an exercise catalogue, one row per set, volume and Epley e1RM, sets per muscle per week — follows what the better Notion gym templates and the Strong and Hevy apps settled on; the computed-on-read model and the session page as the logging surface are our own."
+min_cortex: 0.1.0
+collection: training
+collections: [workouts, sets, exercises]
+files:
+  - schemas/training.yaml
+  - schemas/workouts.yaml
+  - schemas/sets.yaml
+  - schemas/exercises.yaml
+  - index.md
+  - index/workouts.md
+  - index/sets.md
+  - index/exercises.md
+  - templates/workouts.md
+  - templates/sets.md
+  - templates/exercises.md
+  - seed/exercises/bench-press.md
+  - seed/exercises/overhead-press.md
+  - seed/exercises/incline-dumbbell-press.md
+  - seed/exercises/triceps-pushdown.md
+  - seed/exercises/deadlift.md
+  - seed/exercises/barbell-row.md
+  - seed/exercises/pull-up.md
+  - seed/exercises/face-pull.md
+  - seed/exercises/barbell-curl.md
+  - seed/exercises/back-squat.md
+  - seed/exercises/romanian-deadlift.md
+  - seed/exercises/leg-press.md
+  - seed/exercises/calf-raise.md
+  - seed/workouts/push-last-week.md
+  - seed/workouts/pull-last-week.md
+  - seed/workouts/legs-last-week.md
+  - seed/workouts/push-this-week.md
+  - seed/sets/push-last-bench-1.md
+  - seed/sets/push-last-bench-2.md
+  - seed/sets/push-last-bench-3.md
+  - seed/sets/push-last-ohp-1.md
+  - seed/sets/push-last-ohp-2.md
+  - seed/sets/pull-last-row-1.md
+  - seed/sets/pull-last-row-2.md
+  - seed/sets/pull-last-pullup-1.md
+  - seed/sets/legs-last-squat-1.md
+  - seed/sets/legs-last-squat-2.md
+  - seed/sets/legs-last-rdl-1.md
+  - seed/sets/push-this-bench-warmup.md
+  - seed/sets/push-this-bench-1.md
+  - seed/sets/push-this-bench-2.md
+  - seed/sets/push-this-ohp-1.md

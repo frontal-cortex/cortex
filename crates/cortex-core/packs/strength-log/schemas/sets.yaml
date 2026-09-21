@@ -1,0 +1,64 @@
+properties:
+  # A set belongs to a session, and takes its day from it: log the session
+  # once and every set in it is dated, with nothing to keep in step.
+  - name: date
+    type: rollup
+    relation: workout
+    property: date
+    function: max
+  - name: exercise
+    type: relation
+    collection: exercises
+  - name: workout
+    type: relation
+    collection: workouts
+  - name: weight
+    type: number
+    format: decimal
+    unit: " kg"
+  - name: reps
+    type: number
+    format: integer
+  # A warmup is logged the same way and left out of every total: its volume
+  # is not training volume, and its weight is not a record.
+  - name: kind
+    type: select
+    options:
+      - name: working
+        color: green
+      - name: warmup
+        color: gray
+      - name: drop
+        color: yellow
+      - name: failure
+        color: red
+  # How hard the set felt, 6 (easy) to 10 (nothing left). Optional: leave it
+  # empty and everything else still works.
+  - name: rpe
+    type: number
+    format: decimal
+  - name: volume
+    type: formula
+    expr: weight * reps
+    format: integer
+    unit: " kg"
+  # Estimated one-rep max, Epley: weight × (1 + reps / 30). Honest between 2
+  # and 12 reps and nonsense above that, so it stops there — and a warmup has
+  # no estimate at all.
+  - name: e1rm
+    type: formula
+    expr: if(kind == 'warmup', empty, if(reps > 12, empty, round(weight * (1 + reps / 30))))
+    format: integer
+    unit: " kg"
+  # The muscle and the day come from the exercise, so a chart can group sets
+  # by either without any of it being typed on the set.
+  - name: muscle
+    type: rollup
+    relation: exercise
+    property: muscle
+    function: values
+  - name: day
+    type: rollup
+    relation: exercise
+    property: day
+    function: values
