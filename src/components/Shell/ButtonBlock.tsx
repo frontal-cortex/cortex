@@ -18,6 +18,7 @@ import { PlusIcon, OpenIcon, TrackerIcon, LinkIcon, CheckSquareIcon, MoreIcon, C
 import { Dropdown } from "./Dropdown";
 import { useCollections, useRowTitles, useSourceFields } from "./useSourceFields";
 import styles from "./ButtonBlock.module.css";
+import { BLOCK_CHROME } from "../../lib/editorFocus";
 
 export const BUTTON_LANGUAGE = "cortex-button";
 
@@ -80,7 +81,7 @@ function Button({ block, editor }: { block: any; editor: any }) {
   };
 
   return (
-    <div className={styles.wrap} contentEditable={false}>
+    <div className={styles.wrap} contentEditable={false} {...BLOCK_CHROME}>
       <button
         type="button"
         className={`${styles.pill} ${!known ? styles.pillBroken : ""}`}

@@ -19,6 +19,7 @@ import { DataViews } from "./DataViews";
 import { Deferred } from "./Deferred";
 import { DatabaseIcon } from "./icons";
 import styles from "./CollectionViewsBlock.module.css";
+import { BLOCK_CHROME } from "../../lib/editorFocus";
 
 /** What the editor provides when the open note is a collection's own page. */
 export interface CollectionPage {
@@ -77,7 +78,7 @@ function CollectionViewsBlock({ block, editor }: { block: any; editor: any }) {
   );
 
   return (
-    <div className={`${styles.block} ${bound ? styles.bound : ""}`} contentEditable={false}>
+    <div className={`${styles.block} ${bound ? styles.bound : ""}`} contentEditable={false} {...BLOCK_CHROME}>
       {!bound && (
         <div className={styles.bar}>
           <span className={styles.name} title={`The views of collections/${collection}, as on its own page`}>
@@ -132,7 +133,7 @@ function Picker({ onPick }: { onPick: (collection: string) => void }) {
   const [collections, setCollections] = useState<string[]>([]);
   useEffect(() => { commands.listCollections().then(setCollections).catch(() => {}); }, []);
   return (
-    <div className={styles.setup} contentEditable={false}>
+    <div className={styles.setup} contentEditable={false} {...BLOCK_CHROME}>
       <DatabaseIcon size={20} />
       <div className={styles.setupTitle}>Which collection's views?</div>
       {collections.length === 0
