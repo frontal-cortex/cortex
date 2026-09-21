@@ -123,6 +123,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { name: "save_asset", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "read_asset", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "get_all_links", mode: Mode::Sync, exposure: Exposure::Both },
+    CommandInfo { name: "get_link_graph", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "get_backlinks", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "get_unlinked_mentions", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "link_mentions", mode: Mode::Sync, exposure: Exposure::Both },
@@ -633,6 +634,7 @@ pub fn dispatch(ctx: &Arc<AppCtx>, name: &str, args: Value) -> Option<Result<Val
             json(crate::commands::notes::read_asset(ctx, a.rel_path))
         })(),
         "get_all_links" => json(crate::commands::notes::get_all_links(ctx)),
+        "get_link_graph" => json(crate::commands::notes::get_link_graph(ctx)),
         "get_backlinks" => (|| {
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "camelCase")]

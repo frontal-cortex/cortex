@@ -268,3 +268,21 @@
   font-family: var(--font-sans);
   pointer-events: none;
 }
+
+/* A relation edge: the same line, quieter, so what someone wrote as a link
+   still reads as the stronger connection. */
+.edgeRelation {
+  opacity: 0.45;
+  stroke-dasharray: 3 3;
+}
+
+/* A name the graph has no room for: there, but only while the pointer is on
+   its node. Hiding it outright keeps three hundred labels off the screen and
+   out of the layout. */
+.nodeLabelQuiet {
+  display: none;
+}
+
+.nodeGroup:hover .nodeLabelQuiet {
+  display: block;
+}

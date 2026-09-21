@@ -6,6 +6,11 @@ use crate::db::Db;
 use crate::error::Result;
 use crate::note::{self, NoteEntry};
 
+/// What this indexer writes. Raise it when a change makes an index built by
+/// an older version incomplete, and the next vault open re-reads every note:
+///   2 — relation properties are recorded as links (`kind = relation`).
+pub const INDEX_VERSION: u32 = 2;
+
 /// Re-index every `.md` file in the vault. Called on vault open.
 pub fn index_vault(root: &Path, db: &Db) -> Result<()> {
     // Opening a vault used to re-parse and re-write every note, each statement
@@ -13,7 +18,11 @@ pub fn index_vault(root: &Path, db: &Db) -> Result<()> {
     // transaction, notes whose mtime the index already holds are skipped, rows
     // for notes gone from disk are dropped, and the walk never enters the
     // cache, git, trash or config folders.
-    let known: std::collections::HashMap<String, u64> = db.paths_with_modified()?.into_iter().collect();
+    // An index from an older version of this code is missing whatever that
+    // version did not write: read everything once, then trust file times again.
+    let stale = db.index_version() < INDEX_VERSION;
+    let known: std::collections::HashMap<String, u64> =
+        if stale { Default::default() } else { db.paths_with_modified()?.into_iter().collect() };
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     db.with_transaction(|| {
         let walker = WalkDir::new(root).into_iter().filter_entry(|e| {
@@ -33,7 +42,17 @@ pub fn index_vault(root: &Path, db: &Db) -> Result<()> {
             let _ = db.remove_note(gone);
         }
         Ok(())
-    })
+    })?;
+    if stale {
+        // A note dropped from disk while the old index knew it: with `known`
+        // emptied above, the sweep could not see it, so clear what is gone now.
+        let on_disk: std::collections::HashSet<String> = db.paths_with_modified()?.into_iter().map(|(p, _)| p).collect();
+        for path in on_disk {
+            if !root.join(&path).exists() { let _ = db.remove_note(&path); }
+        }
+        db.set_index_version(INDEX_VERSION)?;
+    }
+    Ok(())
 }
 
 /// Update the index for a single file. Called after write/create.
@@ -64,9 +83,36 @@ pub fn index_file(root: &Path, abs: &Path, db: &Db) -> Result<()> {
     // Only the target names a note: `[[Note|alias]]` and `[[Note#Section]]`
     // both link to `Note`, so that is what the graph and backlinks record.
     let links: Vec<String> = crate::note::extract_wiki_links(&note.body).into_iter().map(|l| l.target).collect();
-    db.upsert_links(&rel, &links)?;
+    db.upsert_links_and_relations(&rel, &links, &relation_targets(root, &rel, &note))?;
 
     Ok(())
+}
+
+/// The rows a row's relation properties name — the other half of the graph.
+/// An expense's `category` and `account`, a transfer's two accounts, a bill's
+/// category: written as frontmatter, not as `[[links]]`, so without this a
+/// database of hundreds of rows is hundreds of islands. The target is the
+/// related row's title, exactly as a wiki link's target would be.
+fn relation_targets(root: &Path, rel: &str, note: &note::Note) -> Vec<String> {
+    let Some(collection) = crate::vault::row_collection(rel) else { return vec![] };
+    let Ok(Some(schema)) = crate::schema::load(root, &collection) else { return vec![] };
+    let mut out: Vec<String> = Vec::new();
+    for p in &schema.properties {
+        // The forward side only: a reverse rollup (`from:`) is the same edge
+        // seen from the other end, and would double every one of them.
+        if p.ty != crate::schema::PropType::Relation || p.from.is_some() { continue; }
+        let Some(value) = note.frontmatter.get(&p.name) else { continue };
+        let titles: Vec<String> = match value {
+            serde_json::Value::String(s) => vec![s.clone()],
+            serde_json::Value::Array(items) => items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+            _ => vec![],
+        };
+        for t in titles {
+            let t = t.trim().to_string();
+            if !t.is_empty() && !out.contains(&t) { out.push(t); }
+        }
+    }
+    out
 }
 
 fn is_note(p: &Path) -> bool {
@@ -129,6 +175,38 @@ mod tests {
         assert_eq!(paths, ["collections/tasks/_index.md", "notes/edit.md", "notes/keep.md"], "a deleted note leaves the index");
         assert!(db.search("delta").unwrap().iter().any(|h| h.entry.path == "notes/edit.md"), "a changed note is re-read");
         assert!(db.search("beta").unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_index_from_an_older_version_is_read_again_in_full() {
+        let root = std::env::temp_dir().join(format!("cortex-index-version-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("collections/expenses")).unwrap();
+        std::fs::create_dir_all(root.join(".cortex/schemas")).unwrap();
+        let w = |rel: &str, s: &str| std::fs::write(root.join(rel), s).unwrap();
+        w(".cortex/schemas/expenses.yaml", "properties:\n  - name: account\n    type: relation\n    collection: accounts\n");
+        w("collections/expenses/lunch.md", "---\ntitle: Lunch\naccount: [\"Checking\"]\n---\n");
+
+        let db = Db::open(&root).unwrap();
+        index_vault(&root, &db).unwrap();
+        assert_eq!(db.index_version(), INDEX_VERSION);
+        assert!(db.get_all_links().unwrap().iter().any(|(s, t)| s == "collections/expenses/lunch.md" && t == "Checking"));
+
+        // An index written before relations were recorded: the files have not
+        // changed, so only the version can say it must be read again.
+        db.upsert_links("collections/expenses/lunch.md", &[]).unwrap();
+        db.set_index_version(1).unwrap();
+        assert!(db.get_all_links().unwrap().is_empty());
+        index_vault(&root, &db).unwrap();
+        assert!(db.get_all_links().unwrap().iter().any(|(s, t)| s == "collections/expenses/lunch.md" && t == "Checking"), "the older index is rebuilt");
+        assert_eq!(db.index_version(), INDEX_VERSION);
+
+        // A note deleted while the older index knew it still leaves.
+        std::fs::remove_file(root.join("collections/expenses/lunch.md")).unwrap();
+        db.set_index_version(1).unwrap();
+        index_vault(&root, &db).unwrap();
+        assert!(db.list_notes().unwrap().is_empty(), "the deleted note is gone from a rebuilt index");
         let _ = std::fs::remove_dir_all(&root);
     }
 

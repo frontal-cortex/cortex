@@ -1212,6 +1212,10 @@ export const commands = {
   getAllLinks: () =>
     invoke<Array<[string, string]>>("get_all_links"),
 
+  /** Every edge with what made it: `[source, target, "link" | "relation"]`. */
+  getLinkGraph: () =>
+    invoke<Array<[string, string, string]>>("get_link_graph"),
+
   /** Notes linking to `path`, each with the body lines the links sit on. */
   getBacklinks: (path: string) =>
     invoke<Backlink[]>("get_backlinks", { path }),
