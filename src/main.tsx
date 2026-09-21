@@ -15,10 +15,29 @@ installLinkGuard();
 // lets the app open from the home screen and show its shell when offline.
 // It never caches vault data (see vite.config.ts).
 if (import.meta.env.PROD && !isDesktop() && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").then((reg) => {
+      // A phone keeps a page alive for days: added to the home screen, the app
+      // is resumed rather than loaded, and the running bundle can be several
+      // versions behind the server while every reported bug is already fixed.
+      // Ask on every return to the app whether there is a newer one.
+      const check = () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); };
+      document.addEventListener("visibilitychange", check);
+      window.setInterval(check, 30 * 60 * 1000);
+    }).catch(() => {});
+    // The new worker claims the page as soon as it installs; the tab is still
+    // running the old bundle until it reloads. Reload when nothing is being
+    // typed — never under someone's hands mid-sentence.
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      const el = document.activeElement as HTMLElement | null;
+      const typing = !!el && (el.isContentEditable || ["INPUT", "TEXTAREA"].includes(el.tagName));
+      if (!typing) window.location.reload();
+    });
+  });
 }
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <ErrorBoundary label="the app">
     <App />
   </ErrorBoundary>,
 );
+

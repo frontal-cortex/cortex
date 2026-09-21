@@ -675,6 +675,40 @@ function NoteEditor({
   editorRef.current = editor;
 
   const pmView = () => editor._tiptapEditor.view;
+
+  // A phone shows the keyboard for as long as the editor holds the focus, and
+  // puts it back up by itself when the page reflows under it. So a tap on a
+  // block's own chrome — switching a view, opening its settings — has to do
+  // more than not take the focus (`handleDOMEvents.mousedown`, above): it has
+  // to hand back the focus the editor already had, and take it off again if
+  // the browser hands it over on the tap's release anyway. A text field inside
+  // the block keeps what it is given.
+  useEffect(() => {
+    const root = () => editor.domElement as HTMLElement | null | undefined;
+    const holdsFocus = (el: HTMLElement | null | undefined) => {
+      const active = document.activeElement as HTMLElement | null;
+      return !!el && !!active && (active === el || el.contains(active));
+    };
+    let tappedChromeAt = 0;
+    const onPointerDown = (e: Event) => {
+      if (!tapIsBlockChrome(e.target)) return;
+      tappedChromeAt = Date.now();
+      const el = root();
+      if (holdsFocus(el)) (document.activeElement as HTMLElement).blur();
+    };
+    const onFocusIn = (e: Event) => {
+      if (Date.now() - tappedChromeAt > 500) return;
+      const el = root(), target = e.target as HTMLElement | null;
+      if (!el || !target || target.closest?.("[data-block-chrome]")) return;
+      if (target === el || el.contains(target)) el.blur();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+    };
+  }, [editor]);
   /** Is a passage actually highlighted? A caret, or a block selected whole,
    *  is not — and neither should bring up the formatting toolbar. */
   const hasHighlight = () => {
