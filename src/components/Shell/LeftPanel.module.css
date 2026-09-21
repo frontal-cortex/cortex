@@ -224,7 +224,7 @@
 .sectionArrowOpen { transform: rotate(90deg); }
 
 .sectionLabel {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -232,7 +232,7 @@
 }
 
 .sectionCount {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
   flex-shrink: 0;
   padding-right: 2px;
@@ -328,7 +328,7 @@
 .resultSnippet {
   margin: -2px var(--space-1) 2px;
   padding: 0 var(--space-2) 4px calc(var(--space-2) + 14px + 6px);
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1.35;
   color: var(--text-tertiary);
   cursor: pointer;
@@ -368,7 +368,7 @@
 }
 
 .resultPath {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
 }
@@ -418,7 +418,7 @@
   margin-bottom: 3px;
 }
 
-.agentDot { color: var(--git-agent); font-size: 10px; }
+.agentDot { color: var(--git-agent); font-size: var(--text-2xs); }
 
 .agentDesc {
   font-size: var(--text-xs);
@@ -515,3 +515,10 @@
 :root[data-viewport="phone"] .trashDelete {
   opacity: 1;
 }
+
+/* Icons in the drawer: sized for a thumb rather than a pointer. */
+:root[data-viewport="phone"] .iconBtn svg,
+:root[data-viewport="phone"] .sectionAction svg,
+:root[data-viewport="phone"] .footerBtn svg,
+:root[data-viewport="phone"] .favStar svg { width: 17px; height: 17px; }
+:root[data-viewport="phone"] .searchBox > svg { width: 16px; height: 16px; }

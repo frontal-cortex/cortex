@@ -45,6 +45,7 @@
   --font-sans: "Inter", "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-prose: "Ysabeau", "Inter", "Noto Sans", system-ui, sans-serif;
   --font-mono: ui-monospace, monospace, monospace;
+  --text-2xs:  10px;
   --text-xs:   11px;
   --text-sm:   13px;
   --text-base: 15px;
@@ -286,6 +287,20 @@
 :root[data-viewport="phone"] {
   --left-panel-width: min(300px, 85vw);
   --page-inset: 20px;
+
+  /* A phone is held at arm's length on a screen a third the width of a
+     laptop's: the chrome's small sizes, which read fine at 60 cm on a large
+     display, are the ones people squint at. The scale steps up about 15% —
+     body text lands on iOS's own 17px — and the labels that were 10–11px
+     become legible rather than decorative. Everything that sets type through
+     these tokens follows; the only sizes left raw are miniatures (the
+     marketplace's card mockups), which are drawings, not text. */
+  --text-2xs:  12px;
+  --text-xs:   13px;
+  --text-sm:   15px;
+  --text-base: 17px;
+  --text-lg:   20px;
+  --text-xl:   26px;
 }
 
 /* ── Motion off ─────────────────────────────────────────────────────────────

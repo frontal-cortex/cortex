@@ -95,7 +95,7 @@
 .weekMet { color: var(--git-clean); font-size: var(--text-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
 .rate { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .kbd {
-  font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary);
+  font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary);
   border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; line-height: 14px;
   opacity: 0; transition: opacity 0.1s;
 }
@@ -140,14 +140,14 @@
 .thItem, .tdItem { text-align: left !important; white-space: nowrap; padding-left: var(--space-2) !important; width: 180px; }
 .tdItem { padding-right: var(--space-4) !important; }
 .thDay { line-height: 1.15; }
-.dow { display: block; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; }
+.dow { display: block; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--text-2xs); }
 .dom { display: block; font-size: var(--text-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .today .dom, .today .dow { color: var(--accent); font-weight: 600; }
 .future { opacity: 0.45; }
 th.today, td.today { background: var(--accent-light); }
 .thStat, .tdStat { width: 1%; white-space: nowrap; padding-left: var(--space-3) !important; padding-right: var(--space-2) !important; text-align: right !important; }
-.tdFootLabel { text-align: left !important; white-space: nowrap; padding-left: var(--space-2) !important; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); }
-.tdFoot { font-size: 10px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.tdFootLabel { text-align: left !important; white-space: nowrap; padding-left: var(--space-2) !important; font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); }
+.tdFoot { font-size: var(--text-2xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .dayScore { display: inline-block; }
 .dayPerfect { color: var(--git-clean); font-weight: 600; }
 
@@ -157,7 +157,7 @@ th.today, td.today { background: var(--accent-light); }
 .month .tdDay { height: 24px; padding: 1px 1px !important; }
 .month .mark { width: 15px; height: 15px; border-radius: 4px; }
 .month .thDay { padding: 2px 0; }
-.month .dom { font-size: 10px; }
+.month .dom { font-size: var(--text-2xs); }
 /* Thirty day numbers in a dashboard column run into one another: keep the
    1st, every fifth and today, and let the cells carry the rest. */
 @container (max-width: 820px) {
@@ -191,7 +191,7 @@ th.today, td.today { background: var(--accent-light); }
 .heatWrap { overflow-x: auto; padding: var(--space-1) var(--space-2); }
 .heatMonths {
   display: grid; gap: 3px; margin-bottom: 4px;
-  font-size: 10px; color: var(--text-tertiary);
+  font-size: var(--text-2xs); color: var(--text-tertiary);
 }
 /* A month's name is wider than one week's column: let it run on, on one line. */
 .heatMonths span { white-space: nowrap; overflow: visible; }
@@ -240,3 +240,12 @@ th.today, td.today { background: var(--accent-light); }
 :root[data-viewport="phone"] .check { width: 32px; height: 32px; border-radius: 9px; }
 :root[data-viewport="phone"] .table td { padding: 6px 2px; }
 :root[data-viewport="phone"] .todayRow { min-height: var(--tap-target); }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   The month and year grids are drawings of a calendar: one column per day,
+   its number a tick mark rather than a label. They keep the small size the
+   rest of the chrome gives up on a phone — at 12px thirty-one columns no
+   longer fit the screen. */
+:root[data-viewport="phone"] .dow,
+:root[data-viewport="phone"] .month .dom,
+:root[data-viewport="phone"] .tdFoot { font-size: 10px; }

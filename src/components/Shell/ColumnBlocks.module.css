@@ -35,3 +35,10 @@
   transform: translateY(-10px);
 }
 .small:hover { color: var(--text-primary); border-color: var(--accent); }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   These bars are hover chrome with no height of their own: on a phone, where
+   a tap counts as focus and the columns are stacked anyway, they appear over
+   whatever is under them and control a layout that is not in use. */
+:root[data-viewport="phone"] .listBar,
+:root[data-viewport="phone"] .colBar { display: none; }

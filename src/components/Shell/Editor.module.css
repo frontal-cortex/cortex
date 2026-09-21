@@ -33,7 +33,7 @@
 .emptyKbd {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   background: var(--bg-active);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -482,8 +482,13 @@
    the hover-only header actions always shown. */
 :root[data-viewport="phone"] .docInner { padding-top: var(--space-4); }
 :root[data-viewport="phone"] .titleInput { font-size: 28px; }
-:root[data-viewport="phone"] .iconEmoji { font-size: 24px; }
+:root[data-viewport="phone"] .iconEmoji { font-size: 26px; }
 :root[data-viewport="phone"] .cover { height: 140px; }
 :root[data-viewport="phone"] .deleteBtn,
 :root[data-viewport="phone"] .coverActions { opacity: 1; }
 :root[data-viewport="phone"] .deleteBtn { padding: 10px; }
+
+/* The title's own chrome — add an icon, add a cover, remove them — is hover
+   chrome on a desktop and permanent on a phone: tap-sized, then. */
+:root[data-viewport="phone"] .iconBtn { min-height: 36px; padding-right: 6px; }
+:root[data-viewport="phone"] .coverAddBtn { min-height: 34px; }

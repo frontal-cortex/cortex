@@ -137,7 +137,7 @@
 }
 .navFoot code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 .fileLink {
@@ -149,7 +149,7 @@
   background: none;
   font: inherit;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   cursor: pointer;
   text-align: left;
@@ -232,7 +232,7 @@
   display: inline-flex;
   align-self: flex-start;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   background: var(--bg-hover);
   border-radius: var(--radius-sm);
@@ -362,7 +362,7 @@
 }
 .note code, .hint code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 .warn { color: var(--git-dirty); }

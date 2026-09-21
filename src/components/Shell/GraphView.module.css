@@ -263,7 +263,7 @@
 }
 
 .nodeLabel {
-  font-size: 11px;
+  font-size: var(--text-xs);
   fill: var(--text-secondary);
   font-family: var(--font-sans);
   pointer-events: none;

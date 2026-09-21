@@ -27,7 +27,7 @@
 }
 
 .count {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   padding: 0 5px;
   border-radius: 8px;
@@ -160,7 +160,7 @@
 .actionDanger:hover:not(:disabled) { color: var(--danger); }
 .hint {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
 }
 

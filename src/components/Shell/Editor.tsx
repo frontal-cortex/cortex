@@ -55,6 +55,7 @@ import { OutlinePane } from "./OutlinePane";
 import { FindBar } from "./FindBar";
 import { CommentsPanel, CommentDraft } from "./CommentsPanel";
 import { commentAnchorExtension, anchorForSelection, locateAnchor, setCommentHighlight } from "../../lib/commentAnchors";
+import { tapIsBlockChrome } from "../../lib/editorFocus";
 import styles from "./Editor.module.css";
 
 // Maps data URIs → vault-relative paths (e.g. "assets/image-123.png")
@@ -647,6 +648,16 @@ function NoteEditor({
         }
       : undefined,
     _tiptapOptions: {
+      editorProps: {
+        handleDOMEvents: {
+          // A tap on a block's own chrome — a view's tabs, its gear, a button
+          // block — is that block's business. Left to ProseMirror it selects
+          // the node and focuses the editor, and on a phone the keyboard then
+          // slides up over what was just tapped. Answering "handled" leaves
+          // the click to the block and the editor unfocused.
+          mousedown: (_view, event) => tapIsBlockChrome(event.target),
+        },
+      },
       extensions: [
         wikiLinkExtension((t) => {
           if (t === wikiTap.current.target && Date.now() - wikiTap.current.at < 700) return;
@@ -664,6 +675,14 @@ function NoteEditor({
   editorRef.current = editor;
 
   const pmView = () => editor._tiptapEditor.view;
+  /** Is a passage actually highlighted? A caret, or a block selected whole,
+   *  is not — and neither should bring up the formatting toolbar. */
+  const hasHighlight = () => {
+    try {
+      const { from, to, empty } = pmView().state.selection;
+      return !empty && pmView().state.doc.textBetween(from, to, " ").trim().length > 0;
+    } catch { return false; }
+  };
   openFindRef.current = () => {
     // Seed the query from a text selection, the way a browser's find does.
     const { from, to } = pmView().state.selection;
@@ -1112,6 +1131,11 @@ function NoteEditor({
               {/* Default formatting toolbar + our "Convert to collection" action. */}
               <FormattingToolbarController
                 formattingToolbar={() => {
+                  // Nothing highlighted, nothing to format: a tap that selects a
+                  // whole block (a view, an embed, an image) counts as a
+                  // selection to the editor, and the toolbar — comment button
+                  // and all — used to appear over the text for it.
+                  if (!hasHighlight()) return <></>;
                   // Place our button right after the block-type dropdown (item 0),
                   // before the text-style buttons.
                   const items = getFormattingToolbarItems();

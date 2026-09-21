@@ -69,7 +69,7 @@
 }
 
 .hint {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
@@ -109,7 +109,7 @@
 }
 
 .count {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
   flex-shrink: 0;
   opacity: 0.8;
@@ -246,7 +246,7 @@
 
 .ctxHint {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
 }
 
@@ -263,3 +263,12 @@
 :root[data-viewport="phone"] .rowActions,
 :root[data-viewport="phone"] .starBtn { opacity: 1; }
 :root[data-viewport="phone"] .chevron { width: 20px; height: 24px; }
+
+/* The icons are drawn at 12–13px, which is a pointer's size: on a phone they
+   are both the target and the only mark of what a row is. */
+:root[data-viewport="phone"] .rowIcon svg,
+:root[data-viewport="phone"] .rowActionBtn svg,
+:root[data-viewport="phone"] .starBtn svg { width: 17px; height: 17px; }
+:root[data-viewport="phone"] .chevron svg { width: 15px; height: 15px; }
+:root[data-viewport="phone"] .emoji { font-size: var(--text-base); }
+:root[data-viewport="phone"] .rowActionBtn { min-width: 34px; min-height: 34px; }

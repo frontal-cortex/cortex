@@ -36,6 +36,7 @@ import { FilterText } from "./FilterBuilder";
 import { useCollections, useSourceFields } from "./useSourceFields";
 import { StatEntry, specReplaceKey, statsBlock } from "../../lib/visualSpec";
 import styles from "./CortexViewBlock.module.css";
+import { BLOCK_CHROME } from "../../lib/editorFocus";
 
 /** Select-like columns render as colored pills (incl. person + relation). The
  *  reverse side of a relation (`from:`) is computed on read, so it is not one. */
@@ -2969,7 +2970,7 @@ function CortexViewBody({ block, editor }: { block: any; editor: any }) {
   const shaped = !!peek(spec, "filter") || !!peek(spec, "sort") || !!search.trim();
 
   return (
-    <div className={`${styles.card} ${chromeStuck ? styles.cardActive : ""}`} contentEditable={false}>
+    <div className={`${styles.card} ${chromeStuck ? styles.cardActive : ""}`} contentEditable={false} {...BLOCK_CHROME}>
       <div className={styles.chrome}>
         <ViewTypeSwitcher current={declaredType} onChange={(t) => applySpec(specWithType(spec, t, table))} />
         <SourcePicker source={source} onPick={(next) => applySpec(specRemove(specSet(spec, "source", next), "columns"))} />
