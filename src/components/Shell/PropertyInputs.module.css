@@ -138,7 +138,7 @@
 }
 .ringText {
   fill: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;

@@ -122,3 +122,7 @@
 :root[data-viewport="phone"] .phoneHidden {
   display: none;
 }
+
+/* The bar's icons are the whole of it — at phone size they carry the label's
+   job too, so they are drawn nearer the size of a thumb than of a cursor. */
+:root[data-viewport="phone"] .action svg { width: 19px; height: 19px; }

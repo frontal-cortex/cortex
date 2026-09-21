@@ -327,3 +327,9 @@
   flex: 1;
   min-width: 0;
 }
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   The properties line is how a row's own fields are reached: a whole row to
+   tap, and a chevron big enough to see which way it points. */
+:root[data-viewport="phone"] .meta { min-height: var(--tap-target); }
+:root[data-viewport="phone"] .chevron svg { width: 15px; height: 15px; }

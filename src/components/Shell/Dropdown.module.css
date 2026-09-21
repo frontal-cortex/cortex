@@ -92,7 +92,7 @@
 }
 
 .badge {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -148,4 +148,16 @@
 .check {
   color: var(--accent);
   font-size: var(--text-xs);
+}
+
+/* ── Phone ──────────────────────────────────────────────────────────────────
+   A menu chosen with a thumb: the button and every item are tall enough to
+   hit without aiming. */
+:root[data-viewport="phone"] .button {
+  padding: 9px 10px;
+}
+
+:root[data-viewport="phone"] .item {
+  padding: 10px 10px;
+  min-height: 40px;
 }

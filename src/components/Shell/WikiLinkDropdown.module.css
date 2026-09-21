@@ -50,7 +50,7 @@
 }
 
 .path {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   overflow: hidden;
@@ -67,7 +67,7 @@
 
 .hint {
   padding: 4px 10px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-tertiary);
   border-top: 1px solid var(--border);
   margin-top: 2px;

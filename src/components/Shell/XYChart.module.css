@@ -27,14 +27,14 @@
 
 .axis {
   fill: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-family: var(--font-sans);
   font-variant-numeric: lining-nums tabular-nums;
 }
 
 .total {
   fill: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
