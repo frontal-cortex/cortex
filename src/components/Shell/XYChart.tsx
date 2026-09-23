@@ -74,7 +74,11 @@ export function XYChart({ chart }: { chart: ChartResult }) {
   const innerW = W - padL - padR, innerH = H - padT - padB;
 
   const peaks = stacked ? xs.map(columnTotal) : shown.flatMap((s) => xs.map((x) => val(s.name, x)));
-  const ticks = niceTicks(Math.min(0, ...peaks), Math.max(0, ...peaks));
+  // Bars and filled areas are read from zero; a line is read by its shape, and a
+  // weight charted from zero is a flat line at the top of an empty picture.
+  const baseline = isBar || isArea || stacked ? "zero" : "fit";
+  const span = peaks.length ? peaks : [0];
+  const ticks = niceTicks(Math.min(...span), Math.max(...span), 4, baseline);
   const lo = ticks[0], hi = ticks[ticks.length - 1];
   const yAt = (v: number) => padT + innerH - ((v - lo) / (hi - lo || 1)) * innerH;
 

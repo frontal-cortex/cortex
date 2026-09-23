@@ -45,3 +45,18 @@ test("clicking isolates a series, clicking again shows all, a modifier adds", ()
   assert.deepEqual(toggleSelection(["Food"], "Rent", true), ["Food", "Rent"]);
   assert.deepEqual(toggleSelection(["Food", "Rent"], "Food", true), ["Rent"]);
 });
+
+test("a line fits its data; a bar keeps its zero", () => {
+  // Seven weigh-ins between 86.7 and 87.8 kg: from zero this is a flat line.
+  const fit = niceTicks(86.7, 87.8, 4, "fit");
+  assert.ok(fit[0] >= 86, `fits the data, starts at ${fit[0]}`);
+  assert.ok(fit[fit.length - 1] <= 89, `and stops near it, ends at ${fit[fit.length - 1]}`);
+  assert.equal(niceTicks(86.7, 87.8)[0], 0, "the default is still a zero baseline");
+  assert.equal(niceTicks(86.7, 87.8, 4, "zero")[0], 0);
+});
+
+test("a fitted axis with one point still has a range", () => {
+  const ticks = niceTicks(72, 72, 4, "fit");
+  assert.ok(ticks.length >= 2, "never a zero-height axis");
+  assert.ok(ticks[0] <= 72 && ticks[ticks.length - 1] >= 72, "and the point is on it");
+});
