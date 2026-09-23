@@ -1,0 +1,143 @@
+format: 1
+id: nutrition
+name: "Nutrition"
+version: 1.0.0
+kind: collection
+summary: "Calories, protein and fibre against a daily target, from a food list you build once."
+description: |
+  A dashboard over four small databases. `foods` is your own list, each food carrying the macros of one serving — whatever you decide a serving is, a packet's 100 g or one slice. `food-log` is a row per thing eaten: the food, how many servings, which meal. The calories, protein, carbs, fat and fibre of a row are the food's numbers times the servings, so a macro is typed once and never again, and correcting a food corrects every meal you ever logged it in. `nutrition-targets` is what you are aiming at in a day — tick `active` on the row in use and keep the others for days that are meant to be different. `weigh-ins` is the feedback: a calorie target is right when the weight goes where you meant it to. The dashboard answers the day rather than repeating it — how far through your calories, protein and fibre you are as three rings, what is left of each, today's rows with their totals, the seven-day averages against the target, two weeks of days as bars so a missed day is visible, the weekly weight line, and where the protein came from. Logging is a press: a meal button opens a row with the date filled in, or open a food you eat often and press the meal on its own page for one serving, logged. For something someone else cooked, leave the food empty and put in what you know.
+tags: [health, food, nutrition, macros, diet, database, tracker]
+author:
+  name: "Cortex team"
+  url: https://github.com/frontal-cortex
+license: CC0-1.0
+credits: "The shape — a food library with per-serving macros, a row per thing eaten with a quantity, and targets in grams rather than as a share of calories — follows what the dedicated apps (Cronometer, MacroFactor, MyFitnessPal) settled on and what the better Notion trackers get wrong. Protein and fibre guidance follows Morton et al. 2018, the ISSN position stand and the US dietary guidelines; seed macros are rounded from USDA FoodData Central. The computed-on-read model and the food page as a logging surface are our own."
+min_cortex: 0.1.0
+collection: nutrition
+collections: [foods, food-log, nutrition-targets, weigh-ins]
+files:
+  - schemas/nutrition.yaml
+  - schemas/foods.yaml
+  - schemas/food-log.yaml
+  - schemas/nutrition-targets.yaml
+  - schemas/weigh-ins.yaml
+  - index.md
+  - index/foods.md
+  - index/food-log.md
+  - index/nutrition-targets.md
+  - index/weigh-ins.md
+  - templates/foods.md
+  - templates/food-log.md
+  - templates/nutrition-targets.md
+  - templates/weigh-ins.md
+  - seed/foods/almonds.md
+  - seed/foods/apple.md
+  - seed/foods/avocado.md
+  - seed/foods/banana.md
+  - seed/foods/berries.md
+  - seed/foods/black-beans.md
+  - seed/foods/broccoli.md
+  - seed/foods/cheddar.md
+  - seed/foods/chicken-breast.md
+  - seed/foods/chickpeas.md
+  - seed/foods/eggs.md
+  - seed/foods/greek-yoghurt.md
+  - seed/foods/lentils.md
+  - seed/foods/milk.md
+  - seed/foods/oats.md
+  - seed/foods/olive-oil.md
+  - seed/foods/pasta.md
+  - seed/foods/peanut-butter.md
+  - seed/foods/porridge-with-berries.md
+  - seed/foods/potato.md
+  - seed/foods/rice.md
+  - seed/foods/salmon.md
+  - seed/foods/spinach.md
+  - seed/foods/sweet-potato.md
+  - seed/foods/tuna.md
+  - seed/foods/whey-protein.md
+  - seed/foods/wholemeal-bread.md
+  - seed/food-log/five-days-almonds.md
+  - seed/food-log/five-days-avocado.md
+  - seed/food-log/five-days-bread-2.md
+  - seed/food-log/five-days-bread.md
+  - seed/food-log/five-days-cheddar.md
+  - seed/food-log/five-days-eggs.md
+  - seed/food-log/five-days-lentils.md
+  - seed/food-log/five-days-milk.md
+  - seed/food-log/five-days-rice.md
+  - seed/food-log/five-days-salmon.md
+  - seed/food-log/five-days-sweet-potato.md
+  - seed/food-log/four-days-banana.md
+  - seed/food-log/four-days-bread.md
+  - seed/food-log/four-days-cheddar.md
+  - seed/food-log/four-days-chickpeas.md
+  - seed/food-log/four-days-eggs.md
+  - seed/food-log/four-days-milk.md
+  - seed/food-log/four-days-peanut.md
+  - seed/food-log/four-days-porridge.md
+  - seed/food-log/four-days-rice.md
+  - seed/food-log/four-days-spinach.md
+  - seed/food-log/four-days-tuna.md
+  - seed/food-log/six-days-apple.md
+  - seed/food-log/six-days-broccoli.md
+  - seed/food-log/six-days-cheddar.md
+  - seed/food-log/six-days-chicken.md
+  - seed/food-log/six-days-milk.md
+  - seed/food-log/six-days-oats.md
+  - seed/food-log/six-days-olive-oil.md
+  - seed/food-log/six-days-pasta.md
+  - seed/food-log/six-days-peanut.md
+  - seed/food-log/six-days-porridge.md
+  - seed/food-log/six-days-yoghurt.md
+  - seed/food-log/three-days-almonds.md
+  - seed/food-log/three-days-banana.md
+  - seed/food-log/three-days-berries.md
+  - seed/food-log/three-days-bread.md
+  - seed/food-log/three-days-chicken.md
+  - seed/food-log/three-days-chickpeas.md
+  - seed/food-log/three-days-milk.md
+  - seed/food-log/three-days-olive-oil.md
+  - seed/food-log/three-days-potato.md
+  - seed/food-log/three-days-rice.md
+  - seed/food-log/three-days-yoghurt.md
+  - seed/food-log/today-almonds.md
+  - seed/food-log/today-broccoli.md
+  - seed/food-log/today-chicken.md
+  - seed/food-log/today-milk.md
+  - seed/food-log/today-peanut.md
+  - seed/food-log/today-porridge.md
+  - seed/food-log/today-potato.md
+  - seed/food-log/today-rice.md
+  - seed/food-log/today-salmon.md
+  - seed/food-log/today-spinach.md
+  - seed/food-log/today-yoghurt.md
+  - seed/food-log/two-days-almonds.md
+  - seed/food-log/two-days-banana.md
+  - seed/food-log/two-days-bread.md
+  - seed/food-log/two-days-broccoli.md
+  - seed/food-log/two-days-cheddar.md
+  - seed/food-log/two-days-chicken.md
+  - seed/food-log/two-days-pasta.md
+  - seed/food-log/two-days-peanut.md
+  - seed/food-log/two-days-porridge.md
+  - seed/food-log/two-days-yoghurt.md
+  - seed/food-log/yesterday-almonds.md
+  - seed/food-log/yesterday-apple.md
+  - seed/food-log/yesterday-banana.md
+  - seed/food-log/yesterday-bread.md
+  - seed/food-log/yesterday-cheddar.md
+  - seed/food-log/yesterday-eggs.md
+  - seed/food-log/yesterday-lentils.md
+  - seed/food-log/yesterday-olive-oil.md
+  - seed/food-log/yesterday-potato.md
+  - seed/food-log/yesterday-rice.md
+  - seed/food-log/yesterday-salmon.md
+  - seed/nutrition-targets/daily.md
+  - seed/weigh-ins/day-1.md
+  - seed/weigh-ins/day-11.md
+  - seed/weigh-ins/day-13.md
+  - seed/weigh-ins/day-3.md
+  - seed/weigh-ins/day-5.md
+  - seed/weigh-ins/day-7.md
+  - seed/weigh-ins/day-9.md

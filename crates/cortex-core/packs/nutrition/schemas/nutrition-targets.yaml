@@ -1,0 +1,34 @@
+# What you are aiming at each day. One row is the one in use: tick `active`
+# on it and the dashboard reads its numbers. Keep a second row for the days
+# that are different — a training day, a rest day, a deficit you go back to —
+# and switch by moving the tick, rather than editing numbers you will forget.
+properties:
+  - name: calories
+    type: number
+    format: integer
+    unit: " kcal"
+  - name: protein
+    type: number
+    format: integer
+    unit: " g"
+  - name: fibre
+    type: number
+    format: integer
+    unit: " g"
+  - name: carbs
+    type: number
+    format: integer
+    unit: " g"
+  - name: fat
+    type: number
+    format: integer
+    unit: " g"
+  - name: active
+    type: checkbox
+  # Your weight, if you set protein by it (the usual rule is grams per kilo).
+  # Nothing computes from it; it is here so the number the target came from is
+  # written down next to the target.
+  - name: bodyweight
+    type: number
+    format: decimal
+    unit: " kg"

@@ -1,0 +1,72 @@
+# What you eat, each with the macros of one serving. Type a food in once and
+# every time you log it afterwards is a number of servings.
+properties:
+  # What one serving is, in your own words: "100 g", "1 slice", "1 scoop
+  # (30 g)". The numbers below are for exactly this much.
+  - name: serving
+    type: text
+  - name: calories
+    type: number
+    format: integer
+    unit: " kcal"
+  - name: protein
+    type: number
+    format: decimal
+    unit: " g"
+  - name: carbs
+    type: number
+    format: decimal
+    unit: " g"
+  - name: fat
+    type: number
+    format: decimal
+    unit: " g"
+  - name: fibre
+    type: number
+    format: decimal
+    unit: " g"
+  # Roughly what it is, for the "where the protein came from" kind of question.
+  # A whole meal you eat often — your usual breakfast — is a food too: give it
+  # the totals of the bowl and log it in one row.
+  - name: kind
+    type: select
+    options:
+      - name: protein
+        color: red
+      - name: grain
+        color: brown
+      - name: vegetable
+        color: green
+      - name: fruit
+        color: pink
+      - name: dairy
+        color: blue
+      - name: fat
+        color: yellow
+      - name: drink
+        color: purple
+      - name: snack
+        color: orange
+      - name: meal
+        color: gray
+  # The handful you eat most: the quick list on the dashboard reads this.
+  - name: favourite
+    type: checkbox
+  # Worked out from the log, so the list sorts itself by what you actually eat.
+  - name: times_logged
+    type: rollup
+    from: food-log
+    relation: food
+    function: count
+  - name: last_eaten
+    type: rollup
+    from: food-log
+    relation: food
+    property: date
+    function: max
+  - name: logged_30d
+    type: rollup
+    from: food-log
+    relation: food
+    function: count
+    where: date >= @today-30

@@ -2,10 +2,17 @@
 // tested without a DOM (chartMath.test.ts): round axis ticks, short value
 // labels, readable x labels, and the order series stack and take colours in.
 
-/** Ticks from 0 (or a negative minimum) to past the maximum on a 1/2/5 × 10ⁿ
- *  step, so the axis reads 0 · 2,000 · 4,000 · 6,000 · 8,000, never 7,512.1. */
-export function niceTicks(min: number, max: number, target = 4): number[] {
-  const lo = Math.min(0, min);
+/** Where a chart's axis starts: at zero, or at the data. */
+export type Baseline = "zero" | "fit";
+
+/** Ticks from the baseline to past the maximum on a 1/2/5 × 10ⁿ step, so the
+ *  axis reads 0 · 2,000 · 4,000 · 6,000 · 8,000, never 7,512.1.
+ *
+ *  A bar is read as an area from zero, so its axis includes zero. A line is
+ *  read by its shape, and a weight charted from zero is a flat line across the
+ *  top of an empty picture — `fit` gives those the data's own range. */
+export function niceTicks(min: number, max: number, target = 4, baseline: Baseline = "zero"): number[] {
+  const lo = baseline === "zero" ? Math.min(0, min) : min;
   const hi = max > lo ? max : lo + 1;
   const raw = (hi - lo) / Math.max(1, target);
   const mag = 10 ** Math.floor(Math.log10(raw));
