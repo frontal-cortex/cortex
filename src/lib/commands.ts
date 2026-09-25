@@ -433,6 +433,18 @@ export interface Backlink extends NoteEntry {
   contexts: string[];
 }
 
+/** A `[[link]]` a note writes, grouped by target: where it lands, or — with
+ *  no `path` — a note that does not exist yet. */
+export interface Outlink {
+  /** The target as first written, so an unresolved one can become a title. */
+  target: string;
+  path?: string;
+  title?: string;
+  note_type?: string;
+  /** How many times the note links there. */
+  count: number;
+}
+
 /** One node of the vault's tag tree: `path` is the full tag (`project/alpha`),
  *  `name` its last segment, `count` the notes carrying it or any child. */
 export interface TagNode {
@@ -1221,6 +1233,11 @@ export const commands = {
   /** Notes linking to `path`, each with the body lines the links sit on. */
   getBacklinks: (path: string) =>
     invoke<Backlink[]>("get_backlinks", { path }),
+
+  /** The links `path` writes, one per target, each resolved to where it lands;
+   *  one without a `path` names a note that does not exist yet. */
+  getOutgoingLinks: (path: string) =>
+    invoke<Outlink[]>("get_outgoing_links", { path }),
 
   /** Notes that name `path`'s title in plain text without a `[[link]]`. */
   getUnlinkedMentions: (path: string) =>
