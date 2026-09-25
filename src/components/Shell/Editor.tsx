@@ -18,6 +18,7 @@ import { CollabConfig, CollabSession, createNoteSession } from "../../lib/collab
 import { wikiLinkExtension } from "../../lib/wikiLinkExtension";
 import { wikiLinkSuggestionExtension, SuggestionCoords, SuggestionHandle, SuggestionTrigger } from "../../lib/wikiLinkSuggestion";
 import { parseWikiLink, WikiLink } from "../../lib/wikiLink";
+import { linkResolver } from "../../lib/graph";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { isCollectionRow } from "../../lib/rows";
 import { isDesktop } from "../../lib/transport";
@@ -374,6 +375,11 @@ function NoteEditor({
 
   const navigateRef = useRef(onNavigate);
   navigateRef.current = onNavigate;
+  // Which links land on a note and which do not exist yet, for the decoration.
+  // A ref, so the extension (created once) always asks the current note list.
+  const resolveLink = useMemo(() => linkResolver(allNotes), [allNotes]);
+  const resolveRef = useRef(resolveLink);
+  resolveRef.current = resolveLink;
   // A note is an editable document: the first tap on a wiki link only puts the
   // cursor there, so following it took two taps. The tap below opens it, and
   // this remembers that, so the editor's own click handler doesn't open it
@@ -662,7 +668,7 @@ function NoteEditor({
         wikiLinkExtension((t) => {
           if (t === wikiTap.current.target && Date.now() - wikiTap.current.at < 700) return;
           navigateRef.current(t);
-        }),
+        }, (t) => !!resolveRef.current(t)),
         wikiLinkSuggestionExtension(handle),
         imagePasteDropExtension,
         findExtension,
@@ -675,6 +681,19 @@ function NoteEditor({
   editorRef.current = editor;
 
   const pmView = () => editor._tiptapEditor.view;
+
+  // Decorations are recomputed on a transaction, not when the note list
+  // changes — so when a note appears or goes, an empty transaction asks for
+  // them again. Nothing in the document changes, so nothing is saved.
+  useEffect(() => {
+    try {
+      const tt = editor._tiptapEditor;
+      if (tt.isDestroyed) return;
+      tt.view.dispatch(tt.state.tr.setMeta("preventUpdate", true));
+    } catch {
+      // Not mounted yet: the first render decorates from scratch anyway.
+    }
+  }, [editor, resolveLink]);
 
   // A phone shows the keyboard for as long as the editor holds the focus, and
   // puts it back up by itself when the page reflows under it. So a tap on a
@@ -1195,7 +1214,7 @@ function NoteEditor({
             </BlockNoteView>
           </div>
 
-          {!monk && <BacklinksPanel path={note.path} onNavigate={onNavigate} />}
+          {!monk && <BacklinksPanel path={note.path} saving={saving} onNavigate={onNavigate} />}
         </div>
       </div>
 

@@ -78,6 +78,14 @@ The "Linked from" panel at the bottom of the editor queries this table
 to show all notes that link to the current note. It updates in real time
 as you write.
 
+Next to it, "Links to" lists the other direction: every note this one
+links to, one row per target, resolved the way a click resolves it. A
+target that names no note yet is shown dimmed with a Create button; the
+link's text becomes the new note's title, in `notes/`. The editor draws
+such links faded and dashed, and a click on one creates the note the same
+way — as Obsidian does. Links inside code fences and links to the note
+itself are left out.
+
 ## Implementation
 
 - **Decoration**: the `wikiLinkExtension` ProseMirror plugin decorates

@@ -1,36 +1,54 @@
 import { useCallback, useEffect, useState } from "react";
-import { commands, Backlink } from "../../lib/commands";
+import { commands, Backlink, Outlink } from "../../lib/commands";
 import { Snippet } from "./Snippet";
 import styles from "./BacklinksPanel.module.css";
 
 interface Props {
   path: string;
-  onNavigate: (path: string) => void;
+  /** The editor's save flag: when a save lands the lists are read again, so a
+   *  link just typed shows up under "Links to" without leaving the note. */
+  saving?: boolean;
+  /** Open a note by path — or, given a `[[link]]` target that names no note,
+   *  create it (the shell's navigate handler does both). */
+  onNavigate: (target: string) => void;
 }
 
 /**
- * What points at the open note. "Linked from" lists every note with a
- * `[[link]]` here, each with the lines the links sit on; "Unlinked mentions"
- * lists notes that name this one in plain text, with a Link action that turns
- * those mentions into links (rewriting the other note, never this one).
+ * The open note's links, both ways. "Linked from" lists every note with a
+ * `[[link]]` here, each with the lines the links sit on; "Links to" lists
+ * where this note's own links land, with a Create action on any that name a
+ * note that does not exist yet; "Unlinked mentions" lists notes that name
+ * this one in plain text, with a Link action that turns those mentions into
+ * links (rewriting the other note, never this one).
  */
-export function BacklinksPanel({ path, onNavigate }: Props) {
+export function BacklinksPanel({ path, saving = false, onNavigate }: Props) {
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  const [outgoing, setOutgoing] = useState<Outlink[]>([]);
   const [mentions, setMentions] = useState<Backlink[]>([]);
+  const [outgoingOpen, setOutgoingOpen] = useState(false);
   const [mentionsOpen, setMentionsOpen] = useState(false);
   const [linking, setLinking] = useState<string | null>(null);
 
   const load = useCallback(() => {
     let live = true;
     commands.getBacklinks(path).then((b) => live && setBacklinks(b)).catch(() => live && setBacklinks([]));
+    commands.getOutgoingLinks(path).then((o) => live && setOutgoing(o)).catch(() => live && setOutgoing([]));
     commands.getUnlinkedMentions(path).then((m) => live && setMentions(m)).catch(() => live && setMentions([]));
     return () => { live = false; };
   }, [path]);
 
   useEffect(() => {
+    setOutgoingOpen(false);
     setMentionsOpen(false);
     return load();
   }, [load]);
+
+  // The save has landed and the index with it: read again.
+  useEffect(() => {
+    if (!saving) return load();
+  }, [saving, load]);
+
+  const unresolved = outgoing.filter((o) => !o.path).length;
 
   const link = async (source: string) => {
     setLinking(source);
@@ -42,7 +60,7 @@ export function BacklinksPanel({ path, onNavigate }: Props) {
     }
   };
 
-  if (backlinks.length === 0 && mentions.length === 0) return null;
+  if (backlinks.length === 0 && outgoing.length === 0 && mentions.length === 0) return null;
 
   return (
     <div className={styles.root}>
@@ -56,6 +74,30 @@ export function BacklinksPanel({ path, onNavigate }: Props) {
               <Referrer key={note.path} note={note} onNavigate={onNavigate} />
             ))}
           </div>
+        </>
+      )}
+
+      {outgoing.length > 0 && (
+        <>
+          <button
+            type="button"
+            className={`${styles.label} ${styles.toggle}`}
+            onClick={() => setOutgoingOpen((o) => !o)}
+            aria-expanded={outgoingOpen}
+          >
+            <Chevron open={outgoingOpen} />
+            Links to <span className={styles.count}>{outgoing.length}</span>
+            {unresolved > 0 && (
+              <span className={styles.hint}>{unresolved} not yet {unresolved === 1 ? "a note" : "notes"}</span>
+            )}
+          </button>
+          {outgoingOpen && (
+            <div className={styles.list}>
+              {outgoing.map((o) => (
+                <Target key={o.target.toLowerCase()} link={o} onNavigate={onNavigate} />
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -120,6 +162,42 @@ function Referrer({ note, onNavigate, action }: { note: Backlink; onNavigate: (p
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** One place this note links to. Resolved: opens the note. Unresolved: the
+ *  target as written, dimmed, with Create — which hands the target to the
+ *  navigate handler, and that makes the note and opens it. */
+function Target({ link, onNavigate }: { link: Outlink; onNavigate: (target: string) => void }) {
+  const found = !!link.path;
+  const label = found ? link.title || link.target : link.target;
+  return (
+    <div className={styles.entry}>
+      <div className={styles.row}>
+        <button
+          className={`${styles.item} ${found ? "" : styles.missing}`}
+          onClick={() => onNavigate(found ? link.path! : link.target)}
+          title={found ? link.path : "No note has this name yet — Create makes one"}
+        >
+          <LinkIcon />
+          <span className={styles.title}>{label || "Untitled"}</span>
+          {link.count > 1 && <span className={styles.times}>×{link.count}</span>}
+          {found && link.note_type && (
+            <span className={styles.type}>{link.note_type}</span>
+          )}
+        </button>
+        {!found && (
+          <button
+            type="button"
+            className={styles.link}
+            onClick={(e) => { e.stopPropagation(); onNavigate(link.target); }}
+            title={`Create "${link.target}" in notes/ and open it`}
+          >
+            Create
+          </button>
+        )}
+      </div>
     </div>
   );
 }

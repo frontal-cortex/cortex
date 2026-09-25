@@ -132,7 +132,33 @@
   padding: 0 1px;
 }
 
-/* "Link" on an unlinked mention. */
+/* "2 not yet notes" beside the "Links to" count. */
+.hint {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-tertiary);
+}
+.hint::before {
+  content: "·";
+  margin-right: 5px;
+}
+
+/* A link to a note that does not exist yet: the target as written, dimmed. */
+.missing .title {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.missing:hover .title { color: var(--accent); }
+
+/* How many times the note links to the same place. */
+.times {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+/* "Link" on an unlinked mention; "Create" on an unresolved link. */
 .link {
   flex-shrink: 0;
   background: none;
