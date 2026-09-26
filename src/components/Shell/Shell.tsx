@@ -27,6 +27,7 @@ import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
 import { TagView } from "./TagView";
 import { TopBar } from "./TopBar";
+import { Breadcrumb } from "./Breadcrumb";
 import { TerminalPane, TerminalPaneHandle } from "./TerminalPane";
 import { SettingsView } from "./SettingsView";
 import { MarketplaceView } from "./MarketplaceView";
@@ -644,6 +645,17 @@ export function Shell({
     <div className={`${styles.root} ${monk ? styles.monk : ""}`}>
       {!monk && <TopBar
         vaultName={vault.name}
+        breadcrumb={selectedPath && !showSettings && !showMarketplace ? (
+          <Breadcrumb
+            vaultName={vault.name}
+            path={selectedPath}
+            notes={notes}
+            dirs={dirs}
+            explorerSort={explorerSort}
+            onOpenNote={(p) => openNote(p)}
+            onOpenCollection={handleOpenCollection}
+          />
+        ) : undefined}
         status={status}
         syncing={syncing}
         hasRemote={vault.has_remote}

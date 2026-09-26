@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { VaultStatus } from "../../lib/commands";
 import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, TerminalIcon, MonkIcon, CommentIcon } from "./icons";
 import { capabilities } from "../../lib/host";
@@ -6,6 +7,8 @@ import styles from "./TopBar.module.css";
 
 interface Props {
   vaultName: string;
+  /** The open page's trail (Breadcrumb); stands in for the bare vault name when set. */
+  breadcrumb?: ReactNode;
   status: VaultStatus | null;
   syncing: boolean;
   hasRemote: boolean;
@@ -30,7 +33,7 @@ interface Props {
 }
 
 export function TopBar({
-  vaultName, status, syncing, hasRemote, canBack, canForward, onBack, onForward,
+  vaultName, breadcrumb, status, syncing, hasRemote, canBack, canForward, onBack, onForward,
   onSync, onOpenGraph, onOpenSwitcher, onToday,
   leftOpen, rightOpen, onToggleLeft, onToggleRight, onToggleMonk,
   commentsOpen, unresolvedComments, hasNote, onToggleComments,
@@ -62,7 +65,7 @@ export function TopBar({
       </div>
 
       <div className={`${styles.identity} ${styles.phoneHidden}`} data-tauri-drag-region>
-        <span className={styles.vaultName}>{vaultName}</span>
+        {breadcrumb ?? <span className={styles.vaultName}>{vaultName}</span>}
       </div>
 
       <div className={styles.spacer} data-tauri-drag-region />
