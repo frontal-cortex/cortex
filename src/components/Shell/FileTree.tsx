@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from "react";
+import { useState, useEffect, useRef, CSSProperties, ReactNode, RefObject, MouseEvent as ReactMouseEvent } from "react";
 import { TreeNode, DirNode, FileNode, CollectionNode, isUntitled, relativeTime } from "../../lib/fileTree";
 import { exportToFile } from "../../lib/export";
 import { shortcutFor } from "../../lib/keymap";
@@ -17,6 +17,9 @@ export interface TreeActions {
   onNewFolderCancel: () => void;
   onNewNoteInFolder: (parentPath: string) => void;
   onDeleteFolder: (path: string) => void;
+  /** Open the folder's own page (`<folder>/_index.md`), creating it first if
+   *  the folder has none. */
+  onFolderPage?: (path: string) => void;
   onMoveNote: (fromPath: string, toDir: string) => void;
   onRenameFile?: (path: string) => void;
   onDuplicateFile?: (path: string) => void;
@@ -133,6 +136,11 @@ function DirRow({
   a11y: A11yFor;
 }) {
   const count = countFiles(node);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // A folder with a page of its own behaves like a collection row: the row
+  // opens the page, only the chevron folds. Without one the row folds.
+  const page = node.note;
+  const selected = page !== null && page.path === selectedPath;
   // A note or a collection dropped on the folder moves into it (pointer
   // drag-and-drop, so a finger works too; the target lights up via
   // `data-drop-over`).
@@ -144,20 +152,28 @@ function DirRow({
     }
   });
 
+  const noteCount = `${count} note${count === 1 ? "" : "s"}`;
   return (
     <div>
       <div
-        {...a11y(node.path)}
+        {...a11y(node.path, page ? selected : undefined)}
         ref={dropRef}
-        className={`${styles.row} ${styles.dirRow}`}
+        className={`${styles.row} ${styles.dirRow} ${selected ? styles.rowSelected : ""} ${menu ? styles.rowContext : ""}`}
         style={rowStyle(depth)}
-        title={`${node.name} · ${count} note${count === 1 ? "" : "s"}`}
-        onClick={() => onToggleDir(node.path)}
+        title={page ? `${node.name} · ${page.path} · ${noteCount}` : `${node.name} · ${noteCount}`}
+        onClick={() => (page ? onSelect(page.path) : onToggleDir(node.path))}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
       >
-        <span className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`} aria-hidden>
+        <span
+          className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
+          aria-hidden
+          onClick={(e) => { if (page) { e.stopPropagation(); onToggleDir(node.path); } }}
+        >
           <ChevronRightIcon size={12} />
         </span>
-        <span className={styles.rowIcon}><FolderIcon open={open} /></span>
+        <span className={styles.rowIcon}>
+          {page?.icon ? <span className={styles.emoji}>{page.icon}</span> : <FolderIcon open={open} />}
+        </span>
         <span className={styles.dirName}>{node.name}</span>
 
         {/* Hover affordances only — the keyboard has n / Delete for these. */}
@@ -188,6 +204,17 @@ function DirRow({
           </button>
         </div>
         <span className={styles.count}>{count}</span>
+        {menu && (
+          <DirContextMenu
+            x={menu.x}
+            y={menu.y}
+            node={node}
+            onToggleDir={onToggleDir}
+            actions={actions}
+            onSelect={onSelect}
+            onClose={() => setMenu(null)}
+          />
+        )}
       </div>
 
       {open && (
@@ -203,6 +230,38 @@ function DirRow({
           a11y={a11y}
         />
       )}
+    </div>
+  );
+}
+
+function DirContextMenu({
+  x, y, node, onToggleDir, actions, onSelect, onClose,
+}: {
+  x: number; y: number; node: DirNode; onToggleDir: Props["onToggleDir"]; actions: TreeActions;
+  onSelect: (path: string) => void; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(ref, onClose);
+  const left = Math.min(x, window.innerWidth - 200);
+  const top = Math.min(y, window.innerHeight - 220);
+  const run = (fn?: () => void) => (e: ReactMouseEvent) => { e.stopPropagation(); onClose(); fn?.(); };
+  const page = node.note;
+  return (
+    <div ref={ref} className={styles.ctxMenu} style={{ left, top }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      {page ? (
+        <button className={styles.ctxItem} onClick={run(() => onSelect(page.path))}>Open folder page</button>
+      ) : actions.onFolderPage && (
+        <button className={styles.ctxItem} onClick={run(() => actions.onFolderPage?.(node.path))}>Add a page for this folder</button>
+      )}
+      <button className={styles.ctxItem} onClick={run(() => actions.onNewNoteInFolder(node.path))}>
+        New note <span className={styles.ctxHint}>n</span>
+      </button>
+      <button className={styles.ctxItem} onClick={run(() => { onToggleDir(node.path, true); actions.onNewFolderRequest(node.path); })}>New folder</button>
+      <button className={styles.ctxItem} onClick={run(() => { navigator.clipboard?.writeText(node.path); })}>Copy path</button>
+      <div className={styles.ctxSep} />
+      <button className={`${styles.ctxItem} ${styles.ctxItemDanger}`} onClick={run(() => actions.onDeleteFolder(node.path))}>
+        Delete folder
+      </button>
     </div>
   );
 }
@@ -295,13 +354,7 @@ function CollectionContextMenu({
   x: number; y: number; node: CollectionNode; nested: boolean; actions: TreeActions; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, [onClose]);
+  useDismiss(ref, onClose);
   const left = Math.min(x, window.innerWidth - 200);
   const top = Math.min(y, window.innerHeight - 200);
   const run = (fn?: () => void) => (e: ReactMouseEvent) => { e.stopPropagation(); onClose(); fn?.(); };
@@ -514,6 +567,17 @@ export function ActionRow({
 
 // ── Context menu ──────────────────────────────────────────────────────────────
 
+/** A context menu closes on a click outside it or Escape. */
+function useDismiss(ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [ref, onClose]);
+}
+
 function FileContextMenu({
   x, y, path, fav, actions, onToggleFavorite, onClose,
 }: {
@@ -526,14 +590,7 @@ function FileContextMenu({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, [onClose]);
+  useDismiss(ref, onClose);
 
   // Keep the menu inside the viewport.
   const left = Math.min(x, window.innerWidth - 200);
