@@ -980,6 +980,12 @@ function DateRangeCell({ value, editable, saving, onCommit, forceOpen, onDone }:
   );
 }
 
+/** A dragged column width, kept between what still shows a value and what
+ *  still fits a screen. */
+export function clampColumnWidth(px: number): number {
+  return Math.round(Math.max(48, Math.min(1200, px)));
+}
+
 /** The width class for a column: a floor per kind of value so dates and pills
  *  never squeeze, and text never sprawls. */
 function colClass(c: ViewColumn): string {
@@ -1209,6 +1215,74 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   const cols = table.columns;
   const schemaKey = collectionKey(source);
   const canOpen = source.startsWith("collections/");
+
+  // ── Column widths: `widths: {field: px}` in the spec, set by dragging the
+  // right edge of a header (double-click puts the default back). While a drag
+  // is on, `live` is the column under the pointer, painted once a frame; the
+  // width goes into the spec on release — and so into `_index.md` or the
+  // fence, like a summary pick — and `live` lets go when the spec comes back.
+  const specWidths = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(peekMap(spec, "widths"))) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) out[k] = n;
+    }
+    return out;
+  }, [spec]);
+  const [live, setLive] = useState<{ key: string; width: number } | null>(null);
+  useEffect(() => { setLive(null); }, [spec]);
+  const widthOf = (c: ViewColumn): number | undefined => (live?.key === c.key ? live.width : specWidths[c.key]);
+  const writeWidth = (key: string, width: number | null) => {
+    if (!onSpecChange) return;
+    commands.parseViewSpec(spec)
+      .then((s) => {
+        const next = { ...(s.widths ?? {}) };
+        if (width) next[key] = width; else delete next[key];
+        return commands.serializeViewSpec({ ...s, widths: next });
+      })
+      .then(onSpecChange)
+      .catch((e) => { setErr(String(e)); setLive(null); });
+  };
+  const startResize = (e: React.PointerEvent<HTMLElement>, c: ViewColumn) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const handle = e.currentTarget;
+    const th = handle.parentElement;
+    if (!th) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handle.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = Math.round(th.getBoundingClientRect().width);
+    let width = startW;
+    let frame = 0;
+    const paint = () => { frame = 0; setLive({ key: c.key, width }); };
+    const onMove = (ev: PointerEvent) => {
+      width = clampColumnWidth(startW + ev.clientX - startX);
+      if (!frame) frame = requestAnimationFrame(paint);
+    };
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      document.body.style.cursor = "";
+      if (frame) { cancelAnimationFrame(frame); frame = 0; }
+      if (width === startW || width === specWidths[c.key]) { setLive(null); return; }
+      setLive({ key: c.key, width });
+      writeWidth(c.key, width);
+    };
+    document.body.style.cursor = "col-resize";
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  };
+  /** Inline sizing for a column's header and cells: the width itself, and a
+   *  `--col-w` the stylesheet turns into the clamp on the cell's content. */
+  const sizeStyle = (c: ViewColumn, header: boolean): React.CSSProperties | undefined => {
+    const w = widthOf(c);
+    if (!w) return undefined;
+    const vars = { "--col-w": `${w}px` } as React.CSSProperties;
+    return header ? { ...vars, width: w, minWidth: w, maxWidth: w } : vars;
+  };
 
   // ── Grouping: one section per value of `group:`, in the property's option
   // order, then other values, then the rows with none. Same buckets as the board.
@@ -1646,7 +1720,8 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
             data-r={r}
             data-c={ci}
             tabIndex={here || (!active && r === 0 && ci === 0) ? 0 : -1}
-            className={`${here ? styles.cellActive : ""} ${alignsRight(c) ? styles.numRight : ""}` || undefined}
+            className={`${here ? styles.cellActive : ""} ${alignsRight(c) ? styles.numRight : ""} ${widthOf(c) ? styles.sized : ""}`.trim() || undefined}
+            style={sizeStyle(c, false)}
             onFocus={(e) => { if (e.target === e.currentTarget && !here) moveTo({ r, c: ci }); }}
             onMouseDown={() => { if (!here) moveTo({ r, c: ci }); }}
           >
@@ -1803,7 +1878,11 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
               )}
             </th>
             {cols.map((c) => (
-              <th key={c.key} className={`${colClass(c)} ${alignsRight(c) ? styles.numRight : ""}`}>
+              <th
+                key={c.key}
+                className={`${colClass(c)} ${alignsRight(c) ? styles.numRight : ""} ${widthOf(c) ? styles.sized : ""}`.trim()}
+                style={sizeStyle(c, true)}
+              >
                 <ColumnHeader
                   col={c}
                   canType={!!schemaKey && c.key !== "id" && c.key !== "$body"}
@@ -1812,6 +1891,17 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
                   onRename={(name) => renameColumn(c, name)}
                   onDelete={() => deleteColumn(c)}
                 />
+                {onSpecChange && (
+                  <span
+                    className={`${styles.colResize} ${live?.key === c.key ? styles.colResizing : ""}`}
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={`Resize column ${c.key}`}
+                    title="Drag to resize · double-click to reset"
+                    onPointerDown={(e) => startResize(e, c)}
+                    onDoubleClick={(e) => { e.stopPropagation(); if (specWidths[c.key]) writeWidth(c.key, null); }}
+                  />
+                )}
               </th>
             ))}
             {schemaKey && (

@@ -256,6 +256,8 @@ export interface StructuredSpec {
   limit?: number | null;
   /** Table summary row, field → function. */
   summary?: Record<string, string>;
+  /** Table column widths in pixels, field → width; a column not named keeps its default. */
+  widths?: Record<string, number>;
   /** View-type options (x, chartType, log, range, …), carried through untouched. */
   [option: string]: unknown;
 }

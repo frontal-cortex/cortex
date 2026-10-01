@@ -115,7 +115,7 @@ by inferring column types (`data.rs:128`).
 | List view | done | — | `type: list`: one line per row — title, up to three property chips (the view's `columns:` or the first real properties), the table's row menu (open / duplicate / save as template / delete); no header. Nothing new in the engine (`ListView` in `CortexViewBlock.tsx`). |
 | Multiple saved views, committed as YAML | done | — | `_index.md` frontmatter; add / rename / delete tabs (`DataViews.tsx`). |
 | Per-view visible columns and order | done | — | Toggling a column appends it; no drag reorder. |
-| Column width, wrap | missing | M | `min-width: 150px` in CSS only. |
+| Column width, wrap | partial | S | Drag a header's right edge to set a column's width, saved as `widths: {field: px}` on the view (`_index.md` or the fence); double-click the edge resets it. Renames follow. No wrap toggle: cells stay one line with an ellipsis. |
 | Linked view with its own filter | partial | M | A `cortex-views` block in another note edits the source collection's views everywhere (`CollectionViewsBlock.tsx:9`). A private per-embed filter needs the `cortex-view` block instead. Deliberate, but a Notion divergence. |
 | Row peek / side panel | missing | M | Opening a row replaces the editor. |
 
@@ -146,7 +146,7 @@ by inferring column types (`data.rs:128`).
 | Date picker | done | — | `DatePicker.tsx`: typed input validated to a real calendar day (`2026-13-45` refused), calendar popover with keyboard grid; used by date cells, the properties panel and the calendar view's New row. |
 | Keyboard navigation in the table | done | — | Roving cell focus: arrows / `j k h l`, Tab / Shift+Tab, Home / End, Enter edits, Escape cancels, Ctrl+Enter or `o` opens the row, `n` new row, Delete trashes (`TABLE_KEYS` in `keymap.ts`). |
 | Multi-row select, bulk edit | missing | M | Delete is one row at a time with `window.confirm`. |
-| Column resize, drag reorder | missing | M | |
+| Column resize, drag reorder | partial | M | Resize is done (see Column width above). Reorder is still `columns: [...]` in the spec, edited from the toolbar's column picker. |
 | Add property from the header (incl. relation / rollup / formula config) | done | — | `AddPropertyHeader` (`CortexViewBlock.tsx:171`). |
 | Change property type | partial | S | Nine basic types only; cannot retype into relation / rollup / formula. |
 | Rename property | done | — | `schema::rename_property`: the schema, every row's frontmatter key (one line per file), the collection's views (columns, sort, filter, group, date/chart fields) and the rollups / formulas / auto-dates in any schema that name it. Column header menu, properties panel, `cortex schema rename`, MCP `rename_property`. Views embedded as `cortex-view` fences in other notes are not rewritten. |

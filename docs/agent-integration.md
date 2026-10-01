@@ -169,6 +169,12 @@ filter and limit): `count`, `sum`, `avg`, `min`, `max`, `percent_checked`
 `query_collection`; the app's footer shows the same numbers. A table with
 `group: status` folds into one section per value, in option order.
 
+**Column widths.** `widths: {title: 260, amount: 96}` on a table view is the
+width of each named column in pixels, as dragged in the app (a header's right
+edge; double-click it to go back to the default). Columns not named keep
+their defaults. Nothing but the app's table reads it; the CLI and MCP carry it
+through untouched.
+
 **Period grouping.** `group: <date property>` plus `bucket: day | week | month
 | quarter | year` folds a table, list or board into one section per period,
 newest first — `September 2026`, `Week 37 · 8–14 Sep`, `Q3 2026`. The result
