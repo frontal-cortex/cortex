@@ -34,7 +34,7 @@ screen but the Markdown save path throws it away.
 | Columns | missing | L | Needs `@blocknote/xl-multi-column`; the roadmap rates it the weakest Markdown fit. |
 | Synced blocks | missing | L | Closest is the read-only `![[note]]` embed. |
 | Table of contents block | missing | M | |
-| Breadcrumb | missing | S | `parent` exists on `NoteEntry` (`note.rs:25`) but only the sidebar uses it. |
+| Breadcrumb | done | — | The top bar shows the open page's trail — vault › folders › databases › page — derived from the same note list as the sidebar (`lib/breadcrumb.ts`, `Breadcrumb.tsx`): a row sits under its database, a database under its `parent:`. A database crumb opens its page; a folder crumb (not a page here) lists what is inside it, drillable; deep trails fold their middle into `…`. Hidden on phones with the vault name. |
 | Button block | missing | M | |
 | Emoji picker (`:`) | done | — | BlockNote default, left enabled. |
 | Mention: @page | done | — | `@` and `[[` both insert `[[Title]]`, indexed as a link. |
