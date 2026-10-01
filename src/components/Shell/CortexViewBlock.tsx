@@ -12,7 +12,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, use
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, ViewGroup, PropType, PropertyDef, ChartResult, Stat, StatsResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon, CheckIcon, GearIcon } from "./icons";
+import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon, CheckIcon, GearIcon, MinusIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
@@ -1188,6 +1188,12 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   const [pendingRowId, setPendingRowId] = useState<string | null>(null);
   const [menuRow, setMenuRow] = useState<string | null>(null);
   const [templatesVersion, setTemplatesVersion] = useState(0);
+  // Selected rows (by id) for a bulk action: a tick in the leading column,
+  // shift-click for a range, `x` on the cursor's row. A glance-state, never
+  // written; a row that leaves the table leaves the selection.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const selectAnchor = useRef<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   // Below the phone breakpoint the grid becomes a card list (one card per
   // row; a tap opens it) — a nine-column table is nothing to a thumb.
   const { isPhone } = useViewport();
@@ -1232,7 +1238,8 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   /** What a row added to section `key` carries: the value, or a bucket's first day. */
   const groupSeed = (key: string): Record<string, string> =>
     groupField ? { [groupField]: key === "—" ? "" : bucketed ? bucketStart(key) : key } : {};
-  const colCount = cols.length + (schemaKey ? 1 : 0) + 1;
+  // The tick column, the data columns, the add-property column, the row menu.
+  const colCount = 1 + cols.length + (schemaKey ? 1 : 0) + 1;
   /** The seed that lands a new row in the same group as `row`. */
   const groupSeedOf = (row: ViewTable["rows"][number] | undefined): Record<string, string> | undefined =>
     row && groupField && canAddInGroup && !bucketed ? { [groupField]: toInput(row.cells[groupField]) } : undefined;
@@ -1300,6 +1307,70 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
     if (!window.confirm("Delete this row?")) return;
     commands.deleteRow(source, rowId).then(onChanged).catch((e) => setErr(String(e)));
   };
+
+  // ── Selection. `rows` is the display order, so a range reads top to bottom
+  // across groups; a folded group's rows can't be reached by a range, only kept.
+  useEffect(() => {
+    const ids = new Set(table.rows.map((r) => r.id));
+    setSelected((prev) => {
+      if ([...prev].every((id) => ids.has(id))) return prev;
+      return new Set([...prev].filter((id) => ids.has(id)));
+    });
+  }, [table.rows]);
+  const clearSelection = () => { setSelected(new Set()); selectAnchor.current = null; };
+  const setRowsSelected = (ids: string[], on: boolean) =>
+    setSelected((prev) => { const next = new Set(prev); for (const id of ids) { if (on) next.add(id); else next.delete(id); } return next; });
+  /** Tick or untick one row; with `range`, every row between the anchor and it. */
+  const toggleRow = (rowId: string, range = false) => {
+    const here = rows.findIndex((r) => r.id === rowId);
+    const from = selectAnchor.current ? rows.findIndex((r) => r.id === selectAnchor.current) : -1;
+    if (range && from >= 0 && here >= 0) {
+      const [a, b] = from < here ? [from, here] : [here, from];
+      setRowsSelected(rows.slice(a, b + 1).map((r) => r.id), true);
+      return;
+    }
+    setRowsSelected([rowId], !selected.has(rowId));
+    selectAnchor.current = rowId;
+  };
+  const allShownSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const someShownSelected = rows.some((r) => selected.has(r.id));
+  /** The header tick: everything on show, or nothing. */
+  const toggleAll = () => {
+    if (allShownSelected) clearSelection();
+    else setRowsSelected(rows.map((r) => r.id), true);
+  };
+  /** Selected ids in the table's own order — the order a bulk action runs in. */
+  const selectedIds = () => table.rows.filter((r) => selected.has(r.id)).map((r) => r.id);
+
+  /** One action over every selected row, in order; the view reloads once at
+   *  the end (also after a failure, so what did land shows). */
+  const bulk = async (run: (id: string) => Promise<unknown>) => {
+    const ids = selectedIds();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setErr(null);
+    try {
+      for (const id of ids) await run(id);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBulkBusy(false);
+      onChanged();
+    }
+  };
+  const deleteSelected = () => {
+    const n = selected.size;
+    if (n === 0) return;
+    if (!window.confirm(n === 1 ? "Delete this row?" : `Delete ${n} rows?`)) return;
+    bulk((id) => commands.deleteRow(source, id)).then(clearSelection);
+  };
+  const duplicateSelected = () => {
+    // Ids are time-based; a batch made in one tick needs a counter to stay apart.
+    let i = 0;
+    bulk((id) => commands.duplicateRow(source, id, `${newRowId()}-${(i++).toString(36)}`, today()));
+  };
+  const setSelectedCells = (col: ViewColumn, value: string, ty: string) =>
+    bulk((id) => commands.setCell(source, id, col.key, value, ty));
 
   /** A blank row, seeded from the filter and (for a group's button, or `n`
    *  inside a group) the group's value; it takes focus when it arrives. */
@@ -1510,6 +1581,17 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const cur = active ?? { r: 0, c: 0 };
+    // Shift+↑/↓ (or J/K) grows the selection by the row the cursor steps onto.
+    if (active && e.shiftKey && ["ArrowDown", "ArrowUp", "J", "K"].includes(e.key)) {
+      e.preventDefault(); e.stopPropagation();
+      const dir = e.key === "ArrowDown" || e.key === "J" ? 1 : -1;
+      const next = Math.max(0, Math.min(rows.length - 1, cur.r + dir));
+      const ids = [rows[cur.r]?.id, rows[next]?.id].filter((id): id is string => !!id);
+      setRowsSelected(ids, true);
+      if (!selectAnchor.current) selectAnchor.current = rows[cur.r]?.id ?? null;
+      focusCell(next, cur.c);
+      return;
+    }
     let handled = true;
     switch (e.key) {
       case "ArrowDown": case "j": focusCell(cur.r + (active ? 1 : 0), cur.c); break;
@@ -1531,8 +1613,16 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
       case " ": if (active && cols[active.c] && (isBool(cols[active.c]) || isSelectColumn(cols[active.c]))) editActive(active); break;
       // A new row lands in the cursor's group, so it shows up where the eye is.
       case "n": addBlank(groupSeedOf(activeRow)); break;
-      case "Delete": case "Backspace": if (activeRow) del(activeRow.id); break;
-      case "Escape": setMenuRow(null); target.blur(); break;
+      case "x": if (activeRow) toggleRow(activeRow.id); break;
+      case "Delete": case "Backspace":
+        if (selected.size > 0) deleteSelected();
+        else if (activeRow) del(activeRow.id);
+        break;
+      // Escape peels one layer at a time: the selection, then the table.
+      case "Escape":
+        setMenuRow(null);
+        if (selected.size > 0) clearSelection(); else target.blur();
+        break;
       default: handled = false;
     }
     if (handled) { e.preventDefault(); e.stopPropagation(); }
@@ -1540,7 +1630,14 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
 
   /** One row; `r` is its index in the display order (what the keyboard navigates). */
   const renderRow = (row: ViewTable["rows"][number], r: number) => (
-    <tr key={row.id} className={active?.r === r ? styles.rowActive : undefined}>
+    <tr key={row.id} className={`${active?.r === r ? styles.rowActive : ""} ${selected.has(row.id) ? styles.rowSelected : ""}` || undefined}>
+      <td className={styles.selectCol}>
+        <SelectTick
+          checked={selected.has(row.id)}
+          title={selected.has(row.id) ? "Unselect row" : "Select row (shift-click for a range)"}
+          onClick={(e) => toggleRow(row.id, e.shiftKey)}
+        />
+      </td>
       {cols.map((c, ci) => {
         const here = active?.r === r && active?.c === ci;
         return (
@@ -1597,7 +1694,19 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
 
   const footer = (
     <div className={styles.footer}>
-      <NewRowButton source={source} spec={spec} onAddBlank={() => addBlank()} onChanged={onChanged} onError={setErr} templatesVersion={templatesVersion} />
+      {selected.size > 0 && !isPhone ? (
+        <BulkBar
+          count={selected.size}
+          busy={bulkBusy}
+          columns={cols.filter((c) => cellEditable(c) && !isRangeColumn(c) && c.schema?.type !== "files")}
+          onSet={setSelectedCells}
+          onDuplicate={duplicateSelected}
+          onDelete={deleteSelected}
+          onClear={clearSelection}
+        />
+      ) : (
+        <NewRowButton source={source} spec={spec} onAddBlank={() => addBlank()} onChanged={onChanged} onError={setErr} templatesVersion={templatesVersion} />
+      )}
       <span className={styles.count}>
         {table.rows.length} row{table.rows.length === 1 ? "" : "s"}
         {groupField && groupKeys.length > 0 && ` · ${groupKeys.length} group${groupKeys.length === 1 ? "" : "s"}`}
@@ -1674,7 +1783,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
   return (
     <div className={styles.tableWrap}>
       <table
-        className={styles.table}
+        className={`${styles.table} ${selected.size > 0 ? styles.hasSelection : ""}`}
         ref={tableRef}
         onKeyDown={onKeyDown}
         onFocus={() => { focusWithin.current = true; }}
@@ -1684,6 +1793,15 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
       >
         <thead>
           <tr>
+            <th className={styles.selectCol}>
+              {rows.length > 0 && (
+                <SelectTick
+                  checked={allShownSelected ? true : someShownSelected ? "mixed" : false}
+                  title={allShownSelected ? "Unselect all" : "Select all rows on show"}
+                  onClick={toggleAll}
+                />
+              )}
+            </th>
             {cols.map((c) => (
               <th key={c.key} className={`${colClass(c)} ${alignsRight(c) ? styles.numRight : ""}`}>
                 <ColumnHeader
@@ -1738,6 +1856,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
             )}
             {!s.folded && s.summary && hasSummary && (
               <tr className={styles.groupSummaryRow}>
+                <td className={styles.selectCol} />
                 {cols.map((c) => (
                   <td key={c.key} className={alignsRight(c) ? styles.numRight : undefined}>
                     {summarySpec[c.key] && <SummaryCell col={c} func={summarySpec[c.key]} value={s.summary?.[c.key]} />}
@@ -1752,6 +1871,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
         {(hasSummary || onSpecChange) && (
           <tfoot>
             <tr className={styles.summaryRow}>
+              <td className={styles.selectCol} />
               {cols.map((c) => (
                 <td key={c.key} className={alignsRight(c) ? styles.numRight : undefined}>
                   <SummaryCell
@@ -1769,6 +1889,135 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
         )}
       </table>
       {footer}
+    </div>
+  );
+}
+
+/** The tick that selects a row (or, in the header, every row on show). */
+function SelectTick({ checked, title, onClick }: {
+  checked: boolean | "mixed"; title: string; onClick: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      className={`${styles.checkbox} ${styles.selectTick} ${checked ? styles.checkboxOn : ""}`}
+      title={title}
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => { e.stopPropagation(); onClick(e); }}
+    >
+      {checked === "mixed" ? <MinusIcon size={11} /> : checked ? <CheckIcon size={11} /> : null}
+    </button>
+  );
+}
+
+/** What stands in for the "new row" button while rows are selected: the
+ *  count, set a property on all of them, duplicate, delete, clear. */
+function BulkBar({ count, busy, columns, onSet, onDuplicate, onDelete, onClear }: {
+  count: number;
+  busy: boolean;
+  columns: ViewColumn[];
+  onSet: (col: ViewColumn, value: string, ty: string) => Promise<void>;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onClear: () => void;
+}) {
+  const [field, setField] = useState<string>("");
+  const [draft, setDraft] = useState<string | string[]>("");
+  const col = columns.find((c) => c.key === field);
+  const pick = (key: string) => { setField(key); setDraft(""); };
+  const close = () => { setField(""); setDraft(""); };
+  const t = col?.schema?.type;
+  const multi = t === "multi_select" || t === "relation";
+  const ty = !col ? "text" : multi ? "list" : t === "checkbox" || col.ty === "bool" ? "bool" : t === "date" || col.ty === "date" ? "date" : col.ty;
+  const apply = () => {
+    if (!col) return;
+    const value = Array.isArray(draft) ? draft.join(", ") : draft;
+    // An empty value empties that property on every selected row. Worth being
+    // able to do — untagging a batch — and not worth doing by brushing past a
+    // button, so it says what it is and how many rows it is about to do it to.
+    if (!value.trim() && !window.confirm(`Clear ${col.key} on ${count} ${count === 1 ? "row" : "rows"}?`)) return;
+    onSet(col, value, ty).then(close);
+  };
+  const emptying = !(Array.isArray(draft) ? draft.join("") : draft).trim();
+  const applyKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") { e.preventDefault(); apply(); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
+  };
+
+  let editor: ReactNode = null;
+  if (col) {
+    if (isSelectColumn(col)) {
+      editor = (
+        <div className={styles.bulkPills}>
+          <SelectCell
+            value={draft}
+            options={col.schema!.options ?? []}
+            multi={multi}
+            placeholder={t === "person" ? "Unassigned" : t === "relation" ? "Link…" : "Empty"}
+            onChange={setDraft}
+          />
+        </div>
+      );
+    } else if (ty === "bool") {
+      editor = (
+        <Dropdown
+          value={typeof draft === "string" ? draft : ""}
+          options={[{ value: "true", label: "Checked" }, { value: "false", label: "Unchecked" }]}
+          onChange={setDraft}
+          placeholder="Value"
+        />
+      );
+    } else if (ty === "date") {
+      editor = (
+        <div className={styles.cellDate}>
+          <DatePicker value={typeof draft === "string" ? draft : ""} autoFocus inputClassName={styles.cellInput} onChange={setDraft} onCancel={close} />
+        </div>
+      );
+    } else {
+      editor = (
+        <input
+          className={styles.cellInput}
+          autoFocus
+          value={typeof draft === "string" ? draft : ""}
+          placeholder={ty === "number" ? "0" : "Value (empty clears)"}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={applyKey}
+        />
+      );
+    }
+  }
+
+  return (
+    <div className={styles.bulkBar} role="toolbar" aria-label="Selected rows">
+      <span className={styles.bulkCount}>{count} selected</span>
+      {columns.length > 0 && (
+        <Dropdown
+          value={field}
+          options={columns.map((c) => ({ value: c.key, label: c.key }))}
+          onChange={pick}
+          placeholder="Set property…"
+        />
+      )}
+      {col && (
+        <>
+          {editor}
+          <button className={styles.bulkBtn} disabled={busy} onClick={apply}>{emptying ? "Clear" : "Apply"}</button>
+          <button className={styles.bulkBtn} onClick={close} title="Cancel">Cancel</button>
+        </>
+      )}
+      {!col && (
+        <>
+          <button className={styles.bulkBtn} disabled={busy} onClick={onDuplicate}>Duplicate</button>
+          <button className={`${styles.bulkBtn} ${styles.bulkDanger}`} disabled={busy} onClick={onDelete}>Delete</button>
+        </>
+      )}
+      <button className={styles.bulkClear} onClick={onClear} title="Clear selection (Esc)" aria-label="Clear selection">
+        <CloseIcon size={12} />
+      </button>
+      {busy && <span className={styles.count}>…</span>}
     </div>
   );
 }

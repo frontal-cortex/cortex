@@ -97,7 +97,9 @@ export const TABLE_KEYS: { keys: string; label: string }[] = [
   { keys: "Escape", label: "cancel the edit, then leave the table" },
   { keys: "mod+Enter / o", label: "open the row as a note" },
   { keys: "n", label: "new row" },
-  { keys: "Delete", label: "delete the row" },
+  { keys: "x", label: "select the row" },
+  { keys: "Shift+↑ ↓", label: "extend the selection" },
+  { keys: "Delete", label: "delete the row, or the selection" },
 ];
 
 /** The sidebar tree's keys (LeftPanel `handleTreeKeyDown`), for the overlay. */

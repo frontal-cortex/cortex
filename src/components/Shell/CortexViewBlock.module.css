@@ -287,27 +287,134 @@
   white-space: nowrap;
 }
 
+/* The first column is the tick that selects a row, the second the title.
+   Both stay put while the rest scrolls sideways. */
 .table th:first-child,
-.table td:first-child {
+.table td:first-child,
+.table th:nth-child(2),
+.table td:nth-child(2) {
   position: sticky;
   left: 0;
   z-index: 1;
   background: var(--bg-app);
 }
 
-.table th:first-child {
+.table th:nth-child(2),
+.table td:nth-child(2) {
+  left: 28px;
+}
+
+.table th:nth-child(2) {
   width: 220px;
 }
 
-.table td:first-child,
-.table td:first-child > .cellEditable,
-.table td:first-child > .cellReadonly {
+.table td:nth-child(2),
+.table td:nth-child(2) > .cellEditable,
+.table td:nth-child(2) > .cellReadonly {
   white-space: normal;
 }
 
-.table td:first-child > .cellEditable,
-.table td:first-child > .cellReadonly {
+.table td:nth-child(2) > .cellEditable,
+.table td:nth-child(2) > .cellReadonly {
   max-width: 380px;
+}
+
+/* ── Selection: a tick per row that waits for the pointer, the cursor or a
+   selection to show itself; the header tick selects everything on show. */
+.table th.selectCol,
+.table td.selectCol {
+  width: 28px;
+  min-width: 28px;
+  padding: 7px 0 0 6px;
+  vertical-align: top;
+}
+
+.selectTick {
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, border-color 0.1s;
+}
+
+.table tr:hover .selectTick,
+.table tr.rowActive .selectTick,
+.table.hasSelection .selectTick,
+.table thead:hover .selectTick,
+.selectTick.checkboxOn {
+  opacity: 1;
+}
+
+.table tr.rowSelected td {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-app));
+}
+
+.bulkBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bulkCount {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+  padding-right: 2px;
+}
+
+.bulkPills {
+  min-width: 140px;
+  max-width: 260px;
+}
+
+.bulkBar .cellInput {
+  width: 160px;
+  margin: 0;
+}
+
+.bulkBtn {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.bulkBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.bulkBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.bulkDanger {
+  color: var(--danger);
+}
+
+.bulkDanger:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.bulkClear {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.bulkClear:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .cellPills {
