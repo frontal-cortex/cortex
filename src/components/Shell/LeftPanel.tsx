@@ -7,7 +7,7 @@ import { NoteEntry, SearchHit, AgentBranch, TrashEntry } from "../../lib/command
 import { commands } from "../../lib/commands";
 import { capabilities } from "../../lib/host";
 import {
-  buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle,
+  buildTree, buildCollectionNodes, attachCollections, flattenTree, displayTitle, folderNotePath,
   ExplorerSort, SORT_FIELDS,
 } from "../../lib/fileTree";
 import { useDropTarget } from "../../hooks/usePointerDrag";
@@ -168,6 +168,23 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     onRefresh();
   }, [onRefresh]);
 
+  // A folder's own page: `<folder>/_index.md`, made on first use with the
+  // folder's name as its title, then opened like any note.
+  const handleFolderPage = useCallback(async (dirPath: string) => {
+    const path = folderNotePath(dirPath);
+    try {
+      await commands.readNote(path);
+    } catch {
+      const name = dirPath.replace(/\/$/, "").split("/").pop() ?? "Untitled";
+      try {
+        await commands.createNote(path, name, new Date().toISOString().split("T")[0]);
+      } catch (e) { window.alert(String(e)); return; }
+      onRefresh();
+    }
+    toggleDir(dirPath, true);
+    onSelect(path);
+  }, [onRefresh, onSelect, toggleDir]);
+
   const handleMoveNote = useCallback(async (fromPath: string, toDir: string) => {
     try {
       const newPath = await commands.moveNote(fromPath, toDir);
@@ -279,6 +296,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     onNewFolderCancel: () => setNewFolderIn(null),
     onNewNoteInFolder: (parentPath: string) => onNewNote(parentPath),
     onDeleteFolder: handleDeleteFolder,
+    onFolderPage: handleFolderPage,
     onMoveNote: handleMoveNote,
     onRenameFile: handleRenameFile,
     onDuplicateFile: handleDuplicateFile,
@@ -291,7 +309,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     onRenameCollection: handleRenameCollection,
     onDeleteCollection: handleDeleteCollection,
     onMoveCollection: handleMoveCollection,
-  }), [newFolderIn, requestNewFolder, handleCreateFolder, onNewNote, handleDeleteFolder, handleMoveNote,
+  }), [newFolderIn, requestNewFolder, handleCreateFolder, onNewNote, handleDeleteFolder, handleFolderPage, handleMoveNote,
        handleRenameFile, handleDuplicateFile, handleRevealFile, onDeleteNote, onTurnIntoDatabase, onToggleFavorite, isFavorite,
        onOpenCollection, handleRenameCollection, handleDeleteCollection, handleMoveCollection]);
 
@@ -360,7 +378,12 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       for (const { node, depth, parentPath } of flattenTree(tree, isDirOpen)) {
         const pid = parentPath ?? parentId;
         if (node.type === "dir") {
-          out.push({ id: node.path, kind: "dir", label: node.name, depth: depth + 1, parentId: pid, expanded: isDirOpen(node.path, depth), path: node.path, folder: node.path });
+          // A folder with a page: Enter opens the page (Space still folds).
+          const page = node.note;
+          out.push({
+            id: node.path, kind: "dir", label: node.name, depth: depth + 1, parentId: pid, expanded: isDirOpen(node.path, depth), path: node.path, folder: node.path,
+            run: page ? () => onSelect(page.path) : undefined,
+          });
         } else if (node.type === "collection") {
           const c = node.collection;
           out.push({
@@ -436,7 +459,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
 
     return out;
   }, [searchResults, sectionOpen, isDirOpen, favorites, recentNotes, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
-      notesTree, newFolderIn, templateTree, trash, onToggleFavorite, onNewNote, onNewCollection, onOpenCollection, handleDeleteCollection,
+      notesTree, newFolderIn, templateTree, trash, onToggleFavorite, onNewNote, onSelect, onNewCollection, onOpenCollection, handleDeleteCollection,
       onRestoreTrashed, onDeleteTrashed, onEmptyTrash]);
 
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
@@ -460,7 +483,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
   const activate = useCallback((row: TreeRow) => {
     switch (row.kind) {
       case "section": toggleSection(row.id.slice("section:".length) as SectionId); break;
-      case "dir": toggleDir(row.path!); break;
+      case "dir": if (row.run) row.run(); else toggleDir(row.path!); break;
       case "note": onSelect(row.path!); break;
       default: row.run?.();
     }
@@ -513,8 +536,9 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
         break;
       }
       case "Enter": if (row) activate(row); break;
-      // Enter on a tag opens its page; Space folds it (a tag with children), like a folder.
-      case " ": if (row?.kind === "tag") { if (row.expanded !== undefined) setExpanded(row, !row.expanded); } else if (row && row.expanded !== undefined) activate(row); break;
+      // Space folds whatever can fold (a section, a folder, a tag or a
+      // collection with children); Enter is what opens a page.
+      case " ": if (row && row.expanded !== undefined) setExpanded(row, !row.expanded); break;
       case "n": onNewNote(row?.folder); break;
       case "Delete": case "Backspace": if (row) removeRow(row); break;
       case "f": if (row?.kind === "note" && row.path) onToggleFavorite(row.path); break;

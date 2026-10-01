@@ -59,9 +59,34 @@ export interface FileNode {
 
 export interface DirNode {
   type: "dir";
+  /** The folder's page title when it has a page with one; the folder name otherwise. */
   name: string;
   path: string;   // vault-relative with trailing /
+  /** The folder's own page (`<folder>/_index.md`), when it has one. It is
+   *  not among `children`: it is the folder, not a note inside it. */
+  note: NoteEntry | null;
   children: TreeNode[];
+}
+
+// ── Folder notes ──────────────────────────────────────────────────────────────
+// A plain folder can carry a page of its own, the way a collection does:
+// `notes/<folder>/_index.md` (the collection convention, and Hugo's). A
+// folder named after itself, Obsidian's `<folder>/<folder>.md`, is read as the
+// page too, so an Obsidian vault keeps its folder notes; new ones are always
+// written as `_index.md`, which survives a folder rename.
+
+/** Where a folder's page lives: `notes/foo/` → `notes/foo/_index.md`. */
+export function folderNotePath(dirPath: string): string {
+  return `${dirPath.replace(/\/?$/, "/")}_index.md`;
+}
+
+/** The note that is `dirPath`'s page, among its direct children: `_index.md`
+ *  first, else Obsidian's `<folder>/<folder>.md`. */
+export function folderNoteOf(dirPath: string, notes: NoteEntry[]): NoteEntry | null {
+  const dirName = dirPath.replace(/\/$/, "").split("/").pop() ?? "";
+  return notes.find((n) => n.path === folderNotePath(dirPath))
+    ?? notes.find((n) => n.path === `${dirPath}${dirName}.md`)
+    ?? null;
 }
 
 /** A collection's page in the tree. Rows are data and never appear here;
@@ -193,11 +218,13 @@ export function buildTree(
 
   for (const [dirName, dirNotes] of [...dirMap.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const dirPath = `${prefix}${dirName}/`;
+    const page = folderNoteOf(dirPath, dirNotes);
     result.push({
       type: "dir",
-      name: dirName,
+      name: page && !isUntitled(page.title) ? page.title : dirName,
       path: dirPath,
-      children: buildTree(dirNotes, dirPath, knownDirs, sort),
+      note: page,
+      children: buildTree(page ? dirNotes.filter((n) => n !== page) : dirNotes, dirPath, knownDirs, sort),
     });
   }
 
@@ -227,7 +254,11 @@ export function isUntitled(title: string | null | undefined): boolean {
  */
 export function displayTitle(note: Pick<NoteEntry, "title" | "path">): string {
   if (!isUntitled(note.title)) return note.title;
-  const stem = pathStem(note.path).replace(/-\d{4}-\d{2}-\d{2}(-\d+)?$/, "");
+  // A folder's or collection's page is named for what it is the page of.
+  const parts = note.path.split("/");
+  const stem = parts.pop()?.replace(/\.md$/, "") === "_index" && parts.length
+    ? parts[parts.length - 1]
+    : pathStem(note.path).replace(/-\d{4}-\d{2}-\d{2}(-\d+)?$/, "");
   return isUntitled(stem) ? "Untitled" : stem.replace(/-/g, " ");
 }
 
