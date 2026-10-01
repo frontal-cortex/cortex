@@ -1935,8 +1935,13 @@ function BulkBar({ count, busy, columns, onSet, onDuplicate, onDelete, onClear }
   const apply = () => {
     if (!col) return;
     const value = Array.isArray(draft) ? draft.join(", ") : draft;
+    // An empty value empties that property on every selected row. Worth being
+    // able to do — untagging a batch — and not worth doing by brushing past a
+    // button, so it says what it is and how many rows it is about to do it to.
+    if (!value.trim() && !window.confirm(`Clear ${col.key} on ${count} ${count === 1 ? "row" : "rows"}?`)) return;
     onSet(col, value, ty).then(close);
   };
+  const emptying = !(Array.isArray(draft) ? draft.join("") : draft).trim();
   const applyKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") { e.preventDefault(); apply(); }
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
@@ -1999,7 +2004,7 @@ function BulkBar({ count, busy, columns, onSet, onDuplicate, onDelete, onClear }
       {col && (
         <>
           {editor}
-          <button className={styles.bulkBtn} disabled={busy} onClick={apply}>Apply</button>
+          <button className={styles.bulkBtn} disabled={busy} onClick={apply}>{emptying ? "Clear" : "Apply"}</button>
           <button className={styles.bulkBtn} onClick={close} title="Cancel">Cancel</button>
         </>
       )}
