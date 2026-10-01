@@ -72,10 +72,10 @@ export interface LeftPanelHandle {
   focus(): void;
 }
 
-type SectionId = "favorites" | "recent" | "notes" | "templates" | "trash";
+type SectionId = "favorites" | "databases" | "recent" | "notes" | "templates" | "trash";
 
 const SECTION_DEFAULT_OPEN: Record<SectionId, boolean> = {
-  favorites: true, recent: false, notes: true, templates: false, trash: false,
+  favorites: true, databases: true, recent: false, notes: true, templates: false, trash: false,
 };
 
 export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
@@ -252,6 +252,19 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     const byPath = new Map(notes.map((n) => [n.path, n]));
     return recent.map((p) => byPath.get(p)).filter((n): n is NoteEntry => !!n);
   }, [notes, recent]);
+
+
+  // A pack's front page — Budget, Habits, Nutrition — is a database page with
+  // nothing above it. They were below however many notes the tree happened to
+  // hold, which on a phone is a scroll past everything to reach the thing you
+  // open most.
+  const dashboards = useMemo(
+    () => notes
+      .filter((n) => n.note_type === "database" && n.path.endsWith("/_index.md") && !n.parent)
+      .sort((a, b) => displayTitle(a).localeCompare(displayTitle(b))),
+    [notes],
+  );
+
   const collectionCount = useMemo(() => new Set(notes.map((n) => n.path.match(/^collections\/([^/]+)\//)?.[1]).filter(Boolean)).size, [notes]);
 
   const handleDeleteCollection = useCallback(async (name: string) => {
@@ -410,6 +423,13 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
       }
     }
 
+    if (dashboards.length > 0) {
+      const pid = section("databases", "Databases");
+      if (pid) for (const note of dashboards) {
+        out.push({ id: `db:${note.path}`, kind: "note", label: displayTitle(note), depth: 1, parentId: pid, path: note.path, folder: dirOf(note.path) });
+      }
+    }
+
     if (recentNotes.length > 0) {
       const pid = section("recent", "Recent");
       if (pid) for (const note of recentNotes) {
@@ -458,7 +478,7 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
     }
 
     return out;
-  }, [searchResults, sectionOpen, isDirOpen, favorites, recentNotes, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
+  }, [searchResults, sectionOpen, isDirOpen, favorites, dashboards, recentNotes, notes, showGettingStarted, gettingStartedSteps, dismissGettingStarted, onOpenMarketplace,
       notesTree, newFolderIn, templateTree, trash, onToggleFavorite, onNewNote, onSelect, onNewCollection, onOpenCollection, handleDeleteCollection,
       onRestoreTrashed, onDeleteTrashed, onEmptyTrash]);
 
@@ -656,6 +676,24 @@ export const LeftPanel = forwardRef<LeftPanelHandle, Props>(function LeftPanel({
                     />
                   );
                 })}
+              </Section>
+            )}
+
+            {dashboards.length > 0 && (
+              <Section {...sectionProps("databases")} label="Databases" count={dashboards.length}>
+                {dashboards.map((note) => (
+                  <LeafRow
+                    key={note.path}
+                    id={`db:${note.path}`}
+                    a11y={a11y}
+                    depth={0}
+                    selected={note.path === selectedPath}
+                    icon={note.icon ? <span className={styles.emoji}>{note.icon}</span> : <DatabaseIcon />}
+                    label={displayTitle(note)}
+                    title={note.path}
+                    onClick={() => onSelect(note.path)}
+                  />
+                ))}
               </Section>
             )}
 

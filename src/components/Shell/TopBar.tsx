@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { VaultStatus } from "../../lib/commands";
-import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, TerminalIcon, MonkIcon, CommentIcon } from "./icons";
+import { SearchIcon, GraphIcon, SyncIcon, TodayIcon, ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, TerminalIcon, MonkIcon, CommentIcon, SparkleIcon } from "./icons";
 import { capabilities } from "../../lib/host";
 import { shortcutFor } from "../../lib/keymap";
 import styles from "./TopBar.module.css";
@@ -20,6 +20,8 @@ interface Props {
   onOpenGraph: () => void;
   onOpenSwitcher: () => void;
   onToday: () => void;
+  /** A line into today's note without leaving the page you are on. */
+  onQuickCapture: () => void;
   leftOpen: boolean;
   rightOpen: boolean;
   onToggleLeft: () => void;
@@ -34,7 +36,7 @@ interface Props {
 
 export function TopBar({
   vaultName, breadcrumb, status, syncing, hasRemote, canBack, canForward, onBack, onForward,
-  onSync, onOpenGraph, onOpenSwitcher, onToday,
+  onSync, onOpenGraph, onOpenSwitcher, onToday, onQuickCapture,
   leftOpen, rightOpen, onToggleLeft, onToggleRight, onToggleMonk,
   commentsOpen, unresolvedComments, hasNote, onToggleComments,
 }: Props) {
@@ -73,6 +75,9 @@ export function TopBar({
       <div className={styles.actions}>
         <button className={styles.action} onClick={onToday} title={`Today's note (${shortcutFor("today")})`}>
           <TodayIcon size={15} />
+        </button>
+        <button className={styles.action} onClick={onQuickCapture} title={`Quick capture (${shortcutFor("quick-capture")})`}>
+          <SparkleIcon size={15} />
         </button>
         <button className={styles.action} onClick={onOpenSwitcher} title={`Quick switcher (${shortcutFor("quick-switcher")})`}>
           <SearchIcon size={15} />

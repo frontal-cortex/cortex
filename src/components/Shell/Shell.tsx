@@ -23,6 +23,7 @@ import { defaultViews, viewToFrontmatter, migrateLegacyIndex } from "../../lib/d
 import { CollabConfig, loadCollabConfig, startVaultRoom, stopVaultRoom } from "../../lib/collab";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { QuickCapture } from "./QuickCapture";
+import { HomeScreen } from "./HomeScreen";
 import { ConflictModal } from "./ConflictModal";
 import { GraphView } from "./GraphView";
 import { TagView } from "./TagView";
@@ -246,6 +247,23 @@ export function Shell({
   // Whatever is on screen is the most recently opened note.
   const { recent: recentNotes, record: recordRecent } = useRecentNotes(!!vault);
   useEffect(() => { if (selectedPath) recordRecent(selectedPath); }, [selectedPath, recordRecent]);
+
+  // …and whatever was on screen last time is what you come back to. A phone
+  // reloads a tab it has backgrounded, which used to land you on an empty page
+  // with nothing to tap; the note you were reading is a better answer than a
+  // blank one. An address that names a note wins over it, and this runs once,
+  // so it never pulls you back out of what you opened since.
+  const restoredLast = useRef(false);
+  useEffect(() => {
+    // Reading something already — by address, or because you opened it — means
+    // the moment for restoring has passed. Without this, closing a note or
+    // walking back to the home screen would throw you straight back into it.
+    if (selectedPath) { restoredLast.current = true; return; }
+    if (restoredLast.current || !recentNotes.length) return;
+    restoredLast.current = true;
+    openNote(recentNotes[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentNotes, selectedPath]);
 
   // ── Sync loop ────────────────────────────────────────────────────────────────
 
@@ -667,6 +685,7 @@ export function Shell({
         onOpenGraph={() => setShowGraph("global")}
         onOpenSwitcher={() => setSwitcher("notes")}
         onToday={handleToday}
+        onQuickCapture={() => setShowCapture(true)}
         leftOpen={leftVisible}
         rightOpen={rightVisible}
         onToggleLeft={toggleLeft}
@@ -744,6 +763,18 @@ export function Shell({
         />
         </div>
 
+        {!selectedPath ? (
+          <HomeScreen
+            vaultName={vault.name}
+            notes={notes}
+            favorites={favorites}
+            recent={recentNotes}
+            onOpen={(p) => openNote(p)}
+            onToday={handleToday}
+            onNew={handleNewNote}
+            onCapture={() => setShowCapture(true)}
+          />
+        ) : (
         <Editor
           ref={editorRef}
           note={note}
@@ -768,6 +799,7 @@ export function Shell({
           onResolveComment={async (id, resolved) => { await commentsApi.resolve(id, resolved); scheduleAutoCommit(); }}
           onDeleteComment={async (id) => { await commentsApi.remove(id); scheduleAutoCommit(); }}
         />
+        )}
 
         {terminalMounted && (
           <aside className={styles.rightPane} style={rightVisible ? undefined : { display: "none" }}>
