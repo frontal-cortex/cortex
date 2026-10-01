@@ -560,8 +560,7 @@ async fn static_file(State(inner): State<Shared>, uri: Uri) -> Response {
     let wanted = if path.is_empty() { "index.html" } else { path };
     let (bytes, file) = match inner.assets.get(wanted) {
         Some(bytes) => (bytes, wanted),
-        // A path with no extension is one of the app's own routes: the shell.
-        None if !wanted.rsplit('/').next().unwrap_or("").contains('.') => match inner.assets.get("index.html") {
+        None if is_app_route(wanted) => match inner.assets.get("index.html") {
             Some(bytes) => (bytes, "index.html"),
             None => return error(StatusCode::NOT_FOUND, "The app bundle has no index.html — build the frontend first."),
         },
@@ -576,6 +575,15 @@ async fn static_file(State(inner): State<Shared>, uri: Uri) -> Response {
     h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     res
+}
+
+/// A request the bundle has no file for: is it one of the app's own routes, and
+/// so answered with the shell? A path with no extension is (`/settings`), and so
+/// is `/n/<path>`, the address of a note — which carries the note's own path,
+/// `.md` and all, so the extension rule alone would send a bookmarked note to a
+/// 404 on the way back in.
+fn is_app_route(path: &str) -> bool {
+    path == "n" || path.starts_with("n/") || !path.rsplit('/').next().unwrap_or("").contains('.')
 }
 
 pub fn mime_for(path: &str) -> &'static str {
@@ -686,6 +694,18 @@ mod tests {
         assert_eq!(payload["config"], json!(true));
         assert_eq!(payload["git"], json!(true));
         assert_eq!(payload["notes"], json!([]));
+    }
+
+    #[test]
+    fn a_notes_address_is_answered_with_the_app() {
+        // The address of a note carries the note's path, `.md` and all.
+        assert!(is_app_route("n/notes/ideas/Second%20Brain.md"));
+        assert!(is_app_route("n/collections/budget/_index.md"));
+        assert!(is_app_route("settings"));
+        // A real file is still a real file, and a missing one still missing.
+        assert!(!is_app_route("assets/index-abc.js"));
+        assert!(!is_app_route("icons/icon-192.png"));
+        assert!(!is_app_route("nonsense/thing.js"));
     }
 
     #[test]
