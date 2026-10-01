@@ -866,6 +866,12 @@ pub struct ViewSpec {
     /// shows, never written anywhere.
     #[serde(default)]
     pub summary: BTreeMap<String, String>,
+    /// Table views: column widths in CSS pixels, `widths: {title: 260,
+    /// status: 120}`, set by dragging a header's edge in the app. A column
+    /// not named keeps its default width. Numbers or numeric strings; anything
+    /// else is ignored rather than failing the view.
+    #[serde(default, deserialize_with = "de_widths")]
+    pub widths: BTreeMap<String, u32>,
     /// Every other key: the options a view type reads — charts `x`, `y`,
     /// `agg`, `chartType`, `bucket`, `series`; trackers `log`, `done`,
     /// `range` and their field mappings. One map, so a new view type or
@@ -888,6 +894,21 @@ impl ViewSpec {
         let s = s.trim().to_string();
         if s.is_empty() { None } else { Some(s) }
     }
+}
+
+/// `widths:` values as written by hand or by an older app: a number, or a
+/// number in quotes. Anything else drops out of the map silently.
+fn de_widths<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<BTreeMap<String, u32>, D::Error> {
+    let raw: BTreeMap<String, serde_yaml::Value> = serde::Deserialize::deserialize(d)?;
+    Ok(raw.into_iter().filter_map(|(k, v)| {
+        let n = match v {
+            serde_yaml::Value::Number(n) => n.as_u64(),
+            serde_yaml::Value::String(s) => s.trim().trim_end_matches("px").parse::<u64>().ok(),
+            _ => None,
+        }?;
+        if n == 0 { return None; }
+        Some((k, n.min(u32::MAX as u64) as u32))
+    }).collect())
 }
 
 pub(crate) fn parse_sort(entry: &str) -> Sort {
@@ -1251,6 +1272,9 @@ pub struct StructuredSpec {
     /// Table summary row, field → function (see `ViewSpec::summary`).
     #[serde(default)]
     pub summary: BTreeMap<String, String>,
+    /// Table column widths in pixels, field → width (see `ViewSpec::widths`).
+    #[serde(default, deserialize_with = "de_widths")]
+    pub widths: BTreeMap<String, u32>,
     /// View-type options (`x`, `chartType`, `log`, `range`, …) exactly as
     /// written; the toolbar edits none of them and carries them all through.
     #[serde(flatten, default)]
@@ -1364,6 +1388,7 @@ pub fn parse_view_spec(spec_yaml: &str) -> Result<StructuredSpec> {
         date: vs.date,
         limit: vs.limit,
         summary: vs.summary,
+        widths: vs.widths,
         options,
         ..Default::default()
     };
@@ -1426,6 +1451,10 @@ pub fn serialize_view_spec(s: &StructuredSpec) -> String {
         .collect();
     if !summary.is_empty() {
         out.push_str(&format!("summary: {{{}}}\n", summary.join(", ")));
+    }
+    let widths: Vec<String> = s.widths.iter().filter(|(_, w)| **w > 0).map(|(k, w)| format!("{k}: {w}")).collect();
+    if !widths.is_empty() {
+        out.push_str(&format!("widths: {{{}}}\n", widths.join(", ")));
     }
     // Options in a fixed order: the well-known ones first, the rest alphabetically.
     let known = ["x", "y", "agg", "chartType", "bucket", "series", "log", "done", "range"];
@@ -3507,6 +3536,30 @@ mod tests {
         // The engine reads the flow form back as the same map.
         let vs: ViewSpec = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(vs.summary, s.summary);
+    }
+
+    #[test]
+    fn column_widths_survive_the_structured_round_trip() {
+        // Widths are written by the app as numbers; a hand-edited file may
+        // quote them or add `px`. Nonsense is dropped, never an error.
+        let spec = "source: collections/expenses\ntype: table\nsummary: {amount: sum}\nwidths:\n  title: 260\n  amount: '96px'\n  note: wide\n";
+        let s = parse_view_spec(spec).unwrap();
+        assert_eq!(s.widths.get("title"), Some(&260));
+        assert_eq!(s.widths.get("amount"), Some(&96));
+        assert!(!s.widths.contains_key("note"));
+        assert!(!s.options.contains_key("widths"));
+        let yaml = serialize_view_spec(&s);
+        assert!(yaml.contains("summary: {amount: sum}\nwidths: {amount: 96, title: 260}\n"), "{yaml}");
+        let again = parse_view_spec(&yaml).unwrap();
+        assert_eq!(again.widths, s.widths);
+        let vs: ViewSpec = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(vs.widths, s.widths);
+        // The engine still runs a spec that names widths.
+        let root = scratch("widths");
+        std::fs::create_dir_all(root.join("collections/expenses")).unwrap();
+        std::fs::write(root.join("collections/expenses/a.md"), "---\namount: 5\ntitle: A\n---\n").unwrap();
+        let t = run_view(&root, &yaml).unwrap();
+        assert_eq!(t.rows.len(), 1);
     }
 
     #[test]

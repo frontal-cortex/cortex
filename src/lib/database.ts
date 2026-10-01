@@ -81,9 +81,9 @@ function asStringArray(v: unknown): string[] | undefined {
 }
 
 /** Map-valued keys: a real YAML mapping in `_index.md`, a one-line flow map
- *  (`{amount: sum, done: percent_checked}`) in a spec — the form the Rust
- *  serializer emits, so both round-trip. */
-const MAP_KEYS = ["summary"] as const;
+ *  (`{amount: sum, done: percent_checked}`, `{title: 260}`) in a spec — the
+ *  form the Rust serializer emits, so both round-trip. */
+const MAP_KEYS = ["summary", "widths"] as const;
 
 /** List-of-maps keys (`stats:`): a real YAML list in `_index.md`, carried in a
  *  ViewDef as JSON text — which is valid YAML flow style, so a spec line
@@ -98,15 +98,17 @@ function parseJsonList(s: string): unknown[] | undefined {
   try { const v = JSON.parse(s); return Array.isArray(v) && v.length ? v : undefined; } catch { return undefined; }
 }
 
-function flowMapToObject(s: string): Record<string, string> | undefined {
+/** A flow map as frontmatter values: a whole number (`widths: {title: 260}`)
+ *  goes back to the file as a number, so it reads as one and never gets quoted. */
+function flowMapToObject(s: string): Record<string, string | number> | undefined {
   const m = s.trim().match(/^\{(.*)\}$/);
   if (!m) return undefined;
-  const out: Record<string, string> = {};
+  const out: Record<string, string | number> = {};
   for (const part of m[1].split(",")) {
     const i = part.indexOf(":");
     if (i < 0) continue;
     const k = part.slice(0, i).trim(), v = part.slice(i + 1).trim();
-    if (k && v) out[k] = v;
+    if (k && v) out[k] = /^\d+$/.test(v) ? Number(v) : v;
   }
   return Object.keys(out).length ? out : undefined;
 }
@@ -114,14 +116,14 @@ function flowMapToObject(s: string): Record<string, string> | undefined {
 function objectToFlowMap(v: unknown): string | undefined {
   if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
   const parts = Object.entries(v as Record<string, unknown>)
-    .filter(([k, val]) => k && typeof val === "string" && val !== "")
+    .filter(([k, val]) => k && ((typeof val === "string" && val !== "") || typeof val === "number"))
     .map(([k, val]) => `${k}: ${val}`);
   return parts.length ? `{${parts.join(", ")}}` : undefined;
 }
 
 /** Keys with a fixed place in a spec; every other option follows alphabetically. */
 const LIST_KEYS = ["sort", "columns"] as const;
-const KEY_ORDER = ["filter", "sort", "columns", "group", "bucket", "date", "mode", "limit", "summary", "layout", "size", "x", "y", "agg", "chartType", "series", "stack", "labels", "legend", "height", "log", "done", "range", "start", "end", "stats"];
+const KEY_ORDER = ["filter", "sort", "columns", "group", "bucket", "date", "mode", "limit", "summary", "widths", "layout", "size", "x", "y", "agg", "chartType", "series", "stack", "labels", "legend", "height", "log", "done", "range", "start", "end", "stats"];
 const orderOf = (k: string) => { const i = KEY_ORDER.indexOf(k); return i < 0 ? KEY_ORDER.length : i; };
 const optionKeys = (v: ViewDef) =>
   Object.keys(v).filter((k) => k !== "name" && k !== "type").sort((p, q) => orderOf(p) - orderOf(q) || p.localeCompare(q));

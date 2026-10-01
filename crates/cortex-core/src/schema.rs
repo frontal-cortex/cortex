@@ -454,13 +454,16 @@ fn rewrite_view(view: &mut serde_json::Value, old: &str, new: Option<&str>) -> b
             }
         }
     }
-    // `summary: {field: function}` (a table footer, since #33).
-    if let Some(sum) = obj.get_mut("summary").and_then(|s| s.as_object_mut()) {
-        if let Some(func) = sum.remove(old) {
-            if let Some(new) = new { sum.insert(new.into(), func); }
-            changed = true;
+    // `summary: {field: function}` (a table footer, since #33) and
+    // `widths: {field: px}` (a dragged column width): keyed by field.
+    for key in ["summary", "widths"] {
+        if let Some(map) = obj.get_mut(key).and_then(|s| s.as_object_mut()) {
+            if let Some(val) = map.remove(old) {
+                if let Some(new) = new { map.insert(new.into(), val); }
+                changed = true;
+            }
+            if map.is_empty() { obj.remove(key); }
         }
-        if sum.is_empty() { obj.remove("summary"); }
     }
     for k in FIELD_KEYS {
         if obj.get(k).and_then(|v| v.as_str()) == Some(old) {
@@ -696,7 +699,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         put(&root, ".cortex/schemas/tasks.yaml", "properties:\n- name: hours\n  type: number\n- name: est\n  type: number\n- name: status\n  type: status\n  options:\n  - name: todo\n  - name: done\n- name: project\n  type: relation\n  collection: projects\n- name: left\n  type: formula\n  expr: est - hours\n- name: completed\n  type: date\n  auto: status == done\n");
         put(&root, ".cortex/schemas/projects.yaml", "properties:\n- name: tasks\n  type: relation\n  collection: tasks\n- name: total_hours\n  type: rollup\n  relation: tasks\n  property: hours\n  function: sum\n- name: done_count\n  type: rollup\n  from: tasks\n  relation: project\n  function: count\n  where: status == done\n");
-        put(&root, "collections/tasks/_index.md", "---\ntitle: Tasks\ntype: database\nviews:\n- name: Table\n  type: table\n  columns: [title, hours, status]\n  sort: [hours desc, title]\n  filter: status == done and hours > 2\n  summary: {hours: sum}\n- name: Board\n  type: board\n  group: status\n---\n");
+        put(&root, "collections/tasks/_index.md", "---\ntitle: Tasks\ntype: database\nviews:\n- name: Table\n  type: table\n  columns: [title, hours, status]\n  sort: [hours desc, title]\n  filter: status == done and hours > 2\n  summary: {hours: sum}\n  widths: {hours: 96, title: 240}\n- name: Board\n  type: board\n  group: status\n---\n");
         put(&root, "collections/tasks/a.md", "---\nest: 4\nhours: 3\nproject:\n- Launch\nstatus: done\ntitle: A\n---\n\nBody of A.\n");
         put(&root, "collections/tasks/b.md", "---\nstatus: todo\ntitle: B\n---\n");
         put(&root, "collections/projects/launch.md", "---\ntasks: [A]\ntitle: Launch\n---\n");
@@ -731,6 +734,7 @@ mod tests {
         assert_eq!(views[0]["columns"], serde_json::json!(["title", "effort", "status"]));
         assert_eq!(views[0]["sort"], serde_json::json!(["effort desc", "title"]));
         assert_eq!(views[0]["summary"], serde_json::json!({"effort": "sum"}));
+        assert_eq!(views[0]["widths"], serde_json::json!({"effort": 96, "title": 240}));
         assert_eq!(views[0]["filter"], serde_json::json!("status == done and effort > 2"));
         assert_eq!(views[1]["group"], serde_json::json!("status"));
 
