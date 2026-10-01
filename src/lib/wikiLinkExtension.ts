@@ -16,8 +16,13 @@ const WIKI_LINK_RE = /\[\[([^\]\n]+)\]\]/g;
  * hidden until the cursor touches the link, then the whole thing is editable
  * as written. Every form hands its raw inner text to `onNavigate`, which
  * parses it (see `parseWikiLink`) — so `Note#Section` opens Note at Section.
+ *
+ * `isResolved` says whether a target names a note that exists; a link to one
+ * that does not gets `wiki-link-missing` as well, so it reads as the promise
+ * of a note rather than a note. A click on it creates the note (the shell's
+ * navigate handler does that).
  */
-export function wikiLinkExtension(onNavigate: (target: string) => void) {
+export function wikiLinkExtension(onNavigate: (target: string) => void, isResolved?: (target: string) => boolean) {
   return Extension.create({
     name: "wikiLink",
 
@@ -39,10 +44,12 @@ export function wikiLinkExtension(onNavigate: (target: string) => void) {
                   const from = pos + match.index;
                   const to = from + match[0].length;
                   const inner = match[1];
-                  const attrs = { class: "wiki-link", "data-wiki-target": inner.trim() };
+                  const link = parseWikiLink(inner);
+                  const missing = !!link.target && !!isResolved && !isResolved(link.target);
+                  const attrs = { class: missing ? "wiki-link wiki-link-missing" : "wiki-link", "data-wiki-target": inner.trim() };
                   const bar = inner.indexOf("|");
                   const touching = sel.from <= to && sel.to >= from;
-                  if (bar === -1 || touching || !parseWikiLink(inner).alias) {
+                  if (bar === -1 || touching || !link.alias) {
                     decorations.push(Decoration.inline(from, to, attrs));
                     continue;
                   }

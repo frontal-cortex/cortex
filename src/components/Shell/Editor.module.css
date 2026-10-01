@@ -229,6 +229,19 @@
   text-decoration: underline;
 }
 
+/* A link to a note that does not exist yet: faded, dashed, and a click creates it */
+:global(.wiki-link-missing) {
+  background: transparent;
+  opacity: 0.7;
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
+
+:global(.wiki-link-missing:hover) {
+  opacity: 1;
+  text-decoration: underline dashed;
+}
+
 /* The `[[Note|` and `]]` around an alias; shown again while the cursor is in the link */
 :global(.wiki-link-syntax) {
   display: none;

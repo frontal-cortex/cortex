@@ -74,7 +74,7 @@ function stem(path: string): string {
 
 /** Mirror of `vault::resolve`: a lookup from every name a link may use to the
  *  note path. Exact paths win over titles, titles over stems. */
-function resolver(notes: NoteEntry[]): (target: string) => string | undefined {
+export function linkResolver(notes: NoteEntry[]): (target: string) => string | undefined {
   const byPath = new Map<string, string>();
   const byTitle = new Map<string, string>();
   const byStem = new Map<string, string>();
@@ -97,7 +97,7 @@ function resolver(notes: NoteEntry[]): (target: string) => string | undefined {
  *  edge, and an edge that is both a written link and a relation counts as the
  *  link — the stronger of the two. */
 export function resolveLinks(notes: NoteEntry[], raw: Array<[string, string] | [string, string, string]>): GraphLink[] {
-  const resolve = resolver(notes);
+  const resolve = linkResolver(notes);
   const known = new Set(notes.map((n) => n.path));
   const at = new Map<string, GraphLink>();
   const out: GraphLink[] = [];

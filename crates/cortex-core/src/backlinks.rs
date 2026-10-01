@@ -4,7 +4,9 @@
 //! by reading each referrer's indexed body and returning the lines that carry
 //! the link. It also finds the opposite: notes that name this one in plain
 //! text without a `[[link]]` — Obsidian's "unlinked mentions" — and can turn
-//! those mentions into links. Nothing here writes; callers own the file.
+//! those mentions into links. The other direction, the links a note writes
+//! and where each one lands (or that it lands nowhere yet), is [`outgoing`].
+//! Nothing here writes; callers own the file.
 
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +27,24 @@ pub struct Backlink {
     pub contexts: Vec<String>,
 }
 
+/// A `[[link]]` a note writes, grouped by what it names: Obsidian's outgoing
+/// links. `path` is where the link lands; `None` is an unresolved link, a
+/// note that does not exist yet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Outlink {
+    /// The target as first written (`[[The Plan]]` → `The Plan`), so an
+    /// unresolved one can become the new note's title.
+    pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note_type: Option<String>,
+    /// How many times the note links there.
+    pub count: usize,
+}
+
 /// Shortest title that is worth searching for as a plain-text mention;
 /// anything shorter names nothing in particular.
 const MIN_MENTION_TITLE: usize = 3;
@@ -42,6 +62,53 @@ pub fn backlinks(db: &Db, path: &str) -> Result<Vec<Backlink>> {
         let body = db.body(&entry.path)?.unwrap_or_default();
         let contexts = contexts(&body, |line, _| link_ranges(line, &names));
         out.push(Backlink { entry, contexts });
+    }
+    Ok(out)
+}
+
+/// The links `path` writes, one entry per distinct target in order of first
+/// appearance, resolved the way a click resolves them (`vault::resolve`):
+/// exact path, then title, then filename stem. A link the note makes to
+/// itself is left out, and so is one inside a code fence: that is text
+/// about a link, not a link.
+pub fn outgoing(db: &Db, path: &str) -> Result<Vec<Outlink>> {
+    let body = db.body(path)?.unwrap_or_default();
+    let notes = db.list_notes()?;
+    let mut links = Vec::new();
+    let mut in_fence = false;
+    for line in body.lines() {
+        if is_fence(line) {
+            in_fence = !in_fence;
+            continue;
+        }
+        if !in_fence {
+            links.extend(link_spans(line).into_iter().map(|(_, _, l)| l));
+        }
+    }
+    let mut out: Vec<Outlink> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    for link in links {
+        let target = link.target.trim();
+        if target.is_empty() {
+            continue;
+        }
+        let key = target.to_lowercase();
+        if let Some(i) = seen.iter().position(|k| *k == key) {
+            out[i].count += 1;
+            continue;
+        }
+        let found = crate::vault::resolve(&notes, target);
+        if found.is_some_and(|n| n.path == path) {
+            continue;
+        }
+        seen.push(key);
+        out.push(Outlink {
+            target: target.to_string(),
+            path: found.map(|n| n.path.clone()),
+            title: found.map(|n| n.title.clone()),
+            note_type: found.and_then(|n| n.note_type.clone()),
+            count: 1,
+        });
     }
     Ok(out)
 }
@@ -440,6 +507,37 @@ mod tests {
         assert_eq!(mentions.len(), 1, "c links already; a links; only b mentions");
         assert_eq!(mentions[0].entry.path, "notes/b.md");
         assert_eq!(mentions[0].contexts, vec!["<mark>the plan</mark> is plain text here"]);
+    }
+
+    #[test]
+    fn outgoing_groups_targets_and_marks_unresolved() {
+        let db = Db::open_in_memory().unwrap();
+        let entry = |path: &str, title: &str| NoteEntry {
+            path: path.into(), title: title.into(), note_type: Some("note".into()), icon: None, parent: None,
+            tags: vec![], modified: 0, created: None,
+        };
+        db.upsert_note(&entry("notes/plan.md", "The Plan"), "").unwrap();
+        db.upsert_note(&entry("notes/deep/ideas.md", "Ideas"), "").unwrap();
+        db.upsert_note(
+            &entry("notes/a.md", "A"),
+            "see [[the plan|it]] and [[ideas#Later]]\nagain [[The Plan]], and [[Nowhere Yet]]\nme: [[A]]\n```\n[[In Code]]\n```\n",
+        )
+        .unwrap();
+
+        let out = outgoing(&db, "notes/a.md").unwrap();
+        let summary: Vec<(&str, Option<&str>, usize)> =
+            out.iter().map(|o| (o.target.as_str(), o.path.as_deref(), o.count)).collect();
+        assert_eq!(
+            summary,
+            vec![
+                ("the plan", Some("notes/plan.md"), 2),
+                ("ideas", Some("notes/deep/ideas.md"), 1),
+                ("Nowhere Yet", None, 1),
+            ]
+        );
+        assert_eq!(out[0].title.as_deref(), Some("The Plan"));
+        assert_eq!(out[0].note_type.as_deref(), Some("note"));
+        assert!(out[2].title.is_none());
     }
 
     #[test]

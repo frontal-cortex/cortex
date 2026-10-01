@@ -4,7 +4,7 @@ use walkdir::WalkDir;
 
 use crate::watcher;
 use cortex_core::error::{AppError, Result};
-use cortex_core::backlinks::Backlink;
+use cortex_core::backlinks::{Backlink, Outlink};
 use cortex_core::note::{self, Note, NoteEntry};
 use cortex_core::rename::RenameReport;
 use cortex_core::search::SearchHit;
@@ -709,6 +709,16 @@ pub fn get_backlinks(ctx: &AppCtx, path: String) -> Result<Vec<Backlink>> {
     let guard = ctx.db.0.lock().unwrap();
     match guard.as_ref() {
         Some(db) => cortex_core::backlinks::backlinks(db, &path),
+        None => Ok(vec![]),
+    }
+}
+
+/// The links this note writes, each resolved to where it lands; a link with
+/// no `path` names a note that does not exist yet.
+pub fn get_outgoing_links(ctx: &AppCtx, path: String) -> Result<Vec<Outlink>> {
+    let guard = ctx.db.0.lock().unwrap();
+    match guard.as_ref() {
+        Some(db) => cortex_core::backlinks::outgoing(db, &path),
         None => Ok(vec![]),
     }
 }

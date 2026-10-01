@@ -125,6 +125,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { name: "get_all_links", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "get_link_graph", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "get_backlinks", mode: Mode::Sync, exposure: Exposure::Both },
+    CommandInfo { name: "get_outgoing_links", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "get_unlinked_mentions", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "link_mentions", mode: Mode::Sync, exposure: Exposure::Both },
     CommandInfo { name: "list_templates", mode: Mode::Sync, exposure: Exposure::Both },
@@ -641,6 +642,13 @@ pub fn dispatch(ctx: &Arc<AppCtx>, name: &str, args: Value) -> Option<Result<Val
             struct Args { path: String, }
             let a: Args = parse("get_backlinks", args)?;
             json(crate::commands::notes::get_backlinks(ctx, a.path))
+        })(),
+        "get_outgoing_links" => (|| {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args { path: String, }
+            let a: Args = parse("get_outgoing_links", args)?;
+            json(crate::commands::notes::get_outgoing_links(ctx, a.path))
         })(),
         "get_unlinked_mentions" => (|| {
             #[derive(serde::Deserialize)]

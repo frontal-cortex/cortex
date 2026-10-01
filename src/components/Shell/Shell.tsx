@@ -576,7 +576,15 @@ export function Shell({
     }
     void (async () => {
       const found = await commands.resolveNote(link.target).catch(() => null);
-      if (!found) return;
+      if (!found) {
+        // A link to a note that does not exist yet creates it, as in
+        // Obsidian: titled as the link was written, in `notes/`. A path-like
+        // target (`folder/x`, `x.md`) is left alone rather than guessed at.
+        if (/[\/]|\.md$/i.test(link.target)) return;
+        const created = await createNote(link.target).catch(() => null);
+        if (created) openNote(created.path);
+        return;
+      }
       if (found.path === selectedPathRefForFocus.current) {
         openNote(found.path);
         if (link.section) editorRef.current?.scrollToHeading(link.section);
@@ -585,7 +593,7 @@ export function Shell({
       pendingSection.current = link.section ?? null;
       openNote(found.path);
     })();
-  }, [openNote]);
+  }, [openNote, createNote]);
 
   actionsRef.current = {
     "quick-switcher":  () => setSwitcher("notes"),
