@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, CSSProperties, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { listen } from "../../lib/transport";
-import { commands, VaultInfo, VaultStatus, AgentBranch, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
+import { commands, NoteEntry, VaultInfo, VaultStatus, AgentBranch, SyncOutcome, VaultChanged, Settings } from "../../lib/commands";
 import { parseWikiLink } from "../../lib/wikiLink";
 import { findShortcut, applyKeymapOverrides, shortcutFor, ShortcutId } from "../../lib/keymap";
 import { useNotes, useNote } from "../../hooks/useNotes";
@@ -15,7 +15,7 @@ import { useSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX } from "../../hooks/useSideba
 import { useRecentNotes } from "../../hooks/useRecentNotes";
 import { ExplorerSort, DEFAULT_SORT, parseExplorerSort, formatExplorerSort } from "../../lib/fileTree";
 import { useComments } from "../../hooks/useComments";
-import { ChevronRightIcon } from "./icons";
+import { ChevronRightIcon, CloseIcon, OpenIcon } from "./icons";
 import { capabilities } from "../../lib/host";
 import { LeftPanel, LeftPanelHandle } from "./LeftPanel";
 import { Editor, EditorHandle } from "./Editor";
@@ -51,6 +51,21 @@ interface Props {
   onDiscardBranch: (name: string) => void;
   onLeaveVault: () => void;
   onRefreshStatus: () => Promise<void>;
+}
+
+// The row peek pane: its width, remembered across launches.
+const PEEK_WIDTH_KEY = "cortex.peekWidth";
+const PEEK_DEFAULT = 560;
+const PEEK_MIN = 360;
+const PEEK_MAX = 1100;
+
+/** What the pane's header says about where its row lives: the collection's
+ *  own title when its page is in the note list, else the folder name. */
+function peekCollectionLabel(path: string, notes: NoteEntry[]): string {
+  const m = path.match(/^collections\/([^/]+)\//);
+  if (!m) return "";
+  const page = notes.find((n) => n.path === `collections/${m[1]}/_index.md`);
+  return page?.title || m[1];
 }
 
 export function Shell({
@@ -217,6 +232,77 @@ export function Shell({
 
   const { notes, dirs, tags, refresh, createNote, createNoteFromTemplate, openOrCreateDaily, deleteNote } = useNotes(!!vault);
   const { note, saving, save, applyNote } = useNote(selectedPath);
+
+  // ── Row peek ────────────────────────────────────────────────────────────────
+  // A collection row opened to the side of the page it was clicked on: the
+  // database stays where it is and the row's own page — title, properties,
+  // body, backlinks — edits in a pane beside it, a second editor over a second
+  // note. Session-only: moving to another page closes it. The pane's width is
+  // remembered. On a phone there is no "beside", so the row opens as the page.
+  const [peekPath, setPeekPath] = useState<string | null>(null);
+  const { note: peekNote, saving: peekSaving, save: peekSave, applyNote: applyPeekNote } = useNote(peekPath);
+  const peekComments = useComments(peekPath ?? "");
+  const [peekCommentsOpen, setPeekCommentsOpen] = useState(false);
+  const [peekReloadToken, setPeekReloadToken] = useState(0);
+  const peekEditorRef = useRef<EditorHandle>(null);
+  const peekPaneRef = useRef<HTMLElement>(null);
+  const peekPathRef = useRef(peekPath);
+  peekPathRef.current = peekPath;
+  const peekNoteRef = useRef(peekNote);
+  peekNoteRef.current = peekNote;
+  const closePeek = useCallback(() => setPeekPath(null), []);
+  const [peekWidth, setPeekWidthState] = useState<number>(() => {
+    try { const n = Number(localStorage.getItem(PEEK_WIDTH_KEY)); return n >= PEEK_MIN ? n : PEEK_DEFAULT; } catch { return PEEK_DEFAULT; }
+  });
+  const setPeekWidth = useCallback((w: number) => {
+    const next = Math.round(Math.min(PEEK_MAX, Math.max(PEEK_MIN, w)));
+    setPeekWidthState(next);
+    try { localStorage.setItem(PEEK_WIDTH_KEY, String(next)); } catch { /* fine */ }
+  }, []);
+  const peekDrag = useRef<{ startX: number; startW: number } | null>(null);
+  // The editor whose page has the keyboard: the peek's while focus is in its
+  // pane, otherwise the main one — so find, properties and comments land
+  // where you are typing.
+  const activeEditor = useCallback(() =>
+    (peekPaneRef.current?.contains(document.activeElement) ? peekEditorRef.current : editorRef.current), []);
+  // A view's "Open to the side", its `p` key, or a row menu.
+  useEffect(() => {
+    function onPeek(e: Event) {
+      const path = (e as CustomEvent<{ path?: string }>).detail?.path;
+      if (typeof path !== "string") return;
+      if (drawer) { openNote(path); return; }
+      if (path === selectedPathRefForFocus.current) { focusEditor(); return; }
+      setPeekPath(path);
+    }
+    window.addEventListener("cortex:peek-note", onPeek);
+    return () => window.removeEventListener("cortex:peek-note", onPeek);
+  }, [drawer, openNote, focusEditor]);
+  // Moving on — to the row as a page, or anywhere else — closes the pane; so
+  // does the window narrowing to a phone, and the row being trashed from the view.
+  useEffect(() => { setPeekPath(null); }, [selectedPath]);
+  useEffect(() => { if (drawer) setPeekPath(null); }, [drawer]);
+  useEffect(() => {
+    function onGone(e: Event) {
+      const path = (e as CustomEvent<{ path?: string }>).detail?.path;
+      if (path && path === peekPathRef.current) setPeekPath(null);
+    }
+    window.addEventListener("cortex:row-deleted", onGone);
+    return () => window.removeEventListener("cortex:row-deleted", onGone);
+  }, []);
+  // The pane opens with the cursor in the row's body, as a page would.
+  const peekNotePath = peekNote?.path;
+  useEffect(() => {
+    if (!peekNotePath || peekNotePath !== peekPath) return;
+    requestAnimationFrame(() => peekEditorRef.current?.focusBody());
+  }, [peekPath, peekNotePath]);
+  // The database beside the pane shows the row's edits as they are saved; the
+  // body save is already debounced, this only coalesces a burst of them.
+  const peekSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announcePeekSave = useCallback(() => {
+    if (peekSyncTimer.current) clearTimeout(peekSyncTimer.current);
+    peekSyncTimer.current = setTimeout(() => window.dispatchEvent(new CustomEvent("cortex:data-changed")), 300);
+  }, []);
+  useEffect(() => () => { if (peekSyncTimer.current) clearTimeout(peekSyncTimer.current); }, []);
   // The open note's comment threads (its `.comments.yaml` sidecar) and the
   // margin that shows them. Open/closed is a way of reading, so it lives in
   // localStorage like the outline.
@@ -273,12 +359,20 @@ export function Shell({
   selectedPathRef.current = selectedPath;
   const reloadOpenNote = useCallback(async () => {
     const path = selectedPathRef.current;
-    if (!path) return;
-    try {
-      applyNote(await commands.readNote(path));
-      setReloadToken((t) => t + 1);
-    } catch { /* note may have been deleted by the merge */ }
-  }, [applyNote]);
+    if (path) {
+      try {
+        applyNote(await commands.readNote(path));
+        setReloadToken((t) => t + 1);
+      } catch { /* note may have been deleted by the merge */ }
+    }
+    const peek = peekPathRef.current;
+    if (peek) {
+      try {
+        applyPeekNote(await commands.readNote(peek));
+        setPeekReloadToken((t) => t + 1);
+      } catch { setPeekPath(null); }
+    }
+  }, [applyNote, applyPeekNote]);
 
   // ── Follow the filesystem ───────────────────────────────────────────────────
   // The Rust watcher emits one event per burst of external changes (an agent
@@ -287,11 +381,11 @@ export function Shell({
   // editor when the open note's content actually differs from what's on screen.
   const noteRef = useRef(note);
   noteRef.current = note;
-  const watchDeps = useRef({ refresh, loadSettings, onRefreshStatus, applyNote });
-  watchDeps.current = { refresh, loadSettings, onRefreshStatus, applyNote };
+  const watchDeps = useRef({ refresh, loadSettings, onRefreshStatus, applyNote, applyPeekNote });
+  watchDeps.current = { refresh, loadSettings, onRefreshStatus, applyNote, applyPeekNote };
   useEffect(() => {
     const unlisten = listen<VaultChanged>("vault://changed", async ({ payload }) => {
-      const { refresh, loadSettings, onRefreshStatus, applyNote } = watchDeps.current;
+      const { refresh, loadSettings, onRefreshStatus, applyNote, applyPeekNote } = watchDeps.current;
       if (payload.notes.length || payload.removed.length || payload.dirs) {
         await refresh();
         window.dispatchEvent(new CustomEvent("cortex:data-changed"));
@@ -305,6 +399,17 @@ export function Shell({
             if (!same) { applyNote(fresh); setReloadToken((t) => t + 1); }
           } catch { /* vanished between the event and the read */ }
         }
+        const peek = peekPathRef.current;
+        if (peek && payload.notes.includes(peek)) {
+          try {
+            const fresh = await commands.readNote(peek);
+            const cur = peekNoteRef.current;
+            const same = !!cur && fresh.body === cur.body &&
+              JSON.stringify(fresh.frontmatter) === JSON.stringify(cur.frontmatter);
+            if (!same) { applyPeekNote(fresh); setPeekReloadToken((t) => t + 1); }
+          } catch { setPeekPath(null); }
+        }
+        if (peek && payload.removed.includes(peek)) setPeekPath(null);
       }
       if (payload.config) loadSettings();
       // A comment sidecar changed under us (an agent, a teammate's sync): the
@@ -630,13 +735,13 @@ export function Shell({
     "monk-mode":       () => { toggleMonk(); requestAnimationFrame(focusEditor); },
     "focus-sidebar":   () => { if (!leftVisible) toggleLeft(); requestAnimationFrame(() => leftRef.current?.focus()); },
     "focus-editor":    focusEditor,
-    "toggle-properties": () => editorRef.current?.toggleProperties(),
+    "toggle-properties": () => activeEditor()?.toggleProperties(),
     "marketplace":     () => setShowMarketplace((v) => !v),
     "log-today":       () => setShowLogToday((v) => !v),
-    "find-in-note":    () => editorRef.current?.openFind(),
-    "toggle-outline":  () => editorRef.current?.toggleOutline(),
-    "toggle-comments": () => { if (note) toggleComments(); },
-    "comment":         () => editorRef.current?.commentOnSelection(),
+    "find-in-note":    () => activeEditor()?.openFind(),
+    "toggle-outline":  () => activeEditor()?.toggleOutline(),
+    "toggle-comments": () => { if (activeEditor() === peekEditorRef.current) setPeekCommentsOpen((v) => !v); else if (note) toggleComments(); },
+    "comment":         () => activeEditor()?.commentOnSelection(),
     "shortcut-help":   () => setShowShortcuts((v) => !v),
   };
 
@@ -653,6 +758,22 @@ export function Shell({
     if (d) setSidebarWidth(d.startW + e.clientX - d.startX);
   };
   const onHandleUp = () => { sidebarDrag.current = null; };
+  // The peek pane's edge works the same way, growing to the left.
+  const onPeekHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    peekDrag.current = { startX: e.clientX, startW: peekWidth };
+  };
+  const onPeekHandleMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = peekDrag.current;
+    if (d) setPeekWidth(d.startW - (e.clientX - d.startX));
+  };
+  const onPeekHandleUp = () => { peekDrag.current = null; };
+  const onPeekHandleKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); setPeekWidth(peekWidth + 16); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); setPeekWidth(peekWidth - 16); }
+    else if (e.key === "Home" || e.key === "Enter") { e.preventDefault(); setPeekWidth(PEEK_DEFAULT); }
+  };
   const onHandleKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === "ArrowLeft") { e.preventDefault(); setSidebarWidth(sidebarWidth - 16); }
     else if (e.key === "ArrowRight") { e.preventDefault(); setSidebarWidth(sidebarWidth + 16); }
@@ -799,6 +920,74 @@ export function Shell({
           onResolveComment={async (id, resolved) => { await commentsApi.resolve(id, resolved); scheduleAutoCommit(); }}
           onDeleteComment={async (id) => { await commentsApi.remove(id); scheduleAutoCommit(); }}
         />
+        )}
+
+        {peekPath && !drawer && (
+          <aside
+            ref={peekPaneRef}
+            className={styles.peekPane}
+            style={{ width: peekWidth }}
+            aria-label="Row opened to the side"
+            onKeyDown={(e) => {
+              // Escape hands the keyboard back to the page the row came from.
+              if (e.key !== "Escape" || e.defaultPrevented) return;
+              e.stopPropagation();
+              closePeek();
+              focusEditor();
+            }}
+          >
+            <div
+              className={styles.peekHandle}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize the side pane"
+              aria-valuenow={peekWidth}
+              aria-valuemin={PEEK_MIN}
+              aria-valuemax={PEEK_MAX}
+              tabIndex={0}
+              title="Drag to resize · double-click resets"
+              onPointerDown={onPeekHandleDown}
+              onPointerMove={onPeekHandleMove}
+              onPointerUp={onPeekHandleUp}
+              onPointerCancel={onPeekHandleUp}
+              onDoubleClick={() => setPeekWidth(PEEK_DEFAULT)}
+              onKeyDown={onPeekHandleKey}
+            />
+            <div className={styles.peekHeader}>
+              <button type="button" className={styles.peekBtn} onClick={() => openNote(peekPath)} title="Open as page">
+                <OpenIcon size={14} />
+                <span>Open as page</span>
+              </button>
+              <span className={styles.peekFrom} title={peekPath}>{peekCollectionLabel(peekPath, notes)}</span>
+              <button type="button" className={styles.peekBtn} onClick={() => { closePeek(); focusEditor(); }} title="Close (Escape)" aria-label="Close the side pane">
+                <CloseIcon size={12} />
+              </button>
+            </div>
+            <div className={styles.peekBody}>
+              {peekNote?.path === peekPath && <Editor
+                ref={peekEditorRef}
+                note={peekNote}
+                saving={peekSaving}
+                allNotes={notes}
+                tags={tags}
+                vaultPath={vault.path}
+                reloadToken={peekReloadToken}
+                collab={null}
+                onOpenTag={setOpenTag}
+                onSave={async (updated) => { await peekSave(updated); refresh(); scheduleAutoCommit(); announcePeekSave(); }}
+                onDelete={async (p) => { await handleDelete(p); closePeek(); announcePeekSave(); }}
+                onNavigate={handleNavigate}
+                onApplyNote={applyPeekNote}
+                comments={peekComments.threads}
+                commentsOpen={peekCommentsOpen}
+                onToggleComments={() => setPeekCommentsOpen((v) => !v)}
+                onAddComment={async (text, anchor) => { await peekComments.add(text, anchor); scheduleAutoCommit(); }}
+                onReplyComment={async (id, text) => { await peekComments.reply(id, text); scheduleAutoCommit(); }}
+                onResolveComment={async (id, resolved) => { await peekComments.resolve(id, resolved); scheduleAutoCommit(); }}
+                onDeleteComment={async (id) => { await peekComments.remove(id); scheduleAutoCommit(); }}
+              />}
+            </div>
+          </aside>
         )}
 
         {terminalMounted && (

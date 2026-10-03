@@ -258,6 +258,15 @@
   font-size: var(--text-sm);
 }
 
+/* BlockNote sets `overflow: hidden` on every table inside the editor
+   (`.ProseMirror table`), which makes the table its own scrollport — and a
+   sticky cell sticks to the nearest one, so the tick and title columns
+   scrolled away with everything else instead of staying put. Scrolling is
+   `.tableWrap`'s job; this needs the extra class to outrank that rule. */
+.tableWrap .table {
+  overflow: visible;
+}
+
 .table th {
   text-align: left;
   font-weight: 600;

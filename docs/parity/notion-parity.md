@@ -117,7 +117,7 @@ by inferring column types (`data.rs:128`).
 | Per-view visible columns and order | done | — | Toggling a column appends it; no drag reorder. |
 | Column width, wrap | partial | S | Drag a header's right edge to set a column's width, saved as `widths: {field: px}` on the view (`_index.md` or the fence); double-click the edge resets it. Renames follow. No wrap toggle: cells stay one line with an ellipsis. |
 | Linked view with its own filter | partial | M | A `cortex-views` block in another note edits the source collection's views everywhere (`CollectionViewsBlock.tsx:9`). A private per-embed filter needs the `cortex-view` block instead. Deliberate, but a Notion divergence. |
-| Row peek / side panel | missing | M | Opening a row replaces the editor. |
+| Row peek / side panel | done | — | Side peek: a row opens in a pane beside its database (the hover icon or ⋯ → Open to the side, `p` on the focused row) with the full page editor over the row's note — title, properties, body, backlinks; the view re-queries as the row is saved. Header offers Open as page; Escape closes; the pane's edge drags and the width is remembered. On a phone the row opens as the page. No centre peek (`Shell.tsx` `peekPath`). |
 
 ## 6. Filter, sort, group, search
 
