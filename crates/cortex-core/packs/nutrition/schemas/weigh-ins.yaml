@@ -1,0 +1,14 @@
+# A weight on a date. Intake without weight is a number with nothing to say:
+# the target is right when the weight is going where you meant it to, and
+# wrong when it is not, whatever the arithmetic promised.
+properties:
+  - name: date
+    type: date
+  - name: weight
+    type: number
+    format: decimal
+    unit: " kg"
+  # Morning, after the bathroom, before eating — the same way every time, or
+  # the day-to-day noise is bigger than the change you are looking for.
+  - name: note
+    type: text

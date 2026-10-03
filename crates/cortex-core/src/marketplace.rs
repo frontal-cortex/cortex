@@ -759,13 +759,17 @@ fn lint_markdown(path: &str, text: &str, out: &mut Vec<Finding>) {
             err(out, "frontmatter does not parse as YAML".into());
         }
     }
-    // Only the placeholders the app expands.
+    // Only the placeholders the app expands. `{{this}}` is the exception: a
+    // button expands it to the page it sits on (lib/buttons.ts), so it is a
+    // placeholder inside a ```cortex-button fence and nowhere else.
     let mut i = 0;
     while let Some(s) = text[i..].find("{{") {
         let start = i + s + 2;
         let Some(e) = text[start..].find("}}") else { break };
         let name = text[start..start + e].trim();
-        let ok = TEMPLATE_VARS.contains(&name) || crate::placeholders::is_date_word(name);
+        let ok = TEMPLATE_VARS.contains(&name)
+            || crate::placeholders::is_date_word(name)
+            || (name == "this" && in_button_fence(text, start));
         if !ok {
             err(out, format!("unknown placeholder {{{{{name}}}}} (date, time, title, uuid; date words today, monday, sunday, month, year, week, with offsets like today+7)"));
         }
@@ -825,6 +829,21 @@ fn lint_buttons(path: &str, text: &str, colls: &[String], out: &mut Vec<Finding>
             if !BUTTON_KEYS.contains(&k.as_str()) { warn(out, format!("button `{label}`: unknown key `{k}` is ignored")); }
         }
     }
+}
+
+/// Is this byte offset inside a ```cortex-button fence? Counted by walking the
+/// fences before it, so an unclosed fence at the end of the file reads as open.
+fn in_button_fence(text: &str, at: usize) -> bool {
+    let mut inside = false;
+    for line in text[..at].lines() {
+        let l = line.trim();
+        if l == "```cortex-button" {
+            inside = true;
+        } else if inside && l.starts_with("```") {
+            inside = false;
+        }
+    }
+    inside
 }
 
 /// Placeholders resolved against a fixed day so lint can parse frontmatter.

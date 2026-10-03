@@ -1,0 +1,92 @@
+# One row per thing eaten: which food, how many servings, which meal. Every
+# number below is read from the food and multiplied by the servings, so a
+# macro is typed once, in the food, and never again.
+properties:
+  - name: date
+    type: date
+  - name: meal
+    type: select
+    options:
+      - name: breakfast
+        color: yellow
+      - name: lunch
+        color: green
+      - name: dinner
+        color: blue
+      - name: snack
+        color: orange
+  - name: food
+    type: relation
+    collection: foods
+  # 1 is one serving as the food defines it. Half a portion is 0.5; 150 g of
+  # something listed per 100 g is 1.5.
+  - name: servings
+    type: number
+    format: decimal
+  # Someone else cooked it: a restaurant, a canteen, a friend. Put in what you
+  # know and leave `food` empty — these are used only when there is no food to
+  # read from, and they are still multiplied by the servings.
+  - name: own_calories
+    type: number
+    format: integer
+    unit: " kcal"
+  - name: own_protein
+    type: number
+    format: decimal
+    unit: " g"
+  - name: own_fibre
+    type: number
+    format: decimal
+    unit: " g"
+  # The food's own numbers, pulled across so the formulas below can use them.
+  # They are per serving; the columns you read are these times the servings.
+  - name: kcal_each
+    type: rollup
+    relation: food
+    property: calories
+    function: max
+  - name: protein_each
+    type: rollup
+    relation: food
+    property: protein
+    function: max
+  - name: carbs_each
+    type: rollup
+    relation: food
+    property: carbs
+    function: max
+  - name: fat_each
+    type: rollup
+    relation: food
+    property: fat
+    function: max
+  - name: fibre_each
+    type: rollup
+    relation: food
+    property: fibre
+    function: max
+  - name: calories
+    type: formula
+    expr: round(coalesce(kcal_each, own_calories) * servings)
+    format: integer
+    unit: " kcal"
+  - name: protein
+    type: formula
+    expr: round(coalesce(protein_each, own_protein) * servings, 1)
+    format: decimal
+    unit: " g"
+  - name: carbs
+    type: formula
+    expr: round(carbs_each * servings, 1)
+    format: decimal
+    unit: " g"
+  - name: fat
+    type: formula
+    expr: round(fat_each * servings, 1)
+    format: decimal
+    unit: " g"
+  - name: fibre
+    type: formula
+    expr: round(coalesce(fibre_each, own_fibre) * servings, 1)
+    format: decimal
+    unit: " g"
