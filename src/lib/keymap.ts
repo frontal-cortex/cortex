@@ -96,6 +96,7 @@ export const TABLE_KEYS: { keys: string; label: string }[] = [
   { keys: "Enter", label: "edit the cell" },
   { keys: "Escape", label: "cancel the edit, then leave the table" },
   { keys: "mod+Enter / o", label: "open the row as a note" },
+  { keys: "p", label: "open the row to the side" },
   { keys: "n", label: "new row" },
   { keys: "x", label: "select the row" },
   { keys: "Shift+↑ ↓", label: "extend the selection" },

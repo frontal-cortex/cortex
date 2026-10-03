@@ -336,6 +336,16 @@ export function PanelLeftIcon({ size = 14 }: IconProps) {
   );
 }
 
+export function PanelRightIcon({ size = 14 }: IconProps) {
+  // "Open to the side" — a window with a pane on its right.
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="15" y1="4" x2="15" y2="20" />
+    </svg>
+  );
+}
+
 export function TerminalIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

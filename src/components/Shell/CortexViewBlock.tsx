@@ -12,7 +12,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, use
 import { insertOrUpdateBlockForSlashMenu } from "@blocknote/core/extensions";
 import { createReactBlockSpec, DefaultReactSuggestionItem } from "@blocknote/react";
 import { commands, ViewTable, ViewColumn, ViewGroup, PropType, PropertyDef, ChartResult, Stat, StatsResult } from "../../lib/commands";
-import { CloseIcon, OpenIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon, CheckIcon, GearIcon, MinusIcon } from "./icons";
+import { CloseIcon, OpenIcon, PanelRightIcon, TableIcon, BoardIcon, CalendarIcon, GalleryIcon, ListIcon, ChartIcon, StatsIcon, TrackerIcon, TimelineIcon, CheckIcon, GearIcon, MinusIcon } from "./icons";
 import { SelectCell } from "./SelectCell";
 import { TrackerView } from "./TrackerView";
 import { TimelineView } from "./TimelineView";
@@ -20,7 +20,7 @@ import { Dropdown } from "./Dropdown";
 import { DatePicker } from "./DatePicker";
 import { isMac, tableKeysHint } from "../../lib/keymap";
 import { ViewToolbar } from "./ViewToolbar";
-import { openRow } from "../../lib/rows";
+import { openRow, peekRow, announceRowDeleted } from "../../lib/rows";
 import { ChartSettingsPanel, ChartOptions } from "./ChartSettings";
 import { useViewport } from "../../hooks/useViewport";
 import { dragSource, useDropTarget } from "../../hooks/usePointerDrag";
@@ -425,6 +425,11 @@ function AddPropertyHeader({ columns, onAdd }: { columns: ViewColumn[]; onAdd: (
 /** Only collection rows are notes that can be opened in the full editor. */
 
 export const VIEW_LANGUAGES = ["cortex-view", "cortex-chart"];
+
+/** Trash a row and say so, for a shell with that row open to the side. */
+function trashRow(source: string, rowId: string): Promise<void> {
+  return commands.deleteRow(source, rowId).then(() => announceRowDeleted(source, rowId));
+}
 
 // Naive single-level YAML peek — for header chrome only; the real parse + query
 // happens in the Rust engine via commands.runView.
@@ -1379,7 +1384,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
 
   const del = (rowId: string) => {
     if (!window.confirm("Delete this row?")) return;
-    commands.deleteRow(source, rowId).then(onChanged).catch((e) => setErr(String(e)));
+    trashRow(source, rowId).then(onChanged).catch((e) => setErr(String(e)));
   };
 
   // ── Selection. `rows` is the display order, so a range reads top to bottom
@@ -1436,7 +1441,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
     const n = selected.size;
     if (n === 0) return;
     if (!window.confirm(n === 1 ? "Delete this row?" : `Delete ${n} rows?`)) return;
-    bulk((id) => commands.deleteRow(source, id)).then(clearSelection);
+    bulk((id) => trashRow(source, id)).then(clearSelection);
   };
   const duplicateSelected = () => {
     // Ids are time-based; a batch made in one tick needs a counter to stay apart.
@@ -1684,6 +1689,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
       }
       case "Enter": if (active) editActive(active); break;
       case "o": if (activeRow && canOpen) openRow(source, activeRow.id); break;
+      case "p": if (activeRow && canOpen) peekRow(source, activeRow.id); break;
       case " ": if (active && cols[active.c] && (isBool(cols[active.c]) || isSelectColumn(cols[active.c]))) editActive(active); break;
       // A new row lands in the cursor's group, so it shows up where the eye is.
       case "n": addBlank(groupSeedOf(activeRow)); break;
@@ -1732,16 +1738,19 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
       {schemaKey && <td className={styles.addPropCol} />}
       <td className={styles.rowActionCol}>
         <div className={styles.rowActions}>
-          {canOpen && (
+          {canOpen && (<>
+            <button className={styles.rowOpen} title="Open to the side" tabIndex={-1} onClick={() => peekRow(source, row.id)}>
+              <PanelRightIcon size={13} />
+            </button>
             <button className={styles.rowOpen} title="Open note" tabIndex={-1} onClick={() => openRow(source, row.id)}>
               <OpenIcon size={13} />
             </button>
-          )}
+          </>)}
           <RowMenu
             open={menuRow === row.id}
             onToggle={() => setMenuRow((m) => (m === row.id ? null : row.id))}
             items={[
-              ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }] : []),
+              ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }, { label: "Open to the side", run: () => peekRow(source, row.id) }] : []),
               { label: "Duplicate", run: () => duplicate(row.id) },
               ...(schemaKey ? [{ label: "Save as template…", run: () => saveAsTemplate(row.id) }] : []),
               { label: "Delete", run: () => del(row.id), danger: true },
@@ -1817,7 +1826,7 @@ export function DataTable({ table, spec, source, onChanged, onSpecChange, onFind
           open={menuRow === row.id}
           onToggle={() => setMenuRow((m) => (m === row.id ? null : row.id))}
           items={[
-            ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }] : []),
+            ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }, { label: "Open to the side", run: () => peekRow(source, row.id) }] : []),
             { label: "Duplicate", run: () => duplicate(row.id) },
             ...(schemaKey ? [{ label: "Save as template…", run: () => saveAsTemplate(row.id) }] : []),
             { label: "Delete", run: () => del(row.id), danger: true },
@@ -2330,7 +2339,7 @@ export function BoardView({ table, spec, source, onChanged }: {
 
   const del = (rowId: string) => {
     if (!window.confirm("Delete this row?")) return;
-    commands.deleteRow(source, rowId).then(onChanged).catch((e) => window.alert(String(e)));
+    trashRow(source, rowId).then(onChanged).catch((e) => window.alert(String(e)));
   };
 
   // Drop a card into a column → write its group field (e.g. status).
@@ -2826,7 +2835,7 @@ export function GalleryView({ table, spec, source, onChanged }: {
 
   const del = (rowId: string) => {
     if (!window.confirm("Delete this row?")) return;
-    commands.deleteRow(source, rowId).then(onChanged).catch((e) => window.alert(String(e)));
+    trashRow(source, rowId).then(onChanged).catch((e) => window.alert(String(e)));
   };
 
   if (compact) {
@@ -2971,7 +2980,7 @@ export function ListView({ table, spec, source, onChanged, onFind }: {
 
   const del = (rowId: string) => {
     if (!window.confirm("Delete this row?")) return;
-    commands.deleteRow(source, rowId).then(onChanged).catch((e) => setErr(String(e)));
+    trashRow(source, rowId).then(onChanged).catch((e) => setErr(String(e)));
   };
   const duplicate = (rowId: string) =>
     commands.duplicateRow(source, rowId, newRowId(), today()).then(onChanged).catch((e) => setErr(String(e)));
@@ -3010,16 +3019,19 @@ export function ListView({ table, spec, source, onChanged, onFind }: {
             ))}
           </span>
           <div className={styles.rowActions}>
-            {canOpen && (
+            {canOpen && (<>
+              <button className={styles.rowOpen} title="Open to the side" tabIndex={-1} onClick={() => peekRow(source, row.id)}>
+                <PanelRightIcon size={13} />
+              </button>
               <button className={styles.rowOpen} title="Open note" tabIndex={-1} onClick={() => openRow(source, row.id)}>
                 <OpenIcon size={13} />
               </button>
-            )}
+            </>)}
             <RowMenu
               open={menuRow === row.id}
               onToggle={() => setMenuRow((m) => (m === row.id ? null : row.id))}
               items={[
-                ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }] : []),
+                ...(canOpen ? [{ label: "Open", run: () => openRow(source, row.id) }, { label: "Open to the side", run: () => peekRow(source, row.id) }] : []),
                 { label: "Duplicate", run: () => duplicate(row.id) },
                 ...(schemaKey ? [{ label: "Save as template…", run: () => saveAsTemplate(row.id) }] : []),
                 { label: "Delete", run: () => del(row.id), danger: true },
